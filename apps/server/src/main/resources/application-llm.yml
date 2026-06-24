@@ -1,0 +1,12 @@
+# 启用 LLM / RAG 时使用：spring.profiles.active=llm
+# 需配置 DEEPSEEK_API_KEY、DASHSCOPE_API_KEY
+
+llm:
+  enabled: true
+
+rag:
+  enabled: true
+
+spring:
+  autoconfigure:
+    exclude: []

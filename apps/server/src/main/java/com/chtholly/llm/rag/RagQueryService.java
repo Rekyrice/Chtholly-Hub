@@ -6,6 +6,7 @@ import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -18,6 +19,7 @@ import java.util.List;
  * - 通过 ChatClient 以流式（SSE）方式返回模型输出
  */
 @Service
+@ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class RagQueryService {
     // 向量检索接口（Elasticsearch 向量库封装）

@@ -5,11 +5,13 @@ import com.chtholly.post.api.dto.DescriptionSuggestResponse;
 import com.chtholly.llm.service.PostDescriptionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping(path = "/api/v1/posts", produces = MediaType.APPLICATION_JSON_VALUE)
+@ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class PostAiController {
 

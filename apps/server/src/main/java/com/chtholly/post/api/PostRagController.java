@@ -3,6 +3,7 @@ package com.chtholly.post.api;
 import com.chtholly.llm.rag.RagIndexService;
 import com.chtholly.llm.rag.RagQueryService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -11,6 +12,7 @@ import reactor.core.publisher.Flux;
 @RestController
 @RequestMapping("/api/v1/posts")
 @Validated
+@ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class PostRagController {
 

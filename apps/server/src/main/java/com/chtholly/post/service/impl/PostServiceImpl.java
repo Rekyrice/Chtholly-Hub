@@ -17,7 +17,7 @@ import com.chtholly.post.api.dto.PostDetailResponse;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.storage.config.OssProperties;
-import com.chtholly.llm.rag.RagIndexService;
+import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import jakarta.annotation.Resource;
@@ -56,7 +56,7 @@ public class PostServiceImpl implements PostService {
     private static final Logger log = LoggerFactory.getLogger(PostServiceImpl.class);
     private static final int DETAIL_LAYOUT_VER = 2;
     private final ConcurrentHashMap<String, Object> singleFlight = new ConcurrentHashMap<>();
-    private final RagIndexService ragIndexService;
+    private final PostRagIndexer ragIndexService;
     private final OutboxMapper outboxMapper;
 
     // 手动编写构造器，Spring的@Qualifier直接标注在参数上（核心）
@@ -71,7 +71,7 @@ public class PostServiceImpl implements PostService {
             @Qualifier("feedPublicCache") Cache<String, FeedPageResponse> feedPublicCache,
             @Qualifier("postDetailCache") Cache<String, PostDetailResponse> postDetailCache,
             HotKeyDetector hotKey,
-            RagIndexService ragIndexService,
+            PostRagIndexer ragIndexService,
             OutboxMapper outboxMapper
     ) {
         this.mapper = mapper;

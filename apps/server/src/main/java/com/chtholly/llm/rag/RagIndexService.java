@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
@@ -24,8 +25,9 @@ import java.util.*;
  * - 采用 delete-by-query 清理旧切片，再批量 upsert 新切片
  */
 @Service
+@ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
-public class RagIndexService {
+public class RagIndexService implements PostRagIndexer {
     private static final Logger log = LoggerFactory.getLogger(RagIndexService.class);
     // 向量库封装（Elasticsearch VectorStore），负责写入/检索向量
     private final VectorStore vectorStore;
@@ -38,6 +40,7 @@ public class RagIndexService {
     // ES 相关配置（索引名等）
     private final EsProperties esProps;
 
+    @Override
     public void ensureIndexed(long postId) {
         // 当前策略：在问答前直接尝试重建（指纹未变化时会跳过）
         reindexSinglePost(postId);
