@@ -17,7 +17,7 @@ public class EsProperties {
 
     // RAG 索引名来自 Spring AI 的配置
     @Value("${spring.ai.vectorstore.elasticsearch.index-name:}")
-    private String index;         // e.g. zhiguang-ai-index
+    private String index;         // e.g. chtholly-ai-index
 
     // 兼容旧代码：返回第一个 URI 作为 host
     public String getHost() {

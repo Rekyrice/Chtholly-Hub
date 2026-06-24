@@ -53,7 +53,7 @@ public class ProfileServiceImpl implements ProfileService {
      * <ul>
      *   <li>校验用户存在</li>
      *   <li>校验至少提供一个待更新字段</li>
-     *   <li>若提交知光号（zgId），校验唯一性</li>
+     *   <li>若提交用户标识（zgId），校验唯一性</li>
      *   <li>构造 patch 对象并执行更新</li>
      *   <li>重新查询并返回更新后的快照</li>
      * </ul>
@@ -81,7 +81,7 @@ public class ProfileServiceImpl implements ProfileService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "未提交任何更新字段");
         }
 
-        // 知光号唯一性校验：仅在提交且非空时检查（排除自己）
+        // 用户标识唯一性校验：仅在提交且非空时检查（排除自己）
         if (req.zgId() != null && !req.zgId().isBlank()) {
             boolean exists = userMapper.existsByZgIdExceptId(req.zgId(), current.getId());
 

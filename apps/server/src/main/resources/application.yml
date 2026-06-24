@@ -1,28 +1,27 @@
-
 spring:
   application:
-    name: zhiguang-auth
+    name: chtholly-server
   datasource:
-    url: jdbc:mysql://localhost:3306/zhiguang?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: root
-    password: 写你自己的
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:chtholly}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 20             # 连接池最大连接数
-      minimum-idle: 5                   # 最小空闲连接
-      idle-timeout: 600000              # 10 分钟：空闲多久回收
-      max-lifetime: 1700000             # 约 28 分钟
-      keepalive-time: 300000            # 5 分钟发一次“保活”
-      connection-timeout: 30000             # 30 秒拿不到连接就报错
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 600000
+      max-lifetime: 1700000
+      keepalive-time: 300000
+      connection-timeout: 30000
   jackson:
     serialization:
       write-dates-as-timestamps: false
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     template:
       default-topic: counter-events
     producer:
@@ -45,7 +44,7 @@ spring:
       ack-mode: manual
   ai:
     deepseek:
-      api-key: 写你自己的
+      api-key: ${DEEPSEEK_API_KEY:}
       base-url: https://api.deepseek.com
       chat:
         options:
@@ -53,29 +52,32 @@ spring:
           temperature: 0.8
     openai:
       base-url: https://dashscope.aliyuncs.com/compatible-mode
-      api-key: 写你自己的
+      api-key: ${DASHSCOPE_API_KEY:}
       embedding:
         options:
-          model: text-embedding-v4 # 向量模型
+          model: text-embedding-v4
           dimensions: 1536
     vectorstore:
       elasticsearch:
         initialize-schema: true
-        index-name: zhiguang-ai-index
-        dimensions: 1536 # 一定要和上面的 dimensions 一致，不然会报错
+        index-name: chtholly-ai-index
+        dimensions: 1536
   elasticsearch:
-    uris: http://localhost:9200
+    uris: ${ES_URIS:http://localhost:9200}
 
 canal:
-  enabled: true
+  enabled: ${CANAL_ENABLED:false}
   host: localhost
   port: 11111
   destination: example
   username: "canal"
   password: "Canal@123456"
-  filter: zhiguang\.outbox
+  filter: chtholly\.outbox
   batchSize: 1000
   intervalMs: 1000
+
+site:
+  owner-user-id: ${SITE_OWNER_USER_ID:1}
 
 counter:
   rebuild:
@@ -97,8 +99,8 @@ mybatis:
 
 auth:
   jwt:
-    issuer: zhiguang
-    key-id: zhiguang-key
+    issuer: chtholly
+    key-id: chtholly-key
     private-key: classpath:keys/private.pem
     public-key: classpath:keys/public.pem
     access-token-ttl: PT15M
@@ -119,12 +121,12 @@ logging:
     '[com.tongji]': DEBUG
 
 oss:
-  endpoint: oss-cn-beijing.aliyuncs.com
-  access-key-id: 写你自己的
-  access-key-secret: 写你自己的
-  bucket: 写你自己的
+  endpoint: ${OSS_ENDPOINT:oss-cn-beijing.aliyuncs.com}
+  access-key-id: ${OSS_ACCESS_KEY_ID:}
+  access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+  bucket: ${OSS_BUCKET:}
   public-domain: ${OSS_PUBLIC_DOMAIN:}
-  folder: avatars
+  folder: ${OSS_FOLDER:post}
 
 cache:
   l2:

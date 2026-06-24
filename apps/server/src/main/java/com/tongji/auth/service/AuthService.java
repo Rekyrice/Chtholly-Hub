@@ -113,7 +113,7 @@ public class AuthService {
                 .phone(request.identifierType() == IdentifierType.PHONE ? identifier : null)
                 .email(request.identifierType() == IdentifierType.EMAIL ? identifier : null)
                 .nickname(generateNickname())
-                .avatar("https://static.zhiguang.cn/default-avatar.png")
+                .avatar(null)
                 .bio(null)
                 .tagsJson("[]")
                 .build();
@@ -407,7 +407,7 @@ public class AuthService {
      * @return 随机昵称字符串。
      */
     private String generateNickname() {
-        return "知光用户" + UUID.randomUUID().toString().substring(0, 8);
+        return "Chtholly用户" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     /**

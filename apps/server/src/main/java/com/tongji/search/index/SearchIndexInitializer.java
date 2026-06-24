@@ -20,7 +20,7 @@ import jakarta.annotation.PostConstruct;
 @RequiredArgsConstructor
 public class SearchIndexInitializer {
     private final ElasticsearchClient es;
-    private static final String INDEX = "zhiguang_content_index";
+    private static final String INDEX = "chtholly_content_index";
 
     @PostConstruct
     public void ensureIndex() {

@@ -38,9 +38,9 @@ public class SearchServiceImpl implements SearchService {
     private final ElasticsearchClient es;
     private final CounterService counterService;
     /**
-     * ES 索引名：zhiguang 内容统一索引。
+     * ES 索引名：Chtholly Hub 内容统一索引。
      */
-    private static final String INDEX = "zhiguang_content_index";
+    private static final String INDEX = "chtholly_content_index";
 
     /**
      * 关键词检索：相关性 + 互动数据加权，支持游标分页与高亮。

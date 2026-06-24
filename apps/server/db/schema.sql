@@ -1,4 +1,4 @@
--- MySQL 8.0 schema for ZhiGuang authentication service
+-- MySQL 8.0 schema for Chtholly Hub
 
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

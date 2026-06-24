@@ -38,7 +38,7 @@ import com.tongji.knowpost.model.KnowPostFeedRow;
 @RequiredArgsConstructor
 public class SearchIndexService {
     private static final Logger log = LoggerFactory.getLogger(SearchIndexService.class);
-    private static final String INDEX = "zhiguang_content_index";
+    private static final String INDEX = "chtholly_content_index";
 
     private final ElasticsearchClient es;
     private final KnowPostMapper knowPostMapper;

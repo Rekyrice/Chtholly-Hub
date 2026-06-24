@@ -28,13 +28,13 @@ public class AuthProperties {
     @Data
     public static class Jwt {
         /** JWT 签发者标识（iss）。 */
-        private String issuer = "zhiguang";
+        private String issuer = "chtholly";
         /** 访问令牌有效期（TTL）。 */
         private Duration accessTokenTtl = Duration.ofMinutes(15);
         /** 刷新令牌有效期（TTL）。 */
         private Duration refreshTokenTtl = Duration.ofDays(7);
         /** JWK 密钥标识（kid），用于下游校验与轮换。 */
-        private String keyId = "zhiguang-key";
+        private String keyId = "chtholly-key";
         /** RSA 私钥 PEM（PKCS#8）资源。 */
         private Resource privateKey;
         /** RSA 公钥 PEM（X.509）资源。 */

@@ -4,10 +4,9 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class ZhiGuangApplication {
+public class ChthollyApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(ZhiGuangApplication.class, args);
+        SpringApplication.run(ChthollyApplication.class, args);
     }
 }
-
