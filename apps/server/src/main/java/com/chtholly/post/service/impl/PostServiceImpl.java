@@ -11,6 +11,7 @@ import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
 import com.chtholly.post.model.PostDetailRow;
+import com.chtholly.post.util.SlugUtils;
 import com.chtholly.post.api.dto.FeedPageResponse;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -53,7 +54,7 @@ public class PostServiceImpl implements PostService {
     private final Cache<String, PostDetailResponse> knowPostDetailCache;
     private final HotKeyDetector hotKey;
     private static final Logger log = LoggerFactory.getLogger(PostServiceImpl.class);
-    private static final int DETAIL_LAYOUT_VER = 1;
+    private static final int DETAIL_LAYOUT_VER = 2;
     private final ConcurrentHashMap<String, Object> singleFlight = new ConcurrentHashMap<>();
     private final RagIndexService ragIndexService;
     private final OutboxMapper outboxMapper;
@@ -190,6 +191,14 @@ public class PostServiceImpl implements PostService {
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
+
+        Post post = mapper.findById(id);
+        if (post != null && (post.getSlug() == null || post.getSlug().isBlank())) {
+            String base = SlugUtils.fromTitle(post.getTitle());
+            String unique = SlugUtils.ensureUnique(base, id, mapper::findIdBySlug);
+            mapper.updateSlug(id, creatorId, unique);
+        }
+
         try {
             userCounterService.incrementPosts(creatorId, 1);
         } catch (Exception ignored) {}
@@ -397,6 +406,7 @@ public class PostServiceImpl implements PostService {
 
             resp = new PostDetailResponse(
                     String.valueOf(row.getId()),
+                    row.getSlug(),
                     row.getTitle(),
                     row.getDescription(),
                     row.getContentUrl(),
@@ -437,6 +447,15 @@ public class PostServiceImpl implements PostService {
             singleFlight.remove(pageKey);
             return enrichDetailResponse(resp, currentUserIdNullable, false);
         }
+    }
+
+    @Transactional(readOnly = true)
+    public PostDetailResponse getDetailBySlug(String slug, Long currentUserIdNullable) {
+        Long id = mapper.findIdBySlug(slug);
+        if (id == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "内容不存在");
+        }
+        return getDetail(id, currentUserIdNullable);
     }
 
     /**
@@ -510,6 +529,7 @@ public class PostServiceImpl implements PostService {
         // 3. 构造新的 Record 对象返回
         return new PostDetailResponse(
                 base.id(),
+                base.slug(),
                 base.title(),
                 base.description(),
                 base.contentUrl(),

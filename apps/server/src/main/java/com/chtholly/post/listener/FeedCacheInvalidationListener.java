@@ -151,6 +151,7 @@ public class FeedCacheInvalidationListener {
 
                     it = new FeedItemResponse(
                             it.id(),
+                            it.slug(),
                             it.title(),
                             it.description(),
                             it.coverImage(),

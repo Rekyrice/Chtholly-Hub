@@ -114,9 +114,10 @@ public class PostController {
     @GetMapping("/feed")
     public FeedPageResponse feed(@RequestParam(value = "page", defaultValue = "1") int page,
                                  @RequestParam(value = "size", defaultValue = "20") int size,
+                                 @RequestParam(value = "ownerId", required = false) Long ownerId,
                                  @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        return feedService.getPublicFeed(page, size, userId);
+        return feedService.getPublicFeed(page, size, ownerId, userId);
     }
 
     /**
@@ -138,5 +139,15 @@ public class PostController {
                                          @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
         return service.getDetail(id, userId);
+    }
+
+    /**
+     * 知文详情（按 slug 查询，权限规则同 {@link #detail}）。
+     */
+    @GetMapping("/detail/by-slug/{slug}")
+    public PostDetailResponse detailBySlug(@PathVariable("slug") String slug,
+                                         @AuthenticationPrincipal Jwt jwt) {
+        Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
+        return service.getDetailBySlug(slug, userId);
     }
 }

@@ -7,6 +7,7 @@ import java.util.List;
  */
 public record FeedItemResponse(
         String id,
+        String slug,
         String title,
         String description,
         String coverImage,

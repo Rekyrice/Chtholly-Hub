@@ -36,7 +36,7 @@ public class PostFeedServiceImpl implements PostFeedService {
     private final Cache<String, FeedPageResponse> feedMineCache;
     private final HotKeyDetector hotKey;
     private static final Logger log = LoggerFactory.getLogger(PostFeedServiceImpl.class);
-    private static final int LAYOUT_VER = 1;
+    private static final int LAYOUT_VER = 2;
     private final ConcurrentHashMap<String, Object> singleFlight = new ConcurrentHashMap<>();
 
     /**
@@ -86,7 +86,11 @@ public class PostFeedServiceImpl implements PostFeedService {
      * @param currentUserIdNullable 当前用户 ID（为空表示匿名）
      * @return 带分页信息的 Feed 列表（liked/faved 为用户维度）
      */
-    public FeedPageResponse getPublicFeed(int page, int size, Long currentUserIdNullable) {
+    public FeedPageResponse getPublicFeed(int page, int size, Long ownerId, Long currentUserIdNullable) {
+        if (ownerId != null) {
+            return getPublicFeedByOwner(ownerId, page, size, currentUserIdNullable);
+        }
+
         int safeSize = Math.min(Math.max(size, 1), 50);
         int safePage = Math.max(page, 1);
         // 这个 localPageKey 是本地缓存的页面 Key（非 Redis）
@@ -181,6 +185,25 @@ public class PostFeedServiceImpl implements PostFeedService {
     }
 
     /**
+     * 按创作者过滤的公开 Feed（不走公共缓存，Phase A 站长列表专用）。
+     */
+    private FeedPageResponse getPublicFeedByOwner(long ownerId, int page, int size, Long currentUserIdNullable) {
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        int safePage = Math.max(page, 1);
+        int offset = (safePage - 1) * safeSize;
+
+        List<PostFeedRow> rows = mapper.listFeedPublicByCreator(ownerId, safeSize + 1, offset);
+        boolean hasMore = rows.size() > safeSize;
+        if (hasMore) {
+            rows = rows.subList(0, safeSize);
+        }
+
+        List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, false);
+        log.info("feed.public source=db ownerId={} page={} size={} hasMore={}", ownerId, safePage, safeSize, hasMore);
+        return new FeedPageResponse(items, safePage, safeSize, hasMore);
+    }
+
+    /**
      * 记录单个内容条目的热度，并尝试延长其相关片段缓存的 TTL。
      * @param itemId 内容 ID
      */
@@ -215,6 +238,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             boolean faved = uid != null && counterService.isFaved("post", it.id(), uid);
             out.add(new FeedItemResponse(
                     it.id(),
+                    it.slug(),
                     it.title(),
                     it.description(),
                     it.coverImage(),
@@ -294,6 +318,7 @@ public class PostFeedServiceImpl implements PostFeedService {
 
             enriched.add(new FeedItemResponse(
                     base.id(),
+                    base.slug(),
                     base.title(),
                     base.description(),
                     base.coverImage(),
@@ -477,6 +502,7 @@ public class PostFeedServiceImpl implements PostFeedService {
 
             items.add(new FeedItemResponse(
                     String.valueOf(r.getId()),
+                    r.getSlug(),
                     r.getTitle(),
                     r.getDescription(),
                     cover,
