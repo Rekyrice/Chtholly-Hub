@@ -7,7 +7,7 @@ Spring Boot 3.2 · Java 21 · MyBatis · MySQL `chtholly`
 | 包 | 能力 |
 |----|------|
 | `auth` | JWT 双令牌、验证码登录 |
-| `knowpost` | 帖子 CRUD、Feed、详情 |
+| `post` | 帖子 CRUD、Feed、详情 |
 | `storage` | OSS 预签名直传 |
 | `counter` | 点赞/收藏计数 |
 | `relation` | 关注/粉丝 |
@@ -44,4 +44,4 @@ mvn test
 
 ## 参考
 
-业务代码包名保留 `com.tongji`（迁入来源）。对外产品名统一为 **Chtholly Hub**。
+后端统一 **`com.chtholly`** 包名；REST **`/api/v1/posts`**；计数实体类型 **`post`**；用户 **`handle`** 字段。对外产品名 **Chtholly Hub**。

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.tongji.relation.mapper.RelationMapper">
+<mapper namespace="com.chtholly.relation.mapper.RelationMapper">
     <insert id="insertFollowing">
         INSERT INTO following (id, from_user_id, to_user_id, rel_status, created_at, updated_at)
         VALUES (#{id}, #{fromUserId}, #{toUserId}, #{relStatus}, NOW(3), NOW(3))

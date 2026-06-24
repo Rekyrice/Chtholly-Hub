@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     nickname VARCHAR(64) NOT NULL,
     avatar TEXT NULL,
     bio VARCHAR(512) NULL,
-    zg_id VARCHAR(64) NULL,
+    handle VARCHAR(64) NULL,
     gender VARCHAR(16) NULL,
     birthday DATE NULL,
     school VARCHAR(128) NULL,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     PRIMARY KEY (id),
     UNIQUE KEY uk_users_phone (phone),
     UNIQUE KEY uk_users_email (email),
-    UNIQUE KEY uk_users_zg_id (zg_id)
+    UNIQUE KEY uk_users_handle (handle)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS login_logs (
@@ -34,14 +34,14 @@ CREATE TABLE IF NOT EXISTS login_logs (
     KEY ix_login_logs_user_created_at (user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 知文（KnowPost）主表
+-- 帖子（Post）主表
 -- 说明：
 -- - id 使用雪花算法在业务层生成（非自增）；
 -- - tags、img_urls 使用 JSON 存储，兼容多标签/多图片；
 -- - content 存储在 OSS，仅记录 URL 与校验信息；
 -- - 一期类型仅 image_text，可扩展；
 -- - 状态包含草稿/审核中/已发布，预留 rejected/deleted；
-CREATE TABLE IF NOT EXISTS know_posts (
+CREATE TABLE IF NOT EXISTS posts (
     id BIGINT UNSIGNED NOT NULL,
     tag_id BIGINT UNSIGNED NULL COMMENT '主分类/内容分类ID',
     tags JSON NULL COMMENT '标签名数组，例如 ["java","编程"]',
@@ -63,12 +63,12 @@ CREATE TABLE IF NOT EXISTS know_posts (
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     publish_time TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (id),
-    KEY ix_know_posts_creator_ct (creator_id, create_time),
-    KEY ix_know_posts_status_ct (status, create_time),
-    KEY ix_know_posts_tag_ct (tag_id, create_time),
-    KEY ix_know_posts_top_ct (is_top, create_time),
-    KEY ix_know_posts_creator_status_pub (creator_id, status, publish_time),
-    CONSTRAINT fk_know_posts_creator FOREIGN KEY (creator_id) REFERENCES users(id)
+    KEY ix_posts_creator_ct (creator_id, create_time),
+    KEY ix_posts_status_ct (status, create_time),
+    KEY ix_posts_tag_ct (tag_id, create_time),
+    KEY ix_posts_top_ct (is_top, create_time),
+    KEY ix_posts_creator_status_pub (creator_id, status, publish_time),
+    CONSTRAINT fk_posts_creator FOREIGN KEY (creator_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS outbox (

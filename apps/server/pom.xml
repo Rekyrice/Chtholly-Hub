@@ -242,7 +242,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.tongji.ChthollyApplication</mainClass>
+                    <mainClass>com.chtholly.ChthollyApplication</mainClass>
                 </configuration>
             </plugin>
         </plugins>
