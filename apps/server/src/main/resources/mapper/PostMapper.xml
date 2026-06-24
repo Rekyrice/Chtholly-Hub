@@ -7,6 +7,7 @@
         <result property="tagId" column="tag_id" />
         <result property="tags" column="tags" />
         <result property="title" column="title" />
+        <result property="slug" column="slug" />
         <result property="contentUrl" column="content_url" />
         <result property="contentObjectKey" column="content_object_key" />
         <result property="contentEtag" column="content_etag" />
@@ -53,6 +54,7 @@
         UPDATE posts
         <set>
             <if test="title != null">title = #{title},</if>
+            <if test="slug != null">slug = #{slug},</if>
             <if test="tagId != null">tag_id = #{tagId},</if>
             <if test="tags != null">tags = #{tags},</if>
             <if test="imgUrls != null">img_urls = #{imgUrls},</if>
@@ -97,6 +99,7 @@
         SELECT
             p.id,
             p.title,
+            p.slug,
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
@@ -117,6 +120,7 @@
         SELECT
             p.id,
             p.title,
+            p.slug,
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
@@ -138,6 +142,7 @@
             p.id,
             p.creator_id AS creatorId,
             p.title,
+            p.slug,
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
@@ -156,6 +161,43 @@
         JOIN users u ON p.creator_id = u.id
         WHERE p.id = #{id}
     </select>
+
+    <select id="findDetailBySlug" parameterType="string" resultType="com.chtholly.post.model.PostDetailRow">
+        SELECT
+            p.id,
+            p.creator_id AS creatorId,
+            p.title,
+            p.slug,
+            p.description,
+            p.tags,
+            p.img_urls AS imgUrls,
+            p.content_url AS contentUrl,
+            p.content_etag AS contentEtag,
+            p.content_sha256 AS contentSha256,
+            u.avatar AS authorAvatar,
+            u.nickname AS authorNickname,
+            u.tags_json AS authorTagJson,
+            p.publish_time AS publishTime,
+            p.is_top AS isTop,
+            p.visible,
+            p.type,
+            p.status
+        FROM posts p
+        JOIN users u ON p.creator_id = u.id
+        WHERE p.slug = #{slug}
+          AND p.status = 'published'
+          AND p.visible = 'public'
+    </select>
+
+    <select id="findIdBySlug" parameterType="string" resultType="long">
+        SELECT id FROM posts WHERE slug = #{slug} LIMIT 1
+    </select>
+
+    <update id="updateSlug">
+        UPDATE posts
+        SET slug = #{slug}, update_time = NOW()
+        WHERE id = #{id} AND creator_id = #{creatorId}
+    </update>
 
     <select id="countMyPublished" parameterType="long" resultType="long">
         SELECT COUNT(1)

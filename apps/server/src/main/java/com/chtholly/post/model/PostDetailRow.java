@@ -5,13 +5,14 @@ import lombok.Data;
 import java.time.Instant;
 
 /**
- * 知文详情查询的行映射（含作者信息）。
+ * 帖子详情查询的行映射（含作者信息）。
  */
 @Data
 public class PostDetailRow {
     private Long id;
     private Long creatorId;
     private String title;
+    private String slug;
     private String description;
     private String tags;        // JSON 字符串
     private String imgUrls;     // JSON 字符串

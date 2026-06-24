@@ -11,6 +11,7 @@ import java.time.Instant;
 public class PostFeedRow {
     private Long id;
     private String title;
+    private String slug;
     private String description;
     private String tags;       // JSON 字符串
     private String imgUrls;    // JSON 字符串

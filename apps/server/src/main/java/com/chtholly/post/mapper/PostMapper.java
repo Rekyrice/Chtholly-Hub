@@ -42,7 +42,13 @@ public interface PostMapper {
     // 详情查询（含作者信息）
     PostDetailRow findDetailById(@Param("id") Long id);
 
-    // 统计我的已发布知文数量
+    PostDetailRow findDetailBySlug(@Param("slug") String slug);
+
+    Long findIdBySlug(@Param("slug") String slug);
+
+    int updateSlug(@Param("id") Long id, @Param("creatorId") Long creatorId, @Param("slug") String slug);
+
+    // 统计我的已发布帖子数量
     long countMyPublished(@Param("creatorId") long creatorId);
 
     // 列出我的已发布知文ID列表

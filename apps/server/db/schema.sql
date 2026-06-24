@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS posts (
     tag_id BIGINT UNSIGNED NULL COMMENT '主分类/内容分类ID',
     tags JSON NULL COMMENT '标签名数组，例如 ["java","编程"]',
     title VARCHAR(256) NULL,
+    slug VARCHAR(128) NULL COMMENT 'URL 友好标识',
     description VARCHAR(50) NULL COMMENT '摘要/描述，最多50字',
     content_url TEXT NULL COMMENT '正文存储于OSS的访问URL或签名URL',
     content_object_key VARCHAR(512) NULL COMMENT 'OSS对象Key',
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS posts (
     KEY ix_posts_tag_ct (tag_id, create_time),
     KEY ix_posts_top_ct (is_top, create_time),
     KEY ix_posts_creator_status_pub (creator_id, status, publish_time),
+    UNIQUE KEY uk_posts_slug (slug),
     CONSTRAINT fk_posts_creator FOREIGN KEY (creator_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

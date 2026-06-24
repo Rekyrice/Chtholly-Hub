@@ -17,6 +17,7 @@ public class Post {
     /** JSON 字符串，示例：["java","编程"] */
     private String tags;
     private String title;
+    private String slug;
     private String description;
     private String contentUrl;
     private String contentObjectKey;
