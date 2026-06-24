@@ -137,7 +137,7 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
-    <!-- 我的知文列表查询（当前用户的已发布内容），置顶优先，其次按发布时间倒序 -->
+    <!-- 我的帖子列表查询（当前用户的已发布内容），置顶优先，其次按发布时间倒序 -->
     <select id="listMyPublished" resultType="com.chtholly.post.model.PostFeedRow">
         SELECT
             p.id,

@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * 知文详情响应。
+ * 帖子详情响应。
  */
 public record PostDetailResponse(
         String id,

@@ -23,7 +23,7 @@ public class PostDescriptionServiceImpl implements PostDescriptionService {
         if (content == null || content.trim().isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "正文内容不能为空");
         }
-        String system = "你是中文文案编辑。请基于用户提供的知文正文，生成一个中文描述，简洁有吸引力，且不超过50个汉字。不输出解释或多段，只输出结果。";
+        String system = "你是中文文案编辑。请基于用户提供的帖子正文，生成一个中文描述，简洁有吸引力，且不超过50个汉字。不输出解释或多段，只输出结果。";
         String user = "正文如下：\n\n" + content + "\n\n请直接给出不超过50字的中文描述。";
 
         try {

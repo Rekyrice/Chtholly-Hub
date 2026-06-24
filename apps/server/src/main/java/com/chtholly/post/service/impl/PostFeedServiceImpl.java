@@ -270,7 +270,7 @@ public class PostFeedServiceImpl implements PostFeedService {
      * @return 组装完成的页面；不存在时返回 null
      */
     private FeedPageResponse assembleFromCache(String idsKey, String hasMoreKey, int page, int size, Long uid) {
-        // 需要展示知文的 ID 列表
+        // 需要展示帖子的 ID 列表
         List<String> idList = redis.opsForList().range(idsKey, 0, size - 1);
         String hasMoreStr = redis.opsForValue().get(hasMoreKey);
         if (idList == null || idList.isEmpty()) {
@@ -282,7 +282,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         for (String id : idList) {
             itemKeys.add("feed:item:" + id);
         }
-        // 批量获取知文 元数据
+        // 批量获取帖子 元数据
         List<String> itemJsons = redis.opsForValue().multiGet(itemKeys);
 
         List<FeedItemResponse> items = new ArrayList<>(idList.size());
@@ -402,7 +402,7 @@ public class PostFeedServiceImpl implements PostFeedService {
     }
 
     /**
-     * 获取当前用户自己发布的知文列表（按发布时间倒序）。
+     * 获取当前用户自己发布的帖子列表（按发布时间倒序）。
      * 缓存策略：本地 Caffeine + Redis 页面缓存（TTL 更短）。
      * 返回的每条目包含 isTop 字段以表示是否置顶。
      * @param userId 当前用户 ID

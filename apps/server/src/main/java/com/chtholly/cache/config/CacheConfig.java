@@ -43,12 +43,12 @@ public class CacheConfig {
     }
 
     /**
-     * 知文详情本地缓存。
+     * 帖子详情本地缓存。
      *
      * <p>键为 post:detail:{id}:v{version}，值为 {@link PostDetailResponse}。</p>
      */
-    @Bean("knowPostDetailCache")
-    public Cache<String, PostDetailResponse> knowPostDetailCache(CacheProperties props) {
+    @Bean("postDetailCache")
+    public Cache<String, PostDetailResponse> postDetailCache(CacheProperties props) {
         return Caffeine.newBuilder()
                 .maximumSize(props.getL2().getDetailCfg().getMaxSize())
                 .expireAfterWrite(Duration.ofSeconds(props.getL2().getDetailCfg().getTtlSeconds()))

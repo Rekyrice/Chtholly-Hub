@@ -29,7 +29,7 @@ public interface PostMapper {
                                               @Param("limit") int limit,
                                               @Param("offset") int offset);
 
-    // 我的知文列表（当前用户已发布内容），置顶优先，其次按发布时间倒序。
+    // 我的帖子列表（当前用户已发布内容），置顶优先，其次按发布时间倒序。
     List<PostFeedRow> listMyPublished(@Param("creatorId") long creatorId,
                                                                               @Param("limit") int limit,
                                                                               @Param("offset") int offset);
@@ -55,6 +55,6 @@ public interface PostMapper {
     // 统计我的已发布帖子数量
     long countMyPublished(@Param("creatorId") long creatorId);
 
-    // 列出我的已发布知文ID列表
+    // 列出我的已发布帖子ID列表
     List<Long> listMyPublishedIds(@Param("creatorId") long creatorId);
 }

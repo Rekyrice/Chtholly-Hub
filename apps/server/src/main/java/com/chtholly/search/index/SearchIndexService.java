@@ -41,7 +41,7 @@ public class SearchIndexService {
     private static final String INDEX = "chtholly_content_index";
 
     private final ElasticsearchClient es;
-    private final PostMapper knowPostMapper;
+    private final PostMapper postMapper;
     private final CounterService counterService;
     private final ObjectMapper objectMapper;
     private final RestTemplate http = new RestTemplate();
@@ -57,7 +57,7 @@ public class SearchIndexService {
             int limit = 500;
             int offset = 0;
             while (true) {
-                List<PostFeedRow> rows = knowPostMapper.listFeedPublic(limit, offset);
+                List<PostFeedRow> rows = postMapper.listFeedPublic(limit, offset);
                 if (rows == null || rows.isEmpty()) {
                     // 没有更多数据，结束回灌
                     break;
@@ -78,7 +78,7 @@ public class SearchIndexService {
      */
     public void upsertPost(long id) {
         try {
-            PostDetailRow row = knowPostMapper.findDetailById(id);
+            PostDetailRow row = postMapper.findDetailById(id);
             if (row == null) {
                 log.warn("Index upsert skipped: post {} not found", id);
                 return;

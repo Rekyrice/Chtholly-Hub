@@ -1,0 +1,16 @@
+---
+description: Git 提交与品牌命名约束
+alwaysApply: true
+---
+
+# Git 提交
+
+- **禁止**在 commit message 中添加 `Co-authored-by: Cursor`、 `Made-with: Cursor` 或任何 Cursor 归属 trailer。
+- 提交信息只保留用户本人的 Author 信息。
+
+# 品牌与命名（会进入 Git 的文件）
+
+- 对外品牌：**Chtholly Hub**。
+- 禁止在代码注释、README、配置注释中出现「知光」、`zhiguang`、`zg_id`、`knowpost`、`KnowPost`、`知文` 等旧品牌/旧领域用语。
+- 使用 **帖子 / post**、**handle**、**Chtholly** 等现行命名。
+- `docs/` 等 gitignore 目录内的规划文档不受此限。

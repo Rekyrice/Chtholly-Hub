@@ -50,8 +50,8 @@ public class PostServiceImpl implements PostService {
     private final StringRedisTemplate redis;
     @Qualifier("feedPublicCache")
     private final Cache<String, FeedPageResponse> feedPublicCache;
-    @Qualifier("knowPostDetailCache")
-    private final Cache<String, PostDetailResponse> knowPostDetailCache;
+    @Qualifier("postDetailCache")
+    private final Cache<String, PostDetailResponse> postDetailCache;
     private final HotKeyDetector hotKey;
     private static final Logger log = LoggerFactory.getLogger(PostServiceImpl.class);
     private static final int DETAIL_LAYOUT_VER = 2;
@@ -69,7 +69,7 @@ public class PostServiceImpl implements PostService {
             UserCounterService userCounterService,
             StringRedisTemplate redis,
             @Qualifier("feedPublicCache") Cache<String, FeedPageResponse> feedPublicCache,
-            @Qualifier("knowPostDetailCache") Cache<String, PostDetailResponse> knowPostDetailCache,
+            @Qualifier("postDetailCache") Cache<String, PostDetailResponse> postDetailCache,
             HotKeyDetector hotKey,
             RagIndexService ragIndexService,
             OutboxMapper outboxMapper
@@ -82,7 +82,7 @@ public class PostServiceImpl implements PostService {
         this.userCounterService = userCounterService;
         this.redis = redis;
         this.feedPublicCache = feedPublicCache;
-        this.knowPostDetailCache = knowPostDetailCache; // 带@Qualifier的参数赋值
+        this.postDetailCache = postDetailCache; // 带@Qualifier的参数赋值
         this.hotKey = hotKey;
         this.ragIndexService = ragIndexService;
         this.outboxMapper = outboxMapper;
@@ -314,7 +314,7 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 获取知文详情（含作者信息、图片列表）。
+     * 获取帖子详情（含作者信息、图片列表）。
      * <p>
      * 流程：
      * 1. 尝试读取 Redis 缓存。
@@ -327,9 +327,9 @@ public class PostServiceImpl implements PostService {
      * 8. 返回最终结果（叠加用户维度状态）。
      * </p>
      *
-     * @param id 知文 ID
+     * @param id 帖子 ID
      * @param currentUserIdNullable 当前用户 ID（可空，用于判断权限与点赞状态）
-     * @return 知文详情响应
+     * @return 帖子详情响应
      */
     @Transactional(readOnly = true)
     public PostDetailResponse getDetail(long id, Long currentUserIdNullable) {
@@ -337,7 +337,7 @@ public class PostServiceImpl implements PostService {
         String pageKey = "post:detail:" + id + ":v" + DETAIL_LAYOUT_VER;
         
         // 0. L1 本地缓存（Caffeine）
-        PostDetailResponse local = knowPostDetailCache.getIfPresent(pageKey);
+        PostDetailResponse local = postDetailCache.getIfPresent(pageKey);
         if (local != null) {
             recordHotKeyAndExtendTtl(id, pageKey);
             log.info("detail source=local key={}", pageKey);
@@ -437,7 +437,7 @@ public class PostServiceImpl implements PostService {
                 redis.opsForValue().set(pageKey, json, Duration.ofSeconds(Math.max(target, baseTtl + jitter)));
 
                 // L1 填充
-                knowPostDetailCache.put(pageKey, resp);
+                postDetailCache.put(pageKey, resp);
 
                 log.info("detail source=db key={}", pageKey);
             } catch (Exception ignored) {}
@@ -484,7 +484,7 @@ public class PostServiceImpl implements PostService {
             PostDetailResponse base = objectMapper.readValue(cached, PostDetailResponse.class);
 
             // L1 填充
-            knowPostDetailCache.put(pageKey, base);
+            postDetailCache.put(pageKey, base);
             
             // 4. 记录热度并尝试续期
             // 如果该内容正在被高频访问，自动延长其缓存 TTL
@@ -591,7 +591,7 @@ public class PostServiceImpl implements PostService {
         }
 
         try {
-            knowPostDetailCache.invalidate(pageKey);
+            postDetailCache.invalidate(pageKey);
         } catch (Exception e) {
             log.warn("本地详情缓存删除失败，key={}", pageKey, e);
         }

@@ -40,7 +40,7 @@ public class RagQueryService {
         String context = String.join("\n\n---\n\n", contexts);
 
         // 系统提示：限定只依据提供的上下文作答，无法确定需明确说明
-        String system = "你是中文知识助手。只能依据提供的知文上下文回答；无法确定的请说明不确定。";
+        String system = "你是中文知识助手。只能依据提供的帖子上下文回答；无法确定的请说明不确定。";
         // 用户消息：包含问题和召回到的上下文
         String user = "问题：" + question + "\n\n上下文如下（可能不完整）：\n" + context + "\n\n请基于以上上下文作答。";
 

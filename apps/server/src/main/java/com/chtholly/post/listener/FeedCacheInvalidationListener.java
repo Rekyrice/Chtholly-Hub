@@ -37,18 +37,18 @@ public class FeedCacheInvalidationListener {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final com.chtholly.counter.service.UserCounterService userCounterService;
-    private final com.chtholly.post.mapper.PostMapper knowPostMapper;
+    private final com.chtholly.post.mapper.PostMapper postMapper;
 
     public FeedCacheInvalidationListener(@Qualifier("feedPublicCache") Cache<String, FeedPageResponse> feedPublicCache,
                                          StringRedisTemplate redis,
                                          ObjectMapper objectMapper,
                                          com.chtholly.counter.service.UserCounterService userCounterService,
-                                         com.chtholly.post.mapper.PostMapper knowPostMapper) {
+                                         com.chtholly.post.mapper.PostMapper postMapper) {
         this.feedPublicCache = feedPublicCache;
         this.redis = redis;
         this.objectMapper = objectMapper;
         this.userCounterService = userCounterService;
-        this.knowPostMapper = knowPostMapper;
+        this.postMapper = postMapper;
     }
 
     /**
@@ -74,7 +74,7 @@ public class FeedCacheInvalidationListener {
             int delta = event.getDelta();
 
             try {
-                Post post = knowPostMapper.findById(Long.valueOf(eid));
+                Post post = postMapper.findById(Long.valueOf(eid));
                 if (post != null && post.getCreatorId() != null) {
                     long owner = post.getCreatorId();
                     if ("like".equals(metric)) {

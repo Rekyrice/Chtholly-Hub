@@ -16,7 +16,7 @@ public class PostAiController {
     private final PostDescriptionService descriptionService;
 
     /**
-     * 生成不超过 50 字的知文描述。
+     * 生成不超过 50 字的帖子描述。
      * 需要鉴权（默认策略），防止匿名滥用。
      */
     @PostMapping(path = "/description/suggest", consumes = MediaType.APPLICATION_JSON_VALUE)

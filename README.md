@@ -61,5 +61,3 @@ npm run dev
 ## 参考项目（同级目录，不纳入本仓）
 
 - `My_Blog` — Sakuga UI 参考
-- `zhiguang_be` — 后端迁入来源
-- `zhiguang_fe` — HTTP 契约参考

@@ -59,13 +59,13 @@ class PostServiceImplTest {
     private OutboxMapper outboxMapper;
 
     private Cache<String, FeedPageResponse> feedPublicCache;
-    private Cache<String, PostDetailResponse> knowPostDetailCache;
+    private Cache<String, PostDetailResponse> postDetailCache;
     private PostServiceImpl service;
 
     @BeforeEach
     void setUp() {
         feedPublicCache = Caffeine.newBuilder().build();
-        knowPostDetailCache = Caffeine.newBuilder().build();
+        postDetailCache = Caffeine.newBuilder().build();
 
         when(redis.opsForSet()).thenReturn(setOperations);
 
@@ -82,7 +82,7 @@ class PostServiceImplTest {
                 userCounterService,
                 redis,
                 feedPublicCache,
-                knowPostDetailCache,
+                postDetailCache,
                 hotKeyDetector,
                 ragIndexService,
                 outboxMapper
@@ -356,7 +356,7 @@ class PostServiceImplTest {
         System.out.println("  ├─ 当前时间槽索引: " + currentIndexKey + " (空)");
         System.out.println("  └─ 前一时间槽索引: " + previousIndexKey + " (空)");
 
-        System.out.println("\n📦 [初始状态] 该知文尚未被任何 feed 流缓存");
+        System.out.println("\n📦 [初始状态] 该帖子尚未被任何 feed 流缓存");
         System.out.println("  └─ Redis Set 返回空集合: Set.of()");
 
         when(mapper.updateMetadata(any())).thenReturn(1);

@@ -29,7 +29,7 @@ public class StorageController {
 
     private final OssStorageService ossStorageService;
     private final JwtService jwtService;
-    private final PostMapper knowPostMapper;
+    private final PostMapper postMapper;
 
     /**
      * 获取用于直传的 PUT 预签名 URL。
@@ -47,7 +47,7 @@ public class StorageController {
         }
 
         // 权限校验：postId 必须属于当前用户
-        Post post = knowPostMapper.findById(postId);
+        Post post = postMapper.findById(postId);
         if (post == null || post.getCreatorId() == null || post.getCreatorId() != userId) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }

@@ -19,7 +19,7 @@ import java.util.*;
 
 /**
  * RAG 索引构建服务：
- * - 将公开且已发布的知文切片并写入向量库
+ * - 将公开且已发布的帖子切片并写入向量库
  * - 通过指纹（SHA256/ETag）判断是否需要重建，保证幂等
  * - 采用 delete-by-query 清理旧切片，再批量 upsert 新切片
  */
@@ -29,8 +29,8 @@ public class RagIndexService {
     private static final Logger log = LoggerFactory.getLogger(RagIndexService.class);
     // 向量库封装（Elasticsearch VectorStore），负责写入/检索向量
     private final VectorStore vectorStore;
-    // 数据访问：根据 postId 查询知文详情（含 contentUrl、指纹等）
-    private final PostMapper knowPostMapper;
+    // 数据访问：根据 postId 查询帖子详情（含 contentUrl、指纹等）
+    private final PostMapper postMapper;
     // 拉取 Markdown 正文内容
     private final RestTemplate http = new RestTemplate();
     // 直接使用 ES 客户端做指纹判断和删除旧切片
@@ -44,13 +44,13 @@ public class RagIndexService {
     }
 
     public int reindexSinglePost(long postId) {
-        PostDetailRow row = knowPostMapper.findDetailById(postId);
+        PostDetailRow row = postMapper.findDetailById(postId);
         if (row == null) {
             log.warn("Post {} not found", postId);
             return 0;
         }
 
-        // 仅索引公开的已发布知文
+        // 仅索引公开的已发布帖子
         if (!"published".equalsIgnoreCase(row.getStatus()) || !"public".equalsIgnoreCase(row.getVisible())) {
             log.warn("Post {} is not public/published, skip indexing", postId);
             return 0;

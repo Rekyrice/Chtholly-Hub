@@ -27,7 +27,7 @@ public class CacheProperties {
         // 个人信息流缓存配置。
         private MineCfg mineCfg = new MineCfg();
 
-        // 知文详情缓存配置
+        // 帖子详情缓存配置
         private DetailCfg detailCfg = new DetailCfg();
     }
 

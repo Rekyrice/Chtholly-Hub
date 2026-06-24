@@ -18,7 +18,7 @@ public class PostRagController {
     private final RagQueryService ragQueryService;
 
     /**
-     * 单篇知文 RAG 问答（WebFlux + Flux 流式输出）。
+     * 单篇帖子 RAG 问答（WebFlux + Flux 流式输出）。
      * 示例：GET /api/v1/posts/{id}/qa/stream?question=...&topK=5&maxTokens=1024
      */
     @GetMapping(value = "/{id}/qa/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

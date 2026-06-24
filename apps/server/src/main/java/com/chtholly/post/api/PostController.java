@@ -98,7 +98,7 @@ public class PostController {
     }
 
     /**
-     * 删除知文（软删除）。
+     * 删除帖子（软删除）。
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable("id") long id,
@@ -121,7 +121,7 @@ public class PostController {
     }
 
     /**
-     * 我的知文（当前用户已发布）分页查询；默认每页 20，最大 50。
+     * 我的帖子（当前用户已发布）分页查询；默认每页 20，最大 50。
      */
     @GetMapping("/mine")
     public FeedPageResponse mine(@RequestParam(value = "page", defaultValue = "1") int page,
@@ -132,7 +132,7 @@ public class PostController {
     }
 
     /**
-     * 知文详情（公开：published+public；非公开需作者本人）。
+     * 帖子详情（公开：published+public；非公开需作者本人）。
      */
     @GetMapping("/detail/{id}")
     public PostDetailResponse detail(@PathVariable("id") long id,
@@ -142,7 +142,7 @@ public class PostController {
     }
 
     /**
-     * 知文详情（按 slug 查询，权限规则同 {@link #detail}）。
+     * 帖子详情（按 slug 查询，权限规则同 {@link #detail}）。
      */
     @GetMapping("/detail/by-slug/{slug}")
     public PostDetailResponse detailBySlug(@PathVariable("slug") String slug,

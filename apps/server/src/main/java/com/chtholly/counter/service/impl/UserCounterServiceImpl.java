@@ -29,16 +29,16 @@ import java.util.stream.Collectors;
 public class UserCounterServiceImpl implements UserCounterService {
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> incrScript;
-    private final PostMapper knowPostMapper;
+    private final PostMapper postMapper;
     private final CounterService counterService;
     private final RelationMapper relationMapper;
 
     public UserCounterServiceImpl(StringRedisTemplate redis,
-                                  PostMapper knowPostMapper,
+                                  PostMapper postMapper,
                                   CounterService counterService,
                                   RelationMapper relationMapper) {
         this.redis = redis;
-        this.knowPostMapper = knowPostMapper;
+        this.postMapper = postMapper;
         this.counterService = counterService;
         this.relationMapper = relationMapper;
         this.incrScript = new DefaultRedisScript<>();
@@ -98,7 +98,7 @@ public class UserCounterServiceImpl implements UserCounterService {
         long followers = relationMapper.countFollowerActive(userId);
 
         long posts;
-        List<Long> ids = knowPostMapper.listMyPublishedIds(userId);
+        List<Long> ids = postMapper.listMyPublishedIds(userId);
         // 将 ids 转换成字符串类型的 List
         List<String> idStr = ids.stream()
                 .map(String::valueOf)
@@ -109,7 +109,7 @@ public class UserCounterServiceImpl implements UserCounterService {
             long likeSum = 0L;
             long favSum = 0L;
             Map<String, Map<String, Long>> counts = counterService.getCountsBatch("post", idStr, List.of("like", "fav"));
-            for (String id : idStr) { // 聚合作者全部知文的获赞/获收藏总数
+            for (String id : idStr) { // 聚合作者全部帖子的获赞/获收藏总数
                 Map<String, Long> v = counts.get(id);
                 likeSum += v.getOrDefault("like", 0L);
                 favSum += v.getOrDefault("fav", 0L);

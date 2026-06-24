@@ -5,7 +5,7 @@ import com.chtholly.post.api.dto.PostDetailResponse;
 import java.util.List;
 
 /**
- * 知文业务接口。
+ * 帖子业务接口。
  */
 public interface PostService {
 

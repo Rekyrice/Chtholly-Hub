@@ -1,0 +1,9 @@
+#!/bin/sh
+# 安装：复制到 .git/hooks/prepare-commit-msg 并 chmod +x
+# 作用：提交前移除 Cursor 自动添加的 Co-authored-by trailer
+
+COMMIT_MSG_FILE=$1
+if [ -f "$COMMIT_MSG_FILE" ]; then
+  sed -i '/Co-authored-by: Cursor <cursoragent@cursor.com>/d' "$COMMIT_MSG_FILE" 2>/dev/null \
+    || sed -i '' '/Co-authored-by: Cursor <cursoragent@cursor.com>/d' "$COMMIT_MSG_FILE"
+fi
