@@ -86,6 +86,10 @@ public class CanalKafkaBridge implements SmartLifecycle {
      */
     @Override
     public void start() {
+        if (!enabled) {
+            log.info("Canal bridge disabled (canal.enabled=false)");
+            return;
+        }
         if (running) {
             log.info("Canal bridge start skipped: running={} enabled={} host={} port={} dest={} filter={}", running, enabled, host, port, destination, filter);
             return;
@@ -191,5 +195,10 @@ public class CanalKafkaBridge implements SmartLifecycle {
     @Override
     public boolean isRunning() {
         return running;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return enabled;
     }
 }
