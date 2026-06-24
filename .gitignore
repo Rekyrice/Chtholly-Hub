@@ -1,2 +1,8 @@
 # 本地设计文档与实现计划（superpowers 工作流产物，不纳入版本控制）
 docs/
+
+.env
+.env.local
+apps/server/target/
+apps/web/.next/
+apps/web/node_modules/
