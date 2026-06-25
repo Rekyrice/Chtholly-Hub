@@ -1,5 +1,5 @@
 -- Phase A 种子数据：站长 Rekyrice + 3 篇已发布 Markdown 帖子
--- 执行前确认 OSS 已上传对应 Markdown（路径 post/，Bucket chtholly-hub-dev）
+-- 执行前确认 OSS 已上传对应 Markdown（路径 post/，Bucket chtholly-hub-dev，需公共读）
 --
 -- PowerShell（务必指定 UTF-8，否则中文会双重编码乱码）:
 --   docker cp apps/server/db/seed/phase_a_seed.sql mysql:/tmp/phase_a_seed.sql

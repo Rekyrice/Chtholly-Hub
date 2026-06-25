@@ -27,14 +27,6 @@ export async function generateMetadata({ params }: Props) {
   }
 }
 
-async function fetchMarkdown(contentUrl: string): Promise<string> {
-  const res = await fetch(contentUrl, { next: { revalidate: 300 } });
-  if (!res.ok) {
-    throw new Error(`无法加载正文：${res.status}`);
-  }
-  return res.text();
-}
-
 export default async function PostPage({ params }: Props) {
   const { slug } = await params;
 
@@ -47,7 +39,11 @@ export default async function PostPage({ params }: Props) {
 
   let markdown = "";
   try {
-    markdown = await fetchMarkdown(post.contentUrl);
+    const res = await fetch(post.contentUrl, { next: { revalidate: 300 } });
+    if (!res.ok) {
+      throw new Error(`无法加载正文：${res.status}`);
+    }
+    markdown = await res.text();
   } catch {
     markdown = "*正文暂时无法加载，请稍后再试。*";
   }
