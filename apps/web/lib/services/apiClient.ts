@@ -1,7 +1,7 @@
 /** 相对路径，经 Next.js rewrites 代理到后端 */
 const BASE_URL = "";
 
-const AUTH_TOKENS_KEY = "chtholly_auth_tokens";
+import { AUTH_TOKENS_KEY } from "@/lib/auth/tokens";
 
 export type ApiFetchOptions = {
   method?: string;

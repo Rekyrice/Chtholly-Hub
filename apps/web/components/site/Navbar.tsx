@@ -1,16 +1,75 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { getStoredAuth } from "@/lib/auth/tokens";
+import { authService } from "@/lib/services/authService";
 import { siteConfig } from "@/lib/site.config";
+import type { AuthUser } from "@/lib/types/auth";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(() =>
+    typeof window !== "undefined" ? (getStoredAuth()?.user ?? null) : null,
+  );
   const pathname = usePathname();
+  const router = useRouter();
   const brandMain = siteConfig.name.replace(/ Hub$/, "");
   const brandAccent = siteConfig.name.endsWith(" Hub") ? "Hub" : "";
+
+  const syncUser = useCallback(() => {
+    setUser(getStoredAuth()?.user ?? null);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("chtholly-auth-change", syncUser);
+    return () => window.removeEventListener("chtholly-auth-change", syncUser);
+  }, [syncUser]);
+
+  const handleLogout = async () => {
+    await authService.logout();
+    setUser(null);
+    window.dispatchEvent(new Event("chtholly-auth-change"));
+    router.push("/");
+    router.refresh();
+  };
+
+  const navLink = (href: string, label: string) => {
+    const active =
+      href === "/" ? pathname === "/" : pathname.startsWith(href);
+    return (
+      <Link
+        href={href}
+        className={`sakuga-nav-link flex items-center ${active ? "active" : ""}`}
+        onClick={() => setOpen(false)}
+      >
+        {label}
+      </Link>
+    );
+  };
+
+  const authLinks = user ? (
+    <>
+      <li className="flex items-stretch">{navLink("/write", "Write")}</li>
+      <li className="flex items-center px-3 text-sm" style={{ color: "#727272" }}>
+        {user.nickname || user.phone}
+      </li>
+      <li className="flex items-center">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="sakuga-nav-link"
+          style={{ background: "none", border: "none", cursor: "pointer" }}
+        >
+          退出
+        </button>
+      </li>
+    </>
+  ) : (
+    <li className="flex items-stretch">{navLink("/login", "Login")}</li>
+  );
 
   return (
     <nav className="sakuga-navbar">
@@ -41,22 +100,12 @@ export default function Navbar() {
         </Link>
 
         <ul className="hidden md:flex items-stretch h-[52px]">
-          {siteConfig.nav.map((item) => {
-            const active =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href);
-            return (
-              <li key={item.href} className="flex items-stretch">
-                <Link
-                  href={item.href}
-                  className={`sakuga-nav-link flex items-center ${active ? "active" : ""}`}
-                >
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
+          {siteConfig.nav.map((item) => (
+            <li key={item.href} className="flex items-stretch">
+              {navLink(item.href, item.label)}
+            </li>
+          ))}
+          {authLinks}
         </ul>
 
         <button
@@ -86,6 +135,38 @@ export default function Navbar() {
               {item.label}
             </Link>
           ))}
+          {user ? (
+            <>
+              <Link
+                href="/write"
+                className="block px-4 py-3 text-sm uppercase tracking-wide border-b"
+                style={{ color: "#333", borderColor: "#f5f5f5" }}
+                onClick={() => setOpen(false)}
+              >
+                Write
+              </Link>
+              <button
+                type="button"
+                className="block w-full text-left px-4 py-3 text-sm uppercase tracking-wide"
+                style={{ color: "#009688" }}
+                onClick={() => {
+                  setOpen(false);
+                  void handleLogout();
+                }}
+              >
+                退出 ({user.nickname || user.phone})
+              </button>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="block px-4 py-3 text-sm uppercase tracking-wide"
+              style={{ color: "#009688" }}
+              onClick={() => setOpen(false)}
+            >
+              Login
+            </Link>
+          )}
         </div>
       )}
     </nav>

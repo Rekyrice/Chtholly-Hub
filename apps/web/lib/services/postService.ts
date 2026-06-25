@@ -3,7 +3,22 @@ import type { FeedResponse, PostDetailResponse } from "@/lib/types/post";
 
 const POST_PREFIX = "/api/v1/posts";
 
-/** Phase A 只读帖子 API */
+export type PostDraftCreateResponse = { id: string };
+
+export type PostContentConfirmRequest = {
+  objectKey: string;
+  etag: string;
+  sha256: string;
+  size: number;
+};
+
+export type PostPatchRequest = {
+  title?: string;
+  tags?: string[];
+  description?: string;
+  visible?: string;
+};
+
 export const postService = {
   feed: (page = 1, size = 20, ownerId?: number) =>
     apiFetch<FeedResponse>(
@@ -12,4 +27,22 @@ export const postService = {
 
   detailBySlug: (slug: string) =>
     apiFetch<PostDetailResponse>(`${POST_PREFIX}/detail/by-slug/${slug}`),
+
+  createDraft: () =>
+    apiFetch<PostDraftCreateResponse>(`${POST_PREFIX}/drafts`, { method: "POST" }),
+
+  confirmContent: (id: string, body: PostContentConfirmRequest) =>
+    apiFetch<void>(`${POST_PREFIX}/${id}/content/confirm`, {
+      method: "POST",
+      body,
+    }),
+
+  patchMetadata: (id: string, body: PostPatchRequest) =>
+    apiFetch<void>(`${POST_PREFIX}/${id}`, {
+      method: "PATCH",
+      body,
+    }),
+
+  publish: (id: string) =>
+    apiFetch<void>(`${POST_PREFIX}/${id}/publish`, { method: "POST" }),
 };
