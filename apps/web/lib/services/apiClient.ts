@@ -69,7 +69,15 @@ export async function apiFetch<TResponse>(
     }
   }
 
-  const url = BASE_URL ? `${BASE_URL}${path}` : path;
+  // 浏览器走 Next rewrites；服务端直连 Spring Boot，避免 Node 中相对路径无效
+  const url =
+    path.startsWith("http")
+      ? path
+      : typeof window !== "undefined"
+        ? BASE_URL
+          ? `${BASE_URL}${path}`
+          : path
+        : `${process.env.API_SERVER_URL ?? "http://localhost:8080"}${path}`;
   const response = await fetch(url, {
     method,
     headers: mergedHeaders,

@@ -1,9 +1,9 @@
 -- Phase A 种子数据：站长 Rekyrice + 3 篇已发布 Markdown 帖子
 -- 执行前确认 OSS 已上传对应 Markdown（路径 post/，Bucket chtholly-hub-dev）
 --
--- PowerShell:
---   Get-Content "apps/server/db/seed/phase_a_seed.sql" -Raw |
---     docker exec -i -e MYSQL_PWD='你的密码' mysql mysql -uroot chtholly
+-- PowerShell（务必指定 UTF-8，否则中文会双重编码乱码）:
+--   docker cp apps/server/db/seed/phase_a_seed.sql mysql:/tmp/phase_a_seed.sql
+--   docker exec -i -e MYSQL_PWD='你的密码' mysql mysql -uroot --default-character-set=utf8mb4 chtholly -e "source /tmp/phase_a_seed.sql"
 
 INSERT INTO users (id, nickname, avatar, bio, handle, created_at, updated_at)
 VALUES (1, 'Rekyrice', NULL, '伊米花 · 动漫博客', 'rekyrice', NOW(), NOW())
@@ -63,6 +63,7 @@ ON DUPLICATE KEY UPDATE
     title = VALUES(title),
     slug = VALUES(slug),
     description = VALUES(description),
+    tags = VALUES(tags),
     content_url = VALUES(content_url),
     content_object_key = VALUES(content_object_key),
     status = VALUES(status),

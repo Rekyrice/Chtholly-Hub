@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "chtholly-hub-dev.oss-cn-beijing.aliyuncs.com",
+        pathname: "/**",
+      },
+    ],
+  },
   async rewrites() {
     return [
       {

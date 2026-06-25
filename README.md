@@ -52,11 +52,23 @@ npm run dev
 
 ## 开发阶段
 
-| 阶段 | 能力 |
+| 阶段 | 能力 | 状态 |
+|------|------|------|
+| Phase A | 只读博客：Feed、slug 详情、About / Archive / Tag | ✅ 已实现 |
+| Phase B | 登录、Markdown 发帖 | 待开发 |
+| Phase 3+ | 社区互动、搜索、AI | 待开发 |
+
+### Phase A 页面
+
+| 路由 | 说明 |
 |------|------|
-| Phase A | 只读博客：Feed、slug 详情、About / Archive / Tag |
-| Phase B | 登录、Markdown 发帖 |
-| Phase 3+ | 社区互动、搜索、AI |
+| `/` | Rekyrice Feed（`ownerUserId=1`） |
+| `/post/[slug]` | Markdown 详情（OSS `contentUrl`） |
+| `/about` | 关于页 |
+| `/archive` | 按发布时间归档 |
+| `/tag/[name]` | 标签筛选，如 `/tag/动漫` |
+
+前端站点配置见 `apps/web/lib/site.config.ts`；服务端 API 请求在 Node 环境直连 `localhost:8080`。
 
 ## 参考项目（同级目录，不纳入本仓）
 
