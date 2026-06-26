@@ -1,6 +1,6 @@
 # Chtholly Hub
 
-Rekyrice（伊米花）的个人动漫博客，逐步演进为动漫社区。  
+Rekyrice 的个人动漫博客，逐步演进为动漫社区。（中文名「依米花」为虚构花名，寓意见站内 About 页。）  
 Monorepo：Next.js 前端 + Spring Boot 后端。
 
 ## 仓库结构

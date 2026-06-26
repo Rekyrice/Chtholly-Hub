@@ -4,7 +4,8 @@ export const siteConfig = {
   description: "Rekyrice 的个人动漫博客",
   author: {
     name: "Rekyrice",
-    alias: "伊米花",
+    /** 中文名「依米花」，仅用于 About 等解释性页面 */
+    zhName: "依米花",
     bio: "动漫 · 追番 · 随笔",
     avatar: "/avatar-default.png",
   },

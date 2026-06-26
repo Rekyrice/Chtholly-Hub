@@ -6,7 +6,7 @@
 --   docker exec -i -e MYSQL_PWD='你的密码' mysql mysql -uroot --default-character-set=utf8mb4 chtholly -e "source /tmp/phase_a_seed.sql"
 
 INSERT INTO users (id, nickname, avatar, bio, handle, created_at, updated_at)
-VALUES (1, 'Rekyrice', NULL, '伊米花 · 动漫博客', 'rekyrice', NOW(), NOW())
+VALUES (1, 'Rekyrice', NULL, 'Rekyrice · 动漫博客', 'rekyrice', NOW(), NOW())
 ON DUPLICATE KEY UPDATE
     nickname = VALUES(nickname),
     bio = VALUES(bio),

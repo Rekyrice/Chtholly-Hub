@@ -24,7 +24,7 @@ export default async function Sidebar() {
   }
 
   const tags = collectTags(items);
-  const profileName = siteConfig.author.alias || siteConfig.author.name;
+  const profileName = siteConfig.author.name;
 
   return (
     <aside
