@@ -1,15 +1,27 @@
-# 本地设计文档与实现计划（superpowers 工作流产物，不纳入版本控制）
-docs/
-
+# --- 密钥与本地环境 ---
 .env
 .env.local
+.env.*.local
+
+# --- 本地文档（superpowers 工作流产物）---
+docs/
+
+# --- 构建产物 ---
 apps/server/target/
 apps/web/.next/
+apps/web/out/
 apps/web/node_modules/
 scripts/oss/node_modules/
 
-# Cursor 本地状态（团队共享规则请放 .cursor/rules 并单独决定是否提交）
-.cursor/
+# --- 本地运行日志 ---
+logs/*.log
+*.log
 
+# --- IDE / 编辑器（个人配置，不纳入版本库）---
+.vscode/
+.cursor/
 .idea/
+
+# --- 操作系统 ---
 .DS_Store
+Thumbs.db
