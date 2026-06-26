@@ -21,7 +21,7 @@ export default function SiteError({
       <p style={{ color: "#727272", margin: "16px 0 24px", lineHeight: 1.7 }}>
         无法连接后端或数据暂时不可用。请确认 Spring Boot 已在{" "}
         <code style={{ background: "#f5f5f5", padding: "2px 6px" }}>
-          localhost:8080
+          localhost:8888
         </code>{" "}
         运行，然后重试。
       </p>

@@ -47,7 +47,7 @@ docker run -d --name elasticsearch --restart always `
 ## 与本项目的关系
 
 1. 复制 Monorepo 根目录 `.env.example` → `.env`，填入 MySQL 密码与 OSS 凭证  
-2. 启动 `apps/server`（`:8080`）  
+2. 启动 `apps/server`（`:8888`，8080 在 Windows 上常被 WinNAT 锁死）  
 3. 启动 `apps/web`（`:3000`，API 通过 rewrites 代理到后端）
 
 详见仓库根目录 [README.md](../README.md)。

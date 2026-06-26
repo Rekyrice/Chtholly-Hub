@@ -28,14 +28,14 @@ $env:LLM_ENABLED="false"     # Phase A 无需 AI Key
 mvn spring-boot:run "-Dmaven.test.skip=true"
 ```
 
-默认端口：`http://localhost:8080`
+默认端口：`http://localhost:8888`
 
 ### 健康检查与 Phase A API 冒烟
 
 ```powershell
-Invoke-RestMethod http://localhost:8080/actuator/health
-Invoke-RestMethod "http://localhost:8080/api/v1/posts/feed?ownerId=1&page=1&size=10"
-Invoke-RestMethod http://localhost:8080/api/v1/posts/detail/by-slug/welcome-chtholly-hub
+Invoke-RestMethod http://localhost:8888/actuator/health
+Invoke-RestMethod "http://localhost:8888/api/v1/posts/feed?ownerId=1&page=1&size=10"
+Invoke-RestMethod http://localhost:8888/api/v1/posts/detail/by-slug/welcome-chtholly-hub
 ```
 
 预期：health 为 `UP`；Feed 返回 3 条种子帖子；详情含 `slug` 与 `contentUrl`。

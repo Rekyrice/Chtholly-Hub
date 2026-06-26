@@ -6,3 +6,10 @@ docs/
 apps/server/target/
 apps/web/.next/
 apps/web/node_modules/
+scripts/oss/node_modules/
+
+# Cursor 本地状态（团队共享规则请放 .cursor/rules 并单独决定是否提交）
+.cursor/
+
+.idea/
+.DS_Store

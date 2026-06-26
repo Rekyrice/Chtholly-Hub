@@ -11,9 +11,8 @@ import type { AuthUser } from "@/lib/types/auth";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
-  const [user, setUser] = useState<AuthUser | null>(() =>
-    typeof window !== "undefined" ? (getStoredAuth()?.user ?? null) : null,
-  );
+  // 首屏必须与 SSR 一致为 null，登录态仅在 mount 后从 localStorage 同步
+  const [user, setUser] = useState<AuthUser | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const brandMain = siteConfig.name.replace(/ Hub$/, "");
@@ -24,6 +23,7 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
+    syncUser();
     window.addEventListener("chtholly-auth-change", syncUser);
     return () => window.removeEventListener("chtholly-auth-change", syncUser);
   }, [syncUser]);

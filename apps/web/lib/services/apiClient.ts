@@ -77,7 +77,7 @@ export async function apiFetch<TResponse>(
         ? BASE_URL
           ? `${BASE_URL}${path}`
           : path
-        : `${process.env.API_SERVER_URL ?? "http://localhost:8080"}${path}`;
+        : `${process.env.API_SERVER_URL ?? "http://localhost:8888"}${path}`;
   const response = await fetch(url, {
     method,
     headers: mergedHeaders,

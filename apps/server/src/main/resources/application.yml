@@ -1,3 +1,7 @@
+# WinNAT 在 Windows 上会保留 7998-8097（含 8080），本地开发默认 8888
+server:
+  port: ${SERVER_PORT:8888}
+
 spring:
   application:
     name: chtholly-server

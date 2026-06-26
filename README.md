@@ -31,24 +31,33 @@ copy .env.example .env
 确认 Docker 容器在跑（`localhost:3306` / `6379` / `9092` / `9200`）。  
 详见 [docker/README.md](docker/README.md)。
 
-### 3. 后端（终端 1）
+### 3. 一键启动（Cursor / VS Code 推荐）
+
+按 **`Ctrl+Shift+P`** → 输入 **`Tasks: Run Task`** → 选择：
+
+| 任务 | 说明 |
+|------|------|
+| **Chtholly · 启动全栈（后端 + 前端）** | 开两个专用终端 |
+| **Chtholly · 启动后端（验证码看此终端）** | 登录验证码在 `LoggingCodeSender code=` |
+| **Chtholly · 启动前端** | http://localhost:3000 |
+
+或在终端面板 **`+` 旁的下拉箭头** → 选 **Chtholly · 后端（验证码日志）** / **Chtholly · 前端**。
+
+### 4. 手动启动（可选）
+
+**后端：**
 
 ```powershell
-cd apps/server
-./mvnw spring-boot:run
+.\scripts\dev\start-backend.ps1
 ```
 
-默认 `http://localhost:8080`
-
-### 4. 前端（终端 2）
+**前端：**
 
 ```powershell
-cd apps/web
-npm install
-npm run dev
+.\scripts\dev\start-frontend.ps1
 ```
 
-默认 `http://localhost:3000`，`/api/v1/*` 代理到后端。
+默认后端 `http://localhost:8888`，前端 `http://localhost:3000`。
 
 ## 开发阶段
 
@@ -68,7 +77,7 @@ npm run dev
 | `/archive` | 按发布时间归档 |
 | `/tag/[name]` | 标签筛选，如 `/tag/动漫` |
 
-前端站点配置见 `apps/web/lib/site.config.ts`；服务端 API 请求在 Node 环境直连 `localhost:8080`。
+前端站点配置见 `apps/web/lib/site.config.ts`；服务端 API 请求在 Node 环境直连 `localhost:8888`。
 
 ## 参考项目（同级目录，不纳入本仓）
 
