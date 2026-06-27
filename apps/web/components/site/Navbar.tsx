@@ -6,6 +6,7 @@ import { Menu, Search, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getAccessToken, getStoredAuth } from "@/lib/auth/tokens";
 import { authService } from "@/lib/services/authService";
+import NotificationBell from "@/components/site/NotificationBell";
 import { siteConfig } from "@/lib/site.config";
 import type { AuthUser } from "@/lib/types/auth";
 
@@ -54,6 +55,9 @@ export default function Navbar() {
   const authLinks = user ? (
     <>
       <li className="flex items-stretch">{navLink("/write", "Write")}</li>
+      <li className="flex items-center">
+        <NotificationBell />
+      </li>
       <li className="flex items-center px-3 text-sm" style={{ color: "#727272" }}>
         {user.nickname || user.phone}
       </li>

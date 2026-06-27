@@ -8,10 +8,12 @@ import com.chtholly.comment.model.CommentRow;
 import com.chtholly.comment.service.CommentService;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
+import com.chtholly.notification.event.CommentCreatedEvent;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.model.Post;
 import com.chtholly.post.mapper.PostMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +30,7 @@ public class CommentServiceImpl implements CommentService {
     private final CommentMapper commentMapper;
     private final PostMapper postMapper;
     private final SnowflakeIdGenerator idGen;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -43,8 +46,9 @@ public class CommentServiceImpl implements CommentService {
     public CommentResponse create(long postId, long userId, CreateCommentRequest request) {
         assertCommentablePost(postId, userId);
         Long parentId = parseParentId(request.parentId());
+        CommentRow parent = null;
         if (parentId != null) {
-            CommentRow parent = commentMapper.findById(parentId);
+            parent = commentMapper.findById(parentId);
             if (parent == null || !postIdEquals(parent.getPostId(), postId)) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "回复目标不存在");
             }
@@ -56,6 +60,19 @@ public class CommentServiceImpl implements CommentService {
         long id = idGen.nextId();
         commentMapper.insert(id, postId, parentId, userId, request.content().trim());
         CommentRow row = commentMapper.findById(id);
+        Post post = postMapper.findById(postId);
+        eventPublisher.publishEvent(new CommentCreatedEvent(
+                id,
+                postId,
+                parentId,
+                userId,
+                row.getAuthorNickname(),
+                row.getAuthorAvatar(),
+                post.getCreatorId() == null ? 0L : post.getCreatorId(),
+                post.getTitle(),
+                post.getSlug(),
+                parent == null ? null : parent.getUserId()
+        ));
         return toResponse(row, Collections.emptyList());
     }
 

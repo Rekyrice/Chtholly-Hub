@@ -5,6 +5,8 @@ import com.chtholly.relation.service.RelationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.relation.event.RelationEvent;
 import com.chtholly.relation.outbox.OutboxMapper;
+import com.chtholly.notification.event.FollowCreatedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -47,6 +49,7 @@ public class RelationServiceImpl implements RelationService {
     private final Cache<Long, List<Long>> flwsTopCache;
     private final Cache<Long, List<Long>> fansTopCache;
     private final UserMapper userMapper;
+    private final ApplicationEventPublisher eventPublisher;
     
 
     /**
@@ -60,7 +63,8 @@ public class RelationServiceImpl implements RelationService {
                                OutboxMapper outboxMapper,
                                StringRedisTemplate redis,
                                ObjectMapper objectMapper,
-                               UserMapper userMapper) {
+                               UserMapper userMapper,
+                               ApplicationEventPublisher eventPublisher) {
         this.mapper = mapper;
         this.outboxMapper = outboxMapper;
         this.redis = redis;
@@ -71,6 +75,7 @@ public class RelationServiceImpl implements RelationService {
         this.flwsTopCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(10)).build();
         this.fansTopCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(10)).build();
         this.userMapper = userMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -97,6 +102,14 @@ public class RelationServiceImpl implements RelationService {
                 String payload = objectMapper.writeValueAsString(new RelationEvent("FollowCreated", fromUserId, toUserId, id));
                 outboxMapper.insert(outId, "following", id, "FollowCreated", payload);
             } catch (Exception ignored) {}
+
+            User actor = userMapper.findById(fromUserId);
+            eventPublisher.publishEvent(new FollowCreatedEvent(
+                    fromUserId,
+                    actor == null ? null : actor.getNickname(),
+                    actor == null ? null : actor.getAvatar(),
+                    toUserId
+            ));
 
             return true;
         }
