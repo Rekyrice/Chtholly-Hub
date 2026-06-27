@@ -119,8 +119,33 @@
         FROM posts p
         JOIN users u ON p.creator_id = u.id
         WHERE p.status = 'published' AND p.visible = 'public'
-        ORDER BY p.publish_time DESC
+        ORDER BY p.publish_time DESC, p.id DESC
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 公开 Feed 游标分页：(publish_time, id) 字典序倒序 -->
+    <select id="listFeedPublicByCursor" resultType="com.chtholly.post.model.PostFeedRow">
+        SELECT
+            p.id,
+            p.title,
+            p.slug,
+            p.description,
+            p.tags,
+            p.img_urls AS imgUrls,
+            u.avatar AS authorAvatar,
+            u.nickname AS authorNickname,
+            u.tags_json AS authorTagJson,
+            p.publish_time AS publishTime,
+            p.is_top AS isTop
+        FROM posts p
+        JOIN users u ON p.creator_id = u.id
+        WHERE p.status = 'published' AND p.visible = 'public'
+          AND (
+              p.publish_time &lt; #{cursorTime}
+              OR (p.publish_time = #{cursorTime} AND p.id &lt; #{cursorId})
+          )
+        ORDER BY p.publish_time DESC, p.id DESC
+        LIMIT #{limit}
     </select>
 
     <!-- 按创作者过滤的公开 Feed（Phase A 站长专属列表） -->

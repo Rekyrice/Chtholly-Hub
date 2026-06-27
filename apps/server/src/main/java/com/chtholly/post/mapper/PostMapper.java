@@ -24,9 +24,14 @@ public interface PostMapper {
 
     int publish(@Param("id") Long id, @Param("creatorId") Long creatorId);
 
-    // 首页 Feed 列表（已发布、公开可见），置顶优先，其次按发布时间倒序。
+    // 首页 Feed 列表（已发布、公开可见），按发布时间倒序 + offset 分页。
     List<PostFeedRow> listFeedPublic(@Param("limit") int limit,
                                          @Param("offset") int offset);
+
+    /** 游标分页：返回 (publish_time, id) 严格小于锚点的记录。 */
+    List<PostFeedRow> listFeedPublicByCursor(@Param("cursorTime") Instant cursorTime,
+                                             @Param("cursorId") long cursorId,
+                                             @Param("limit") int limit);
 
     List<PostFeedRow> listFeedPublicByCreator(@Param("creatorId") long creatorId,
                                               @Param("limit") int limit,

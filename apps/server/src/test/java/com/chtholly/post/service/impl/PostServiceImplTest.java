@@ -121,8 +121,8 @@ class PostServiceImplTest {
         String currentPageKey = "feed:public:20:1:v1";
         String previousPageKey = "feed:public:20:2:v1";
 
-        feedPublicCache.put(currentPageKey, new FeedPageResponse(List.of(), 1, 20, false));
-        feedPublicCache.put(previousPageKey, new FeedPageResponse(List.of(), 2, 20, false));
+        feedPublicCache.put(currentPageKey, new FeedPageResponse(List.of(), 1, 20, false, null));
+        feedPublicCache.put(previousPageKey, new FeedPageResponse(List.of(), 2, 20, false, null));
 
         when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
@@ -160,7 +160,7 @@ class PostServiceImplTest {
         long hourSlot = System.currentTimeMillis() / 3600000L;
         String indexKey = "feed:public:index:" + postId + ":" + hourSlot;
         String pageKey = "feed:public:20:3:v1";
-        feedPublicCache.put(pageKey, new FeedPageResponse(List.of(), 3, 20, false));
+        feedPublicCache.put(pageKey, new FeedPageResponse(List.of(), 3, 20, false, null));
 
         when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(setOperations.members(indexKey)).thenReturn(Set.of(pageKey));
@@ -179,7 +179,7 @@ class PostServiceImplTest {
         long hourSlot = System.currentTimeMillis() / 3600000L;
         String indexKey = "feed:public:index:" + postId + ":" + hourSlot;
         String pageKey = "feed:public:20:4:v1";
-        feedPublicCache.put(pageKey, new FeedPageResponse(List.of(), 4, 20, false));
+        feedPublicCache.put(pageKey, new FeedPageResponse(List.of(), 4, 20, false, null));
 
         when(setOperations.members(indexKey)).thenReturn(Set.of(pageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
@@ -210,7 +210,7 @@ class PostServiceImplTest {
         System.out.println("  ├─ Redis 索引 Key: " + indexKey);
         System.out.println("  └─ 页面缓存 Key: " + pageKey);
 
-        feedPublicCache.put(pageKey, new FeedPageResponse(List.of(), 5, 20, false));
+        feedPublicCache.put(pageKey, new FeedPageResponse(List.of(), 5, 20, false, null));
 
         System.out.println("\n📦 [初始状态] 模拟本地缓存已存在数据:");
         System.out.println("  └─ feedPublicCache.getIfPresent('" + pageKey + "') = "
@@ -335,8 +335,8 @@ class PostServiceImplTest {
         System.out.println("  │   └─ 索引 Key: " + previousIndexKey);
         System.out.println("  └─ 模拟跨小时的缓存数据");
 
-        feedPublicCache.put(currentPageKey, new FeedPageResponse(List.of(), 7, 20, false));
-        feedPublicCache.put(previousPageKey, new FeedPageResponse(List.of(), 8, 20, false));
+        feedPublicCache.put(currentPageKey, new FeedPageResponse(List.of(), 7, 20, false, null));
+        feedPublicCache.put(previousPageKey, new FeedPageResponse(List.of(), 8, 20, false, null));
 
         System.out.println("\n📦 [初始状态] 两个时间窗口都有缓存:");
         System.out.println("  ├─ 当前小时缓存 '" + currentPageKey + "': ✅ 存在");

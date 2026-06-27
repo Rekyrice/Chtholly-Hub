@@ -168,13 +168,14 @@ public class PostController {
      */
     @Operation(summary = "公开 Feed 列表")
     @GetMapping("/feed")
-    public FeedPageResponse feed(@RequestParam(value = "page", defaultValue = "1") int page,
+    public FeedPageResponse feed(@RequestParam(value = "page", required = false) Integer page,
+                                 @RequestParam(value = "cursor", required = false) String cursor,
                                  @RequestParam(value = "size", defaultValue = "20") int size,
                                  @RequestParam(value = "ownerId", required = false) Long ownerId,
                                  @RequestParam(value = "tag", required = false) String tag,
                                  @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        return feedService.getPublicFeed(page, size, ownerId, tag, userId);
+        return feedService.getPublicFeed(page, cursor, size, ownerId, tag, userId);
     }
 
     /**

@@ -12,7 +12,7 @@ alwaysApply: true
 
 ## 核心规则
 
-1. **语言**: 与用户对话用中文；Commit message 用中文（Conventional Commits 前缀如 `feat:`、`fix:`）。
+1. **语言**: 与用户对话用中文；Commit message 用中文（Conventional Commits：`feat:`、`fix:`、`refactor:`、`chore:`、`docs:`、`test:`）。
 2. **注释**: 类/方法 Javadoc 英文；方法体内 WHY 注释中文。详见 AGENTS.md。
 3. **异常**: 禁止 `catch (Exception ignored) {}`；每个 catch 至少打日志。
 4. **配置**: 禁止硬编码密钥；用 `application.yml` 的 `${VAR:default}`。

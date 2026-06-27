@@ -10,6 +10,7 @@ import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.post.util.FeedCursor;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.chtholly.cache.singleflight.SingleFlightLockRegistry;
 import com.chtholly.cache.hotkey.HotKeyDetector;
@@ -91,66 +92,66 @@ public class PostFeedServiceImpl implements PostFeedService {
     }
 
     /**
-     * 生成公共 Feed 页面的缓存 Key（包含分页与布局版本）。
-     * @param page 页码（1 起）
-     * @param size 每页大小
-     * @return Redis/Page 缓存的 Key
+     * 生成公共 Feed 页面的缓存 Key（offset 分页）。
      */
-    private String cacheKey(int page, int size) {
+    private String cacheKeyByPage(int page, int size) {
         return "feed:public:" + size + ":" + page + ":v" + LAYOUT_VER;
     }
 
     /**
-     * Fetches a page of public posts (newest first, unpinned ordering on public feed).
-     *
-     * <p>Routes to tag/owner filters when {@code tag} or {@code ownerId} is set (bypasses page cache).
-     *
-     * @param page                  Page number (1-indexed).
-     * @param size                  Items per page (clamped to 1–50).
-     * @param ownerId               Optional creator filter.
-     * @param tag                   Optional tag filter.
-     * @param currentUserIdNullable Current user for liked/faved enrichment (null = anonymous).
-     * @return Feed page with pagination metadata.
+     * 生成公共 Feed 页面的缓存 Key（游标分页）。
      */
-    public FeedPageResponse getPublicFeed(int page, int size, Long ownerId, String tag, Long currentUserIdNullable) {
+    private String cacheKeyByCursor(String cursorSlot, int size) {
+        return "feed:public:" + size + ":" + cursorSlot + ":v" + LAYOUT_VER;
+    }
+
+    /**
+     * Fetches a page of public posts (newest first).
+     *
+     * <p>{@code cursor} 优先于 {@code page}：传 cursor 时走游标分页，否则走 offset 分页（向后兼容）。
+     */
+    @Override
+    public FeedPageResponse getPublicFeed(Integer page, String cursor, int size, Long ownerId, String tag,
+                                          Long currentUserIdNullable) {
         if (tag != null && !tag.isBlank()) {
-            return getPublicFeedByTag(tag.trim(), ownerId, page, size, currentUserIdNullable);
+            int safePage = page != null ? Math.max(page, 1) : 1;
+            return getPublicFeedByTag(tag.trim(), ownerId, safePage, size, currentUserIdNullable);
         }
         if (ownerId != null) {
-            return getPublicFeedByOwner(ownerId, page, size, currentUserIdNullable);
+            int safePage = page != null ? Math.max(page, 1) : 1;
+            return getPublicFeedByOwner(ownerId, safePage, size, currentUserIdNullable);
         }
+        if (cursor != null) {
+            return getPublicFeedByCursor(cursor, size, currentUserIdNullable);
+        }
+        int safePage = page != null ? Math.max(page, 1) : 1;
+        return getPublicFeedByOffset(safePage, size, currentUserIdNullable);
+    }
 
+    /**
+     * 公开 Feed — offset 分页（向后兼容 page 参数）。
+     */
+    private FeedPageResponse getPublicFeedByOffset(int safePage, int size, Long currentUserIdNullable) {
         int safeSize = Math.min(Math.max(size, 1), 50);
-        int safePage = Math.max(page, 1);
-        // 这个 localPageKey 是本地缓存的页面 Key（非 Redis）
-        String localPageKey = cacheKey(safePage, safeSize);
+        String localPageKey = cacheKeyByPage(safePage, safeSize);
 
-        // 按小时分片的片段缓存键：降低跨小时内容更新导致的大面积失效风险
-        // 将分页维度（size/page）与时间维度（hourSlot）组合，避免热门页在整站失效时同时回源
         long hourSlot = System.currentTimeMillis() / 3600000L;
         String idsKey = "feed:public:ids:" + safeSize + ":" + hourSlot + ":" + safePage;
-        String hasMoreKey = "feed:public:ids:" + safeSize + ":" + hourSlot + ":" + safePage + ":hasMore";
+        String hasMoreKey = idsKey + ":hasMore";
 
-        // L1: 先从本地缓存拿数据，高并发时抗 80% 流量
         FeedPageResponse local = feedPublicCache.getIfPresent(localPageKey);
-
         if (local != null && local.items() != null) {
-            // 对返回列表中的每个条目进行热度统计
             for (FeedItemResponse item : local.items()) {
                 recordItemHotKey(item.id());
             }
-
             log.info("feed.public source=local localPageKey={} page={} size={}", localPageKey, safePage, safeSize);
             List<FeedItemResponse> enrichedLocal = enrich(local.items(), currentUserIdNullable);
-
-            return new FeedPageResponse(enrichedLocal, local.page(), local.size(), local.hasMore());
+            return buildResponse(enrichedLocal, safePage, safeSize, local.hasMore(), local.nextCursor());
         }
 
-        // L2: 二级缓存，Redis 片段缓存，组装
         FeedPageResponse fromCache = assembleFromCache(idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable);
         if (fromCache != null) {
             feedPublicCache.put(localPageKey, fromCache);
-            // 对返回列表中的每个条目进行热度统计
             if (fromCache.items() != null) {
                 for (FeedItemResponse item : fromCache.items()) {
                     recordItemHotKey(item.id());
@@ -160,10 +161,6 @@ public class PostFeedServiceImpl implements PostFeedService {
             return fromCache;
         }
 
-        // 当上述两级缓存都没有数据，说明需要回源查数据库
-        // 为了防止高并发下（例如 1000 个请求同时访问同一页）
-        // 所有请求同时打到数据库（造成 缓存击穿 ），这里使用了锁
-        // 单航班机制：以 idsKey 作为“航班号”
         return singleFlight.runExclusive(idsKey, () -> {
             FeedPageResponse again = assembleFromCache(idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable);
             if (again != null) {
@@ -185,21 +182,127 @@ public class PostFeedServiceImpl implements PostFeedService {
             }
 
             List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
+            String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
 
-            FeedPageResponse respForCache = new FeedPageResponse(items, safePage, safeSize, hasMore);
-            // baseTtl=60s + jitter 0–29s：避免大量 key 同时过期引发集体回源
+            FeedPageResponse respForCache = new FeedPageResponse(items, safePage, safeSize, hasMore, nextCursor);
             int baseTtl = 60;
             int jitter = ThreadLocalRandom.current().nextInt(30);
             Duration frTtl = Duration.ofSeconds(baseTtl + jitter);
 
-            writeCaches(localPageKey, idsKey, hasMoreKey, safeSize, rows, items, hasMore, frTtl);
+            writeCaches(localPageKey, idsKey, hasMoreKey, safeSize, rows, items, hasMore, nextCursor, frTtl);
             feedPublicCache.put(localPageKey, respForCache);
 
             List<FeedItemResponse> enriched = enrich(items, currentUserIdNullable);
             log.info("feed.public source=db localPageKey={} page={} size={} hasMore={}", localPageKey, safePage, safeSize, hasMore);
-
-            return new FeedPageResponse(enriched, safePage, safeSize, hasMore);
+            return buildResponse(enriched, safePage, safeSize, hasMore, nextCursor);
         });
+    }
+
+    /**
+     * 公开 Feed — 游标分页；cursor 为空表示首页（缓存槽位 head）。
+     */
+    private FeedPageResponse getPublicFeedByCursor(String cursor, int size, Long currentUserIdNullable) {
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        String cursorSlot = FeedCursor.cacheSlot(cursor);
+        String localPageKey = cacheKeyByCursor(cursorSlot, safeSize);
+
+        long hourSlot = System.currentTimeMillis() / 3600000L;
+        String idsKey = "feed:public:ids:" + safeSize + ":" + hourSlot + ":" + cursorSlot;
+        String hasMoreKey = idsKey + ":hasMore";
+
+        FeedPageResponse local = feedPublicCache.getIfPresent(localPageKey);
+        if (local != null && local.items() != null) {
+            for (FeedItemResponse item : local.items()) {
+                recordItemHotKey(item.id());
+            }
+            log.info("feed.public source=local cursor={} size={}", cursorSlot, safeSize);
+            List<FeedItemResponse> enrichedLocal = enrich(local.items(), currentUserIdNullable);
+            return buildResponse(enrichedLocal, 0, safeSize, local.hasMore(), local.nextCursor());
+        }
+
+        FeedPageResponse fromCache = assembleFromCache(idsKey, hasMoreKey, 0, safeSize, currentUserIdNullable);
+        if (fromCache != null) {
+            feedPublicCache.put(localPageKey, stripUserFlags(fromCache));
+            if (fromCache.items() != null) {
+                for (FeedItemResponse item : fromCache.items()) {
+                    recordItemHotKey(item.id());
+                }
+            }
+            log.info("feed.public source=3tier cursor={} size={}", cursorSlot, safeSize);
+            return fromCache;
+        }
+
+        return singleFlight.runExclusive(idsKey, () -> {
+            FeedPageResponse again = assembleFromCache(idsKey, hasMoreKey, 0, safeSize, currentUserIdNullable);
+            if (again != null) {
+                feedPublicCache.put(localPageKey, stripUserFlags(again));
+                if (again.items() != null) {
+                    for (FeedItemResponse item : again.items()) {
+                        recordItemHotKey(item.id());
+                    }
+                }
+                return again;
+            }
+
+            List<PostFeedRow> rows;
+            if (cursor == null || cursor.isBlank()) {
+                rows = mapper.listFeedPublic(safeSize + 1, 0);
+            } else {
+                FeedCursor.FeedCursorPoint point = FeedCursor.require(cursor);
+                rows = mapper.listFeedPublicByCursor(point.publishTime(), point.postId(), safeSize + 1);
+            }
+
+            boolean hasMore = rows.size() > safeSize;
+            if (hasMore) {
+                rows = rows.subList(0, safeSize);
+            }
+
+            List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
+            String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
+
+            FeedPageResponse respForCache = new FeedPageResponse(items, 0, safeSize, hasMore, nextCursor);
+            int baseTtl = 60;
+            int jitter = ThreadLocalRandom.current().nextInt(30);
+            Duration frTtl = Duration.ofSeconds(baseTtl + jitter);
+
+            writeCaches(localPageKey, idsKey, hasMoreKey, safeSize, rows, items, hasMore, nextCursor, frTtl);
+            feedPublicCache.put(localPageKey, respForCache);
+
+            List<FeedItemResponse> enriched = enrich(items, currentUserIdNullable);
+            log.info("feed.public source=db cursor={} size={} hasMore={}", cursorSlot, safeSize, hasMore);
+            return buildResponse(enriched, 0, safeSize, hasMore, nextCursor);
+        });
+    }
+
+    private FeedPageResponse buildResponse(List<FeedItemResponse> items, int page, int size,
+                                           boolean hasMore, String nextCursor) {
+        return new FeedPageResponse(items, page, size, hasMore, nextCursor);
+    }
+
+    private String nextCursorFromRows(List<PostFeedRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        PostFeedRow last = rows.get(rows.size() - 1);
+        if (last.getPublishTime() == null || last.getId() == null) {
+            return null;
+        }
+        return FeedCursor.encode(last.getPublishTime(), last.getId());
+    }
+
+    /** 剥离用户态标志，供 L1 缓存共享片段。 */
+    private FeedPageResponse stripUserFlags(FeedPageResponse page) {
+        if (page.items() == null) {
+            return page;
+        }
+        List<FeedItemResponse> neutral = new ArrayList<>(page.items().size());
+        for (FeedItemResponse it : page.items()) {
+            neutral.add(new FeedItemResponse(
+                    it.id(), it.slug(), it.title(), it.description(), it.coverImage(),
+                    it.tags(), it.authorAvatar(), it.authorNickname(), it.tagJson(),
+                    it.likeCount(), it.favoriteCount(), null, null, it.isTop()));
+        }
+        return new FeedPageResponse(neutral, page.page(), page.size(), page.hasMore(), page.nextCursor());
     }
 
     /**
@@ -217,8 +320,9 @@ public class PostFeedServiceImpl implements PostFeedService {
         }
 
         List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, false);
+        String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
         log.info("feed.public source=db ownerId={} page={} size={} hasMore={}", ownerId, safePage, safeSize, hasMore);
-        return new FeedPageResponse(items, safePage, safeSize, hasMore);
+        return new FeedPageResponse(items, safePage, safeSize, hasMore, nextCursor);
     }
 
     /** 按标签过滤的公开 Feed（不走页面级缓存，M1 直查 DB）。 */
@@ -234,8 +338,9 @@ public class PostFeedServiceImpl implements PostFeedService {
         }
 
         List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, false);
+        String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
         log.info("feed.public source=db tag={} ownerId={} page={} size={} hasMore={}", tagName, ownerId, safePage, safeSize, hasMore);
-        return new FeedPageResponse(items, safePage, safeSize, hasMore);
+        return new FeedPageResponse(items, safePage, safeSize, hasMore, nextCursor);
     }
 
     /**
@@ -259,18 +364,29 @@ public class PostFeedServiceImpl implements PostFeedService {
     }
 
     /**
-     * 叠加用户维度状态，将 liked/faved 根据用户计算覆盖到列表上。
-     * 不改写底层缓存，避免不同用户状态互相污染。
-     * @param base 基础列表（含计数）
-     * @param uid 用户 ID（可空）
-     * @return 叠加 liked/faved 的列表
+     * 叠加用户维度 liked/faved；使用 Redis Pipeline 批量查询，避免 N 次往返。
      */
     private List<FeedItemResponse> enrich(List<FeedItemResponse> base, Long uid) {
-        List<FeedItemResponse> out = new ArrayList<>(base.size());
+        if (base == null || base.isEmpty()) {
+            return Collections.emptyList();
+        }
 
+        Map<Long, Boolean> likedBatch = Map.of();
+        Map<Long, Boolean> favBatch = Map.of();
+        if (uid != null) {
+            List<Long> postIds = new ArrayList<>(base.size());
+            for (FeedItemResponse it : base) {
+                postIds.add(Long.parseLong(it.id()));
+            }
+            likedBatch = counterService.batchIsLiked(uid, postIds);
+            favBatch = counterService.batchIsFaved(uid, postIds);
+        }
+
+        List<FeedItemResponse> out = new ArrayList<>(base.size());
         for (FeedItemResponse it : base) {
-            boolean liked = uid != null && counterService.isLiked("post", it.id(), uid);
-            boolean faved = uid != null && counterService.isFaved("post", it.id(), uid);
+            long postId = Long.parseLong(it.id());
+            boolean liked = uid != null && Boolean.TRUE.equals(likedBatch.get(postId));
+            boolean faved = uid != null && Boolean.TRUE.equals(favBatch.get(postId));
             out.add(new FeedItemResponse(
                     it.id(),
                     it.slug(),
@@ -336,22 +452,13 @@ public class PostFeedServiceImpl implements PostFeedService {
             }
         }
 
-        List<FeedItemResponse> enriched = new ArrayList<>(idList.size());
-        for (int i = 0; i < idList.size(); i++) {
-            FeedItemResponse base = items.get(i);
-            if (base == null) {
-                continue;
-            }
+        Map<String, Map<String, Long>> countsBatch =
+                counterService.getCountsBatch("post", idList, List.of("like", "fav"));
 
-            Map<String, Long> counts = counterService.getCounts("post", String.valueOf(base.id()), List.of("like", "fav"));
-            Long likeCount = counts.getOrDefault("like", 0L);
-            Long favoriteCount = counts.getOrDefault("fav", 0L);
-
-            // 用户维度状态实时计算，不落入片段缓存以避免用户数据污染
-            boolean liked = uid != null && counterService.isLiked("post", base.id(), uid);
-            boolean faved = uid != null && counterService.isFaved("post", base.id(), uid);
-
-            enriched.add(new FeedItemResponse(
+        List<FeedItemResponse> withCounts = new ArrayList<>(items.size());
+        for (FeedItemResponse base : items) {
+            Map<String, Long> counts = countsBatch.getOrDefault(base.id(), Map.of());
+            withCounts.add(new FeedItemResponse(
                     base.id(),
                     base.slug(),
                     base.title(),
@@ -361,17 +468,19 @@ public class PostFeedServiceImpl implements PostFeedService {
                     base.authorAvatar(),
                     base.authorNickname(),
                     base.tagJson(),
-                    likeCount,
-                    favoriteCount,
-                    liked,
-                    faved,
-                    base.isTop())
-            );
+                    counts.getOrDefault("like", 0L),
+                    counts.getOrDefault("fav", 0L),
+                    null,
+                    null,
+                    base.isTop()));
         }
-        // hasMore 优先使用软缓存值；若缺失，则以“满页”作为兜底判断
-        boolean hasMore = hasMoreStr != null ? "1".equals(hasMoreStr) : (idList.size() == size);
 
-        return new FeedPageResponse(enriched, page, size, hasMore);
+        List<FeedItemResponse> enriched = enrich(withCounts, uid);
+
+        boolean hasMore = hasMoreStr != null ? "1".equals(hasMoreStr) : (idList.size() == size);
+        String nextCursor = redis.opsForValue().get(idsKey + ":nextCursor");
+
+        return new FeedPageResponse(enriched, page, size, hasMore, nextCursor);
     }
 
     /**
@@ -387,9 +496,11 @@ public class PostFeedServiceImpl implements PostFeedService {
      * @param rows 原始行数据
      * @param items 条目列表（计数已填充，liked/faved 为空）
      * @param hasMore 是否还有更多
+     * @param nextCursor 下一页游标（可空）
      * @param frTtl 片段缓存 TTL
      */
-    private void writeCaches(String pageKey, String idsKey, String hasMoreKey, int size, List<PostFeedRow> rows, List<FeedItemResponse> items, boolean hasMore, Duration frTtl) {
+    private void writeCaches(String pageKey, String idsKey, String hasMoreKey, int size, List<PostFeedRow> rows,
+                             List<FeedItemResponse> items, boolean hasMore, String nextCursor, Duration frTtl) {
         List<String> idVals = new ArrayList<>();
 
         for (PostFeedRow r : rows) {
@@ -399,11 +510,13 @@ public class PostFeedServiceImpl implements PostFeedService {
         if (!idVals.isEmpty()) {
             redis.opsForList().leftPushAll(idsKey, idVals);
             redis.expire(idsKey, frTtl);
-            // 软缓存 hasMore：仅在满页时缓存 true，TTL 很短
             if (idVals.size() == size && hasMore) {
                 redis.opsForValue().set(hasMoreKey, "1", Duration.ofSeconds(10 + ThreadLocalRandom.current().nextInt(11)));
             } else {
                 redis.opsForValue().set(hasMoreKey, hasMore ? "1" : "0", Duration.ofSeconds(10));
+            }
+            if (nextCursor != null) {
+                redis.opsForValue().set(idsKey + ":nextCursor", nextCursor, frTtl);
             }
         }
 
@@ -472,7 +585,7 @@ public class PostFeedServiceImpl implements PostFeedService {
                     maybeExtendTtlMine(key);
                     log.info("feed.mine source=page key={} page={} size={} user={}", key, safePage, safeSize, userId);
                 List<FeedItemResponse> enriched = enrich(cachedResp.items(), userId);
-                return new FeedPageResponse(enriched, cachedResp.page(), cachedResp.size(), cachedResp.hasMore());
+                return new FeedPageResponse(enriched, cachedResp.page(), cachedResp.size(), cachedResp.hasMore(), cachedResp.nextCursor());
             }
             } catch (Exception e) {
                 log.warn("Feed mine cache deserialize failed, key={}: {}", key, e.getMessage());
@@ -486,7 +599,8 @@ public class PostFeedServiceImpl implements PostFeedService {
 
         List<FeedItemResponse> items = mapRowsToItems(rows, userId, true);
 
-        FeedPageResponse resp = new FeedPageResponse(items, safePage, safeSize, hasMore);
+        FeedPageResponse resp = new FeedPageResponse(items, safePage, safeSize, hasMore,
+                hasMore ? nextCursorFromRows(rows) : null);
         try {
             String json = objectMapper.writeValueAsString(resp);
             // 个人列表 baseTtl=30s（比公开 Feed 更短）：用户更频繁改稿/置顶，接受更高回源率换一致性
@@ -542,7 +656,8 @@ public class PostFeedServiceImpl implements PostFeedService {
         List<FeedItemResponse> items = mapRowsToItemsBatch(pageRows, userId);
         log.info("feed.following user={} page={} size={} timeline={} bigv={} merged={} hasMore={}",
                 userId, safePage, safeSize, timelineRows.size(), bigVRows.size(), sorted.size(), hasMore);
-        return new FeedPageResponse(items, safePage, safeSize, hasMore);
+        return new FeedPageResponse(items, safePage, safeSize, hasMore,
+                hasMore ? nextCursorFromRows(pageRows) : null);
     }
 
     /**

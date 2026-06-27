@@ -189,7 +189,7 @@ public class FeedCacheInvalidationListener {
                 items.add(it);
             }
 
-        return new FeedPageResponse(items, page.page(), page.size(), page.hasMore());
+        return new FeedPageResponse(items, page.page(), page.size(), page.hasMore(), page.nextCursor());
     }
 
     /**
