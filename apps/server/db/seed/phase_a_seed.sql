@@ -1,9 +1,13 @@
--- Phase A 种子数据：站长 Rekyrice + 3 篇已发布 Markdown 帖子
--- 执行前确认 OSS 已上传对应 Markdown（路径 post/，Bucket chtholly-hub-dev，需公共读）
+-- Phase A 种子数据：站长 Rekyrice + 3 篇已发布帖子（仅元数据，正文见 scripts/oss/seed/）
 --
--- PowerShell（务必指定 UTF-8，否则中文会双重编码乱码）:
+-- 1) 导入本文件（UTF-8）:
 --   docker cp apps/server/db/seed/phase_a_seed.sql mysql:/tmp/phase_a_seed.sql
 --   docker exec -i -e MYSQL_PWD='你的密码' mysql mysql -uroot --default-character-set=utf8mb4 chtholly -e "source /tmp/phase_a_seed.sql"
+--
+-- 2) 上传 Markdown 正文:
+--   cd scripts/oss && node upload-seed-markdown.mjs
+--
+-- 详见 apps/server/db/seed/README.md
 
 INSERT INTO users (id, nickname, avatar, bio, handle, created_at, updated_at)
 VALUES (1, 'Rekyrice', NULL, 'Rekyrice · 动漫博客', 'rekyrice', NOW(), NOW())

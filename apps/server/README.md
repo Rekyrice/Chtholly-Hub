@@ -17,8 +17,9 @@ Spring Boot 3.2 · Java 21 · MyBatis · MySQL `chtholly`
 ## 本地启动
 
 1. 确认 Docker 中 MySQL / Redis / Kafka / ES 已运行（见仓库 `docker/README.md`）
-2. 在 Monorepo 根目录配置 `.env`（从 `.env.example` 复制）
-3. 启动（Spring Boot **不会**自动读取根目录 `.env`，需注入环境变量或在 IDE 中配置）：
+2. 首次开发需完成 [db/README.md](db/README.md) 中的 schema + seed + OSS 正文上传
+3. 在 Monorepo 根目录配置 `.env`（从 `.env.example` 复制）
+4. 启动（Spring Boot **不会**自动读取根目录 `.env`，推荐用 `scripts/dev/start-backend.ps1`）：
 
 ```powershell
 cd apps/server

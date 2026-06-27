@@ -6,16 +6,25 @@ Monorepo：Next.js 前端 + Spring Boot 后端。
 ## 仓库结构
 
 ```
-apps/web/      Next.js 站点（Sakuga 视觉）
-apps/server/   Spring Boot API
-docker/        本地依赖说明（实际容器在 D 盘外部目录）
+apps/web/           Next.js 站点（Sakuga 视觉）
+apps/server/        Spring Boot API
+  db/               MySQL：schema、migration、seed（见 apps/server/db/README.md）
+docker/             本地依赖说明（实际容器在外部目录）
+scripts/dev/        本地启动脚本
+scripts/oss/        OSS 正文 seed 与上传脚本
 ```
 
 ## 前置条件
 
 - **JDK 21**、**Node.js 18+**
 - 本地 Docker 已运行 MySQL / Redis / Kafka / ES（见 [docker/README.md](docker/README.md)）
-- MySQL 库 **chtholly** 已创建并导入 schema
+- MySQL 库 **chtholly** 已建表并导入 Phase A 种子（见下方）
+
+### 首次初始化数据库与正文
+
+1. 建表：`apps/server/db/schema.sql`（步骤见 [apps/server/db/README.md](apps/server/db/README.md)）
+2. 种子数据：`apps/server/db/seed/phase_a_seed.sql`
+3. OSS 正文：`node scripts/oss/upload-seed-markdown.mjs`
 
 ## 快速开始
 
