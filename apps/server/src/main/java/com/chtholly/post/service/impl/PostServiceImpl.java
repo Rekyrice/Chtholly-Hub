@@ -21,6 +21,7 @@ import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.tag.service.TagService;
 import com.chtholly.search.index.SearchIndexService;
+import com.chtholly.cache.singleflight.SingleFlightLockRegistry;
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import jakarta.annotation.Resource;
 import org.slf4j.Logger;
@@ -36,7 +37,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -57,7 +57,7 @@ public class PostServiceImpl implements PostService {
     private final HotKeyDetector hotKey;
     private static final Logger log = LoggerFactory.getLogger(PostServiceImpl.class);
     private static final int DETAIL_LAYOUT_VER = 2;
-    private final ConcurrentHashMap<String, Object> singleFlight = new ConcurrentHashMap<>();
+    private final SingleFlightLockRegistry singleFlight = new SingleFlightLockRegistry();
     private final PostRagIndexer ragIndexService;
     private final OutboxMapper outboxMapper;
     private final TagService tagService;
@@ -416,57 +416,39 @@ public class PostServiceImpl implements PostService {
         }
 
         // 3. 缓存未命中，进入 SingleFlight 模式
-        // 对同一个 pageKey 加锁，防止高并发下大量请求同时打到数据库（缓存击穿/惊群效应）
-        Object lock = singleFlight.computeIfAbsent(pageKey, k -> new Object());
-        synchronized (lock) {
+        return singleFlight.runExclusive(pageKey, () -> {
             // 4. 双重检查（Double Check）
-            // 在获取锁后，再次检查缓存，因为在排队等待锁的过程中，前一个请求可能已经把数据写入缓存了
             String again = redis.opsForValue().get(pageKey);
-            try {
-                resp = tryProcessCacheHit(again, id, pageKey, currentUserIdNullable, "page(after-flight)");
-            } catch (BusinessException e) {
-                // 如果缓存中明确记录了 "NULL"（即内容不存在），则直接抛出异常，不再查库
-                singleFlight.remove(pageKey);
-                throw e;
-            }
-            if (resp != null) {
-                // 缓存已由其他线程填充，直接返回
-                singleFlight.remove(pageKey);
-                return resp;
+            PostDetailResponse flightResp = tryProcessCacheHit(again, id, pageKey, currentUserIdNullable, "page(after-flight)");
+            if (flightResp != null) {
+                return flightResp;
             }
 
             // 5. 数据库回源查询
             PostDetailRow row = mapper.findDetailById(id);
-            
+
             // 6. 处理内容不存在或已删除的情况
-            // 写入 "NULL" 空值缓存，防止缓存穿透（查询不存在的数据导致一直打数据库）
             if (row == null || "deleted".equals(row.getStatus())) {
                 redis.opsForValue().set(pageKey, "NULL", java.time.Duration.ofSeconds(30 + java.util.concurrent.ThreadLocalRandom.current().nextInt(31)));
-                singleFlight.remove(pageKey);
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "内容不存在");
             }
 
             // 7. 权限校验
-            // 公开策略：状态为 published 且可见性为 public 的内容可直接访问
-            // 私有策略：否则仅作者本人可见
             boolean isPublic = "published".equals(row.getStatus()) && "public".equals(row.getVisible());
             boolean isOwner = currentUserIdNullable != null && row.getCreatorId() != null && currentUserIdNullable.equals(row.getCreatorId());
             if (!isPublic && !isOwner) {
-                singleFlight.remove(pageKey);
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "无权限查看");
             }
 
             // 8. 组装响应对象
-            // 解析图片和标签 JSON
             List<String> images = parseStringArray(row.getImgUrls());
             List<String> tags = parseStringArray(row.getTags());
-            
-            // 此处查询的计数仅作为缓存的基础值，后续 enrich 会刷新
+
             Map<String, Long> counts = counterService.getCounts("post", String.valueOf(row.getId()), List.of("like", "fav"));
             Long likeCount = counts.getOrDefault("like", 0L);
             Long favoriteCount = counts.getOrDefault("fav", 0L);
 
-            resp = new PostDetailResponse(
+            flightResp = new PostDetailResponse(
                     String.valueOf(row.getId()),
                     row.getSlug(),
                     row.getTitle(),
@@ -480,8 +462,8 @@ public class PostServiceImpl implements PostService {
                     row.getAuthorTagJson(),
                     likeCount,
                     favoriteCount,
-                    null, // liked 状态暂时留空，由 enrich 填充
-                    null, // faved 状态暂时留空，由 enrich 填充
+                    null,
+                    null,
                     row.getIsTop(),
                     row.getVisible(),
                     row.getType(),
@@ -490,27 +472,19 @@ public class PostServiceImpl implements PostService {
 
             // 9. 写入 Redis 缓存
             try {
-                String json = objectMapper.writeValueAsString(resp);
+                String json = objectMapper.writeValueAsString(flightResp);
                 int baseTtl = 60;
-                // 增加随机抖动（Jitter），防止大量缓存同时过期（雪崩）
                 int jitter = ThreadLocalRandom.current().nextInt(30);
-                // 根据热度检测结果动态调整 TTL，热点内容缓存时间更长
                 int target = hotKey.ttlForPublic(baseTtl, pageKey);
                 redis.opsForValue().set(pageKey, json, Duration.ofSeconds(Math.max(target, baseTtl + jitter)));
-
-                // L1 填充
-                postDetailCache.put(pageKey, resp);
-
+                postDetailCache.put(pageKey, flightResp);
                 log.info("detail source=db key={}", pageKey);
             } catch (Exception e) {
                 log.warn("Failed to cache post detail, key={}: {}", pageKey, e.getMessage());
             }
 
-            // 10. 释放锁并返回最终结果
-            // 返回前调用 enrich 填充用户维度的 liked/faved 状态
-            singleFlight.remove(pageKey);
-            return enrichDetailResponse(resp, currentUserIdNullable, false);
-        }
+            return enrichDetailResponse(flightResp, currentUserIdNullable, false);
+        });
     }
 
     @Transactional(readOnly = true)

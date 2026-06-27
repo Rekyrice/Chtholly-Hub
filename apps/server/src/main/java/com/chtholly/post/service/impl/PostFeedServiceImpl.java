@@ -9,6 +9,7 @@ import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.counter.service.CounterService;
 import com.github.benmanes.caffeine.cache.Cache;
+import com.chtholly.cache.singleflight.SingleFlightLockRegistry;
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +17,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import java.util.concurrent.ConcurrentHashMap;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -37,7 +37,7 @@ public class PostFeedServiceImpl implements PostFeedService {
     private final HotKeyDetector hotKey;
     private static final Logger log = LoggerFactory.getLogger(PostFeedServiceImpl.class);
     private static final int LAYOUT_VER = 2;
-    private final ConcurrentHashMap<String, Object> singleFlight = new ConcurrentHashMap<>();
+    private final SingleFlightLockRegistry singleFlight = new SingleFlightLockRegistry();
 
     /**
      * 构造函数：注入 Mapper、Redis、对象映射器、计数服务与本地缓存。
@@ -138,25 +138,19 @@ public class PostFeedServiceImpl implements PostFeedService {
         // 为了防止高并发下（例如 1000 个请求同时访问同一页）
         // 所有请求同时打到数据库（造成 缓存击穿 ），这里使用了锁
         // 单航班机制：以 idsKey 作为“航班号”
-        // 并发下同一页只允许一个请求回源数据库，其余在锁内优先重查缓存，避免击穿惊群
-        Object lock = singleFlight.computeIfAbsent(idsKey, k -> new Object());
-        synchronized (lock) {
-            // 重查 L2 缓存，避免重复回源
+        return singleFlight.runExclusive(idsKey, () -> {
             FeedPageResponse again = assembleFromCache(idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable);
             if (again != null) {
                 feedPublicCache.put(localPageKey, again);
-                // 对返回列表中的每个条目进行热度统计
                 if (again.items() != null) {
                     for (FeedItemResponse item : again.items()) {
                         recordItemHotKey(item.id());
                     }
                 }
                 log.info("feed.public source=3tier(after-flight) localPageKey={} page={} size={}", localPageKey, safePage, safeSize);
-                singleFlight.remove(idsKey);
                 return again;
             }
 
-            // 数据库回源：读取 size+1 以判断是否有下一页，后裁剪为当前页
             int offset = (safePage - 1) * safeSize;
             List<PostFeedRow> rows = mapper.listFeedPublic(safeSize + 1, offset);
             boolean hasMore = rows.size() > safeSize;
@@ -164,27 +158,21 @@ public class PostFeedServiceImpl implements PostFeedService {
                 rows = rows.subList(0, safeSize);
             }
 
-            // 构建基础列表（计数已填充），liked/faved 置为 null 以免污染用户维度缓存
             List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
 
             FeedPageResponse respForCache = new FeedPageResponse(items, safePage, safeSize, hasMore);
-            // 片段缓存（ids/item/count）TTL 更长并加入随机抖动，降低同一时刻大量过期
             int baseTtl = 60;
             int jitter = ThreadLocalRandom.current().nextInt(30);
             Duration frTtl = Duration.ofSeconds(baseTtl + jitter);
 
-            // 写入片段缓存与本地缓存
             writeCaches(localPageKey, idsKey, hasMoreKey, safeSize, rows, items, hasMore, frTtl);
             feedPublicCache.put(localPageKey, respForCache);
 
-            // 返回时覆盖用户维度状态，不写回缓存
             List<FeedItemResponse> enriched = enrich(items, currentUserIdNullable);
             log.info("feed.public source=db localPageKey={} page={} size={} hasMore={}", localPageKey, safePage, safeSize, hasMore);
-            // 释放单航班锁，允许后续请求正常进入
-            singleFlight.remove(idsKey);
 
             return new FeedPageResponse(enriched, safePage, safeSize, hasMore);
-        }
+        });
     }
 
     /**
