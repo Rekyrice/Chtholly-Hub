@@ -2,6 +2,8 @@ package com.chtholly.counter.service.impl;
 
 import com.chtholly.counter.event.CounterEventProducer;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.user.mapper.UserMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,12 +35,16 @@ class CounterServiceImplBatchTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private RedissonClient redisson;
+    @Mock
+    private PostMapper postMapper;
+    @Mock
+    private UserMapper userMapper;
 
     private CounterService counterService;
 
     @BeforeEach
     void setUp() {
-        counterService = new CounterServiceImpl(redis, eventProducer, eventPublisher, redisson);
+        counterService = new CounterServiceImpl(redis, eventProducer, eventPublisher, redisson, postMapper, userMapper);
     }
 
     @Test

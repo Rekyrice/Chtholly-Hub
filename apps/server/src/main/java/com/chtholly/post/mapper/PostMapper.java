@@ -15,6 +15,8 @@ public interface PostMapper {
 
     Post findById(@Param("id") Long id);
 
+    List<Post> findByIds(@Param("ids") List<Long> ids);
+
     int updateContent(Post post);
 
     int updateMetadata(Post post);

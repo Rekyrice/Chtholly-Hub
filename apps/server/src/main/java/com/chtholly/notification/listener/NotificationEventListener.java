@@ -5,10 +5,6 @@ import com.chtholly.notification.event.CommentCreatedEvent;
 import com.chtholly.notification.event.FollowCreatedEvent;
 import com.chtholly.notification.model.NotificationType;
 import com.chtholly.notification.service.NotificationService;
-import com.chtholly.post.mapper.PostMapper;
-import com.chtholly.post.model.Post;
-import com.chtholly.user.domain.User;
-import com.chtholly.user.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
@@ -23,8 +19,6 @@ import java.util.Map;
 public class NotificationEventListener {
 
     private final NotificationService notificationService;
-    private final PostMapper postMapper;
-    private final UserMapper userMapper;
 
     @Async("notificationExecutor")
     @EventListener
@@ -68,6 +62,9 @@ public class NotificationEventListener {
         if (!"post".equals(event.getEntityType())) {
             return;
         }
+        if (event.getPostCreatorId() == null) {
+            return;
+        }
 
         long postId;
         try {
@@ -76,11 +73,7 @@ public class NotificationEventListener {
             return;
         }
 
-        Post post = postMapper.findById(postId);
-        if (post == null || post.getCreatorId() == null) {
-            return;
-        }
-        long recipient = post.getCreatorId();
+        long recipient = event.getPostCreatorId();
         if (recipient == event.getUserId()) {
             return;
         }
@@ -89,15 +82,14 @@ public class NotificationEventListener {
             return;
         }
 
-        User actor = userMapper.findById(event.getUserId());
         Map<String, Object> payload = basePayload(
                 event.getUserId(),
-                actor == null ? null : actor.getNickname(),
-                actor == null ? null : actor.getAvatar()
+                event.getActorNickname(),
+                event.getActorAvatar()
         );
         payload.put("postId", postId);
-        payload.put("postSlug", post.getSlug());
-        payload.put("postTitle", post.getTitle());
+        payload.put("postSlug", event.getPostSlug());
+        payload.put("postTitle", event.getPostTitle());
         notificationService.create(recipient, NotificationType.LIKE_POST, payload);
     }
 

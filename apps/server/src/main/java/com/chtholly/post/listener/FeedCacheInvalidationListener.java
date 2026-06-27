@@ -78,9 +78,14 @@ public class FeedCacheInvalidationListener {
             int delta = event.getDelta();
 
             try {
-                Post post = postMapper.findById(Long.valueOf(eid));
-                if (post != null && post.getCreatorId() != null) {
-                    long owner = post.getCreatorId();
+                Long owner = event.getPostCreatorId();
+                if (owner == null) {
+                    Post post = postMapper.findById(Long.valueOf(eid));
+                    if (post != null && post.getCreatorId() != null) {
+                        owner = post.getCreatorId();
+                    }
+                }
+                if (owner != null) {
                     if ("like".equals(metric)) {
                         userCounterService.incrementLikesReceived(owner, delta);
                     }

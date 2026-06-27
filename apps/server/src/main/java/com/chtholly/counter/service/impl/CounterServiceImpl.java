@@ -6,6 +6,10 @@ import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.event.CounterEventProducer;
+import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.Post;
+import com.chtholly.user.domain.User;
+import com.chtholly.user.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -41,6 +45,8 @@ public class CounterServiceImpl implements CounterService {
     private final CounterEventProducer eventProducer;
     private final ApplicationEventPublisher eventPublisher;
     private final RedissonClient redisson;
+    private final PostMapper postMapper;
+    private final UserMapper userMapper;
     @Value("${counter.rebuild.lock.ttl-ms:5000}")
     private long lockTtlMs;
     @Value("${counter.rebuild.rate.permits:3}")
@@ -52,11 +58,15 @@ public class CounterServiceImpl implements CounterService {
     @Value("${counter.rebuild.backoff.max-ms:30000}")
     private long backoffMaxMs;
 
-    public CounterServiceImpl(StringRedisTemplate redis, CounterEventProducer eventProducer, ApplicationEventPublisher eventPublisher, RedissonClient redisson) {
+    public CounterServiceImpl(StringRedisTemplate redis, CounterEventProducer eventProducer,
+                              ApplicationEventPublisher eventPublisher, RedissonClient redisson,
+                              PostMapper postMapper, UserMapper userMapper) {
         this.redis = redis;
         this.eventProducer = eventProducer;
         this.eventPublisher = eventPublisher;
         this.redisson = redisson;
+        this.postMapper = postMapper;
+        this.userMapper = userMapper;
         this.toggleScript = new DefaultRedisScript<>();
         this.toggleScript.setResultType(Long.class);
         // 位图状态原子切换，仅在状态变化时返回 1
@@ -122,12 +132,38 @@ public class CounterServiceImpl implements CounterService {
         boolean ok = changed == 1L;
         if (ok) {
             int delta = add ? 1 : -1;
-            // 产出计数事件（异步聚合），分区按实体维度保证同实体事件顺序
-            eventProducer.publish(CounterEvent.of(etype, eid, metric, idx, uid, delta));
-            // 本地事件：触发缓存失效/旁路更新等快速路径
-            eventPublisher.publishEvent(CounterEvent.of(etype, eid, metric, idx, uid, delta));
+            CounterEvent event = enrichEvent(etype, eid, metric, idx, uid, delta);
+            eventProducer.publish(event);
+            eventPublisher.publishEvent(event);
         }
         return ok;
+    }
+
+    /** 在事件源填充帖子/用户展示信息，避免下游监听器 N+1 查库。 */
+    private CounterEvent enrichEvent(String etype, String eid, String metric, int idx, long uid, int delta) {
+        CounterEvent event = CounterEvent.of(etype, eid, metric, idx, uid, delta);
+        if (!"post".equals(etype)) {
+            return event;
+        }
+        try {
+            long postId = Long.parseLong(eid);
+            Post post = postMapper.findById(postId);
+            if (post != null && post.getCreatorId() != null) {
+                event.setPostCreatorId(post.getCreatorId());
+                event.setPostTitle(post.getTitle());
+                event.setPostSlug(post.getSlug());
+            }
+            if ("like".equals(metric) && delta == 1) {
+                User actor = userMapper.findById(uid);
+                if (actor != null) {
+                    event.setActorNickname(actor.getNickname());
+                    event.setActorAvatar(actor.getAvatar());
+                }
+            }
+        } catch (Exception e) {
+            log.debug("CounterEvent 上下文填充失败 etype={} eid={}: {}", etype, eid, e.getMessage());
+        }
+        return event;
     }
 
     /**

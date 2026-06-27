@@ -12,8 +12,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /** 站内文章语义检索（向量 RAG）。 */
@@ -51,21 +54,16 @@ public class ArticleRagTool implements AgentTool {
             return "向量库中未找到与「" + query + "」相关的帖子片段（可能尚未建立 RAG 索引）。";
         }
 
+        Map<String, Post> postById = loadPostsByIds(docs);
+
         List<String> blocks = new ArrayList<>();
-        Map<String, Post> postCache = new LinkedHashMap<>();
         for (Document doc : docs) {
             Object postIdObj = doc.getMetadata().get("postId");
             String postId = postIdObj == null ? null : String.valueOf(postIdObj);
             String title = str(doc.getMetadata().get("title"));
             String slug = null;
             if (postId != null) {
-                Post post = postCache.computeIfAbsent(postId, id -> {
-                    try {
-                        return postMapper.findById(Long.parseLong(id));
-                    } catch (NumberFormatException e) {
-                        return null;
-                    }
-                });
+                Post post = postById.get(postId);
                 if (post != null) {
                     title = post.getTitle() != null ? post.getTitle() : title;
                     slug = post.getSlug();
@@ -79,11 +77,35 @@ public class ArticleRagTool implements AgentTool {
                     + (slug != null ? " (/post/" + slug + ")" : "")
                     + "\n" + (text == null ? "" : text));
         }
-        return blocks.stream().collect(Collectors.joining("\n\n---\n\n"));
+        return String.join("\n\n---\n\n", blocks);
+    }
+
+    private Map<String, Post> loadPostsByIds(List<Document> docs) {
+        Set<Long> ids = new LinkedHashSet<>();
+        for (Document doc : docs) {
+            Object postIdObj = doc.getMetadata().get("postId");
+            if (postIdObj == null) {
+                continue;
+            }
+            try {
+                ids.add(Long.parseLong(String.valueOf(postIdObj)));
+            } catch (NumberFormatException ignored) {
+                // 跳过非法 postId
+            }
+        }
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<Post> posts = postMapper.findByIds(new ArrayList<>(ids));
+        return posts.stream()
+                .filter(p -> p.getId() != null)
+                .collect(Collectors.toMap(p -> String.valueOf(p.getId()), Function.identity(), (a, b) -> a, LinkedHashMap::new));
     }
 
     private int parseInt(Object v, int defaultVal) {
-        if (v == null) return defaultVal;
+        if (v == null) {
+            return defaultVal;
+        }
         try {
             return Integer.parseInt(String.valueOf(v));
         } catch (NumberFormatException e) {
