@@ -5,7 +5,7 @@
 
 ## 项目概览
 
-Chtholly Hub 是一个动漫博客向社区演进的全栈平台，作为秋招 2026 作品集项目。从个人动漫博客起步，逐步引入 AI 内容能力。
+Chtholly Hub 是一个动漫博客向社区演进的全栈平台，从个人动漫博客起步，逐步引入 AI 内容能力。
 
 - **GitHub**: https://github.com/Rekyrice/Chtholly-Hub
 - **技术栈**: Java 21 + Spring Boot 3.2.4（后端）/ Next.js 16 + Tailwind CSS 4（前端）
