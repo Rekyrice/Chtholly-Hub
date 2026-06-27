@@ -1,6 +1,7 @@
 package com.chtholly.tag.mapper;
 
 import com.chtholly.tag.model.Tag;
+import com.chtholly.tag.model.TagListEtagRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -10,6 +11,8 @@ import java.util.List;
 public interface TagMapper {
 
     List<Tag> listOrderByUsage(@Param("limit") int limit);
+
+    TagListEtagRow etagFingerprint(@Param("limit") int limit);
 
     Tag findByName(@Param("name") String name);
 

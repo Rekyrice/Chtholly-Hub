@@ -1,9 +1,12 @@
 package com.chtholly.tag.service.impl;
 
+import com.chtholly.common.exception.BusinessException;
+import com.chtholly.common.web.HttpCacheHelper;
 import com.chtholly.post.util.SlugUtils;
 import com.chtholly.tag.api.dto.TagResponse;
 import com.chtholly.tag.mapper.TagMapper;
 import com.chtholly.tag.model.Tag;
+import com.chtholly.tag.model.TagListEtagRow;
 import com.chtholly.tag.service.TagService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,6 +39,18 @@ public class TagServiceImpl implements TagService {
         return tagMapper.listOrderByUsage(safeLimit).stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String computeListEtag(int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), 200);
+        TagListEtagRow row = tagMapper.etagFingerprint(safeLimit);
+        long count = row != null && row.getTagCount() != null ? row.getTagCount() : 0L;
+        String maxUpdated = row != null && row.getMaxUpdatedAt() != null
+                ? row.getMaxUpdatedAt().toString()
+                : "";
+        return HttpCacheHelper.hashEtag(maxUpdated, String.valueOf(safeLimit), String.valueOf(count));
     }
 
     /**

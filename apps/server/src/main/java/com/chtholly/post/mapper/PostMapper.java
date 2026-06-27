@@ -1,6 +1,7 @@
 package com.chtholly.post.mapper;
 
 import com.chtholly.post.model.Post;
+import com.chtholly.post.model.PostDetailEtagRow;
 import com.chtholly.post.model.PostDetailRow;
 
 import com.chtholly.post.model.PostFeedRow;
@@ -64,6 +65,10 @@ public interface PostMapper {
     PostDetailRow findDetailById(@Param("id") Long id);
 
     PostDetailRow findDetailBySlug(@Param("slug") String slug);
+
+    PostDetailEtagRow findDetailEtagById(@Param("id") long id);
+
+    PostDetailEtagRow findDetailEtagBySlug(@Param("slug") String slug);
 
     Long findIdBySlug(@Param("slug") String slug);
 

@@ -12,6 +12,8 @@ import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
+import com.chtholly.common.web.HttpCacheHelper;
+import com.chtholly.post.model.PostDetailEtagRow;
 import com.chtholly.post.model.PostDetailRow;
 import com.chtholly.post.util.SlugUtils;
 import com.chtholly.post.api.dto.FeedPageResponse;
@@ -562,6 +564,29 @@ public class PostServiceImpl implements PostService {
             throw new ResourceNotFoundException("内容不存在");
         }
         return getDetail(id, currentUserIdNullable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String computeDetailEtag(long id) {
+        return computeDetailEtagRow(mapper.findDetailEtagById(id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String computeDetailEtagBySlug(String slug) {
+        return computeDetailEtagRow(mapper.findDetailEtagBySlug(slug));
+    }
+
+    private String computeDetailEtagRow(PostDetailEtagRow row) {
+        if (row == null || "deleted".equals(row.getStatus())) {
+            throw new ResourceNotFoundException("内容不存在");
+        }
+        Instant updateTime = row.getUpdateTime();
+        return HttpCacheHelper.hashEtag(
+                row.getStatus(),
+                String.valueOf(DETAIL_LAYOUT_VER),
+                updateTime != null ? updateTime.toString() : "");
     }
 
     /**

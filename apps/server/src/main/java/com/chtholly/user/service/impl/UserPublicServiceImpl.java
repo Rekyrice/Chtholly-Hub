@@ -1,6 +1,7 @@
 package com.chtholly.user.service.impl;
 
 import com.chtholly.common.exception.BusinessException;
+import com.chtholly.common.web.HttpCacheHelper;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.user.api.dto.PublicUserResponse;
@@ -9,6 +10,8 @@ import com.chtholly.user.mapper.UserMapper;
 import com.chtholly.user.service.UserPublicService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+
+import java.time.Instant;
 
 /**
  * Resolves public user profile data by handle for profile pages.
@@ -45,5 +48,18 @@ public class UserPublicServiceImpl implements UserPublicService {
                 user.getBio(),
                 postCount
         );
+    }
+
+    @Override
+    public String computeEtagByHandle(String handle) {
+        if (handle == null || handle.isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "用户标识不能为空");
+        }
+        User user = userMapper.findByHandle(handle.trim());
+        if (user == null) {
+            throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND, "用户不存在");
+        }
+        Instant updatedAt = user.getUpdatedAt();
+        return HttpCacheHelper.hashEtag(updatedAt != null ? updatedAt.toString() : "");
     }
 }

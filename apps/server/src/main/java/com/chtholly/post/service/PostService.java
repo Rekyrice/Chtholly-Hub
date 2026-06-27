@@ -30,4 +30,9 @@ public interface PostService {
     PostDetailResponse getDetail(long id, Long currentUserIdNullable);
 
     PostDetailResponse getDetailBySlug(String slug, Long currentUserIdNullable);
+
+    /** 详情 ETag：hash(status + layoutVersion + updateTime)。 */
+    String computeDetailEtag(long id);
+
+    String computeDetailEtagBySlug(String slug);
 }

@@ -1,5 +1,6 @@
 package com.chtholly.post.api;
 
+import com.chtholly.common.web.HttpCacheHelper;
 import com.chtholly.common.ratelimit.RateLimit;
 import com.chtholly.common.ratelimit.RateLimitDimension;
 import com.chtholly.auth.token.JwtService;
@@ -168,14 +169,20 @@ public class PostController {
      */
     @Operation(summary = "公开 Feed 列表")
     @GetMapping("/feed")
-    public FeedPageResponse feed(@RequestParam(value = "page", required = false) Integer page,
+    public ResponseEntity<FeedPageResponse> feed(@RequestParam(value = "page", required = false) Integer page,
                                  @RequestParam(value = "cursor", required = false) String cursor,
                                  @RequestParam(value = "size", defaultValue = "20") int size,
                                  @RequestParam(value = "ownerId", required = false) Long ownerId,
                                  @RequestParam(value = "tag", required = false) String tag,
+                                 @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
                                  @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        return feedService.getPublicFeed(page, cursor, size, ownerId, tag, userId);
+        FeedPageResponse body = feedService.getPublicFeed(page, cursor, size, ownerId, tag, userId);
+        String pageKey = feedService.publicFeedPageKey(page, cursor, size, ownerId, tag);
+        long hourSlot = System.currentTimeMillis() / 3600000L;
+        int itemCount = body.items() != null ? body.items().size() : 0;
+        String etag = HttpCacheHelper.hashEtag(pageKey, String.valueOf(hourSlot), String.valueOf(itemCount));
+        return HttpCacheHelper.conditionalPublic(body, etag, ifNoneMatch);
     }
 
     /**
@@ -216,10 +223,16 @@ public class PostController {
      */
     @Operation(summary = "帖子详情（按 ID）")
     @GetMapping("/detail/{id}")
-    public PostDetailResponse detail(@PathVariable("id") long id,
+    public ResponseEntity<PostDetailResponse> detail(@PathVariable("id") long id,
+                                         @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
                                          @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        return service.getDetail(id, userId);
+        String etag = service.computeDetailEtag(id);
+        if (HttpCacheHelper.matchesIfNoneMatch(ifNoneMatch, etag)) {
+            return HttpCacheHelper.notModifiedPublic(etag);
+        }
+        PostDetailResponse body = service.getDetail(id, userId);
+        return HttpCacheHelper.okPublic(body, etag);
     }
 
     /**
@@ -231,9 +244,15 @@ public class PostController {
      */
     @Operation(summary = "帖子详情（按 slug）")
     @GetMapping("/detail/by-slug/{slug}")
-    public PostDetailResponse detailBySlug(@PathVariable("slug") String slug,
+    public ResponseEntity<PostDetailResponse> detailBySlug(@PathVariable("slug") String slug,
+                                         @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
                                          @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        return service.getDetailBySlug(slug, userId);
+        String etag = service.computeDetailEtagBySlug(slug);
+        if (HttpCacheHelper.matchesIfNoneMatch(ifNoneMatch, etag)) {
+            return HttpCacheHelper.notModifiedPublic(etag);
+        }
+        PostDetailResponse body = service.getDetailBySlug(slug, userId);
+        return HttpCacheHelper.okPublic(body, etag);
     }
 }

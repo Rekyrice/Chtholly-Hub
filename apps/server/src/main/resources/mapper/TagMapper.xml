@@ -19,6 +19,16 @@
         LIMIT #{limit}
     </select>
 
+    <select id="etagFingerprint" resultType="com.chtholly.tag.model.TagListEtagRow">
+        SELECT COUNT(*) AS tagCount, MAX(updated_at) AS maxUpdatedAt
+        FROM (
+            SELECT updated_at
+            FROM tags
+            ORDER BY usage_count DESC, name ASC
+            LIMIT #{limit}
+        ) t
+    </select>
+
     <select id="findByName" resultMap="TagResultMap">
         SELECT id, name, slug, creator_id, usage_count, created_at, updated_at
         FROM tags

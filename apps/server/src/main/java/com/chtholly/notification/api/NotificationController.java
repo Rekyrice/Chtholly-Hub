@@ -1,5 +1,6 @@
 package com.chtholly.notification.api;
 
+import com.chtholly.common.web.HttpCacheHelper;
 import com.chtholly.auth.token.JwtService;
 import com.chtholly.notification.api.dto.NotificationListResponse;
 import com.chtholly.notification.api.dto.UnreadCountResponse;
@@ -7,6 +8,7 @@ import com.chtholly.notification.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
@@ -41,11 +43,12 @@ public class NotificationController {
      */
     @Operation(summary = "通知分页列表")
     @GetMapping
-    public NotificationListResponse list(@AuthenticationPrincipal Jwt jwt,
+    public ResponseEntity<NotificationListResponse> list(@AuthenticationPrincipal Jwt jwt,
                                          @RequestParam(value = "page", defaultValue = "1") int page,
                                          @RequestParam(value = "size", defaultValue = "20") int size) {
         long userId = jwtService.extractUserId(jwt);
-        return notificationService.list(userId, page, size);
+        NotificationListResponse body = notificationService.list(userId, page, size);
+        return HttpCacheHelper.okPrivate(body);
     }
 
     /**
@@ -56,9 +59,10 @@ public class NotificationController {
      */
     @Operation(summary = "未读通知数量")
     @GetMapping("/unread-count")
-    public UnreadCountResponse unreadCount(@AuthenticationPrincipal Jwt jwt) {
+    public ResponseEntity<UnreadCountResponse> unreadCount(@AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);
-        return notificationService.unreadCount(userId);
+        UnreadCountResponse body = notificationService.unreadCount(userId);
+        return HttpCacheHelper.okPrivate(body);
     }
 
     /**

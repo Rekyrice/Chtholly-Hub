@@ -128,6 +128,25 @@ public class PostFeedServiceImpl implements PostFeedService {
         return getPublicFeedByOffset(safePage, size, currentUserIdNullable);
     }
 
+    @Override
+    public String publicFeedPageKey(Integer page, String cursor, int size, Long ownerId, String tag) {
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        if (tag != null && !tag.isBlank()) {
+            int safePage = page != null ? Math.max(page, 1) : 1;
+            String ownerPart = ownerId != null ? String.valueOf(ownerId) : "all";
+            return "feed:tag:" + tag.trim() + ":" + ownerPart + ":" + safeSize + ":" + safePage + ":v" + LAYOUT_VER;
+        }
+        if (ownerId != null) {
+            int safePage = page != null ? Math.max(page, 1) : 1;
+            return "feed:owner:" + ownerId + ":" + safeSize + ":" + safePage + ":v" + LAYOUT_VER;
+        }
+        if (cursor != null) {
+            return cacheKeyByCursor(FeedCursor.cacheSlot(cursor), safeSize);
+        }
+        int safePage = page != null ? Math.max(page, 1) : 1;
+        return cacheKeyByPage(safePage, safeSize);
+    }
+
     /**
      * 公开 Feed — offset 分页（向后兼容 page 参数）。
      */

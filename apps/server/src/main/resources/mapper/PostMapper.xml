@@ -281,6 +281,18 @@
           AND p.visible = 'public'
     </select>
 
+    <select id="findDetailEtagById" parameterType="long" resultType="com.chtholly.post.model.PostDetailEtagRow">
+        SELECT p.status, p.update_time AS updateTime
+        FROM posts p
+        WHERE p.id = #{id}
+    </select>
+
+    <select id="findDetailEtagBySlug" parameterType="string" resultType="com.chtholly.post.model.PostDetailEtagRow">
+        SELECT p.status, p.update_time AS updateTime
+        FROM posts p
+        WHERE p.slug = #{slug}
+    </select>
+
     <select id="findIdBySlug" parameterType="string" resultType="long">
         SELECT id FROM posts WHERE slug = #{slug} LIMIT 1
     </select>

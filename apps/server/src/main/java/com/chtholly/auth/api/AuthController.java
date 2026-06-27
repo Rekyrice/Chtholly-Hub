@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import com.chtholly.common.ratelimit.RateLimit;
 import com.chtholly.common.ratelimit.RateLimitDimension;
 import com.chtholly.common.ratelimit.RateLimits;
+import com.chtholly.common.web.HttpCacheHelper;
 import com.chtholly.auth.api.dto.AuthResponse;
 import com.chtholly.auth.api.dto.AuthUserResponse;
 import com.chtholly.auth.api.dto.LoginRequest;
@@ -140,9 +141,10 @@ public class AuthController {
      */
     @Operation(summary = "当前登录用户信息")
     @GetMapping("/me")
-    public AuthUserResponse me(@AuthenticationPrincipal Jwt jwt) {
+    public ResponseEntity<AuthUserResponse> me(@AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);
-        return authService.me(userId);
+        AuthUserResponse body = authService.me(userId);
+        return HttpCacheHelper.okPrivate(body);
     }
 
     /**
