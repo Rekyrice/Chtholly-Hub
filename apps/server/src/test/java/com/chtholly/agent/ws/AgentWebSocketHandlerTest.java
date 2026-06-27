@@ -1,8 +1,9 @@
 package com.chtholly.agent.ws;
 
 import com.chtholly.agent.ChthollyAgent;
-import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.agent.memory.AgentConversationMemory;
+import com.chtholly.agent.memory.AgentMemoryStore;
+import com.chtholly.agent.observability.AgentMetrics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,8 @@ class AgentWebSocketHandlerTest {
     private AgentWsTicketStore ticketStore;
     @Mock
     private WebSocketSession rawSession;
+    @Mock
+    private AgentMetrics agentMetrics;
 
     private AgentSessionRateLimiter rateLimiter;
     private AgentWebSocketHeartbeat heartbeat;
@@ -50,7 +53,7 @@ class AgentWebSocketHandlerTest {
         objectMapper = new ObjectMapper();
         rateLimiter = new AgentSessionRateLimiter();
         heartbeat = new AgentWebSocketHeartbeat();
-        handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat);
+        handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat, agentMetrics);
     }
 
     @Test
@@ -71,7 +74,7 @@ class AgentWebSocketHandlerTest {
         handler.afterConnectionEstablished(rawSession);
 
         when(memoryStore.getOrCreateMemory(99L)).thenReturn(memory);
-        doNothing().when(agent).run(any(), anyLong(), any(), any());
+        doNothing().when(agent).run(any(), anyLong(), any(), any(), any());
 
         List<String> payloads = new ArrayList<>();
         doAnswer(inv -> {
@@ -90,7 +93,7 @@ class AgentWebSocketHandlerTest {
                 .filter(p -> p.contains("RATE_LIMITED"))
                 .count();
         assertThat(rateLimited).isGreaterThanOrEqualTo(5);
-        verify(agent, atLeast(10)).run(any(), anyLong(), any(), any());
+        verify(agent, atLeast(10)).run(any(), anyLong(), any(), any(), any());
     }
 
     @Test
@@ -102,7 +105,7 @@ class AgentWebSocketHandlerTest {
         handler.afterConnectionEstablished(rawSession);
 
         when(memoryStore.getOrCreateMemory(1L)).thenReturn(memory);
-        doNothing().when(agent).run(any(), anyLong(), any(), any());
+        doNothing().when(agent).run(any(), anyLong(), any(), any(), any());
 
         doNothing().when(rawSession).sendMessage(any());
 
@@ -112,6 +115,6 @@ class AgentWebSocketHandlerTest {
         handler.handleTextMessage(rawSession, new TextMessage("{\"type\":\"chat\",\"message\":\"ok\"}"));
 
         TimeUnit.MILLISECONDS.sleep(200);
-        verify(agent).run(any(), anyLong(), any(), any());
+        verify(agent).run(any(), anyLong(), any(), any(), any());
     }
 }

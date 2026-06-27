@@ -72,4 +72,19 @@ class AgentMemoryStoreTest {
         assertThat(memory.formatForPrompt()).contains("Assistant: hi");
         verify(redis).expire("agent:memory:3", Duration.ofMinutes(120));
     }
+
+    @Test
+    void getStatsReflectsCachedSessions() throws Exception {
+        when(redis.opsForList()).thenReturn(listOps);
+        String json = objectMapper.writeValueAsString(AgentTurn.assistant("hi"));
+        when(listOps.range("agent:memory:1", 0, -1)).thenReturn(List.of(json));
+        when(listOps.range("agent:memory:2", 0, -1)).thenReturn(List.of(json, json));
+
+        store.getOrCreateMemory(1L);
+        store.getOrCreateMemory(2L);
+
+        AgentMemoryStats stats = store.getStats();
+        assertThat(stats.activeSessions()).isEqualTo(2);
+        assertThat(stats.totalTurns()).isEqualTo(3);
+    }
 }

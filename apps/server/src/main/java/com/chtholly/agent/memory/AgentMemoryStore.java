@@ -79,6 +79,15 @@ public class AgentMemoryStore {
         localCache.invalidate(userId);
     }
 
+    /** 当前本地缓存中的活跃 session 数与总记忆轮数（近似值，不含仅存在于 Redis 的冷数据）。 */
+    public AgentMemoryStats getStats() {
+        long activeSessions = localCache.estimatedSize();
+        long totalTurns = localCache.asMap().values().stream()
+                .mapToLong(List::size)
+                .sum();
+        return new AgentMemoryStats(activeSessions, totalTurns);
+    }
+
     int maxTurns() {
         return Math.max(2, properties.getMemoryMaxTurns());
     }

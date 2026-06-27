@@ -3,6 +3,8 @@ package com.chtholly.agent;
 import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentTurn;
+import com.chtholly.agent.observability.AgentExecutionTrace;
+import com.chtholly.agent.observability.AgentMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -46,6 +48,7 @@ public class ChthollyAgent {
     private final ObjectMapper objectMapper;
     private final List<AgentTool> tools;
     private final AgentJsonExtractor jsonExtractor;
+    private final AgentMetrics agentMetrics;
 
     /**
      * 执行一轮对话，通过 sink 推送 think/act/observe/delta/final/error 事件。
@@ -53,85 +56,116 @@ public class ChthollyAgent {
      * @param memory 当前 WebSocket 会话记忆（跨轮次追问）
      */
     public void run(String question, long userId, AgentConversationMemory memory, Consumer<AgentEvent> sink) {
-        if (question == null || question.isBlank()) {
-            emitError(sink, "问题不能为空");
-            return;
-        }
+        run(question, userId, memory, null, sink);
+    }
 
-        Map<String, AgentTool> toolMap = new LinkedHashMap<>();
-        for (AgentTool tool : tools) {
-            toolMap.put(tool.name(), tool);
-        }
-
-        String system = buildSystemPrompt(toolMap.values());
-        List<String> transcript = new ArrayList<>();
-        String historyBlock = memory == null ? "" : memory.formatForPrompt();
-        if (!historyBlock.isBlank()) {
-            transcript.add(historyBlock);
-        }
-        transcript.add("## 当前问题\nUser: " + question.trim());
-
+    /**
+     * 执行一轮对话（带 WebSocket sessionId 用于可观测性）。
+     */
+    public void run(String question, long userId, AgentConversationMemory memory, String sessionId,
+                    Consumer<AgentEvent> sink) {
         int maxSteps = Math.max(1, properties.getMaxSteps());
-        for (int step = 0; step < maxSteps; step++) {
-            String llmOut;
-            try {
-                llmOut = callLlm(system, String.join("\n\n", transcript));
-            } catch (TimeoutException e) {
-                log.warn("Agent LLM 调用超时 (>{}s)", properties.getLlmTimeoutSeconds());
-                emitError(sink, "模型响应超时，请稍后重试");
-                return;
-            } catch (Exception e) {
-                log.warn("Agent LLM 调用失败: {}", e.getMessage());
-                emitError(sink, "模型调用失败，请检查 LLM 配置");
+        AgentExecutionTrace trace = new AgentExecutionTrace(userId, sessionId, maxSteps);
+        try {
+            if (question == null || question.isBlank()) {
+                trace.terminateError();
+                emitError(sink, "问题不能为空");
                 return;
             }
 
-            AgentAction action;
-            try {
-                action = parseAction(llmOut);
-            } catch (Exception e) {
-                emitError(sink, "无法解析模型输出，请重试");
-                return;
+            Map<String, AgentTool> toolMap = new LinkedHashMap<>();
+            for (AgentTool tool : tools) {
+                toolMap.put(tool.name(), tool);
             }
 
-            emitThink(sink, action);
-
-            if (action.isFinal()) {
-                streamFinalAnswer(sink, question, transcript, memory);
-                return;
+            String system = buildSystemPrompt(toolMap.values());
+            List<String> transcript = new ArrayList<>();
+            String historyBlock = memory == null ? "" : memory.formatForPrompt();
+            if (!historyBlock.isBlank()) {
+                transcript.add(historyBlock);
             }
+            transcript.add("## 当前问题\nUser: " + question.trim());
 
-            AgentTool tool = toolMap.get(action.action());
-            if (tool == null) {
-                String observation = "未知工具：" + action.action() + "。请使用已注册工具或返回 final。";
-                emitAct(sink, action.action(), action.input());
+            for (int step = 0; step < maxSteps; step++) {
+                String userPrompt = String.join("\n\n", transcript);
+                long stepLlmStart = System.currentTimeMillis();
+                String llmOut;
+                try {
+                    llmOut = callLlm(system, userPrompt);
+                } catch (TimeoutException e) {
+                    log.warn("Agent LLM 调用超时 (>{}s)", properties.getLlmTimeoutSeconds());
+                    trace.terminateTimeout();
+                    emitError(sink, "模型响应超时，请稍后重试");
+                    return;
+                } catch (Exception e) {
+                    log.warn("Agent LLM 调用失败: {}", e.getMessage());
+                    trace.terminateError();
+                    emitError(sink, "模型调用失败，请检查 LLM 配置");
+                    return;
+                }
+                long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
+                trace.recordLlmCall(stepLlmMs, system.length() + userPrompt.length(), llmOut.length());
+
+                AgentAction action;
+                try {
+                    action = parseAction(llmOut);
+                } catch (Exception e) {
+                    trace.recordStep(step, "parse_error", stepLlmMs, 0);
+                    trace.terminateError();
+                    emitError(sink, "无法解析模型输出，请重试");
+                    return;
+                }
+
+                emitThink(sink, action);
+
+                if (action.isFinal()) {
+                    long streamLlmMs = streamFinalAnswer(sink, question, transcript, memory, trace);
+                    trace.recordStep(step, "final_answer", stepLlmMs + streamLlmMs, 0);
+                    return;
+                }
+
+                AgentTool tool = toolMap.get(action.action());
+                if (tool == null) {
+                    String observation = "未知工具：" + action.action() + "。请使用已注册工具或返回 final。";
+                    emitAct(sink, action.action(), action.input());
+                    emitObserve(sink, observation);
+                    transcript.add("Assistant: " + llmOut);
+                    transcript.add("Observation: " + observation);
+                    trace.recordStep(step, action.action(), stepLlmMs, 0);
+                    continue;
+                }
+
+                Map<String, Object> inputMap = new LinkedHashMap<>(jsonToMap(action.input()));
+                inputMap.put("_userQuestion", question.trim());
+                if (memory != null) {
+                    inputMap.put("_conversationHistory", memory.formatForPrompt());
+                }
+                emitAct(sink, tool.name(), action.input());
+                long toolStart = System.currentTimeMillis();
+                String observation = executeTool(tool, inputMap, userId);
+                long stepToolMs = System.currentTimeMillis() - toolStart;
+                trace.recordToolCall(tool.name(), stepToolMs);
+                observation = augmentObservation(tool.name(), observation);
                 emitObserve(sink, observation);
                 transcript.add("Assistant: " + llmOut);
                 transcript.add("Observation: " + observation);
-                continue;
+                trace.recordStep(step, tool.name(), stepLlmMs, stepToolMs);
             }
 
-            Map<String, Object> inputMap = new LinkedHashMap<>(jsonToMap(action.input()));
-            inputMap.put("_userQuestion", question.trim());
-            if (memory != null) {
-                inputMap.put("_conversationHistory", memory.formatForPrompt());
-            }
-            emitAct(sink, tool.name(), action.input());
-            String observation = executeTool(tool, inputMap, userId);
-            observation = augmentObservation(tool.name(), observation);
-            emitObserve(sink, observation);
-            transcript.add("Assistant: " + llmOut);
-            transcript.add("Observation: " + observation);
+            trace.terminateMaxSteps();
+            emitError(sink, "已达到最大推理步数（" + maxSteps + "），请简化问题后重试");
+        } finally {
+            trace.finishAndLog(objectMapper, agentMetrics);
         }
-
-        emitError(sink, "已达到最大推理步数（" + maxSteps + "），请简化问题后重试");
     }
 
-    private void streamFinalAnswer(
+    /** @return 流式回答 LLM 耗时（毫秒） */
+    private long streamFinalAnswer(
             Consumer<AgentEvent> sink,
             String question,
             List<String> transcript,
-            AgentConversationMemory memory) {
+            AgentConversationMemory memory,
+            AgentExecutionTrace trace) {
         String context = String.join("\n\n", transcript);
         String system = """
                 你是 Chtholly Hub 的动漫知识助手「珂朵莉」。
@@ -139,12 +173,14 @@ public class ChthollyAgent {
                 用户可能在追问上文（如「他们是谁」「宿舍伙伴有哪些」），请结合历史理解指代。
                 只陈述 Observation 中有依据的事实；若工具未返回数据请如实说明。
                 不要输出 JSON 或 markdown 代码块。""";
+        String userPrompt = context + "\n\n请回答用户的当前问题。";
 
         int timeoutSec = Math.max(1, properties.getLlmTimeoutSeconds());
+        long streamStart = System.currentTimeMillis();
         try {
             Flux<String> flux = chatClient.prompt()
                     .system(system)
-                    .user(context + "\n\n请回答用户的当前问题。")
+                    .user(userPrompt)
                     .options(chatOptions(0.3, 1024))
                     .stream()
                     .content()
@@ -159,19 +195,28 @@ public class ChthollyAgent {
             }).blockLast();
 
             String answer = truncateAnswer(full.toString());
+            long streamMs = System.currentTimeMillis() - streamStart;
+            trace.recordLlmCall(streamMs, system.length() + userPrompt.length(), answer.length());
+            trace.terminateFinalAnswer(answer);
             emitFinal(sink, answer);
             if (memory != null && !answer.isBlank()) {
                 memory.add(AgentTurn.user(question.trim()));
                 memory.add(AgentTurn.assistant(answer));
             }
+            return streamMs;
         } catch (Exception e) {
+            long streamMs = System.currentTimeMillis() - streamStart;
+            trace.recordLlmCall(streamMs, system.length() + userPrompt.length(), 0);
             if (isTimeout(e)) {
                 log.warn("Agent 流式回答超时 (>{}s)", timeoutSec);
+                trace.terminateTimeout();
                 emitError(sink, "生成回答超时，请稍后重试");
-                return;
+                return streamMs;
             }
             log.warn("Agent 流式回答失败: {}", e.getMessage());
+            trace.terminateError();
             emitError(sink, "生成回答失败，请重试");
+            return streamMs;
         }
     }
 

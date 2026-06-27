@@ -4,6 +4,7 @@ import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.ChthollyAgent;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
+import com.chtholly.agent.observability.AgentMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -41,11 +42,13 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final AgentWsTicketStore ticketStore;
     private final AgentSessionRateLimiter rateLimiter;
     private final AgentWebSocketHeartbeat heartbeat;
+    private final AgentMetrics agentMetrics;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     /** 原始 sessionId -> 线程安全装饰 session（并发 send 串行化）。 */
     private final Map<String, WebSocketSession> safeSessions = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionUsers = new ConcurrentHashMap<>();
+    private final Map<String, Long> sessionConnectedAt = new ConcurrentHashMap<>();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -58,7 +61,10 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         WebSocketSession safe = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_SIZE_LIMIT);
         safeSessions.put(session.getId(), safe);
         sessionUsers.put(session.getId(), userId);
+        sessionConnectedAt.put(session.getId(), System.currentTimeMillis());
         heartbeat.start(safe);
+        agentMetrics.wsConnected();
+        log.info("[AgentWS] Connected: userId={}, sessionId={}", userId, session.getId());
     }
 
     @Override
@@ -77,10 +83,15 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        sessionUsers.remove(session.getId());
+        Long userId = sessionUsers.remove(session.getId());
+        Long connectedAt = sessionConnectedAt.remove(session.getId());
         safeSessions.remove(session.getId());
         rateLimiter.removeSession(session.getId());
         heartbeat.stop(session.getId());
+        agentMetrics.wsDisconnected();
+        long durationSec = connectedAt == null ? 0 : (System.currentTimeMillis() - connectedAt) / 1000;
+        log.info("[AgentWS] Disconnected: userId={}, sessionId={}, duration={}s",
+                userId, session.getId(), durationSec);
     }
 
     private void handlePayload(WebSocketSession session, long userId, String payload) {
@@ -112,7 +123,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             }
 
             AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId);
-            agent.run(text, userId, memory, event -> {
+            agent.run(text, userId, memory, session.getId(), event -> {
                 try {
                     if (safe.isOpen()) {
                         sendJson(safe, event.type(), event.data());
