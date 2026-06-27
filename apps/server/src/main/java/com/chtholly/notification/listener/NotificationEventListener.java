@@ -6,6 +6,7 @@ import com.chtholly.notification.event.FollowCreatedEvent;
 import com.chtholly.notification.model.NotificationType;
 import com.chtholly.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -14,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** 监听业务事件并异步写入通知。 */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class NotificationEventListener {
@@ -23,74 +25,88 @@ public class NotificationEventListener {
     @Async("notificationExecutor")
     @EventListener
     public void onCommentCreated(CommentCreatedEvent event) {
-        Map<String, Object> base = basePayload(event.authorUserId(), event.authorNickname(), event.authorAvatar());
-        base.put("postId", event.postId());
-        base.put("postSlug", event.postSlug());
-        base.put("postTitle", event.postTitle());
-        base.put("commentId", event.commentId());
+        try {
+            Map<String, Object> base = basePayload(event.authorUserId(), event.authorNickname(), event.authorAvatar());
+            base.put("postId", event.postId());
+            base.put("postSlug", event.postSlug());
+            base.put("postTitle", event.postTitle());
+            base.put("commentId", event.commentId());
 
-        if (event.parentId() != null && event.parentCommentUserId() != null) {
-            long recipient = event.parentCommentUserId();
-            if (recipient != event.authorUserId()) {
-                notificationService.create(recipient, NotificationType.COMMENT_REPLY, base);
+            if (event.parentId() != null && event.parentCommentUserId() != null) {
+                long recipient = event.parentCommentUserId();
+                if (recipient != event.authorUserId()) {
+                    notificationService.create(recipient, NotificationType.COMMENT_REPLY, base);
+                }
+                return;
             }
-            return;
-        }
 
-        long recipient = event.postCreatorId();
-        if (recipient != event.authorUserId()) {
-            notificationService.create(recipient, NotificationType.COMMENT_POST, base);
+            long recipient = event.postCreatorId();
+            if (recipient != event.authorUserId()) {
+                notificationService.create(recipient, NotificationType.COMMENT_POST, base);
+            }
+        } catch (Exception ex) {
+            log.error("评论通知写入失败 commentId={}: {}", event.commentId(), ex.getMessage(), ex);
         }
     }
 
     @Async("notificationExecutor")
     @EventListener
     public void onFollowCreated(FollowCreatedEvent event) {
-        if (event.fromUserId() == event.toUserId()) {
-            return;
+        try {
+            if (event.fromUserId() == event.toUserId()) {
+                return;
+            }
+            Map<String, Object> payload = basePayload(event.fromUserId(), event.fromNickname(), event.fromAvatar());
+            notificationService.create(event.toUserId(), NotificationType.FOLLOW, payload);
+        } catch (Exception ex) {
+            log.error("关注通知写入失败 fromUserId={} toUserId={}: {}",
+                    event.fromUserId(), event.toUserId(), ex.getMessage(), ex);
         }
-        Map<String, Object> payload = basePayload(event.fromUserId(), event.fromNickname(), event.fromAvatar());
-        notificationService.create(event.toUserId(), NotificationType.FOLLOW, payload);
     }
 
     @Async("notificationExecutor")
     @EventListener
     public void onCounterEvent(CounterEvent event) {
-        if (!"like".equals(event.getMetric()) || event.getDelta() != 1) {
-            return;
-        }
-        if (!"post".equals(event.getEntityType())) {
-            return;
-        }
-        if (event.getPostCreatorId() == null) {
-            return;
-        }
-
-        long postId;
         try {
-            postId = Long.parseLong(event.getEntityId());
-        } catch (NumberFormatException e) {
-            return;
-        }
+            if (!"like".equals(event.getMetric()) || event.getDelta() != 1) {
+                return;
+            }
+            if (!"post".equals(event.getEntityType())) {
+                return;
+            }
+            if (event.getPostCreatorId() == null) {
+                return;
+            }
 
-        long recipient = event.getPostCreatorId();
-        if (recipient == event.getUserId()) {
-            return;
-        }
+            long postId;
+            try {
+                postId = Long.parseLong(event.getEntityId());
+            } catch (NumberFormatException e) {
+                return;
+            }
 
-        if (notificationService.hasUnreadLikePost(recipient, postId)) {
-            return;
-        }
+            long recipient = event.getPostCreatorId();
+            if (recipient == event.getUserId()) {
+                return;
+            }
 
-        Map<String, Object> payload = basePayload(
-                event.getUserId(),
-                event.getActorNickname(),
-                event.getActorAvatar()
-        );
-        payload.put("postId", postId);
-        payload.put("postSlug", event.getPostSlug());
-        payload.put("postTitle", event.getPostTitle());
-        notificationService.create(recipient, NotificationType.LIKE_POST, payload);
+            if (notificationService.hasUnreadLikePost(recipient, postId)) {
+                return;
+            }
+
+            Map<String, Object> payload = basePayload(
+                    event.getUserId(),
+                    event.getActorNickname(),
+                    event.getActorAvatar()
+            );
+            payload.put("postId", postId);
+            payload.put("postSlug", event.getPostSlug());
+            payload.put("postTitle", event.getPostTitle());
+            notificationService.create(recipient, NotificationType.LIKE_POST, payload);
+        } catch (Exception ex) {
+            log.error("点赞通知写入失败 postId={} actorUserId={}: {}",
+                    event.getEntityId(), event.getUserId(), ex.getMessage(), ex);
+        }
     }
 
     private Map<String, Object> basePayload(long actorUserId, String nickname, String avatar) {

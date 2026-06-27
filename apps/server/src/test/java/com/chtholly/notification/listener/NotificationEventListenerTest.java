@@ -1,6 +1,7 @@
 package com.chtholly.notification.listener;
 
 import com.chtholly.counter.event.CounterEvent;
+import com.chtholly.notification.event.CommentCreatedEvent;
 import com.chtholly.notification.model.NotificationType;
 import com.chtholly.notification.service.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,8 +13,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -29,6 +33,16 @@ class NotificationEventListenerTest {
     @BeforeEach
     void setUp() {
         listener = new NotificationEventListener(notificationService);
+    }
+
+    @Test
+    void given_notificationCreateFails_when_onCommentCreated_then_doesNotPropagate() {
+        CommentCreatedEvent event = new CommentCreatedEvent(
+                100L, 1L, null, 3L, "nick", "avatar", 2L, "title", "slug", null);
+        doThrow(new RuntimeException("db down")).when(notificationService)
+                .create(eq(2L), eq(NotificationType.COMMENT_POST), any());
+
+        assertThatCode(() -> listener.onCommentCreated(event)).doesNotThrowAnyException();
     }
 
     @Test
