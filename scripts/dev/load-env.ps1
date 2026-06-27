@@ -19,4 +19,9 @@ if (-not (Test-Path $envFile)) {
 if (-not $env:CANAL_ENABLED) { $env:CANAL_ENABLED = "false" }
 if (-not $env:LLM_ENABLED) { $env:LLM_ENABLED = "false" }
 
+# 若 .env 指定 JAVA_HOME，优先用于 Maven / Spring Boot（项目目标 JDK 21）
+if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME "bin\java.exe"))) {
+    $env:Path = (Join-Path $env:JAVA_HOME "bin") + ";" + $env:Path
+}
+
 Set-Location $RepoRoot

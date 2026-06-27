@@ -29,6 +29,11 @@ public interface PostMapper {
                                               @Param("limit") int limit,
                                               @Param("offset") int offset);
 
+    List<PostFeedRow> listFeedPublicByTag(@Param("tagName") String tagName,
+                                          @Param("creatorId") Long creatorId,
+                                          @Param("limit") int limit,
+                                          @Param("offset") int offset);
+
     // 我的帖子列表（当前用户已发布内容），置顶优先，其次按发布时间倒序。
     List<PostFeedRow> listMyPublished(@Param("creatorId") long creatorId,
                                                                               @Param("limit") int limit,

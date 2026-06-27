@@ -19,6 +19,7 @@ import com.chtholly.counter.service.CounterService;
 import com.chtholly.storage.config.OssProperties;
 import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.relation.outbox.OutboxMapper;
+import com.chtholly.tag.service.TagService;
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import jakarta.annotation.Resource;
 import org.slf4j.Logger;
@@ -58,6 +59,7 @@ public class PostServiceImpl implements PostService {
     private final ConcurrentHashMap<String, Object> singleFlight = new ConcurrentHashMap<>();
     private final PostRagIndexer ragIndexService;
     private final OutboxMapper outboxMapper;
+    private final TagService tagService;
 
     // 手动编写构造器，Spring的@Qualifier直接标注在参数上（核心）
     public PostServiceImpl(
@@ -72,7 +74,8 @@ public class PostServiceImpl implements PostService {
             @Qualifier("postDetailCache") Cache<String, PostDetailResponse> postDetailCache,
             HotKeyDetector hotKey,
             PostRagIndexer ragIndexService,
-            OutboxMapper outboxMapper
+            OutboxMapper outboxMapper,
+            TagService tagService
     ) {
         this.mapper = mapper;
         this.idGen = idGen;
@@ -86,6 +89,7 @@ public class PostServiceImpl implements PostService {
         this.hotKey = hotKey;
         this.ragIndexService = ragIndexService;
         this.outboxMapper = outboxMapper;
+        this.tagService = tagService;
     }
     /**
      * 创建草稿并返回新 ID。
@@ -149,6 +153,13 @@ public class PostServiceImpl implements PostService {
     public void updateMetadata(long creatorId, long id, String title, Long tagId, List<String> tags, List<String> imgUrls, String visible, Boolean isTop, String description) {
         invalidateCache(id);
 
+        Post existing = mapper.findById(id);
+        if (existing == null || !existing.getCreatorId().equals(creatorId)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
+        }
+        List<String> oldTags = parseStringArray(existing.getTags());
+        boolean wasPublished = "published".equals(existing.getStatus());
+
         Post post = Post.builder()
                 .id(id)
                 .creatorId(creatorId)
@@ -167,6 +178,10 @@ public class PostServiceImpl implements PostService {
 
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
+        }
+
+        if (wasPublished) {
+            tagService.syncPublishedPostTags(creatorId, oldTags, tags);
         }
 
         // 元数据变更后写入 Outbox 事件，驱动搜索索引更新
@@ -197,6 +212,11 @@ public class PostServiceImpl implements PostService {
             String base = SlugUtils.fromTitle(post.getTitle());
             String unique = SlugUtils.ensureUnique(base, id, mapper::findIdBySlug);
             mapper.updateSlug(id, creatorId, unique);
+            post = mapper.findById(id);
+        }
+
+        if (post != null) {
+            tagService.syncPublishedPostTags(creatorId, List.of(), parseStringArray(post.getTags()));
         }
 
         try {
@@ -263,9 +283,20 @@ public class PostServiceImpl implements PostService {
     public void delete(long creatorId, long id) {
         invalidateCache(id);
 
+        Post existing = mapper.findById(id);
+        if (existing == null || !existing.getCreatorId().equals(creatorId)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
+        }
+        boolean wasPublished = "published".equals(existing.getStatus());
+        List<String> oldTags = parseStringArray(existing.getTags());
+
         int updated = mapper.softDelete(id, creatorId);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
+        }
+
+        if (wasPublished) {
+            tagService.releasePublishedPostTags(oldTags);
         }
 
         // 写入 Outbox 事件，驱动搜索索引软删

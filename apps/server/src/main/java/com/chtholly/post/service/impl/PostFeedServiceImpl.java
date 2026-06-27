@@ -86,7 +86,10 @@ public class PostFeedServiceImpl implements PostFeedService {
      * @param currentUserIdNullable 当前用户 ID（为空表示匿名）
      * @return 带分页信息的 Feed 列表（liked/faved 为用户维度）
      */
-    public FeedPageResponse getPublicFeed(int page, int size, Long ownerId, Long currentUserIdNullable) {
+    public FeedPageResponse getPublicFeed(int page, int size, Long ownerId, String tag, Long currentUserIdNullable) {
+        if (tag != null && !tag.isBlank()) {
+            return getPublicFeedByTag(tag.trim(), ownerId, page, size, currentUserIdNullable);
+        }
         if (ownerId != null) {
             return getPublicFeedByOwner(ownerId, page, size, currentUserIdNullable);
         }
@@ -200,6 +203,23 @@ public class PostFeedServiceImpl implements PostFeedService {
 
         List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, false);
         log.info("feed.public source=db ownerId={} page={} size={} hasMore={}", ownerId, safePage, safeSize, hasMore);
+        return new FeedPageResponse(items, safePage, safeSize, hasMore);
+    }
+
+    /** 按标签过滤的公开 Feed（不走页面级缓存，M1 直查 DB）。 */
+    private FeedPageResponse getPublicFeedByTag(String tagName, Long ownerId, int page, int size, Long currentUserIdNullable) {
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        int safePage = Math.max(page, 1);
+        int offset = (safePage - 1) * safeSize;
+
+        List<PostFeedRow> rows = mapper.listFeedPublicByTag(tagName, ownerId, safeSize + 1, offset);
+        boolean hasMore = rows.size() > safeSize;
+        if (hasMore) {
+            rows = rows.subList(0, safeSize);
+        }
+
+        List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, false);
+        log.info("feed.public source=db tag={} ownerId={} page={} size={} hasMore={}", tagName, ownerId, safePage, safeSize, hasMore);
         return new FeedPageResponse(items, safePage, safeSize, hasMore);
     }
 

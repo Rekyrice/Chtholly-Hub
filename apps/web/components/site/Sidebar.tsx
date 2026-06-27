@@ -1,21 +1,14 @@
 import Link from "next/link";
 import { postService } from "@/lib/services/postService";
+import { tagService } from "@/lib/services/tagService";
 import { siteConfig } from "@/lib/site.config";
 import type { FeedItem } from "@/lib/types/post";
-
-/** 从 Feed 聚合唯一标签 */
-function collectTags(items: FeedItem[]) {
-  const set = new Set<string>();
-  for (const item of items) {
-    for (const tag of item.tags) {
-      if (tag) set.add(tag);
-    }
-  }
-  return [...set].sort((a, b) => a.localeCompare(b, "zh-CN"));
-}
+import type { TagItem } from "@/lib/types/tag";
 
 export default async function Sidebar() {
   let items: FeedItem[] = [];
+  let tags: TagItem[] = [];
+
   try {
     const feed = await postService.feed(1, 50, siteConfig.ownerUserId);
     items = feed.items;
@@ -23,7 +16,12 @@ export default async function Sidebar() {
     items = [];
   }
 
-  const tags = collectTags(items);
+  try {
+    tags = await tagService.list(50);
+  } catch {
+    tags = [];
+  }
+
   const profileName = siteConfig.author.name;
 
   return (
@@ -120,8 +118,8 @@ export default async function Sidebar() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {tags.map((tag) => (
               <Link
-                key={tag}
-                href={`/tag/${encodeURIComponent(tag)}`}
+                key={tag.id}
+                href={`/tag/${encodeURIComponent(tag.name)}`}
                 style={{
                   padding: "3px 10px",
                   fontSize: 12,
@@ -131,8 +129,9 @@ export default async function Sidebar() {
                   letterSpacing: 0.5,
                 }}
                 className="hover:opacity-80 transition-opacity"
+                title={`${tag.usageCount} 篇`}
               >
-                {tag}
+                {tag.name}
               </Link>
             ))}
           </div>

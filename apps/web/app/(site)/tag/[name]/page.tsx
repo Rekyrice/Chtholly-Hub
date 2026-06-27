@@ -1,6 +1,7 @@
 import Sidebar from "@/components/site/Sidebar";
 import PostCard from "@/components/site/PostCard";
 import { postService } from "@/lib/services/postService";
+import { tagService } from "@/lib/services/tagService";
 import { siteConfig } from "@/lib/site.config";
 
 interface Props {
@@ -20,11 +21,21 @@ export default async function TagPage({ params }: Props) {
   const tagName = decodeURIComponent(name);
 
   let items: Awaited<ReturnType<typeof postService.feed>>["items"] = [];
+  let usageCount: number | null = null;
+
   try {
-    const feed = await postService.feed(1, 100, siteConfig.ownerUserId);
-    items = feed.items.filter((item) => item.tags.includes(tagName));
+    const feed = await postService.feed(1, 50, siteConfig.ownerUserId, tagName);
+    items = feed.items;
   } catch {
     items = [];
+  }
+
+  try {
+    const tags = await tagService.list(200);
+    const matched = tags.find((t) => t.name === tagName);
+    usageCount = matched?.usageCount ?? items.length;
+  } catch {
+    usageCount = items.length;
   }
 
   return (
@@ -42,7 +53,7 @@ export default async function TagPage({ params }: Props) {
             # {tagName}
           </span>
           <span style={{ fontSize: 14, color: "#757575" }}>
-            {items.length} 篇文章
+            {usageCount ?? items.length} 篇文章
           </span>
         </div>
 

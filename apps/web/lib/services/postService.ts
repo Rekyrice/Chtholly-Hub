@@ -20,10 +20,15 @@ export type PostPatchRequest = {
 };
 
 export const postService = {
-  feed: (page = 1, size = 20, ownerId?: number) =>
-    apiFetch<FeedResponse>(
-      `${POST_PREFIX}/feed?page=${page}&size=${size}${ownerId ? `&ownerId=${ownerId}` : ""}`,
-    ),
+  feed: (page = 1, size = 20, ownerId?: number, tag?: string) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      size: String(size),
+    });
+    if (ownerId != null) params.set("ownerId", String(ownerId));
+    if (tag) params.set("tag", tag);
+    return apiFetch<FeedResponse>(`${POST_PREFIX}/feed?${params.toString()}`);
+  },
 
   detailBySlug: (slug: string) =>
     apiFetch<PostDetailResponse>(`${POST_PREFIX}/detail/by-slug/${slug}`),

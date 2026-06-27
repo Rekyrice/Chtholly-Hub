@@ -115,9 +115,10 @@ public class PostController {
     public FeedPageResponse feed(@RequestParam(value = "page", defaultValue = "1") int page,
                                  @RequestParam(value = "size", defaultValue = "20") int size,
                                  @RequestParam(value = "ownerId", required = false) Long ownerId,
+                                 @RequestParam(value = "tag", required = false) String tag,
                                  @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        return feedService.getPublicFeed(page, size, ownerId, userId);
+        return feedService.getPublicFeed(page, size, ownerId, tag, userId);
     }
 
     /**

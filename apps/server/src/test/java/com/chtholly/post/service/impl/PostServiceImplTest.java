@@ -11,8 +11,10 @@ import com.chtholly.post.api.dto.FeedPageResponse;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.mapper.PostMapper;
-import com.chtholly.llm.rag.RagIndexService;
+import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.relation.outbox.OutboxMapper;
+import com.chtholly.tag.service.TagService;
+import com.chtholly.post.model.Post;
 import com.chtholly.storage.config.OssProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,9 +56,11 @@ class PostServiceImplTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
     @Mock
-    private RagIndexService ragIndexService;
+    private PostRagIndexer ragIndexService;
     @Mock
     private OutboxMapper outboxMapper;
+    @Mock
+    private TagService tagService;
 
     private Cache<String, FeedPageResponse> feedPublicCache;
     private Cache<String, PostDetailResponse> postDetailCache;
@@ -85,9 +89,19 @@ class PostServiceImplTest {
                 postDetailCache,
                 hotKeyDetector,
                 ragIndexService,
-                outboxMapper
+                outboxMapper,
+                tagService
         );
 
+    }
+
+    private Post draftOwnedBy(long postId, long creatorId) {
+        return Post.builder()
+                .id(postId)
+                .creatorId(creatorId)
+                .status("draft")
+                .tags("[]")
+                .build();
     }
 
     @Test
@@ -102,6 +116,7 @@ class PostServiceImplTest {
         feedPublicCache.put(currentPageKey, new FeedPageResponse(List.of(), 1, 20, false));
         feedPublicCache.put(previousPageKey, new FeedPageResponse(List.of(), 2, 20, false));
 
+        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(currentIndexKey)).thenReturn(Set.of(currentPageKey, ""));
         when(setOperations.members(previousIndexKey)).thenReturn(Set.of(previousPageKey));
@@ -121,6 +136,7 @@ class PostServiceImplTest {
         String currentIndexKey = "feed:public:index:" + postId + ":" + hourSlot;
         String stalePageKey = "feed:public:10:9:v1";
 
+        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(currentIndexKey)).thenReturn(Set.of(stalePageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
@@ -138,6 +154,7 @@ class PostServiceImplTest {
         String pageKey = "feed:public:20:3:v1";
         feedPublicCache.put(pageKey, new FeedPageResponse(List.of(), 3, 20, false));
 
+        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(setOperations.members(indexKey)).thenReturn(Set.of(pageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
         when(mapper.softDelete(postId, 1L)).thenReturn(1);
@@ -191,6 +208,7 @@ class PostServiceImplTest {
         System.out.println("  └─ feedPublicCache.getIfPresent('" + pageKey + "') = "
                 + (feedPublicCache.getIfPresent(pageKey) != null ? "✅ 存在" : "❌ 不存在"));
 
+        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(indexKey)).thenReturn(Set.of(pageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
@@ -231,6 +249,7 @@ class PostServiceImplTest {
         System.out.println("  └─ feedPublicCache.getIfPresent('" + stalePageKey + "') = "
                 + (feedPublicCache.getIfPresent(stalePageKey) != null ? "❌ 意外存在" : "✅ 不存在（符合预期）"));
 
+        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(indexKey)).thenReturn(Set.of(stalePageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
@@ -267,6 +286,7 @@ class PostServiceImplTest {
         System.out.println("  ├─ Redis 索引 Key: " + indexKey);
         System.out.println("  └─ 模拟脏数据集合: [" + validPageKey + ", null, \"\"]");
 
+        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(indexKey)).thenReturn(keysWithNulls);
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
@@ -314,6 +334,7 @@ class PostServiceImplTest {
         System.out.println("  ├─ 当前小时缓存 '" + currentPageKey + "': ✅ 存在");
         System.out.println("  └─ 前一小时缓存 '" + previousPageKey + "': ✅ 存在");
 
+        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(currentIndexKey)).thenReturn(Set.of(currentPageKey));
         when(setOperations.members(previousIndexKey)).thenReturn(Set.of(previousPageKey));
@@ -359,6 +380,7 @@ class PostServiceImplTest {
         System.out.println("\n📦 [初始状态] 该帖子尚未被任何 feed 流缓存");
         System.out.println("  └─ Redis Set 返回空集合: Set.of()");
 
+        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(currentIndexKey)).thenReturn(Set.of());
         when(setOperations.members(previousIndexKey)).thenReturn(Set.of());

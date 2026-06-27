@@ -137,6 +137,31 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <!-- 按标签名过滤公开 Feed（JSON 数组精确匹配） -->
+    <select id="listFeedPublicByTag" resultType="com.chtholly.post.model.PostFeedRow">
+        SELECT
+            p.id,
+            p.title,
+            p.slug,
+            p.description,
+            p.tags,
+            p.img_urls AS imgUrls,
+            u.avatar AS authorAvatar,
+            u.nickname AS authorNickname,
+            u.tags_json AS authorTagJson,
+            p.publish_time AS publishTime,
+            p.is_top AS isTop
+        FROM posts p
+        JOIN users u ON p.creator_id = u.id
+        WHERE p.status = 'published' AND p.visible = 'public'
+          AND JSON_CONTAINS(p.tags, JSON_QUOTE(#{tagName}))
+        <if test="creatorId != null">
+          AND p.creator_id = #{creatorId}
+        </if>
+        ORDER BY p.publish_time DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <!-- 我的帖子列表查询（当前用户的已发布内容），置顶优先，其次按发布时间倒序 -->
     <select id="listMyPublished" resultType="com.chtholly.post.model.PostFeedRow">
         SELECT
