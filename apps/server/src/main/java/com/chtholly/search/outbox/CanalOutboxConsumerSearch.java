@@ -54,32 +54,36 @@ public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
     protected void process(String sourceTopic, String messageKey, String payload, int retryCount) throws Exception {
         List<JsonNode> rows = OutboxMessageUtil.extractRows(objectMapper, payload);
         for (JsonNode row : rows) {
-            Long eventId = OutboxMessageUtil.extractEventId(row);
-            if (eventId != null && idempotencyGuard.isAlreadyConsumed(IDEMPOTENCY_SCOPE, eventId)) {
-                continue;
-            }
+            processOutboxRow(row);
+        }
+    }
 
-            JsonNode payloadNode = row.get("payload");
-            if (payloadNode == null) {
-                continue;
-            }
+    private void processOutboxRow(JsonNode row) throws Exception {
+        Long eventId = OutboxMessageUtil.extractEventId(row);
+        if (eventId != null && idempotencyGuard.isAlreadyConsumed(IDEMPOTENCY_SCOPE, eventId)) {
+            return;
+        }
 
-            JsonNode eventPayload = objectMapper.readTree(payloadNode.asText());
-            String entity = text(eventPayload.get("entity"));
-            String op = text(eventPayload.get("op"));
-            Long id = asLong(eventPayload.get("id"));
-            if (!"post".equals(entity) || id == null) {
-                continue;
-            }
+        JsonNode payloadNode = row.get("payload");
+        if (payloadNode == null) {
+            return;
+        }
 
-            if ("delete".equalsIgnoreCase(op)) {
-                indexService.softDeletePost(id);
-            } else {
-                indexService.upsertPost(id);
-            }
-            if (eventId != null) {
-                idempotencyGuard.markConsumed(IDEMPOTENCY_SCOPE, eventId);
-            }
+        JsonNode eventPayload = objectMapper.readTree(payloadNode.asText());
+        String entity = text(eventPayload.get("entity"));
+        String op = text(eventPayload.get("op"));
+        Long postId = asLong(eventPayload.get("id"));
+        if (!"post".equals(entity) || postId == null) {
+            return;
+        }
+
+        if ("delete".equalsIgnoreCase(op)) {
+            indexService.softDeletePost(postId);
+        } else {
+            indexService.upsertPost(postId);
+        }
+        if (eventId != null) {
+            idempotencyGuard.markConsumed(IDEMPOTENCY_SCOPE, eventId);
         }
     }
 
