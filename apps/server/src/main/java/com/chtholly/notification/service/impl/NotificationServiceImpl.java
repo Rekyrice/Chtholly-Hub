@@ -6,6 +6,7 @@ import com.chtholly.notification.api.dto.NotificationListResponse;
 import com.chtholly.notification.api.dto.NotificationResponse;
 import com.chtholly.notification.api.dto.UnreadCountResponse;
 import com.chtholly.notification.mapper.NotificationMapper;
+import com.chtholly.notification.model.NotificationCountStats;
 import com.chtholly.notification.model.NotificationRow;
 import com.chtholly.notification.model.NotificationType;
 import com.chtholly.notification.service.NotificationService;
@@ -13,12 +14,14 @@ import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NotificationServiceImpl implements NotificationService {
@@ -39,8 +42,9 @@ public class NotificationServiceImpl implements NotificationService {
         List<NotificationResponse> items = notificationMapper.listByUser(userId, safeSize, offset).stream()
                 .map(this::toResponse)
                 .toList();
-        long total = notificationMapper.countByUser(userId);
-        long unread = notificationMapper.countUnread(userId);
+        NotificationCountStats stats = notificationMapper.countStatsByUser(userId);
+        long total = stats == null ? 0L : stats.getTotal();
+        long unread = stats == null ? 0L : stats.getUnread();
         return new NotificationListResponse(items, total, unread);
     }
 
@@ -77,16 +81,34 @@ public class NotificationServiceImpl implements NotificationService {
         }
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasUnreadLikePost(long userId, long postId) {
+        return notificationMapper.countUnreadLikePost(userId, NotificationType.LIKE_POST.name(), postId) > 0;
+    }
+
+    @Override
+    @Transactional
+    public int cleanExpired(long userId, int retentionDays) {
+        return notificationMapper.deleteExpiredReadByUser(userId, retentionDays);
+    }
+
+    @Override
+    @Transactional
+    public int cleanExpiredAll(int retentionDays) {
+        return notificationMapper.deleteExpiredRead(retentionDays);
+    }
+
     private NotificationResponse toResponse(NotificationRow row) {
         Map<String, Object> payload = parsePayload(row.getPayload());
-        NotificationType type = NotificationType.valueOf(row.getType());
+        NotificationType type = parseType(row.getType());
         String actorNickname = str(payload.get("actorNickname"));
         String postTitle = str(payload.get("postTitle"));
         String message = buildMessage(type, actorNickname, postTitle);
 
         return new NotificationResponse(
                 String.valueOf(row.getId()),
-                row.getType(),
+                type == NotificationType.UNKNOWN ? row.getType() : type.name(),
                 str(payload.get("actorUserId")),
                 actorNickname,
                 str(payload.get("actorAvatar")),
@@ -98,6 +120,18 @@ public class NotificationServiceImpl implements NotificationService {
                 row.getCreatedAt(),
                 row.getReadAt()
         );
+    }
+
+    private NotificationType parseType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return NotificationType.UNKNOWN;
+        }
+        try {
+            return NotificationType.valueOf(raw);
+        } catch (IllegalArgumentException ex) {
+            log.warn("未知通知类型: {}", raw);
+            return NotificationType.UNKNOWN;
+        }
     }
 
     private Map<String, Object> parsePayload(String raw) {
@@ -122,6 +156,7 @@ public class NotificationServiceImpl implements NotificationService {
                     ? name + " 赞了你的帖子"
                     : name + " 赞了《" + postTitle + "》";
             case FOLLOW -> name + " 关注了你";
+            case UNKNOWN -> "你有一条新通知";
         };
     }
 

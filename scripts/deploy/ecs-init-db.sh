@@ -37,7 +37,7 @@ echo ">> 导入 schema.sql"
 "${COMPOSE[@]}" exec -T "$MYSQL_SERVICE" mysql -uroot -p"$MYSQL_PASSWORD" --default-character-set=utf8mb4 "$DB" \
   < apps/server/db/schema.sql
 
-for f in apps/server/db/migration/V*.sql; do
+for f in $(ls apps/server/db/migration/V*.sql | sort -t'_' -k1 -V); do
   echo ">> migration: $(basename "$f")"
   "${COMPOSE[@]}" exec -T "$MYSQL_SERVICE" mysql -uroot -p"$MYSQL_PASSWORD" --default-character-set=utf8mb4 "$DB" < "$f"
 done

@@ -30,6 +30,10 @@ if ($other) {
 
 Set-Location (Join-Path $RepoRoot "apps/server")
 
+Write-Host "Applying DB migrations..." -ForegroundColor DarkGray
+& (Join-Path $PSScriptRoot "apply-migrations.ps1")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "Compiling..." -ForegroundColor DarkGray
 & mvn -q compile "-Dmaven.test.skip=true"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

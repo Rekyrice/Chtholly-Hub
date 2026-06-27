@@ -11,12 +11,13 @@ import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** 监听业务事件并写入通知（Kafka 降级为 Spring ApplicationEvent）。 */
+/** 监听业务事件并异步写入通知。 */
 @Component
 @RequiredArgsConstructor
 public class NotificationEventListener {
@@ -25,6 +26,7 @@ public class NotificationEventListener {
     private final PostMapper postMapper;
     private final UserMapper userMapper;
 
+    @Async("notificationExecutor")
     @EventListener
     public void onCommentCreated(CommentCreatedEvent event) {
         Map<String, Object> base = basePayload(event.authorUserId(), event.authorNickname(), event.authorAvatar());
@@ -47,6 +49,7 @@ public class NotificationEventListener {
         }
     }
 
+    @Async("notificationExecutor")
     @EventListener
     public void onFollowCreated(FollowCreatedEvent event) {
         if (event.fromUserId() == event.toUserId()) {
@@ -56,6 +59,7 @@ public class NotificationEventListener {
         notificationService.create(event.toUserId(), NotificationType.FOLLOW, payload);
     }
 
+    @Async("notificationExecutor")
     @EventListener
     public void onCounterEvent(CounterEvent event) {
         if (!"like".equals(event.getMetric()) || event.getDelta() != 1) {
@@ -78,6 +82,10 @@ public class NotificationEventListener {
         }
         long recipient = post.getCreatorId();
         if (recipient == event.getUserId()) {
+            return;
+        }
+
+        if (notificationService.hasUnreadLikePost(recipient, postId)) {
             return;
         }
 

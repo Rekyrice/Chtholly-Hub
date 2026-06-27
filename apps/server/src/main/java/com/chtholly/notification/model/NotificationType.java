@@ -9,5 +9,7 @@ public enum NotificationType {
     /** 有人赞了你的帖子 */
     LIKE_POST,
     /** 有人关注了你 */
-    FOLLOW
+    FOLLOW,
+    /** 未知类型（兼容旧数据或新类型未升级） */
+    UNKNOWN
 }
