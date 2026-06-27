@@ -15,16 +15,23 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * ReAct 主循环：Think → Act → Observe，直至 final 或达到步数上限。
+ * <p>
+ * LLM 调用在虚拟线程上执行并带超时；最终流式回答在 WebSocket 虚拟线程执行器中阻塞可接受。
  */
 @Slf4j
 @Service
@@ -32,12 +39,13 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class ChthollyAgent {
 
-    private static final Pattern JSON_BLOCK = Pattern.compile("\\{[\\s\\S]*}", Pattern.DOTALL);
+    private static final ExecutorService LLM_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
     private final ChatClient chatClient;
     private final AgentProperties properties;
     private final ObjectMapper objectMapper;
     private final List<AgentTool> tools;
+    private final AgentJsonExtractor jsonExtractor;
 
     /**
      * 执行一轮对话，通过 sink 推送 think/act/observe/delta/final/error 事件。
@@ -67,16 +75,11 @@ public class ChthollyAgent {
         for (int step = 0; step < maxSteps; step++) {
             String llmOut;
             try {
-                llmOut = chatClient.prompt()
-                        .system(system)
-                        .user(String.join("\n\n", transcript))
-                        .options(DeepSeekChatOptions.builder()
-                                .model("deepseek-chat")
-                                .temperature(0.1)
-                                .maxTokens(1024)
-                                .build())
-                        .call()
-                        .content();
+                llmOut = callLlm(system, String.join("\n\n", transcript));
+            } catch (TimeoutException e) {
+                log.warn("Agent LLM 调用超时 (>{}s)", properties.getLlmTimeoutSeconds());
+                emitError(sink, "模型响应超时，请稍后重试");
+                return;
             } catch (Exception e) {
                 log.warn("Agent LLM 调用失败: {}", e.getMessage());
                 emitError(sink, "模型调用失败，请检查 LLM 配置");
@@ -154,17 +157,15 @@ public class ChthollyAgent {
                 只陈述 Observation 中有依据的事实；若工具未返回数据请如实说明。
                 不要输出 JSON 或 markdown 代码块。""";
 
+        int timeoutSec = Math.max(1, properties.getLlmTimeoutSeconds());
         try {
             Flux<String> flux = chatClient.prompt()
                     .system(system)
                     .user(context + "\n\n请回答用户的当前问题。")
-                    .options(DeepSeekChatOptions.builder()
-                            .model("deepseek-chat")
-                            .temperature(0.3)
-                            .maxTokens(1024)
-                            .build())
+                    .options(chatOptions(0.3, 1024))
                     .stream()
-                    .content();
+                    .content()
+                    .timeout(Duration.ofSeconds(timeoutSec));
 
             StringBuilder full = new StringBuilder();
             flux.doOnNext(chunk -> {
@@ -174,16 +175,79 @@ public class ChthollyAgent {
                 }
             }).blockLast();
 
-            String answer = full.toString();
+            String answer = truncateAnswer(full.toString());
             emitFinal(sink, answer);
             if (memory != null && !answer.isBlank()) {
                 memory.add(AgentTurn.user(question.trim()));
                 memory.add(AgentTurn.assistant(answer));
             }
         } catch (Exception e) {
+            if (isTimeout(e)) {
+                log.warn("Agent 流式回答超时 (>{}s)", timeoutSec);
+                emitError(sink, "生成回答超时，请稍后重试");
+                return;
+            }
             log.warn("Agent 流式回答失败: {}", e.getMessage());
             emitError(sink, "生成回答失败，请重试");
         }
+    }
+
+    private String callLlm(String system, String userPrompt) throws Exception {
+        int timeoutSec = Math.max(1, properties.getLlmTimeoutSeconds());
+        CompletableFuture<String> future = CompletableFuture.supplyAsync(
+                () -> chatClient.prompt()
+                        .system(system)
+                        .user(userPrompt)
+                        .options(chatOptions(0.1, 1024))
+                        .call()
+                        .content(),
+                LLM_EXECUTOR);
+        try {
+            return future.get(timeoutSec, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw e;
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (cause instanceof Exception ex) {
+                throw ex;
+            }
+            throw new RuntimeException(cause);
+        }
+    }
+
+    private DeepSeekChatOptions chatOptions(double temperature, int maxTokens) {
+        return DeepSeekChatOptions.builder()
+                .model(properties.getModel())
+                .temperature(temperature)
+                .maxTokens(maxTokens)
+                .build();
+    }
+
+    private String truncateAnswer(String answer) {
+        if (answer == null || answer.isEmpty()) {
+            return "";
+        }
+        int max = Math.max(1, properties.getMaxResponseChars());
+        if (answer.length() <= max) {
+            return answer;
+        }
+        return answer.substring(0, max);
+    }
+
+    private static boolean isTimeout(Throwable e) {
+        Throwable cur = e;
+        while (cur != null) {
+            if (cur instanceof TimeoutException) {
+                return true;
+            }
+            String msg = cur.getMessage();
+            if (msg != null && msg.toLowerCase().contains("timeout")) {
+                return true;
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 
     /** 按字符节流 delta，避免前端一次性刷完。 */
@@ -207,10 +271,6 @@ public class ChthollyAgent {
                 }
             }
         }
-    }
-
-    private boolean hasToolObservation(List<String> transcript) {
-        return transcript.stream().anyMatch(line -> line.startsWith("Observation:"));
     }
 
     private boolean usedBangumiTool(List<String> transcript) {
@@ -343,7 +403,7 @@ public class ChthollyAgent {
     }
 
     private AgentAction parseAction(String llmOut) throws Exception {
-        String json = extractJson(llmOut);
+        String json = jsonExtractor.extractActionJson(llmOut);
         JsonNode node = objectMapper.readTree(json);
         String action = node.path("action").asText(null);
         if (action == null || action.isBlank()) {
@@ -352,14 +412,6 @@ public class ChthollyAgent {
         JsonNode input = node.path("input");
         String answer = node.path("answer").asText(null);
         return new AgentAction(action, input.isMissingNode() ? null : input, answer);
-    }
-
-    private String extractJson(String text) {
-        Matcher m = JSON_BLOCK.matcher(text == null ? "" : text.trim());
-        if (m.find()) {
-            return m.group();
-        }
-        throw new IllegalArgumentException("no json found");
     }
 
     private Map<String, Object> jsonToMap(JsonNode input) {
