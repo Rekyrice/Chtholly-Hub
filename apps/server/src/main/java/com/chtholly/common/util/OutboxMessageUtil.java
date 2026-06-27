@@ -57,4 +57,22 @@ public final class OutboxMessageUtil {
             return Collections.emptyList();
         }
     }
+
+    /**
+     * 从 outbox 行中提取事件 ID。
+     */
+    public static Long extractEventId(JsonNode row) {
+        if (row == null) {
+            return null;
+        }
+        JsonNode idNode = row.get("id");
+        if (idNode == null || idNode.isNull()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(idNode.asText());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
 }
