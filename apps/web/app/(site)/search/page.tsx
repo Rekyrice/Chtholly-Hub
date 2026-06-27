@@ -57,7 +57,9 @@ export default async function SearchPage({ searchParams }: Props) {
               「{keyword}」共 {items.length} 条结果
             </p>
             {items.length > 0 ? (
-              items.map((post) => <PostCard key={post.id} post={post} />)
+              items.map((post) => (
+                <PostCard key={post.id} post={post} highlightDescription />
+              ))
             ) : (
               <div className="post-card p-10 text-center" style={{ color: "#9e9e9e" }}>
                 未找到相关帖子

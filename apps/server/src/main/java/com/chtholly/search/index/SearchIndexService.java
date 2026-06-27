@@ -19,7 +19,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
-import jakarta.annotation.PostConstruct;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -47,27 +46,35 @@ public class SearchIndexService {
     private final RestTemplate http = new RestTemplate();
 
     /**
-     * 启动时若索引为空，进行历史数据回灌（分页）。
+     * 索引为空时回灌已发布帖子（由 SearchIndexInitializer 在索引就绪后调用）。
      */
-    @PostConstruct
     public void ensureBackfill() {
         try {
+            if (!es.indices().exists(e -> e.index(INDEX)).value()) {
+                log.warn("Search index backfill skipped: index {} not found", INDEX);
+                return;
+            }
             long cnt = es.count(c -> c.index(INDEX)).count();
-            if (cnt > 0) return;
+            if (cnt > 0) {
+                return;
+            }
+            log.info("Search index backfill started");
             int limit = 500;
             int offset = 0;
+            int indexed = 0;
             while (true) {
                 List<PostFeedRow> rows = postMapper.listFeedPublic(limit, offset);
                 if (rows == null || rows.isEmpty()) {
-                    // 没有更多数据，结束回灌
                     break;
                 }
                 for (PostFeedRow r : rows) {
                     upsertPost(r.getId());
+                    indexed++;
                 }
                 offset += rows.size();
             }
-            log.info("Search index backfill completed: {} documents", es.count(c -> c.index(INDEX)).count());
+            log.info("Search index backfill completed: {} posts processed, {} documents in index",
+                    indexed, es.count(c -> c.index(INDEX)).count());
         } catch (Exception e) {
             log.warn("Search index backfill skipped: {}", e.getMessage());
         }

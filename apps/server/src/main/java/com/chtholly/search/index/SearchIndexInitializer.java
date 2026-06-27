@@ -25,21 +25,23 @@ public class SearchIndexInitializer {
     private static final String INDEX = "chtholly_content_index";
 
     private final ElasticsearchClient es;
+    private final SearchIndexService searchIndexService;
 
     @PostConstruct
     public void ensureIndex() {
         try {
-            if (es.indices().exists(e -> e.index(INDEX)).value()) {
-                return;
+            if (!es.indices().exists(e -> e.index(INDEX)).value()) {
+                try {
+                    es.indices().create(c -> applyMappings(c, "ik_max_word", "ik_smart", "ik_max_word"));
+                    log.info("Search index {} created with IK analyzers", INDEX);
+                } catch (Exception ikError) {
+                    log.warn("IK analyzer unavailable, fallback to standard: {}", ikError.getMessage());
+                    es.indices().create(c -> applyMappings(c, "standard", "standard", "standard"));
+                    log.info("Search index {} created with standard analyzer", INDEX);
+                }
             }
-            try {
-                es.indices().create(c -> applyMappings(c, "ik_max_word", "ik_smart", "ik_max_word"));
-                log.info("Search index {} created with IK analyzers", INDEX);
-            } catch (Exception ikError) {
-                log.warn("IK analyzer unavailable, fallback to standard: {}", ikError.getMessage());
-                es.indices().create(c -> applyMappings(c, "standard", "standard", "standard"));
-                log.info("Search index {} created with standard analyzer", INDEX);
-            }
+            // 索引就绪后再回灌，避免 @PostConstruct 乱序导致 index_not_found 跳过回灌
+            searchIndexService.ensureBackfill();
         } catch (Exception e) {
             log.warn("Search index init failed: {}", e.getMessage());
         }

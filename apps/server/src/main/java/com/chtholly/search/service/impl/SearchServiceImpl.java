@@ -6,6 +6,7 @@ import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.FieldValueFactorModifier;
 import co.elastic.clients.elasticsearch._types.query_dsl.FunctionBoostMode;
+import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
 import co.elastic.clients.elasticsearch.core.search.CompletionSuggestOption;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.Suggestion;
@@ -66,8 +67,19 @@ public class SearchServiceImpl implements SearchService {
                         // 召回与加权：先构造 bool 查询，再用 function_score 做互动数据加权
                         .query(qb -> qb.functionScore(fs -> fs
                                 .query(qb2 -> qb2.bool(bq -> {
-                                    bq.must(m -> m.multiMatch(mm -> mm.query(q)
-                                            .fields("title^3", "body")));
+                                    // 中文：短语匹配（standard 分词会把单字拆开导致误命中）
+                                    // 英文/数字：multi_match 且要求所有词都出现
+                                    if (containsCjk(q)) {
+                                        bq.must(m -> m.bool(inner -> inner
+                                                .should(sh -> sh.matchPhrase(mp -> mp.field("title").query(q).boost(3.0f)))
+                                                .should(sh -> sh.matchPhrase(mp -> mp.field("body").query(q)))
+                                                .minimumShouldMatch("1")
+                                        ));
+                                    } else {
+                                        bq.must(m -> m.multiMatch(mm -> mm.query(q)
+                                                .fields("title^3", "body")
+                                                .operator(Operator.And)));
+                                    }
                                     bq.filter(f -> f.term(t -> t.field("status")
                                             .value(v -> v.stringValue("published"))));
 
@@ -86,10 +98,10 @@ public class SearchServiceImpl implements SearchService {
                                         .weight(1.0))
                                 .boostMode(FunctionBoostMode.Sum)
                         ))
-                        // 返回 title/body 高亮片段，后续合并为 snippet
+                        // 只取一小段高亮摘要，避免把整篇 Markdown 正文塞进列表
                         .highlight(h -> h
-                                .fields("title", f -> f)
-                                .fields("body", f -> f)
+                                .fields("title", f -> f.numberOfFragments(1).fragmentSize(80))
+                                .fields("body", f -> f.numberOfFragments(1).fragmentSize(160))
                         )
                         .sort(sorts);
                 // 游标分页：携带上一次最后命中的 sort 值
@@ -246,27 +258,52 @@ public class SearchServiceImpl implements SearchService {
     }
 
     /**
-     * 合并高亮片段为 snippet（标题片段在前，正文片段在后）。
+     * 合并高亮片段为 snippet：优先标题片段，否则正文首段；清理 Markdown 并截断。
      */
     private String buildSnippet(Hit<Map<String, Object>> hit) {
-        StringBuilder sb = new StringBuilder();
-
-        if (hit.highlight() != null) {
-            List<String> ht = hit.highlight().get("title");
-            if (ht != null && !ht.isEmpty()) {
-                sb.append(String.join(" ", ht));
-            }
-
-            List<String> hb = hit.highlight().get("body");
-            if (hb != null && !hb.isEmpty()) {
-                if (!sb.isEmpty()) {
-                    sb.append(" ");
-                }
-                sb.append(String.join(" ", hb));
-            }
+        if (hit.highlight() == null) {
+            return null;
         }
 
-        return sb.isEmpty() ? null : sb.toString();
+        List<String> ht = hit.highlight().get("title");
+        if (ht != null && !ht.isEmpty()) {
+            return cleanSnippet(ht.getFirst());
+        }
+
+        List<String> hb = hit.highlight().get("body");
+        if (hb != null && !hb.isEmpty()) {
+            return cleanSnippet(hb.getFirst());
+        }
+
+        return null;
+    }
+
+    /** 去掉 Markdown 噪音，保留 ES 高亮 em 标签。 */
+    private String cleanSnippet(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+
+        String s = raw
+                .replaceAll("(?m)^#+\\s*", "")
+                .replaceAll("\\*\\*([^*]+)\\*\\*", "$1")
+                .replaceAll("\\[([^\\]]+)]\\([^)]*\\)", "$1")
+                .replaceAll("[\\r\\n]+", " ")
+                .replaceAll("\\s{2,}", " ")
+                .trim();
+
+        if (s.length() > 200) {
+            s = s.substring(0, 197) + "...";
+        }
+        return s.isEmpty() ? null : s;
+    }
+
+    /** 查询里含汉字时走短语匹配，避免 standard 单字 OR 误召回。 */
+    private boolean containsCjk(String q) {
+        if (q == null || q.isBlank()) {
+            return false;
+        }
+        return q.codePoints().anyMatch(cp -> Character.UnicodeScript.of(cp) == Character.UnicodeScript.HAN);
     }
 
     /**

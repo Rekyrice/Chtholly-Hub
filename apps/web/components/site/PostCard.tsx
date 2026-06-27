@@ -7,11 +7,14 @@ import { siteConfig } from "@/lib/site.config";
 interface PostCardProps {
   post: FeedItem;
   authorName?: string;
+  /** 搜索摘要：description 含 ES 高亮 em 标签时用 HTML 渲染 */
+  highlightDescription?: boolean;
 }
 
 export default function PostCard({
   post,
   authorName = siteConfig.author.name,
+  highlightDescription = false,
 }: PostCardProps) {
   return (
     <article className="post-card">
@@ -88,7 +91,14 @@ export default function PostCard({
       </div>
 
       {post.description && (
-        <div className="entry-summary">{post.description}</div>
+        highlightDescription ? (
+          <div
+            className="entry-summary search-snippet"
+            dangerouslySetInnerHTML={{ __html: post.description }}
+          />
+        ) : (
+          <div className="entry-summary">{post.description}</div>
+        )
       )}
     </article>
   );
