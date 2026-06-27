@@ -106,6 +106,8 @@ bangumi:
   enabled: ${BANGUMI_ENABLED:true}
   base-url: https://api.bgm.tv
   access-token: ${BANGUMI_ACCESS_TOKEN:}
+  http-proxy: ${BANGUMI_HTTP_PROXY:}
+  use-system-proxy: ${BANGUMI_USE_SYSTEM_PROXY:true}
   user-agent: ChthollyHub/1.0 (https://github.com/chtholly-hub)
   rate-per-second: 1
   sync:

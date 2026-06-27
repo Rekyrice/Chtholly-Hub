@@ -37,13 +37,17 @@ public class BangumiServiceImpl implements BangumiService {
         }
         int safeLimit = Math.min(Math.max(limit, 1), 10);
 
-        List<BangumiSubjectRow> local = subjectMapper.searchByKeyword(q, safeLimit);
+        List<BangumiSubjectRow> local = searchLocal(q, safeLimit);
         if (!local.isEmpty()) {
             return local;
         }
 
         JsonNode resp = bangumiClient.searchSubjects(q, safeLimit);
-        if (resp == null || !resp.has("data") || !resp.get("data").isArray()) {
+        if (resp == null) {
+            throw new IllegalStateException(
+                    "Bangumi API 无法访问。请确认 VPN/代理已开启，并在 .env 设置 BANGUMI_HTTP_PROXY（如 http://127.0.0.1:7897）");
+        }
+        if (!resp.has("data") || !resp.get("data").isArray()) {
             return List.of();
         }
 
@@ -60,7 +64,7 @@ public class BangumiServiceImpl implements BangumiService {
             }
         }
 
-        List<BangumiSubjectRow> refreshed = subjectMapper.searchByKeyword(q, safeLimit);
+        List<BangumiSubjectRow> refreshed = searchLocal(q, safeLimit);
         if (!refreshed.isEmpty()) {
             return refreshed;
         }
@@ -80,6 +84,19 @@ public class BangumiServiceImpl implements BangumiService {
             }
         }
         return fallback;
+    }
+
+    private List<BangumiSubjectRow> searchLocal(String keyword, int limit) {
+        try {
+            List<BangumiSubjectRow> hits = subjectMapper.searchByKeyword(keyword, limit);
+            if (!hits.isEmpty()) {
+                return hits;
+            }
+            return subjectMapper.searchByKeywordLike(keyword, limit);
+        } catch (Exception e) {
+            log.warn("Bangumi 本地检索失败: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     private Integer fetchEpisodeTotal(long subjectId) {

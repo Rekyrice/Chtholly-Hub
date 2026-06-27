@@ -98,7 +98,8 @@ public class ChthollyAgent {
                 continue;
             }
 
-            Map<String, Object> inputMap = jsonToMap(action.input());
+            Map<String, Object> inputMap = new LinkedHashMap<>(jsonToMap(action.input()));
+            inputMap.put("_userQuestion", question.trim());
             emitAct(sink, tool.name(), action.input());
             String observation;
             try {

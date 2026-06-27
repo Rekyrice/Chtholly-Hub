@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS bangumi_subjects (
     nsfw TINYINT(1) NOT NULL DEFAULT 0,
     air_date DATE NULL,
     score DECIMAL(4, 2) NULL,
-    rank INT NULL,
+    `rank` INT NULL,
     eps_count INT NULL,
     raw_json JSON NULL,
     synced_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

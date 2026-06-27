@@ -1,6 +1,7 @@
 package com.chtholly.bangumi.client;
 
 import com.chtholly.bangumi.config.BangumiProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class BangumiClient {
     private final BangumiProperties properties;
     private final RestTemplate bangumiRestTemplate;
     private final RedissonClient redisson;
+    private final ObjectMapper objectMapper;
 
     /** 获取每日放送表。 */
     public JsonNode fetchCalendar() {
@@ -72,9 +74,15 @@ public class BangumiClient {
     private JsonNode exchangeJson(String url, HttpMethod method, Object body) {
         acquirePermit();
         HttpHeaders headers = buildHeaders(body != null);
-        HttpEntity<?> entity = body == null
-                ? new HttpEntity<>(headers)
-                : new HttpEntity<>(body, headers);
+        HttpEntity<?> entity;
+        try {
+            entity = body == null
+                    ? new HttpEntity<>(headers)
+                    : new HttpEntity<>(objectMapper.writeValueAsString(body), headers);
+        } catch (Exception e) {
+            log.warn("Bangumi 请求体序列化失败: {}", e.getMessage());
+            return null;
+        }
         try {
             ResponseEntity<JsonNode> resp = bangumiRestTemplate.exchange(url, method, entity, JsonNode.class);
             return resp.getBody();
