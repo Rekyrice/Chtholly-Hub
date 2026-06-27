@@ -20,6 +20,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * REST API for post lifecycle: drafts, metadata, publishing, feeds, and detail views.
+ */
 @Tag(name = "文章", description = "文章 CRUD、Feed、发布")
 @RestController
 @RequestMapping("/api/v1/posts")
@@ -31,6 +34,12 @@ public class PostController {
     private final PostFeedService feedService;
     private final JwtService jwtService;
 
+    /**
+     * Creates an empty draft owned by the authenticated user.
+     *
+     * @param jwt authenticated user JWT
+     * @return new draft post ID
+     */
     @Operation(summary = "创建草稿")
     @PostMapping("/drafts")
     public PostDraftCreateResponse createDraft(@AuthenticationPrincipal Jwt jwt) {
@@ -39,6 +48,14 @@ public class PostController {
         return new PostDraftCreateResponse(String.valueOf(id));
     }
 
+    /**
+     * Confirms OSS upload completion and binds content metadata to the draft.
+     *
+     * @param id post snowflake ID
+     * @param request object key, etag, size, and checksum from the upload
+     * @param jwt authenticated user JWT
+     * @return HTTP 204 on success
+     */
     @Operation(summary = "确认内容上传")
     @PostMapping("/{id}/content/confirm")
     public ResponseEntity<Void> confirmContent(@PathVariable("id") long id,
@@ -49,6 +66,14 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Partially updates post metadata (title, tags, images, visibility, etc.).
+     *
+     * @param id post snowflake ID
+     * @param request fields to patch
+     * @param jwt authenticated user JWT
+     * @return HTTP 204 on success
+     */
     @Operation(summary = "更新帖子元数据")
     @PatchMapping("/{id}")
     public ResponseEntity<Void> patchMetadata(@PathVariable("id") long id,
@@ -59,6 +84,13 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Publishes a draft post, making it visible per its visibility setting.
+     *
+     * @param id post snowflake ID
+     * @param jwt authenticated user JWT
+     * @return HTTP 204 on success
+     */
     @Operation(summary = "发布帖子")
     @PostMapping("/{id}/publish")
     public ResponseEntity<Void> publish(@PathVariable("id") long id,
@@ -68,6 +100,14 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Sets or clears the pinned (top) flag for a post.
+     *
+     * @param id post snowflake ID
+     * @param request desired pinned state
+     * @param jwt authenticated user JWT
+     * @return HTTP 204 on success
+     */
     @Operation(summary = "设置置顶")
     @PatchMapping("/{id}/top")
     public ResponseEntity<Void> patchTop(@PathVariable("id") long id,
@@ -78,6 +118,14 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Updates post visibility (public, private, etc.).
+     *
+     * @param id post snowflake ID
+     * @param request desired visibility value
+     * @param jwt authenticated user JWT
+     * @return HTTP 204 on success
+     */
     @Operation(summary = "设置可见性")
     @PatchMapping("/{id}/visibility")
     public ResponseEntity<Void> patchVisibility(@PathVariable("id") long id,
@@ -88,6 +136,13 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Soft-deletes a post owned by the authenticated user.
+     *
+     * @param id post snowflake ID
+     * @param jwt authenticated user JWT
+     * @return HTTP 204 on success
+     */
     @Operation(summary = "删除帖子（软删除）")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable("id") long id,
@@ -97,6 +152,16 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Returns a paginated public feed with optional owner and tag filters.
+     *
+     * @param page 1-based page number
+     * @param size items per page
+     * @param ownerId optional author filter
+     * @param tag optional tag slug filter
+     * @param jwt optional JWT for personalized fields (may be null)
+     * @return feed page with post summaries
+     */
     @Operation(summary = "公开 Feed 列表")
     @GetMapping("/feed")
     public FeedPageResponse feed(@RequestParam(value = "page", defaultValue = "1") int page,
@@ -108,6 +173,14 @@ public class PostController {
         return feedService.getPublicFeed(page, size, ownerId, tag, userId);
     }
 
+    /**
+     * Lists published posts for the authenticated user.
+     *
+     * @param page 1-based page number
+     * @param size items per page
+     * @param jwt authenticated user JWT
+     * @return paginated feed of the caller's posts
+     */
     @Operation(summary = "我的已发布帖子")
     @GetMapping("/mine")
     public FeedPageResponse mine(@RequestParam(value = "page", defaultValue = "1") int page,
@@ -117,6 +190,13 @@ public class PostController {
         return feedService.getMyPublished(userId, page, size);
     }
 
+    /**
+     * Returns full post detail by snowflake ID.
+     *
+     * @param id post snowflake ID
+     * @param jwt optional JWT for personalized fields (may be null)
+     * @return post detail payload
+     */
     @Operation(summary = "帖子详情（按 ID）")
     @GetMapping("/detail/{id}")
     public PostDetailResponse detail(@PathVariable("id") long id,
@@ -125,6 +205,13 @@ public class PostController {
         return service.getDetail(id, userId);
     }
 
+    /**
+     * Returns full post detail by URL slug.
+     *
+     * @param slug post slug
+     * @param jwt optional JWT for personalized fields (may be null)
+     * @return post detail payload
+     */
     @Operation(summary = "帖子详情（按 slug）")
     @GetMapping("/detail/by-slug/{slug}")
     public PostDetailResponse detailBySlug(@PathVariable("slug") String slug,

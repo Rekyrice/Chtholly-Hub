@@ -25,6 +25,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * Multi-level cache feed service for public and personal post listings.
+ *
+ * <p>Architecture: Caffeine L1 (per-config TTL) → Redis L2 fragment cache (ids/item/hasMore) → MySQL.
+ * Uses {@link SingleFlightLockRegistry} for stampede prevention and {@link HotKeyDetector}
+ * for dynamic TTL extension on hot posts/pages.
+ *
+ * @see HotKeyDetector
+ * @see PostServiceImpl
+ */
 @Service
 public class PostFeedServiceImpl implements PostFeedService {
 
@@ -79,12 +89,16 @@ public class PostFeedServiceImpl implements PostFeedService {
     }
 
     /**
-     * 获取公开的首页 Feed（按发布时间倒序，不受置顶影响）。
-     * 采用三级缓存：本地 Caffeine、Redis 页面缓存、Redis 片段缓存（ids/item/count）。
-     * @param page 页码（≥1）
-     * @param size 每页数量（1~50）
-     * @param currentUserIdNullable 当前用户 ID（为空表示匿名）
-     * @return 带分页信息的 Feed 列表（liked/faved 为用户维度）
+     * Fetches a page of public posts (newest first, unpinned ordering on public feed).
+     *
+     * <p>Routes to tag/owner filters when {@code tag} or {@code ownerId} is set (bypasses page cache).
+     *
+     * @param page                  Page number (1-indexed).
+     * @param size                  Items per page (clamped to 1–50).
+     * @param ownerId               Optional creator filter.
+     * @param tag                   Optional tag filter.
+     * @param currentUserIdNullable Current user for liked/faved enrichment (null = anonymous).
+     * @return Feed page with pagination metadata.
      */
     public FeedPageResponse getPublicFeed(int page, int size, Long ownerId, String tag, Long currentUserIdNullable) {
         if (tag != null && !tag.isBlank()) {
@@ -161,6 +175,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
 
             FeedPageResponse respForCache = new FeedPageResponse(items, safePage, safeSize, hasMore);
+            // baseTtl=60s + jitter 0–29s：避免大量 key 同时过期引发集体回源
             int baseTtl = 60;
             int jitter = ThreadLocalRandom.current().nextInt(30);
             Duration frTtl = Duration.ofSeconds(baseTtl + jitter);
@@ -412,13 +427,12 @@ public class PostFeedServiceImpl implements PostFeedService {
     }
 
     /**
-     * 获取当前用户自己发布的帖子列表（按发布时间倒序）。
-     * 缓存策略：本地 Caffeine + Redis 页面缓存（TTL 更短）。
-     * 返回的每条目包含 isTop 字段以表示是否置顶。
-     * @param userId 当前用户 ID
-     * @param page 页码（≥1）
-     * @param size 每页数量（1~50）
-     * @return 带分页信息的个人发布列表
+     * Fetches the authenticated user's published posts (includes {@code isTop} flag).
+     *
+     * @param userId Current user ID.
+     * @param page   Page number (1-indexed).
+     * @param size   Items per page (clamped to 1–50).
+     * @return Personal feed page; shorter Redis TTL than public feed.
      */
     public FeedPageResponse getMyPublished(long userId, int page, int size) {
         int safeSize = Math.min(Math.max(size, 1), 50);
@@ -463,7 +477,8 @@ public class PostFeedServiceImpl implements PostFeedService {
         FeedPageResponse resp = new FeedPageResponse(items, safePage, safeSize, hasMore);
         try {
             String json = objectMapper.writeValueAsString(resp);
-            int baseTtl = 30; // 用户维度列表缓存更短
+            // 个人列表 baseTtl=30s（比公开 Feed 更短）：用户更频繁改稿/置顶，接受更高回源率换一致性
+            int baseTtl = 30;
             int jitter = ThreadLocalRandom.current().nextInt(20);
             redis.opsForValue().set(key, json, Duration.ofSeconds(baseTtl + jitter));
             feedMineCache.put(key, resp);

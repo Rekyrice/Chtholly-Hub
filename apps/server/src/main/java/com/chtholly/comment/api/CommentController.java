@@ -25,7 +25,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 
-/** 帖子评论 API：两层嵌套。 */
+/**
+ * REST API for two-level nested comments on posts.
+ */
 @Tag(name = "评论", description = "评论创建、列表、删除")
 @RestController
 @RequestMapping("/api/v1/posts/{postId}/comments")
@@ -36,6 +38,15 @@ public class CommentController {
     private final CommentService commentService;
     private final JwtService jwtService;
 
+    /**
+     * Lists top-level comments with nested replies, paginated.
+     *
+     * @param postId post snowflake ID
+     * @param page 1-based page number
+     * @param size items per page (max 50)
+     * @param jwt optional JWT for viewer-specific fields (may be null)
+     * @return paginated comment tree
+     */
     @Operation(summary = "评论列表（树形分页）")
     @GetMapping
     public CommentListResponse list(@PathVariable("postId") long postId,
@@ -46,6 +57,14 @@ public class CommentController {
         return commentService.listByPost(postId, userId, page, size);
     }
 
+    /**
+     * Creates a top-level comment or a reply to an existing comment.
+     *
+     * @param postId post snowflake ID
+     * @param request comment body and optional parent comment ID
+     * @param jwt authenticated user JWT
+     * @return created comment payload
+     */
     @Operation(summary = "创建评论或回复")
     @PostMapping
     public CommentResponse create(@PathVariable("postId") long postId,
@@ -55,6 +74,13 @@ public class CommentController {
         return commentService.create(postId, userId, request);
     }
 
+    /**
+     * Soft-deletes a comment owned by the authenticated user.
+     *
+     * @param postId post snowflake ID
+     * @param commentId comment snowflake ID
+     * @param jwt authenticated user JWT
+     */
     @Operation(summary = "删除评论（软删除）")
     @DeleteMapping("/{commentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

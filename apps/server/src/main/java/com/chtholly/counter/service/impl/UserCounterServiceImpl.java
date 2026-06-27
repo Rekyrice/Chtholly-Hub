@@ -18,12 +18,10 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 用户维度计数服务实现。
+ * User-level counter service (follow/fan/post/like-received aggregates in SDS).
  *
- * <p>职责：</p>
- * - 异步维护关注/粉丝/发文/获赞/获收藏计数（SDS）；
- * - 提供按需重建能力以纠偏异常；
- * - 重建过程聚合作者所有内容的获赞/获收藏总数。
+ * <p>Maintained asynchronously from relation and counter events; supports on-demand rebuild
+ * by scanning posts and relation tables when SDS is corrupt or missing.
  */
 @Service
 public class UserCounterServiceImpl implements UserCounterService {
@@ -47,42 +45,46 @@ public class UserCounterServiceImpl implements UserCounterService {
         this.incrScript.setScriptText(INCR_FIELD_LUA);
     }
 
-    /** 增量更新关注数 */
+    /** Atomically increments the user's following count in SDS segment 1. */
     @Override
     public void incrementFollowings(long userId, int delta) {
         String key = UserCounterKeys.sdsKey(userId);
         redis.execute(incrScript, List.of(key), "5", "4", "1", String.valueOf(delta));
     }
 
-    /** 增量更新粉丝数 */
+    /** Atomically increments the user's follower count in SDS segment 2. */
     @Override
     public void incrementFollowers(long userId, int delta) {
         String key = UserCounterKeys.sdsKey(userId);
         redis.execute(incrScript, List.of(key), "5", "4", "2", String.valueOf(delta));
     }
 
-    /** 增量更新发文数 */
+    /** Atomically increments the user's published post count in SDS segment 3. */
     @Override
     public void incrementPosts(long userId, int delta) {
         String key = UserCounterKeys.sdsKey(userId);
         redis.execute(incrScript, List.of(key), "5", "4", "3", String.valueOf(delta));
     }
 
-    /** 增量更新获赞数（作者维度） */
+    /** Atomically increments likes received across the user's posts (SDS segment 4). */
     @Override
     public void incrementLikesReceived(long userId, int delta) {
         String key = UserCounterKeys.sdsKey(userId);
         redis.execute(incrScript, List.of(key), "5", "4", "4", String.valueOf(delta));
     }
 
-    /** 增量更新获收藏数（作者维度） */
+    /** Atomically increments favorites received across the user's posts (SDS segment 5). */
     @Override
     public void incrementFavsReceived(long userId, int delta) {
         String key = UserCounterKeys.sdsKey(userId);
         redis.execute(incrScript, List.of(key), "5", "4", "5", String.valueOf(delta));
     }
 
-    /** 基于事实重建全部用户维度计数 */
+    /**
+     * Rebuilds all user-level counters from relation and post tables (full scan).
+     *
+     * @param userId User whose SDS should be recomputed.
+     */
     @Override
     public void rebuildAllCounters(long userId) {
         String key = UserCounterKeys.sdsKey(userId);

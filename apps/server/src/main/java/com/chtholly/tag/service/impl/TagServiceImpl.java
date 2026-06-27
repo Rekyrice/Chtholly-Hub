@@ -13,12 +13,22 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Default implementation of {@link TagService}.
+ * Maintains the tag catalog and synchronizes usage counts when published posts change.
+ */
 @Service
 @RequiredArgsConstructor
 public class TagServiceImpl implements TagService {
 
     private final TagMapper tagMapper;
 
+    /**
+     * Lists tags ordered by usage count.
+     *
+     * @param limit maximum number of tags to return (clamped to 1–200)
+     * @return tag summaries sorted by popularity
+     */
     @Override
     @Transactional(readOnly = true)
     public List<TagResponse> listTags(int limit) {
@@ -28,6 +38,13 @@ public class TagServiceImpl implements TagService {
                 .toList();
     }
 
+    /**
+     * Reconciles tag usage counts after a published post's tags are updated.
+     *
+     * @param creatorId post author ID used when upserting new tags
+     * @param oldTags previous tag names on the post
+     * @param newTags updated tag names on the post
+     */
     @Override
     @Transactional
     public void syncPublishedPostTags(long creatorId, List<String> oldTags, List<String> newTags) {
@@ -48,6 +65,11 @@ public class TagServiceImpl implements TagService {
         }
     }
 
+    /**
+     * Decrements usage counts when a published post is removed or unpublished.
+     *
+     * @param tags tag names previously associated with the post
+     */
     @Override
     @Transactional
     public void releasePublishedPostTags(List<String> tags) {

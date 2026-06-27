@@ -9,6 +9,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * LLM-assisted post authoring helpers (available when {@code llm.enabled=true}).
+ */
 @RestController
 @RequestMapping(path = "/api/v1/posts", produces = MediaType.APPLICATION_JSON_VALUE)
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
@@ -18,8 +21,10 @@ public class PostAiController {
     private final PostDescriptionService descriptionService;
 
     /**
-     * 生成不超过 50 字的帖子描述。
-     * 需要鉴权（默认策略），防止匿名滥用。
+     * Generates a short post description (max ~50 characters) from draft content.
+     *
+     * @param req request body containing markdown or plain post content
+     * @return suggested description text
      */
     @PostMapping(path = "/description/suggest", consumes = MediaType.APPLICATION_JSON_VALUE)
     public DescriptionSuggestResponse suggest(@Valid @RequestBody DescriptionSuggestRequest req) {

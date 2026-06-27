@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.*;
 
 /**
- * 计数读取接口：返回指定实体在给定指标上的汇总计数（SDS）。
+ * Read-only REST API for entity metric counts stored in Redis SDS.
  */
 @RestController
 @RequestMapping("/api/v1/counter")
@@ -22,10 +22,12 @@ public class CounterController {
     }
 
     /**
-     * 获取实体的计数汇总。
-     * @param entityType 实体类型（如 post）
-     * @param entityId 实体ID
-     * @param metricsStr 指标列表（逗号分隔），为空则返回全部支持指标
+     * Returns aggregated counts for an entity and selected metrics.
+     *
+     * @param entityType entity type (e.g. {@code post})
+     * @param entityId entity snowflake ID as string
+     * @param metricsStr optional comma-separated metric names; all supported metrics when blank
+     * @return count map wrapped in a response DTO
      */
     @GetMapping("/{etype}/{eid}")
     public ResponseEntity<CountsResponse> getCounts(@PathVariable("etype") String entityType,

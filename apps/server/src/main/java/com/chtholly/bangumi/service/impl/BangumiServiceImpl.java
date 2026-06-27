@@ -26,6 +26,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
+/**
+ * Bangumi subject search and enrichment backed by local cache and the Bangumi API.
+ * Keeps HTTP calls outside Spring transactions to avoid long-held database locks.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -41,6 +45,14 @@ public class BangumiServiceImpl implements BangumiService {
     private final ObjectMapper objectMapper;
     private final PlatformTransactionManager transactionManager;
 
+    /**
+     * Searches Bangumi subjects by keyword, preferring local cache with API backfill.
+     *
+     * @param keyword search keyword
+     * @param limit maximum results (clamped to 1–10)
+     * @return matching subject rows, or empty if the keyword is blank
+     * @throws IllegalStateException if the Bangumi API is unavailable during backfill
+     */
     @Override
     public List<BangumiSubjectRow> search(String keyword, int limit) {
         String q = keyword == null ? "" : keyword.trim();
@@ -66,6 +78,14 @@ public class BangumiServiceImpl implements BangumiService {
         return inReadTransaction(() -> loadPersistedFallback(fetched, safeLimit));
     }
 
+    /**
+     * Searches anime series (type 2) by keyword and persists results locally.
+     *
+     * @param keyword search keyword
+     * @param limit maximum results (clamped to 1–20)
+     * @return anime subjects sorted by air date
+     * @throws IllegalStateException if the Bangumi API is unavailable
+     */
     @Override
     public List<BangumiSubjectRow> searchAnimeSeries(String keyword, int limit) {
         String q = keyword == null ? "" : keyword.trim();
@@ -102,6 +122,15 @@ public class BangumiServiceImpl implements BangumiService {
         return rows;
     }
 
+    /**
+     * Builds a human-readable summary of a person's credited works for Agent tooling.
+     *
+     * @param keyword person name or alias to search
+     * @param workTitleHint optional work title used to resolve creators
+     * @param workType optional type filter ({@code all}, {@code book/manga}, {@code anime}, etc.)
+     * @return formatted works summary, or a not-found message
+     * @throws IllegalStateException if a required Bangumi API call fails
+     */
     @Override
     public String describePersonWorks(String keyword, String workTitleHint, String workType) {
         Integer typeFilter = parseWorkTypeFilter(workType);
@@ -141,6 +170,13 @@ public class BangumiServiceImpl implements BangumiService {
         return out.isEmpty() ? "未找到该人物参与的作品。" : out.toString();
     }
 
+    /**
+     * Lists characters for the best-matching Bangumi subject for a keyword.
+     *
+     * @param keyword subject title or alias
+     * @return formatted character list, or an error or not-found message
+     * @throws IllegalStateException if the Bangumi API is unavailable
+     */
     @Override
     public String describeSubjectCharacters(String keyword) {
         String q = keyword == null ? "" : keyword.trim();

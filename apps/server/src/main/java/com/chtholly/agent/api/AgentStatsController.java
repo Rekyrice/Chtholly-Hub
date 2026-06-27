@@ -14,7 +14,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Agent 运维统计（仅站点 owner 可访问）。 */
+/**
+ * Operator-only Agent memory statistics (restricted to the site owner).
+ */
 @RestController
 @RequestMapping("/api/v1/agent")
 @RequiredArgsConstructor
@@ -25,6 +27,12 @@ public class AgentStatsController {
     private final SiteProperties siteProperties;
     private final JwtService jwtService;
 
+    /**
+     * Returns in-memory Agent conversation statistics.
+     *
+     * @param jwt authenticated user JWT (must be the site owner)
+     * @return agent memory usage stats
+     */
     @GetMapping("/stats")
     public AgentMemoryStats stats(@AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);

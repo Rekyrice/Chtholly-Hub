@@ -31,9 +31,14 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 /**
- * ReAct 主循环：Think → Act → Observe，直至 final 或达到步数上限。
- * <p>
- * LLM 调用在虚拟线程上执行并带超时；最终流式回答在 WebSocket 虚拟线程执行器中阻塞可接受。
+ * Custom ReAct agent engine: Think → Act → Observe loop until final answer or step limit.
+ *
+ * <p>Design: LLM calls run on virtual threads with configurable timeout; tool execution
+ * is isolated with per-tool timeout. Final answers stream over WebSocket with optional
+ * character throttling. Observability via {@link AgentExecutionTrace} and {@link AgentMetrics}.
+ *
+ * @see AgentTool
+ * @see AgentConversationMemory
  */
 @Slf4j
 @Service
@@ -51,16 +56,21 @@ public class ChthollyAgent {
     private final AgentMetrics agentMetrics;
 
     /**
-     * 执行一轮对话，通过 sink 推送 think/act/observe/delta/final/error 事件。
+     * Runs one agent turn, emitting think/act/observe/delta/final/error events via sink.
      *
-     * @param memory 当前 WebSocket 会话记忆（跨轮次追问）
+     * @param question User question for this turn.
+     * @param userId   Authenticated user ID (passed to tools).
+     * @param memory   Session conversation memory for follow-up questions.
+     * @param sink     Event consumer (typically WebSocket handler).
      */
     public void run(String question, long userId, AgentConversationMemory memory, Consumer<AgentEvent> sink) {
         run(question, userId, memory, null, sink);
     }
 
     /**
-     * 执行一轮对话（带 WebSocket sessionId 用于可观测性）。
+     * Runs one agent turn with session ID for observability tracing.
+     *
+     * @param sessionId WebSocket session identifier (may be null).
      */
     public void run(String question, long userId, AgentConversationMemory memory, String sessionId,
                     Consumer<AgentEvent> sink) {
@@ -73,6 +83,7 @@ public class ChthollyAgent {
                 return;
             }
 
+            // 工具注册表：按 name 索引，供 ReAct 循环 O(1) 查找
             Map<String, AgentTool> toolMap = new LinkedHashMap<>();
             for (AgentTool tool : tools) {
                 toolMap.put(tool.name(), tool);
@@ -86,11 +97,13 @@ public class ChthollyAgent {
             }
             transcript.add("## 当前问题\nUser: " + question.trim());
 
+            // ReAct 主循环：每步 LLM 输出 JSON action，要么调工具要么 final
             for (int step = 0; step < maxSteps; step++) {
                 String userPrompt = String.join("\n\n", transcript);
                 long stepLlmStart = System.currentTimeMillis();
                 String llmOut;
                 try {
+                    // Think 阶段：低 temperature(0.1) 保证 JSON 结构稳定，便于 parseAction
                     llmOut = callLlm(system, userPrompt);
                 } catch (TimeoutException e) {
                     log.warn("Agent LLM 调用超时 (>{}s)", properties.getLlmTimeoutSeconds());
@@ -119,6 +132,8 @@ public class ChthollyAgent {
                 emitThink(sink, action);
 
                 if (action.isFinal()) {
+                    // final 不直接用 LLM 的 answer 字段，而是另开流式调用生成用户可见回答
+                    // 原因：ReAct 阶段的 JSON 只负责决策，最终回答需要更高 temperature 与自然语言风格
                     long streamLlmMs = streamFinalAnswer(sink, question, transcript, memory, trace);
                     trace.recordStep(step, "final_answer", stepLlmMs + streamLlmMs, 0);
                     return;
@@ -126,6 +141,7 @@ public class ChthollyAgent {
 
                 AgentTool tool = toolMap.get(action.action());
                 if (tool == null) {
+                    // 未知工具：把 Observation 写回 transcript，让 LLM 下一步自我纠正，而非直接失败
                     String observation = "未知工具：" + action.action() + "。请使用已注册工具或返回 final。";
                     emitAct(sink, action.action(), action.input());
                     emitObserve(sink, observation);
@@ -136,6 +152,7 @@ public class ChthollyAgent {
                 }
 
                 Map<String, Object> inputMap = new LinkedHashMap<>(jsonToMap(action.input()));
+                // 注入隐式上下文：工具不依赖 LLM 复述完整对话，由引擎注入原始问题与历史
                 inputMap.put("_userQuestion", question.trim());
                 if (memory != null) {
                     inputMap.put("_conversationHistory", memory.formatForPrompt());
@@ -145,8 +162,10 @@ public class ChthollyAgent {
                 String observation = executeTool(tool, inputMap, userId);
                 long stepToolMs = System.currentTimeMillis() - toolStart;
                 trace.recordToolCall(tool.name(), stepToolMs);
+                // 站内搜索空结果时追加系统提示，引导 LLM 切换 Bangumi 工具（避免重复无效检索）
                 observation = augmentObservation(tool.name(), observation);
                 emitObserve(sink, observation);
+                // Observe 写回 transcript，形成下一轮 Think 的上下文（经典 ReAct 模式）
                 transcript.add("Assistant: " + llmOut);
                 transcript.add("Observation: " + observation);
                 trace.recordStep(step, tool.name(), stepLlmMs, stepToolMs);
@@ -159,7 +178,11 @@ public class ChthollyAgent {
         }
     }
 
-    /** @return 流式回答 LLM 耗时（毫秒） */
+    /**
+     * Streams the final natural-language answer to the client and persists turn to memory.
+     *
+     * @return LLM streaming duration in milliseconds.
+     */
     private long streamFinalAnswer(
             Consumer<AgentEvent> sink,
             String question,
@@ -181,6 +204,7 @@ public class ChthollyAgent {
             Flux<String> flux = chatClient.prompt()
                     .system(system)
                     .user(userPrompt)
+                    // final 阶段 temperature 0.3：比 ReAct 决策略高，回答更自然
                     .options(chatOptions(0.3, 1024))
                     .stream()
                     .content()
@@ -220,6 +244,7 @@ public class ChthollyAgent {
         }
     }
 
+    /** Executes a tool on a virtual thread with configurable timeout; cancels on timeout. */
     private String executeTool(AgentTool tool, Map<String, Object> inputMap, long userId) {
         Optional<String> validationError = AgentToolParamValidator.validate(inputMap, tool.parameterSchema());
         if (validationError.isPresent()) {
@@ -245,6 +270,7 @@ public class ChthollyAgent {
         }
     }
 
+    /** Blocking LLM call on virtual thread; used for ReAct JSON action parsing (non-streaming). */
     private String callLlm(String system, String userPrompt) throws Exception {
         int timeoutSec = Math.max(1, properties.getLlmTimeoutSeconds());
         CompletableFuture<String> future = CompletableFuture.supplyAsync(
@@ -303,7 +329,7 @@ public class ChthollyAgent {
         return false;
     }
 
-    /** 按字符节流 delta，避免前端一次性刷完。 */
+    /** Emits delta chunks character-by-character for typewriter UX on WebSocket clients. */
     private void emitThrottledDelta(Consumer<AgentEvent> sink, String chunk) {
         int delayMs = Math.max(0, properties.getStreamCharDelayMs());
         if (delayMs == 0) {
@@ -339,7 +365,10 @@ public class ChthollyAgent {
                 || observation.contains("向量库中未找到");
     }
 
-    /** 站内搜索无结果时提示 LLM 考虑 Bangumi 工具（不做关键词/domain 硬编码判断）。 */
+    /**
+     * Appends a system hint when site search tools return empty, nudging LLM toward Bangumi tools.
+     * Avoids hard-coded keyword routing — the hint is only injected into Observation text.
+     */
     private String augmentObservation(String toolName, String observation) {
         if (!isEmptySiteResult(observation) || !isSiteTool(toolName)) {
             return observation;

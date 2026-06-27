@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
-/** 为已登录用户签发 Agent WebSocket 短生命周期 ticket。 */
+/**
+ * Issues short-lived WebSocket tickets for authenticated Agent chat sessions.
+ */
 @RestController
 @RequestMapping(path = "/api/v1/agent", produces = MediaType.APPLICATION_JSON_VALUE)
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
@@ -22,6 +24,12 @@ public class AgentWsTicketController {
     private final AgentWsTicketStore ticketStore;
     private final JwtService jwtService;
 
+    /**
+     * Creates a one-time WebSocket connection ticket for the caller.
+     *
+     * @param jwt authenticated user JWT
+     * @return ticket string and TTL in seconds
+     */
     @PostMapping("/ws-ticket")
     public AgentWsTicketResponse issueTicket(@AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);

@@ -11,7 +11,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 用户公开 API：个人主页资料。 */
+/**
+ * Public user profile API for profile pages and author discovery.
+ */
 @Tag(name = "用户", description = "用户公开信息")
 @RestController
 @RequestMapping("/api/v1/users")
@@ -21,6 +23,12 @@ public class UserController {
 
     private final UserPublicService userPublicService;
 
+    /**
+     * Returns public profile information for a user handle.
+     *
+     * @param handle unique user handle
+     * @return public user profile
+     */
     @Operation(summary = "公开用户资料")
     @GetMapping("/{handle}")
     public PublicUserResponse profile(@PathVariable("handle") String handle) {

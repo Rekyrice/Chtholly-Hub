@@ -29,12 +29,10 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 内容实体计数服务实现（位图事实 + 事件聚合 + SDS 汇总）。
+ * Distributed counter service: Redis Bitmap for idempotent like/fav facts,
+ * Kafka/ApplicationEvent for async aggregation, SDS for O(1) count reads.
  *
- * <p>职责：</p>
- * - 位图原子切换并产出计数事件（幂等）；
- * - 读取汇总计数（SDS），异常时基于位图分片重建；
- * - 批量读取优化与“是否点赞/收藏”判定。
+ * <p>Rebuild path uses rate limiting and exponential backoff to avoid storms on hot entities.
  */
 @Slf4j
 @Service
@@ -74,38 +72,28 @@ public class CounterServiceImpl implements CounterService {
     }
 
     /**
-     * 点赞：位图原子置位，仅当状态从未点赞→已点赞时返回 true。
-     * 同步路径完成事实层更新后产出增量事件，异步聚合到计数快照。
-     * @param entityType 实体类型
-     * @param entityId 实体 ID
-     * @param userId 用户 ID
-     * @return 是否发生状态变化（幂等）
+     * Likes an entity. Bitmap toggle is idempotent — returns true only on 0→1 transition.
+     *
+     * @return {@code true} if state changed (publishes delta event).
      */
     @Override
     public boolean like(String entityType, String entityId, long userId) {
         return toggle(entityType, entityId, userId, "like", CounterSchema.IDX_LIKE, true);
     }
 
-    /**
-     * 取消点赞：位图原子清零，仅当状态从已点赞→未点赞时返回 true。
-     * 产出增量事件（delta=-1），异步聚合到计数快照。
-     */
+    /** Removes a like; publishes delta=-1 event on 1→0 transition. */
     @Override
     public boolean unlike(String entityType, String entityId, long userId) {
         return toggle(entityType, entityId, userId, "like", CounterSchema.IDX_LIKE, false);
     }
 
-    /**
-     * 收藏：位图原子置位，并产出增量事件（delta=+1）。
-     */
+    /** Favorites an entity (bitmap idempotent, same semantics as {@link #like}). */
     @Override
     public boolean fav(String entityType, String entityId, long userId) {
         return toggle(entityType, entityId, userId, "fav", CounterSchema.IDX_FAV, true);
     }
 
-    /**
-     * 取消收藏：位图原子清零，并产出增量事件（delta=-1）。
-     */
+    /** Removes a favorite; publishes delta=-1 on state change. */
     @Override
     public boolean unfav(String entityType, String entityId, long userId) {
         return toggle(entityType, entityId, userId, "fav", CounterSchema.IDX_FAV, false);
@@ -167,8 +155,9 @@ public class CounterServiceImpl implements CounterService {
     }
 
     /**
-     * 获取实体计数汇总（SDS）。
-     * 若缺失或结构异常则触发基于位图的事实重建，并清理对应聚合字段。
+     * Returns aggregated counts from SDS; triggers bitmap rebuild when structure is missing.
+     *
+     * @param metrics Subset of metrics to read (e.g. "like", "fav").
      */
     @Override
     public Map<String, Long> getCounts(String entityType, String entityId, List<String> metrics) {

@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** 标签 API：公开列表；计数由发帖流程维护。 */
+/**
+ * Public tag listing API; usage counts are maintained by the post publish flow.
+ */
 @Tag(name = "标签", description = "标签管理")
 @RestController
 @RequestMapping("/api/v1/tags")
@@ -23,6 +25,12 @@ public class TagController {
 
     private final TagService tagService;
 
+    /**
+     * Lists tags ordered by reference count descending.
+     *
+     * @param limit maximum number of tags to return
+     * @return tag list
+     */
     @Operation(summary = "标签列表（按引用次数降序）")
     @GetMapping
     public List<TagResponse> list(@RequestParam(value = "limit", defaultValue = "50") int limit) {

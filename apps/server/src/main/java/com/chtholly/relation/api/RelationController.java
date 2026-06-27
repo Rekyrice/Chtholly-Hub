@@ -18,9 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 关系接口控制器。
- * 职责：关注/取消关注、关系三态查询、关注/粉丝列表（偏移与游标）、用户维度计数读取与采样自检。
- * 缓存：ZSet 存储关注/粉丝列表；用户计数采用 SDS 固定结构（5×4 字节，大端编码），提供采样一致性校验与按需重建。
+ * REST API for follow relationships, profile lists, and Redis-backed user counters.
  */
 @RestController
 @RequestMapping("/api/v1/relation")
@@ -42,10 +40,11 @@ public class RelationController {
     }
 
     /**
-     * 发起关注。
-     * @param toUserId 被关注的用户ID
-     * @param jwt 认证令牌
-     * @return 是否关注成功
+     * Follows another user.
+     *
+     * @param toUserId target user snowflake ID
+     * @param jwt authenticated user JWT
+     * @return {@code true} if the follow state changed
      */
     @PostMapping("/follow")
     public boolean follow(@RequestParam("toUserId") long toUserId, @AuthenticationPrincipal Jwt jwt) {
@@ -54,10 +53,11 @@ public class RelationController {
     }
 
     /**
-     * 取消关注。
-     * @param toUserId 被取消关注的用户ID
-     * @param jwt 认证令牌
-     * @return 是否取消成功
+     * Unfollows another user.
+     *
+     * @param toUserId target user snowflake ID
+     * @param jwt authenticated user JWT
+     * @return {@code true} if the follow state changed
      */
     @PostMapping("/unfollow")
     public boolean unfollow(@RequestParam("toUserId") long toUserId, @AuthenticationPrincipal Jwt jwt) {
@@ -66,10 +66,11 @@ public class RelationController {
     }
 
     /**
-     * 查询与目标用户的关系三态。
-     * @param toUserId 目标用户ID
-     * @param jwt 认证令牌
-     * @return following/followedBy/mutual 三态
+     * Returns mutual follow status between the caller and a target user.
+     *
+     * @param toUserId target user snowflake ID
+     * @param jwt authenticated user JWT
+     * @return map with {@code following}, {@code followedBy}, and {@code mutual} flags
      */
     @GetMapping("/status")
     public Map<String, Boolean> status(@RequestParam("toUserId") long toUserId, @AuthenticationPrincipal Jwt jwt) {
@@ -78,12 +79,13 @@ public class RelationController {
     }
 
     /**
-     * 获取关注列表，支持偏移或游标分页。
-     * @param userId 用户ID
-     * @param limit 返回数量上限
-     * @param offset 偏移量（当 cursor 为空时生效）
-     * @param cursor 游标（毫秒时间戳）
-     * @return 关注用户ID列表
+     * Lists users the given user follows, with offset or cursor pagination.
+     *
+     * @param userId subject user snowflake ID
+     * @param limit maximum profiles to return (clamped to 100)
+     * @param offset zero-based offset when {@code cursor} is absent
+     * @param cursor optional millisecond timestamp cursor
+     * @return following user profiles
      */
     @GetMapping("/following")
     public List<ProfileResponse> following(@RequestParam("userId") long userId,
@@ -95,12 +97,13 @@ public class RelationController {
     }
 
     /**
-     * 获取粉丝列表，支持偏移或游标分页。
-     * @param userId 用户ID
-     * @param limit 返回数量上限
-     * @param offset 偏移量（当 cursor 为空时生效）
-     * @param cursor 游标（毫秒时间戳）
-     * @return 粉丝用户ID列表
+     * Lists followers of the given user, with offset or cursor pagination.
+     *
+     * @param userId subject user snowflake ID
+     * @param limit maximum profiles to return (clamped to 100)
+     * @param offset zero-based offset when {@code cursor} is absent
+     * @param cursor optional millisecond timestamp cursor
+     * @return follower user profiles
      */
     @GetMapping("/followers")
     public List<ProfileResponse> followers(@RequestParam("userId") long userId,
@@ -112,10 +115,10 @@ public class RelationController {
     }
 
     /**
-     * 获取用户维度计数（SDS）。
-     * 结构与一致性：SDS 由 5 个 4 字节段组成（关注/粉丝/发文/获赞/获藏），按需触发采样校验与重建，保证接口稳定可用。
-     * @param userId 用户ID
-     * @return 各计数指标的值
+     * Reads aggregated user counters from Redis SDS, with sampled consistency checks.
+     *
+     * @param userId subject user snowflake ID
+     * @return map of followings, followers, posts, likedPosts, and favedPosts counts
      */
     @GetMapping("/counter")
     public Map<String, Long> counter(@RequestParam("userId") long userId) {

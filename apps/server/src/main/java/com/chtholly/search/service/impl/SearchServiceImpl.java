@@ -27,10 +27,10 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 搜索服务实现：
- * - 宽召回（multi_match 命中 title^3 与 body）+ 业务加权（function_score）
- * - 过滤（status=published、可选 tags）+ 排序（score/publish_time/like/view/content_id）
- * - 高亮片段合并为 snippet；游标分页使用 search_after
+ * Elasticsearch full-text search with function_score boosting and cursor pagination.
+ *
+ * <p>Query strategy: CJK uses match_phrase (avoid single-char false positives from standard analyzer);
+ * Latin uses multi_match with AND operator. Interaction counts weighted via log1p field_value_factor.
  */
 @Service
 @RequiredArgsConstructor
@@ -45,7 +45,14 @@ public class SearchServiceImpl implements SearchService {
     private static final String INDEX = "chtholly_content_index";
 
     /**
-     * 关键词检索：相关性 + 互动数据加权，支持游标分页与高亮。
+     * Full-text search with relevance ranking, highlights, and search_after cursor pagination.
+     *
+     * @param q                     Query string.
+     * @param size                  Page size.
+     * @param tagsCsv               Optional comma-separated tag filter.
+     * @param after                 Opaque cursor from previous page (Base64-encoded sort values).
+     * @param currentUserIdNullable Current user for liked/faved enrichment.
+     * @return Search results; empty with {@code degraded=true} on ES failure.
      */
     @SuppressWarnings("unchecked")
     public SearchResponse search(String q, int size, String tagsCsv, String after, Long currentUserIdNullable) {
@@ -91,10 +98,11 @@ public class SearchServiceImpl implements SearchService {
                                     }
                                     return bq;
                                 }))
-                                // 对点赞数收藏数设置权重
+                                // title^3：标题命中权重是正文 3 倍，符合用户「搜标题」的预期
                                 .functions(fn -> fn.fieldValueFactor(fvf -> fvf.field("like_count")
                                         .modifier(FieldValueFactorModifier.Log1p))
                                         .weight(2.0))
+                                // log1p 修饰：点赞 1 与 1000 的差距被压缩，避免头部内容完全碾压相关性
                                 .functions(fn -> fn.fieldValueFactor(fvf -> fvf.field("view_count")
                                         .modifier(FieldValueFactorModifier.Log1p))
                                         .weight(1.0))
@@ -195,7 +203,11 @@ public class SearchServiceImpl implements SearchService {
     }
 
     /**
-     * 联想建议：Completion Suggester，取 title_suggest 的候选文本。
+     * Typeahead suggestions via ES Completion Suggester on {@code title_suggest} field.
+     *
+     * @param prefix Query prefix.
+     * @param size   Max suggestions to return.
+     * @return Matching title strings (empty on ES failure).
      */
     @SuppressWarnings("unchecked")
     public SuggestResponse suggest(String prefix, int size) {

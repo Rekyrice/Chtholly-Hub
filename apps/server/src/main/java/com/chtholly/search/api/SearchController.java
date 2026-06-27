@@ -17,7 +17,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.chtholly.auth.token.JwtService;
 
-/** 搜索接口：关键词检索与联想建议。 */
+/**
+ * Full-text search and autocomplete suggestion endpoints backed by Elasticsearch.
+ */
 @Tag(name = "搜索", description = "全文搜索、联想建议")
 @RestController
 @RequestMapping("/api/v1/search")
@@ -28,6 +30,16 @@ public class SearchController {
     private final SearchService searchService;
     private final JwtService jwtService;
 
+    /**
+     * Searches posts by keyword with optional tag filter and cursor pagination.
+     *
+     * @param q search query text
+     * @param size maximum hits to return
+     * @param tagsCsv optional comma-separated tag slugs
+     * @param after optional cursor for next page
+     * @param jwt optional JWT for personalized fields (may be null)
+     * @return search result page
+     */
     @Operation(summary = "关键词搜索")
     @GetMapping
     public SearchResponse search(@RequestParam("q") @NotBlank String q,
@@ -39,6 +51,13 @@ public class SearchController {
         return searchService.search(q, size, tagsCsv, after, userId);
     }
 
+    /**
+     * Returns prefix-based search suggestions for autocomplete.
+     *
+     * @param prefix typed prefix text
+     * @param size maximum suggestions to return
+     * @return suggestion list
+     */
     @Operation(summary = "搜索联想建议")
     @GetMapping("/suggest")
     public SuggestResponse suggest(@RequestParam("prefix") @NotBlank String prefix,

@@ -11,6 +11,9 @@ import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
 
+/**
+ * LLM-powered generator for short Chinese post descriptions when {@code llm.enabled} is true.
+ */
 @Service
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
@@ -19,7 +22,11 @@ public class PostDescriptionServiceImpl implements PostDescriptionService {
     private final ChatClient chatClient;
 
     /**
-     * 基于正文生成不超过 50 字的中文描述。
+     * Generates a concise Chinese description (at most 50 characters) from post body text.
+     *
+     * @param content post body markdown or plain text
+     * @return trimmed description within the length limit
+     * @throws BusinessException if content is empty or the LLM call fails
      */
     public String generateDescription(String content) {
         if (content == null || content.trim().isEmpty()) {

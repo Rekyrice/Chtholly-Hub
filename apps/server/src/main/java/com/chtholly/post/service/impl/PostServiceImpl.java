@@ -40,6 +40,15 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * Post lifecycle service: draft CRUD, publish, metadata, and detail retrieval.
+ *
+ * <p>Write path invalidates L1/L2 caches and emits Outbox events for search index sync.
+ * Detail reads use Caffeine L1 → Redis L2 → MySQL with SingleFlight and hot-key TTL extension.
+ *
+ * @see PostFeedServiceImpl
+ * @see SearchIndexService
+ */
 @Service
 public class PostServiceImpl implements PostService {
 
@@ -97,7 +106,10 @@ public class PostServiceImpl implements PostService {
         this.searchIndexService = searchIndexService;
     }
     /**
-     * 创建草稿并返回新 ID。
+     * Creates a new draft post and returns its snowflake ID.
+     *
+     * @param creatorId Owner user ID.
+     * @return New post ID.
      */
     @Transactional
     public long createDraft(long creatorId) {
@@ -118,11 +130,18 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 确认内容上传（写入 objectKey、etag、大小、校验和，并生成公共 URL）。
+     * Confirms OSS content upload and stores object metadata on the draft.
+     *
+     * @param creatorId  Owner user ID.
+     * @param id           Post ID.
+     * @param objectKey    OSS object key.
+     * @param etag         OSS ETag.
+     * @param size         Content size in bytes.
+     * @param sha256       Content checksum.
      */
     @Transactional
     public void confirmContent(long creatorId, long id, String objectKey, String etag, Long size, String sha256) {
-        // 缓存双删
+        // 双删缓存：写前删一次、写后再删，降低并发读读到旧详情的窗口
         invalidateCache(id);
 
         Post post = Post.builder()
@@ -152,7 +171,7 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 更新元数据：标题、标签、可见性、置顶、图片列表等。
+     * Updates post metadata (title, tags, visibility, pin, description).
      */
     @Transactional
     public void updateMetadata(long creatorId, long id, String title, Long tagId, List<String> tags, List<String> imgUrls, String visible, Boolean isTop, String description) {
@@ -202,9 +221,7 @@ public class PostServiceImpl implements PostService {
         invalidateCache(id);
     }
 
-    /**
-     * 发布草稿，设置状态与发布时间。
-     */
+    /** Publishes a draft: assigns slug, syncs tags, increments user post counter, indexes search/RAG. */
     @Transactional
     public void publish(long creatorId, long id) {
         int updated = mapper.publish(id, creatorId);
@@ -251,9 +268,7 @@ public class PostServiceImpl implements PostService {
         }
     }
 
-    /**
-     * 设置置顶。
-     */
+    /** Sets or clears pin status for the author's post. */
     @Transactional
     public void updateTop(long creatorId, long id, boolean isTop) {
         invalidateCache(id);
@@ -267,9 +282,7 @@ public class PostServiceImpl implements PostService {
         invalidateCache(id);
     }
 
-    /**
-     * 设置可见性（权限）。
-     */
+    /** Updates visibility (public/followers/school/private/unlisted). */
     @Transactional
     public void updateVisibility(long creatorId, long id, String visible) {
         if (!isValidVisible(visible)) {
@@ -287,9 +300,7 @@ public class PostServiceImpl implements PostService {
         invalidateCache(id);
     }
 
-    /**
-     * 软删除。
-     */
+    /** Soft-deletes a post and removes it from search index when previously published. */
     @Transactional
     public void delete(long creatorId, long id) {
         invalidateCache(id);
@@ -377,22 +388,11 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 获取帖子详情（含作者信息、图片列表）。
-     * <p>
-     * 流程：
-     * 1. 尝试读取 Redis 缓存。
-     * 2. 若缓存命中，直接返回（需叠加实时计数与用户状态）。
-     * 3. 若缓存未命中，使用 SingleFlight 锁机制防止缓存击穿。
-     * 4. 锁内再次检查缓存（双重检查）。
-     * 5. 若仍未命中，回源查询数据库。
-     * 6. 校验内容状态与访问权限。
-     * 7. 组装数据并写入 Redis 缓存（带随机过期时间与热点自动延期）。
-     * 8. 返回最终结果（叠加用户维度状态）。
-     * </p>
+     * Loads post detail by ID with multi-level cache and access control.
      *
-     * @param id 帖子 ID
-     * @param currentUserIdNullable 当前用户 ID（可空，用于判断权限与点赞状态）
-     * @return 帖子详情响应
+     * @param id                    Post ID.
+     * @param currentUserIdNullable Current user (null = anonymous).
+     * @return Detail response with live counts and liked/faved state.
      */
     @Transactional(readOnly = true)
     public PostDetailResponse getDetail(long id, Long currentUserIdNullable) {
@@ -416,7 +416,7 @@ public class PostServiceImpl implements PostService {
             return resp;
         }
 
-        // 3. 缓存未命中，进入 SingleFlight 模式
+        // 3. L2 未命中 → SingleFlight：同一 pageKey 只有一个线程查 DB，其余等待复用结果
         return singleFlight.runExclusive(pageKey, () -> {
             // 4. 双重检查（Double Check）
             String again = redis.opsForValue().get(pageKey);
@@ -430,6 +430,7 @@ public class PostServiceImpl implements PostService {
 
             // 6. 处理内容不存在或已删除的情况
             if (row == null || "deleted".equals(row.getStatus())) {
+                // 空值缓存 30–60s：防止恶意刷不存在的 ID 击穿 DB
                 redis.opsForValue().set(pageKey, "NULL", java.time.Duration.ofSeconds(30 + java.util.concurrent.ThreadLocalRandom.current().nextInt(31)));
                 throw new ResourceNotFoundException("内容不存在");
             }
@@ -488,6 +489,7 @@ public class PostServiceImpl implements PostService {
         });
     }
 
+    /** Resolves post detail by URL slug (delegates to {@link #getDetail(long, Long)}). */
     @Transactional(readOnly = true)
     public PostDetailResponse getDetailBySlug(String slug, Long currentUserIdNullable) {
         Long id = mapper.findIdBySlug(slug);

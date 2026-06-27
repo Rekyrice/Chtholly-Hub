@@ -12,9 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 /**
- * 行为接口：点赞/取消点赞、收藏/取消收藏。
- *
- * <p>所有接口基于登录用户，返回操作是否改变状态以及当前状态值。</p>
+ * Authenticated like and favorite toggle endpoints for arbitrary entities.
  */
 @RestController
 @RequestMapping("/api/v1/action")
@@ -29,7 +27,11 @@ public class ActionController {
     }
 
     /**
-     * 点赞操作。
+     * Likes an entity for the authenticated user.
+     *
+     * @param req entity type and ID
+     * @param jwt authenticated user JWT
+     * @return map with {@code changed} flag and current {@code liked} state
      */
     @PostMapping("/like")
     public ResponseEntity<Map<String, Object>> like(@Valid @RequestBody ActionRequest req,
@@ -43,7 +45,11 @@ public class ActionController {
     }
 
     /**
-     * 取消点赞操作。
+     * Removes a like from an entity for the authenticated user.
+     *
+     * @param req entity type and ID
+     * @param jwt authenticated user JWT
+     * @return map with {@code changed} flag and current {@code liked} state
      */
     @PostMapping("/unlike")
     public ResponseEntity<Map<String, Object>> unlike(@Valid @RequestBody ActionRequest req,
@@ -57,7 +63,11 @@ public class ActionController {
     }
 
     /**
-     * 收藏操作。
+     * Favorites an entity for the authenticated user.
+     *
+     * @param req entity type and ID
+     * @param jwt authenticated user JWT
+     * @return map with {@code changed} flag and current {@code faved} state
      */
     @PostMapping("/fav")
     public ResponseEntity<Map<String, Object>> fav(@Valid @RequestBody ActionRequest req,
@@ -71,7 +81,11 @@ public class ActionController {
     }
 
     /**
-     * 取消收藏操作。
+     * Removes a favorite from an entity for the authenticated user.
+     *
+     * @param req entity type and ID
+     * @param jwt authenticated user JWT
+     * @return map with {@code changed} flag and current {@code faved} state
      */
     @PostMapping("/unfav")
     public ResponseEntity<Map<String, Object>> unfav(@Valid @RequestBody ActionRequest req,

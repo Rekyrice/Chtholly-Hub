@@ -10,6 +10,9 @@ import com.chtholly.user.service.UserPublicService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+/**
+ * Resolves public user profile data by handle for profile pages.
+ */
 @Service
 @RequiredArgsConstructor
 public class UserPublicServiceImpl implements UserPublicService {
@@ -17,6 +20,13 @@ public class UserPublicServiceImpl implements UserPublicService {
     private final UserMapper userMapper;
     private final PostMapper postMapper;
 
+    /**
+     * Loads a public profile snapshot including published post count.
+     *
+     * @param handle user handle (trimmed)
+     * @return public profile response
+     * @throws BusinessException if the handle is blank or the user does not exist
+     */
     @Override
     public PublicUserResponse getByHandle(String handle) {
         if (handle == null || handle.isBlank()) {

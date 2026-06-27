@@ -11,6 +11,9 @@ import com.chtholly.user.service.UserService;
 import com.chtholly.user.mapper.UserMapper;
 import com.chtholly.user.domain.User;
 
+/**
+ * Internal user persistence service for authentication and account management.
+ */
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
@@ -18,10 +21,10 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
 
     /**
-     * 根据手机号查询用户。
+     * Finds a user by phone number.
      *
-     * @param phone 手机号。
-     * @return 用户 Optional。
+     * @param phone phone number
+     * @return matching user, or empty if not found
      */
     @Transactional(readOnly = true)
     public Optional<User> findByPhone(String phone) {
@@ -29,10 +32,10 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 根据邮箱查询用户。
+     * Finds a user by email address.
      *
-     * @param email 邮箱地址。
-     * @return 用户 Optional。
+     * @param email email address
+     * @return matching user, or empty if not found
      */
     @Transactional(readOnly = true)
     public Optional<User> findByEmail(String email) {
@@ -40,10 +43,10 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 根据 ID 查询用户。
+     * Finds a user by primary key.
      *
-     * @param id 用户 ID。
-     * @return 用户 Optional。
+     * @param id user ID
+     * @return matching user, or empty if not found
      */
     @Transactional(readOnly = true)
     public Optional<User> findById(long id) {
@@ -51,10 +54,10 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 判断手机号是否存在。
+     * Checks whether a phone number is already registered.
      *
-     * @param phone 手机号。
-     * @return 是否存在。
+     * @param phone phone number
+     * @return {@code true} if a user with the phone exists
      */
     @Transactional(readOnly = true)
     public boolean existsByPhone(String phone) {
@@ -62,10 +65,10 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 判断邮箱是否存在。
+     * Checks whether an email address is already registered.
      *
-     * @param email 邮箱地址。
-     * @return 是否存在。
+     * @param email email address
+     * @return {@code true} if a user with the email exists
      */
     @Transactional(readOnly = true)
     public boolean existsByEmail(String email) {
@@ -73,10 +76,10 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 创建用户，写入创建与更新时间并持久化。
+     * Creates a new user with creation and update timestamps.
      *
-     * @param user 待创建的用户实体。
-     * @return 持久化后的用户实体。
+     * @param user user entity to persist
+     * @return the persisted user entity
      */
     @Transactional
     public User createUser(User user) {
@@ -88,9 +91,9 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 更新用户密码哈希并写入更新时间。
+     * Updates a user's password hash and refresh timestamp.
      *
-     * @param user 用户实体（需包含 ID 与新的 passwordHash）。
+     * @param user user entity containing ID and new password hash
      */
     @Transactional
     public void updatePassword(User user) {

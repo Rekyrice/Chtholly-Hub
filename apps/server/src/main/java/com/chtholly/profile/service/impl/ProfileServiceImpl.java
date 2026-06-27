@@ -15,16 +15,8 @@ import com.chtholly.user.mapper.UserMapper;
 import com.chtholly.profile.service.ProfileService;
 
 /**
- * 个人资料服务实现。
- *
- * <p>职责：</p>
- * <ul>
- *   <li>读取用户资料</li>
- *   <li>校验并更新用户基础信息（昵称/简介/性别/生日/学校/标签等）</li>
- *   <li>更新头像 URL</li>
- * </ul>
- *
- * <p>错误处理：通过抛出 {@link BusinessException} 携带 {@link ErrorCode}，由全局异常处理器统一返回 HTTP 400。</p>
+ * Default implementation of {@link ProfileService}.
+ * Reads and updates authenticated user profile fields and avatar URL.
  */
 @Service
 @RequiredArgsConstructor
@@ -33,12 +25,10 @@ public class ProfileServiceImpl implements ProfileService {
     private final UserMapper userMapper;
 
     /**
-     * 按用户 ID 查询用户实体。
+     * Loads a user entity by ID for internal profile operations.
      *
-     * <p>只读事务用于减少不必要的写锁与脏检查。</p>
-     *
-     * @param userId 用户 ID
-     * @return 用户实体（不存在则为 {@link Optional#empty()}）
+     * @param userId user ID
+     * @return matching user, or empty if not found
      */
     @Override
     @Transactional(readOnly = true)
@@ -47,20 +37,12 @@ public class ProfileServiceImpl implements ProfileService {
     }
 
     /**
-     * 更新个人资料（支持部分字段更新）。
+     * Partially updates profile fields for the authenticated user.
      *
-     * <p>更新流程：</p>
-     * <ul>
-     *   <li>校验用户存在</li>
-     *   <li>校验至少提供一个待更新字段</li>
-     *   <li>若提交用户标识（handle），校验唯一性</li>
-     *   <li>构造 patch 对象并执行更新</li>
-     *   <li>重新查询并返回更新后的快照</li>
-     * </ul>
-     *
-     * @param userId 当前登录用户 ID
-     * @param req patch 请求（字段可空，非空字段会被更新）
-     * @return 更新后的个人资料响应
+     * @param userId current user ID
+     * @param req patch request with optional fields to update
+     * @return updated profile snapshot
+     * @throws BusinessException if the user is missing, no fields were provided, or handle is taken
      */
     @Override
     @Transactional
@@ -100,11 +82,6 @@ public class ProfileServiceImpl implements ProfileService {
         return toResponse(updated);
     }
 
-    /**
-     * 将 patch 请求转换为用户更新对象。
-     *
-     * <p>仅对非空字段进行 set，且对字符串做 trim/归一化处理。</p>
-     */
     private static User getUser(ProfilePatchRequest req, User current) {
         User patch = new User();
         patch.setId(current.getId());
@@ -133,13 +110,12 @@ public class ProfileServiceImpl implements ProfileService {
     }
 
     /**
-     * 更新用户头像 URL。
+     * Updates the avatar URL after upload completes elsewhere.
      *
-     * <p>头像文件上传由上层完成，此处只负责将 URL 写入用户资料。</p>
-     *
-     * @param userId 当前登录用户 ID
-     * @param avatarUrl 头像 URL（通常来自对象存储上传返回）
-     * @return 更新后的个人资料响应
+     * @param userId current user ID
+     * @param avatarUrl new avatar URL from object storage
+     * @return updated profile snapshot
+     * @throws BusinessException if the user does not exist
      */
     @Override
     @Transactional
@@ -160,9 +136,6 @@ public class ProfileServiceImpl implements ProfileService {
         return toResponse(updated);
     }
 
-    /**
-     * 将用户实体映射为对外响应 DTO。
-     */
     private ProfileResponse toResponse(User user) {
         return new ProfileResponse(
                 user.getId(),

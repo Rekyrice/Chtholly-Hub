@@ -21,6 +21,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * REST endpoints for OSS presigned uploads (post content and inline images).
+ */
 @RestController
 @RequestMapping("/api/v1/storage")
 @Validated
@@ -32,7 +35,11 @@ public class StorageController {
     private final PostMapper postMapper;
 
     /**
-     * 获取用于直传的 PUT 预签名 URL。
+     * Issues a presigned PUT URL for direct client-to-OSS upload.
+     *
+     * @param request upload scene, content type, and target post metadata
+     * @param jwt authenticated user JWT
+     * @return presigned URL, object key, required headers, and expiry seconds
      */
     @PostMapping("/presign")
     public StoragePresignResponse presign(@Valid @RequestBody StoragePresignRequest request,

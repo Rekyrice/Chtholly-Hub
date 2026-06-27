@@ -34,12 +34,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 关系服务实现。
- * 设计要点：
- * - 写路径：关注/取消关注经 Lua 令牌桶限流后入库，并以 Outbox 事件异步驱动粉丝表更新与缓存维护；
- * - 读路径：优先读取 Redis ZSet（关注/粉丝）并按需回填，支持偏移与游标两种分页；大V用户启用本地 Top 缓存；
- * - 计数：用户维度计数（关注/粉丝等）通过独立服务维护，阈值判断如“大V”基于 SDS 段值；
- * - 并发与一致性：回填后设置短 TTL，降低陈旧风险；Outbox 事件消费者提供幂等与去重保障。
+ * Follow/unfollow service with Outbox-driven fan-list sync and Redis ZSet read cache.
+ *
+ * <p>Write path: token-bucket rate limit → following table → Outbox event for async fan ZSet build.
+ * Read path: L1 Caffeine Top cache for big-V users → Redis ZSet → DB backfill with short TTL.
+ *
+ * @see OutboxMapper
  */
 @Service
 public class RelationServiceImpl implements RelationService {
@@ -102,6 +102,7 @@ public class RelationServiceImpl implements RelationService {
 
         if (inserted > 0) {
             try {
+                // Outbox 而非同步写粉丝表：关注接口只保证 following 事实，fan 侧由 CDC/Consumer 最终一致
                 Long outId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
                 String payload = objectMapper.writeValueAsString(new RelationEvent("FollowCreated", fromUserId, toUserId, id));
                 outboxMapper.insert(outId, "following", id, "FollowCreated", payload);
@@ -302,12 +303,13 @@ public class RelationServiceImpl implements RelationService {
         }
 
         long n = 0;
-        int off = 2 * 4;
+        int off = 2 * 4; // SDS 第 3 段（followers 计数）在大端 4 字节布局中的偏移
 
         for (int i = 0; i < 4; i++) {
             n = (n << 8) | (raw[off + i] & 0xFFL);
         }
 
+        // 50 万粉丝阈值：超过后启用本地 Top-500 缓存，避免每次分页都扫完整 ZSet
         return n >= 500_000L;
     }
 

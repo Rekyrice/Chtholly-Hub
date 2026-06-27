@@ -9,6 +9,9 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
+/**
+ * LLM-backed RAG endpoints for per-post Q&amp;A and vector index maintenance.
+ */
 @RestController
 @RequestMapping("/api/v1/posts")
 @Validated
@@ -20,8 +23,13 @@ public class PostRagController {
     private final RagQueryService ragQueryService;
 
     /**
-     * 单篇帖子 RAG 问答（WebFlux + Flux 流式输出）。
-     * 示例：GET /api/v1/posts/{id}/qa/stream?question=...&topK=5&maxTokens=1024
+     * Streams a RAG answer for a single post as Server-Sent Events.
+     *
+     * @param id post snowflake ID
+     * @param question user question text
+     * @param topK number of retrieved chunks to include
+     * @param maxTokens maximum tokens for the generated answer
+     * @return SSE stream of answer text fragments
      */
     @GetMapping(value = "/{id}/qa/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> qaStream(@PathVariable("id") long id,
@@ -32,7 +40,10 @@ public class PostRagController {
     }
 
     /**
-     * 手动触发单篇索引重建（返回重建的切片数）。
+     * Manually rebuilds the vector index for one post.
+     *
+     * @param id post snowflake ID
+     * @return number of index chunks written
      */
     @PostMapping("/{id}/rag/reindex")
     public int reindex(@PathVariable("id") long id) {

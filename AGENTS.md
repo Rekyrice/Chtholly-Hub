@@ -80,21 +80,36 @@ docker compose -f docker-compose.prod.yml up -d
 ### 后端（Java）
 
 1. **包结构**: `{module}/api/`（Controller + DTO）、`{module}/service/`（接口）、`{module}/service/impl/`（实现）、`{module}/mapper/`（MyBatis）、`{module}/model/`（实体/Row）
-2. **注释分层策略**:
-   - **类级 Javadoc → 英文**：描述类的职责与在系统中的位置（对外「门面」）
-   - **方法级 Javadoc → 英文**：`@param`、`@return`、`@throws` 用英文
-   - **方法体内 WHY 注释 → 中文**：解释**为什么**这样设计，而非复述代码在做什么（面试时可作为现成讲解）
-   - **简单行内注释 → 中英均可**
+2. **注释分层策略**（类/方法英文门面，方法体内中文 WHY）:
+   - **(a) 类级 Javadoc → 英文**：描述职责、在系统中的位置、关键架构关系；可含 `@see` 引用相关类
+   - **(b) 方法级 Javadoc → 英文**：public/protected 方法写 `@param`、`@return`、`@throws`（API 文档性质）
+   - **(c) 方法体内 WHY 注释 → 中文**：解释**为什么**这样设计（面试时可当讲解），不复述代码在做什么
+   - **(d) 魔法数字与非常规逻辑**：必须有行内注释（中英文皆可），说明含义或来源
+   - **(e) TODO/FIXME/HACK 标记**:
+     - `// TODO: Description — tracked in [issue/prompt reference]`
+     - `// HACK: 临时方案，原因 [reason]，在 [condition] 后移除`
+   - **不做的事**: 不给 Lombok 生成的 getter/setter 加注释；不给显而易见代码加注释；不写被注释掉的死代码
    - 示例:
      ```java
      /**
       * Multi-level cache feed service for public post listings.
+      *
+      * <p>Architecture: Caffeine L1 → Redis L2 fragment cache → MySQL.
+      * Uses SingleFlight for stampede prevention.
+      *
+      * @see HotKeyDetector
       */
      public class PostFeedServiceImpl {
+         /**
+          * Fetches a page of public posts with multi-level cache.
+          *
+          * @param page Page number (1-indexed).
+          * @param size Items per page (max 50).
+          * @return Cached feed page with enriched post items.
+          */
          public FeedPage getPublicFeed(int page, int size) {
              // 用 SingleFlight 而不是直接查缓存，是因为缓存同时过期时
              // 几十个并发请求会同时打到 DB（缓存击穿）。
-             // SingleFlight 保证同一 pageKey 只有一个请求真正查 DB，其余复用结果。
          }
      }
      ```

@@ -30,6 +30,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Default implementation of {@link CommentService}.
+ * Handles two-level nested comments on published posts with sanitization, rate limiting,
+ * and {@link CommentCreatedEvent} publishing for downstream notifications.
+ */
 @Service
 @RequiredArgsConstructor
 public class CommentServiceImpl implements CommentService {
@@ -45,6 +50,16 @@ public class CommentServiceImpl implements CommentService {
     private final CommentContentSanitizer contentSanitizer;
     private final CommentRateLimiter commentRateLimiter;
 
+    /**
+     * Lists paginated root comments and their nested replies for a post.
+     *
+     * @param postId target post ID
+     * @param viewerUserIdNullable optional viewer user ID for visibility checks
+     * @param page page number (1-based)
+     * @param size page size
+     * @return paginated comment tree with total count and has-more flag
+     * @throws BusinessException if the post is missing, unpublished, or not visible to the viewer
+     */
     @Override
     @Transactional(readOnly = true)
     public CommentListResponse listByPost(long postId, Long viewerUserIdNullable, int page, int size) {
@@ -112,6 +127,15 @@ public class CommentServiceImpl implements CommentService {
         return new CommentListResponse(items, total, page, size, hasMore);
     }
 
+    /**
+     * Creates a root comment or a level-1 reply on a published post.
+     *
+     * @param postId target post ID
+     * @param userId author user ID
+     * @param request comment content and optional parent comment ID
+     * @return the newly created comment
+     * @throws BusinessException if validation fails, rate limit is exceeded, or the parent is invalid
+     */
     @Override
     @Transactional
     public CommentResponse create(long postId, long userId, CreateCommentRequest request) {
@@ -153,6 +177,15 @@ public class CommentServiceImpl implements CommentService {
         return toResponse(row, Collections.emptyList());
     }
 
+    /**
+     * Soft-deletes a comment when the caller is the comment author or the post author.
+     *
+     * @param postId target post ID
+     * @param commentId comment to delete
+     * @param userId requesting user ID
+     * @throws ResourceNotFoundException if the comment does not exist
+     * @throws BusinessException if the caller lacks permission to delete the comment
+     */
     @Override
     @Transactional
     public void delete(long postId, long commentId, long userId) {

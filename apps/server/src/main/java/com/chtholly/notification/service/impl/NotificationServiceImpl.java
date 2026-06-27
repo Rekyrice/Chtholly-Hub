@@ -21,6 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Default implementation of {@link NotificationService}.
+ * Persists in-app notifications and builds display messages from typed JSON payloads.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -32,6 +36,14 @@ public class NotificationServiceImpl implements NotificationService {
     private final SnowflakeIdGenerator idGen;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Returns a paginated list of notifications for a user with aggregate counts.
+     *
+     * @param userId recipient user ID
+     * @param page page number (1-based, clamped to at least 1)
+     * @param size page size (clamped to 1–50)
+     * @return notification items with total and unread counts
+     */
     @Override
     @Transactional(readOnly = true)
     public NotificationListResponse list(long userId, int page, int size) {
@@ -48,12 +60,25 @@ public class NotificationServiceImpl implements NotificationService {
         return new NotificationListResponse(items, total, unread);
     }
 
+    /**
+     * Returns the unread notification count for a user.
+     *
+     * @param userId recipient user ID
+     * @return unread count wrapper
+     */
     @Override
     @Transactional(readOnly = true)
     public UnreadCountResponse unreadCount(long userId) {
         return new UnreadCountResponse(notificationMapper.countUnread(userId));
     }
 
+    /**
+     * Marks a single notification as read for the owning user.
+     *
+     * @param userId recipient user ID
+     * @param notificationId notification to mark read
+     * @throws BusinessException if the notification does not exist or belongs to another user
+     */
     @Override
     @Transactional
     public void markRead(long userId, long notificationId) {
@@ -64,12 +89,25 @@ public class NotificationServiceImpl implements NotificationService {
         notificationMapper.markRead(notificationId, userId);
     }
 
+    /**
+     * Marks all notifications as read for a user.
+     *
+     * @param userId recipient user ID
+     */
     @Override
     @Transactional
     public void markAllRead(long userId) {
         notificationMapper.markAllRead(userId);
     }
 
+    /**
+     * Persists a new notification with a JSON-serialized payload.
+     *
+     * @param recipientUserId target user ID
+     * @param type notification type
+     * @param payload structured payload fields for display and deep links
+     * @throws BusinessException if payload serialization or persistence fails
+     */
     @Override
     @Transactional
     public void create(long recipientUserId, NotificationType type, Map<String, Object> payload) {
@@ -81,18 +119,38 @@ public class NotificationServiceImpl implements NotificationService {
         }
     }
 
+    /**
+     * Checks whether the user has an unread like notification for a specific post.
+     *
+     * @param userId recipient user ID
+     * @param postId liked post ID
+     * @return {@code true} if an unread like notification exists
+     */
     @Override
     @Transactional(readOnly = true)
     public boolean hasUnreadLikePost(long userId, long postId) {
         return notificationMapper.countUnreadLikePost(userId, NotificationType.LIKE_POST.name(), postId) > 0;
     }
 
+    /**
+     * Deletes read notifications older than the retention window for one user.
+     *
+     * @param userId recipient user ID
+     * @param retentionDays age threshold in days for eligible read notifications
+     * @return number of rows deleted
+     */
     @Override
     @Transactional
     public int cleanExpired(long userId, int retentionDays) {
         return notificationMapper.deleteExpiredReadByUser(userId, retentionDays);
     }
 
+    /**
+     * Deletes read notifications older than the retention window for all users.
+     *
+     * @param retentionDays age threshold in days for eligible read notifications
+     * @return number of rows deleted
+     */
     @Override
     @Transactional
     public int cleanExpiredAll(int retentionDays) {
