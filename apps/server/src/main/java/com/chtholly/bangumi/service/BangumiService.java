@@ -22,4 +22,7 @@ public interface BangumiService {
      * @param workType      过滤作品类型：book / anime / all
      */
     String describePersonWorks(String keyword, String workTitleHint, String workType);
+
+    /** 查询条目下的登场角色列表（含 relation 如主役/配角）。 */
+    String describeSubjectCharacters(String keyword);
 }

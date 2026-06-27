@@ -77,6 +77,12 @@ public class BangumiClient {
         return exchangeJson(url, HttpMethod.GET, null);
     }
 
+    /** 条目关联角色（登场人物）。 */
+    public JsonNode getSubjectCharacters(long subjectId) {
+        String url = properties.getBaseUrl() + "/v0/subjects/" + subjectId + "/characters";
+        return exchangeJson(url, HttpMethod.GET, null);
+    }
+
     /** 人物参与的全部条目。 */
     public JsonNode getPersonSubjects(long personId) {
         String url = properties.getBaseUrl() + "/v0/persons/" + personId + "/subjects";

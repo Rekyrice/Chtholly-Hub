@@ -1,6 +1,9 @@
 package com.chtholly.agent;
 
 import com.chtholly.agent.config.AgentProperties;
+import com.chtholly.agent.memory.AgentContextUtil;
+import com.chtholly.agent.memory.AgentConversationMemory;
+import com.chtholly.agent.memory.AgentTurn;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -38,8 +41,10 @@ public class ChthollyAgent {
 
     /**
      * 执行一轮对话，通过 sink 推送 think/act/observe/delta/final/error 事件。
+     *
+     * @param memory 当前 WebSocket 会话记忆（跨轮次追问）
      */
-    public void run(String question, long userId, Consumer<AgentEvent> sink) {
+    public void run(String question, long userId, AgentConversationMemory memory, Consumer<AgentEvent> sink) {
         if (question == null || question.isBlank()) {
             emitError(sink, "问题不能为空");
             return;
@@ -52,7 +57,11 @@ public class ChthollyAgent {
 
         String system = buildSystemPrompt(toolMap.values());
         List<String> transcript = new ArrayList<>();
-        transcript.add("User: " + question.trim());
+        String historyBlock = memory == null ? "" : memory.formatForPrompt();
+        if (!historyBlock.isBlank()) {
+            transcript.add(historyBlock);
+        }
+        transcript.add("## 当前问题\nUser: " + question.trim());
 
         int maxSteps = Math.max(1, properties.getMaxSteps());
         for (int step = 0; step < maxSteps; step++) {
@@ -85,16 +94,18 @@ public class ChthollyAgent {
             emitThink(sink, action);
 
             if (action.isFinal()) {
-                if (isBangumiDomainQuestion(question) && !usedBangumiTool(transcript)) {
-                    String observation = authorWorksQuestion(question)
+                if (needsBangumiToolBeforeFinal(question, memory, transcript)) {
+                    String observation = characterQuestion(question)
+                            ? "系统要求：该问题涉及条目角色/人物，必须先调用 bangumi_characters（keyword 从对话历史推断作品名），禁止凭记忆直接回答。"
+                            : authorWorksQuestion(question)
                             ? "系统要求：该问题涉及作者/作品列表，必须先调用 bangumi_person_works（可传 work_title），禁止凭记忆或站内搜索直接回答。"
-                            : "系统要求：该问题涉及动漫/漫画元数据，必须先调用 bangumi_search 或 bangumi_person_works，禁止凭记忆直接回答。";
+                            : "系统要求：该问题涉及动漫/漫画元数据，必须先调用 bangumi_search、bangumi_characters 或 bangumi_person_works，禁止凭记忆直接回答。";
                     emitObserve(sink, observation);
                     transcript.add("Assistant: " + llmOut);
                     transcript.add("Observation: " + observation);
                     continue;
                 }
-                streamFinalAnswer(sink, question, transcript);
+                streamFinalAnswer(sink, question, transcript, memory);
                 return;
             }
 
@@ -110,6 +121,9 @@ public class ChthollyAgent {
 
             Map<String, Object> inputMap = new LinkedHashMap<>(jsonToMap(action.input()));
             inputMap.put("_userQuestion", question.trim());
+            if (memory != null) {
+                inputMap.put("_conversationHistory", memory.formatForPrompt());
+            }
             emitAct(sink, tool.name(), action.input());
             String observation;
             try {
@@ -127,18 +141,23 @@ public class ChthollyAgent {
         emitError(sink, "已达到最大推理步数（" + maxSteps + "），请简化问题后重试");
     }
 
-    private void streamFinalAnswer(Consumer<AgentEvent> sink, String question, List<String> transcript) {
+    private void streamFinalAnswer(
+            Consumer<AgentEvent> sink,
+            String question,
+            List<String> transcript,
+            AgentConversationMemory memory) {
         String context = String.join("\n\n", transcript);
         String system = """
                 你是 Chtholly Hub 的动漫知识助手「珂朵莉」。
-                根据上方对话与工具 Observation 用简洁中文直接回答用户。
+                根据对话历史、当前问题与工具 Observation 用简洁中文直接回答用户。
+                用户可能在追问上文（如「他们是谁」「宿舍伙伴有哪些」），请结合历史理解指代。
                 只陈述 Observation 中有依据的事实；若工具未返回数据请如实说明。
                 不要输出 JSON 或 markdown 代码块。""";
 
         try {
             Flux<String> flux = chatClient.prompt()
                     .system(system)
-                    .user(context + "\n\n请回答用户的问题。")
+                    .user(context + "\n\n请回答用户的当前问题。")
                     .options(DeepSeekChatOptions.builder()
                             .model("deepseek-chat")
                             .temperature(0.3)
@@ -151,14 +170,42 @@ public class ChthollyAgent {
             flux.doOnNext(chunk -> {
                 if (chunk != null && !chunk.isEmpty()) {
                     full.append(chunk);
-                    emitDelta(sink, chunk);
+                    emitThrottledDelta(sink, chunk);
                 }
             }).blockLast();
 
-            emitFinal(sink, full.toString());
+            String answer = full.toString();
+            emitFinal(sink, answer);
+            if (memory != null && !answer.isBlank()) {
+                memory.add(AgentTurn.user(question.trim()));
+                memory.add(AgentTurn.assistant(answer));
+            }
         } catch (Exception e) {
             log.warn("Agent 流式回答失败: {}", e.getMessage());
             emitError(sink, "生成回答失败，请重试");
+        }
+    }
+
+    /** 按字符节流 delta，避免前端一次性刷完。 */
+    private void emitThrottledDelta(Consumer<AgentEvent> sink, String chunk) {
+        int delayMs = Math.max(0, properties.getStreamCharDelayMs());
+        if (delayMs == 0) {
+            emitDelta(sink, chunk);
+            return;
+        }
+        int i = 0;
+        while (i < chunk.length()) {
+            int cp = chunk.codePointAt(i);
+            emitDelta(sink, new String(Character.toChars(cp)));
+            i += Character.charCount(cp);
+            if (i < chunk.length()) {
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
         }
     }
 
@@ -168,7 +215,31 @@ public class ChthollyAgent {
 
     private boolean usedBangumiTool(List<String> transcript) {
         return transcript.stream().anyMatch(line ->
-                line.contains("bangumi_search") || line.contains("bangumi_person_works"));
+                line.contains("bangumi_search")
+                        || line.contains("bangumi_person_works")
+                        || line.contains("bangumi_characters"));
+    }
+
+    private boolean needsBangumiToolBeforeFinal(
+            String question, AgentConversationMemory memory, List<String> transcript) {
+        if (usedBangumiTool(transcript)) {
+            return false;
+        }
+        if (isBangumiDomainQuestion(question)) {
+            return true;
+        }
+        String history = memory == null ? "" : memory.formatForPrompt();
+        return isFollowUpQuestion(question) && AgentContextUtil.historyMentionsBangumiTopic(history);
+    }
+
+    private boolean characterQuestion(String question) {
+        if (question == null) {
+            return false;
+        }
+        return question.contains("人物")
+                || question.contains("角色")
+                || question.contains("伙伴")
+                || question.contains("登场");
     }
 
     private boolean isSiteTool(String toolName) {
@@ -225,7 +296,24 @@ public class ChthollyAgent {
                 || q.contains("作品")
                 || q.contains("漫画家")
                 || q.contains("声优")
-                || q.contains("插画");
+                || q.contains("插画")
+                || q.contains("人物")
+                || q.contains("角色")
+                || q.contains("伙伴");
+    }
+
+    /** 短追问（依赖对话历史理解指代）。 */
+    private boolean isFollowUpQuestion(String question) {
+        if (question == null) {
+            return false;
+        }
+        String q = question.trim();
+        return q.length() <= 20
+                || q.contains("他们")
+                || q.contains("伙伴")
+                || q.contains("还有")
+                || q.contains("分别")
+                || q.contains("哪些");
     }
 
     private String buildSystemPrompt(Iterable<AgentTool> tools) {
@@ -244,11 +332,13 @@ public class ChthollyAgent {
                 工具选择（必须遵守）：
                 1. fulltext_search / article_rag：仅搜索本站博客帖子。用户问动漫库事实时不要先用它们。
                 2. bangumi_search：查条目（动画/漫画）的评分、季数、集数、放送日。问「有几季」时用系列简称（如「盾之勇者」），工具会返回全部相关动画条目。
-                3. bangumi_person_works：查作者/漫画家及其全部作品。问「某作者有哪些漫画」「某作品作者还画过什么」必用它。
-                4. 涉及 Bangumi 能回答的事实（评分/季数/作者/作品列表）时，禁止凭记忆 final，必须先调 2 或 3。
-                5. 统计季数时，以 Observation 中「共找到 N 部相关动画条目」为准，不要只凭第一条条目推断。
-                6. 只有用户明确问「站内有没有写过…」时才优先 fulltext_search / article_rag。
-                7. 获得足够 Observation 后再 action=final；不要编造工具未返回的内容。""");
+                3. bangumi_characters：查条目的登场角色（主役/配角）。问「主要人物」「宿舍伙伴是谁」必用它；追问时 keyword 用对话历史里的作品名。
+                4. bangumi_person_works：查作者/漫画家及其全部作品。问「某作者有哪些漫画」「某作品作者还画过什么」必用它。
+                5. 涉及 Bangumi 能回答的事实（评分/季数/作者/作品列表/角色）时，禁止凭记忆 final，必须先调 2、3 或 4。
+                6. 统计季数时，以 Observation 中「共找到 N 部相关动画条目」为准，不要只凭第一条条目推断。
+                7. 只有用户明确问「站内有没有写过…」时才优先 fulltext_search / article_rag。
+                8. 若有对话历史，追问需结合上文主题选 keyword（如上文谈某作品，追问「宿舍伙伴」应调 bangumi_characters）。
+                9. 获得足够 Observation 后再 action=final；不要编造工具未返回的内容。""");
         return sb.toString();
     }
 

@@ -2,6 +2,8 @@ package com.chtholly.agent.ws;
 
 import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.ChthollyAgent;
+import com.chtholly.agent.memory.AgentConversationMemory;
+import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.auth.token.JwtService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,6 +34,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final ChthollyAgent agent;
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
+    private final AgentMemoryStore memoryStore;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     private final Map<String, Long> sessionUsers = new ConcurrentHashMap<>();
@@ -53,29 +56,39 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (userId == null) {
             return;
         }
-        executor.submit(() -> handleChat(session, userId, message.getPayload()));
+        executor.submit(() -> handlePayload(session, userId, message.getPayload()));
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         sessionUsers.remove(session.getId());
+        memoryStore.remove(session.getId());
     }
 
-    private void handleChat(WebSocketSession session, long userId, String payload) {
+    private void handlePayload(WebSocketSession session, long userId, String payload) {
         try {
             JsonNode root = objectMapper.readTree(payload);
             String type = root.path("type").asText("");
+
+            if ("clear".equals(type)) {
+                memoryStore.getOrCreate(session.getId()).clear();
+                sendJson(session, "cleared", objectMapper.createObjectNode().put("message", "对话记忆已清空"));
+                return;
+            }
+
             if (!"chat".equals(type)) {
                 sendJson(session, "error", objectMapper.createObjectNode().put("message", "未知消息类型"));
                 return;
             }
+
             String text = root.path("message").asText("").trim();
             if (text.isEmpty()) {
                 sendJson(session, "error", objectMapper.createObjectNode().put("message", "消息不能为空"));
                 return;
             }
 
-            agent.run(text, userId, event -> {
+            AgentConversationMemory memory = memoryStore.getOrCreate(session.getId());
+            agent.run(text, userId, memory, event -> {
                 try {
                     if (session.isOpen()) {
                         sendJson(session, event.type(), event.data());

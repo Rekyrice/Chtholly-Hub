@@ -142,7 +142,21 @@ export default function AgentChat() {
       stepsRef.current = [];
       setLiveSteps([]);
       setBusy(false);
+      return;
     }
+    if (type === "cleared") {
+      setMessages([]);
+      stepsRef.current = [];
+      setLiveSteps([]);
+      streamingIdRef.current = null;
+      setBusy(false);
+    }
+  };
+
+  const clearConversation = () => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: "clear" }));
   };
 
   const sendMessage = async (text: string) => {
@@ -244,11 +258,21 @@ export default function AgentChat() {
             珂朵莉 Agent
           </h1>
           <p className="text-xs mt-0.5" style={{ color: "#9e9e9e" }}>
-            ReAct 推理 · 流式回答 · Bangumi / 站内检索
+            ReAct 推理 · 流式回答 · 会话记忆 · Bangumi / 站内检索
             {connected ? " · 已连接" : " · 未连接"}
           </p>
         </div>
-        <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: "#757575" }}>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={busy || messages.length === 0}
+            onClick={clearConversation}
+            className="text-xs px-2 py-1 border rounded disabled:opacity-40"
+            style={{ borderColor: "#e0e0e0", color: "#757575" }}
+          >
+            清空对话
+          </button>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: "#757575" }}>
           <input
             type="checkbox"
             checked={showSteps}
@@ -256,6 +280,7 @@ export default function AgentChat() {
           />
           显示推理过程
         </label>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">

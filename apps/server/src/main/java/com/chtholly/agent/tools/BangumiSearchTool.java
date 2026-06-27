@@ -1,5 +1,6 @@
 package com.chtholly.agent.tools;
 
+import com.chtholly.agent.memory.AgentContextUtil;
 import com.chtholly.agent.AgentTool;
 import com.chtholly.bangumi.model.BangumiSubjectRow;
 import com.chtholly.bangumi.service.BangumiService;
@@ -113,7 +114,21 @@ public class BangumiSearchTool implements AgentTool {
         if (userQuestion != null) {
             addTitleCandidates(candidates, String.valueOf(userQuestion));
         }
+        Object history = input.get("_conversationHistory");
+        if (history != null) {
+            addFromConversationHistory(candidates, String.valueOf(history), String.valueOf(userQuestion == null ? "" : userQuestion));
+        }
         return new ArrayList<>(candidates);
+    }
+
+    private void addFromConversationHistory(Set<String> candidates, String history, String userQuestion) {
+        if (!StringUtils.hasText(history)) {
+            return;
+        }
+        for (String title : AgentContextUtil.extractWorkTitleCandidates(history, userQuestion)) {
+            candidates.add(title);
+            candidates.add(shortSeriesName(title));
+        }
     }
 
     /** 提取系列简称，便于宽召回多季（如「盾之勇者成名录」→「盾之勇者」）。 */

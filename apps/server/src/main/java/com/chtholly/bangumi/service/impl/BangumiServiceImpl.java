@@ -178,6 +178,57 @@ public class BangumiServiceImpl implements BangumiService {
         return out.isEmpty() ? "未找到该人物参与的作品。" : out.toString();
     }
 
+    @Override
+    public String describeSubjectCharacters(String keyword) {
+        String q = keyword == null ? "" : keyword.trim();
+        if (q.isEmpty()) {
+            return "错误：缺少条目 keyword";
+        }
+
+        List<BangumiSubjectRow> subjects = search(q, 3);
+        if (subjects.isEmpty()) {
+            return "Bangumi 未找到与「" + q + "」相关的条目，无法查询角色。";
+        }
+
+        BangumiSubjectRow subject = subjects.get(0);
+        JsonNode characters = bangumiClient.getSubjectCharacters(subject.getId());
+        if (characters == null) {
+            throw new IllegalStateException(
+                    "Bangumi API 无法访问。请确认 VPN/代理已开启，并在 .env 设置 BANGUMI_HTTP_PROXY（如 http://127.0.0.1:7897）");
+        }
+        if (!characters.isArray() || characters.isEmpty()) {
+            return "条目《" + displayName(subject) + "》暂无角色数据。";
+        }
+
+        List<String> lines = new ArrayList<>();
+        for (JsonNode c : characters) {
+            String name = text(c, "name_cn");
+            if (!StringUtils.hasText(name)) {
+                name = text(c, "name");
+            }
+            String relation = text(c, "relation");
+            if (!StringUtils.hasText(name)) {
+                continue;
+            }
+            lines.add("- " + name + (StringUtils.hasText(relation) ? "（" + relation + "）" : ""));
+        }
+
+        if (lines.isEmpty()) {
+            return "条目《" + displayName(subject) + "》暂无可用角色名。";
+        }
+
+        return "条目：《" + displayName(subject) + "》[Bangumi " + subject.getId() + "]\n"
+                + "登场角色（共 " + lines.size() + " 个）：\n"
+                + String.join("\n", lines);
+    }
+
+    private String displayName(BangumiSubjectRow row) {
+        if (row.getNameCn() != null && !row.getNameCn().isBlank()) {
+            return row.getNameCn() + "（" + row.getName() + "）";
+        }
+        return row.getName();
+    }
+
     private void collectPersonIdsFromSearch(Set<Long> personIds, Map<Long, String> personNames, String keyword) {
         // career 多值在 Bangumi API 中是「且」关系，不可传多个；先无 filter 搜索
         JsonNode resp = bangumiClient.searchPersons(keyword, null, 5);

@@ -9,4 +9,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AgentProperties {
     /** ReAct 最大步数，防止无限循环。 */
     private int maxSteps = 5;
+    /** 会话记忆保留的最大轮次（user+assistant 各算一条）。 */
+    private int memoryMaxTurns = 20;
+    /** 流式输出每个字符间隔毫秒（0 表示不节流）。 */
+    private int streamCharDelayMs = 50;
 }

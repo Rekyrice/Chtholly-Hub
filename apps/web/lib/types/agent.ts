@@ -1,4 +1,4 @@
-export type AgentEventType = "think" | "act" | "observe" | "delta" | "final" | "error";
+export type AgentEventType = "think" | "act" | "observe" | "delta" | "final" | "error" | "cleared";
 
 export interface AgentWsEnvelope {
   type: AgentEventType;
