@@ -102,6 +102,7 @@ llm:
 agent:
   max-steps: ${AGENT_MAX_STEPS:5}
   memory-max-turns: ${AGENT_MEMORY_MAX_TURNS:20}
+  memory-ttl-minutes: ${AGENT_MEMORY_TTL_MINUTES:120}
   stream-char-delay-ms: ${AGENT_STREAM_CHAR_DELAY_MS:50}
 
 bangumi:

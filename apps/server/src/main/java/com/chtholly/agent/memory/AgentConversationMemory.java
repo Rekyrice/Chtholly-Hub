@@ -27,6 +27,22 @@ public class AgentConversationMemory {
         return List.copyOf(turns);
     }
 
+    public synchronized boolean isEmpty() {
+        return turns.isEmpty();
+    }
+
+    /** 从 Redis 反序列化结果还原记忆对象。 */
+    public static AgentConversationMemory restore(List<AgentTurn> turns, int maxTurns) {
+        AgentConversationMemory memory = new AgentConversationMemory(maxTurns);
+        if (turns == null) {
+            return memory;
+        }
+        for (AgentTurn turn : turns) {
+            memory.add(turn);
+        }
+        return memory;
+    }
+
     public synchronized void clear() {
         turns.clear();
     }

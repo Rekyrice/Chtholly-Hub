@@ -62,7 +62,6 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         sessionUsers.remove(session.getId());
-        memoryStore.remove(session.getId());
     }
 
     private void handlePayload(WebSocketSession session, long userId, String payload) {
@@ -71,7 +70,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             String type = root.path("type").asText("");
 
             if ("clear".equals(type)) {
-                memoryStore.getOrCreate(session.getId()).clear();
+                memoryStore.clear(userId);
                 sendJson(session, "cleared", objectMapper.createObjectNode().put("message", "对话记忆已清空"));
                 return;
             }
@@ -87,16 +86,20 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
 
-            AgentConversationMemory memory = memoryStore.getOrCreate(session.getId());
-            agent.run(text, userId, memory, event -> {
-                try {
-                    if (session.isOpen()) {
-                        sendJson(session, event.type(), event.data());
+            AgentConversationMemory memory = memoryStore.getOrCreate(userId);
+            try {
+                agent.run(text, userId, memory, event -> {
+                    try {
+                        if (session.isOpen()) {
+                            sendJson(session, event.type(), event.data());
+                        }
+                    } catch (Exception e) {
+                        log.warn("WebSocket 发送失败: {}", e.getMessage());
                     }
-                } catch (Exception e) {
-                    log.warn("WebSocket 发送失败: {}", e.getMessage());
-                }
-            });
+                });
+            } finally {
+                memoryStore.save(userId, memory);
+            }
         } catch (Exception e) {
             log.warn("Agent WS 处理失败: {}", e.getMessage());
             try {
