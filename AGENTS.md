@@ -128,7 +128,7 @@ docker compose -f docker-compose.prod.yml up -d
 ### Git
 
 1. **Commit 格式**: Conventional Commits — `feat:`、`fix:`、`refactor:`、`chore:`、`docs:`、`test:`
-2. **Commit 语言**: 英文
+2. **Commit 语言**: 中文
 3. **分支命名**: `feat/{description}`、`fix/{description}`
 
 ## 架构决策
