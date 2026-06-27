@@ -139,7 +139,16 @@ public class BangumiSearchTool implements AgentTool {
         }
     }
 
-    /** 提取系列简称，便于宽召回多季（如「盾之勇者成名录」→「盾之勇者」）。 */
+    /** 去掉季数/评分等问句后缀，提取可能的条目名 keyword。 */
+    private void addTitleCandidates(Set<String> candidates, String question) {
+        String title = extractTitle(question);
+        if (StringUtils.hasText(title)) {
+            candidates.add(title);
+            candidates.add(shortSeriesName(title));
+        }
+    }
+
+    /** 去掉季数/后缀标记，尝试提取系列简称以便宽召回多季条目。 */
     private String shortSeriesName(String keyword) {
         if (!StringUtils.hasText(keyword)) {
             return keyword;
@@ -151,27 +160,6 @@ public class BangumiSearchTool implements AgentTool {
             return s;
         }
         return keyword;
-    }
-
-    private void addTitleCandidates(Set<String> candidates, String question) {
-        String title = extractTitle(question);
-        if (StringUtils.hasText(title)) {
-            candidates.add(title);
-            candidates.add(shortSeriesName(title));
-        }
-        if (title.contains("盾之勇者") || question.contains("盾之勇者")) {
-            candidates.add("盾之勇者");
-        }
-        if (title.contains("高木")) {
-            candidates.add("擅长捉弄的高木同学");
-            candidates.add("高木同学");
-        }
-        String lower = title.toLowerCase();
-        if (lower.contains("re0") || lower.contains("re:") || title.contains("从零开始")) {
-            candidates.add("Re:从零开始的异世界生活");
-            candidates.add("Re:ZERO");
-            candidates.add("Re0");
-        }
     }
 
     private String extractTitle(String question) {

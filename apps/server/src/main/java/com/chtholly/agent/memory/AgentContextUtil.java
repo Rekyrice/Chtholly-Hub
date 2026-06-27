@@ -9,7 +9,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 从对话历史与用户问题中提取作品名、主题词，供工具与守卫逻辑复用。 */
+/** 从对话历史与用户问题中提取作品名候选，供 Bangumi 工具 keyword 回退。 */
 public final class AgentContextUtil {
 
     private static final Pattern WORK_TITLE = Pattern.compile(
@@ -28,7 +28,7 @@ public final class AgentContextUtil {
                     addTopicFromQuestion(candidates, line.substring("User:".length()).trim());
                 }
             }
-            addPlainTitleHints(candidates, history);
+            addCommaSeparatedFragment(candidates, history);
         }
         if (StringUtils.hasText(userQuestion)) {
             addQuotedTitles(candidates, userQuestion);
@@ -44,28 +44,11 @@ public final class AgentContextUtil {
         String topic = question.trim()
                 .replaceAll("[？?。！!，,；;].*$", "")
                 .replaceAll("^(请问|告诉我|想知道|帮我查|查一下|搜索)", "")
-                .replaceAll("(的主要人物|主要人物|的人物|有哪些人物|有哪些角色|的角色|的伙伴|宿舍伙伴|宿舍的伙伴|伙伴都有|都有谁|是谁|怎么样|是什么).*$", "")
+                .replaceAll("(的主要人物|主要人物|的人物|有哪些人物|有哪些角色|的角色|的伙伴|伙伴都有|都有谁|是谁|怎么样|是什么).*$", "")
                 .trim();
         if (topic.length() >= 2 && topic.length() <= 30) {
             candidates.add(topic);
         }
-    }
-
-    /** 对话是否涉及动漫/漫画条目（用于短追问判定）。 */
-    public static boolean historyMentionsBangumiTopic(String history) {
-        if (!StringUtils.hasText(history)) {
-            return false;
-        }
-        String h = history;
-        return h.contains("Bangumi")
-                || h.contains("《")
-                || h.contains("评分")
-                || h.contains("人物")
-                || h.contains("角色")
-                || h.contains("作者")
-                || h.contains("漫画")
-                || h.contains("番剧")
-                || h.contains("动画");
     }
 
     private static void addQuotedTitles(Set<String> candidates, String text) {
@@ -79,8 +62,8 @@ public final class AgentContextUtil {
         }
     }
 
-    /** 从 Assistant 回答或 User 问题中提取未加书名号的长标题片段。 */
-    private static void addPlainTitleHints(Set<String> candidates, String text) {
+    /** 从对话行中提取逗号分隔的短标题片段（无特定作品硬编码）。 */
+    private static void addCommaSeparatedFragment(Set<String> candidates, String text) {
         for (String line : text.split("\n")) {
             String trimmed = line.trim();
             if (trimmed.startsWith("Assistant:")) {
@@ -94,9 +77,11 @@ public final class AgentContextUtil {
                     candidates.add(trimmed.substring(0, comma + 1) + trimmed.substring(comma + 1).split("[，。！？?]")[0]);
                 }
             }
-            if (trimmed.length() >= 3 && trimmed.length() <= 24
-                    && (trimmed.contains("旅行") || trimmed.contains("勇者") || trimmed.contains("牡丹"))) {
-                candidates.add(trimmed.split("[，。！？?]")[0].trim());
+            if (trimmed.length() >= 3 && trimmed.length() <= 24) {
+                String firstClause = trimmed.split("[，。！？?]")[0].trim();
+                if (firstClause.length() >= 3) {
+                    candidates.add(firstClause);
+                }
             }
         }
     }

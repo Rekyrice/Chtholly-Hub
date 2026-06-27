@@ -1,7 +1,6 @@
 package com.chtholly.agent;
 
 import com.chtholly.agent.config.AgentProperties;
-import com.chtholly.agent.memory.AgentContextUtil;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentTurn;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -98,17 +97,6 @@ public class ChthollyAgent {
             emitThink(sink, action);
 
             if (action.isFinal()) {
-                if (needsBangumiToolBeforeFinal(question, memory, transcript)) {
-                    String observation = characterQuestion(question)
-                            ? "系统要求：该问题涉及条目角色/人物，必须先调用 bangumi_characters（keyword 从对话历史推断作品名），禁止凭记忆直接回答。"
-                            : authorWorksQuestion(question)
-                            ? "系统要求：该问题涉及作者/作品列表，必须先调用 bangumi_person_works（可传 work_title），禁止凭记忆或站内搜索直接回答。"
-                            : "系统要求：该问题涉及动漫/漫画元数据，必须先调用 bangumi_search、bangumi_characters 或 bangumi_person_works，禁止凭记忆直接回答。";
-                    emitObserve(sink, observation);
-                    transcript.add("Assistant: " + llmOut);
-                    transcript.add("Observation: " + observation);
-                    continue;
-                }
                 streamFinalAnswer(sink, question, transcript, memory);
                 return;
             }
@@ -130,7 +118,7 @@ public class ChthollyAgent {
             }
             emitAct(sink, tool.name(), action.input());
             String observation = executeTool(tool, inputMap, userId);
-            observation = augmentObservation(question, tool.name(), observation);
+            observation = augmentObservation(tool.name(), observation);
             emitObserve(sink, observation);
             transcript.add("Assistant: " + llmOut);
             transcript.add("Observation: " + observation);
@@ -293,35 +281,6 @@ public class ChthollyAgent {
         }
     }
 
-    private boolean usedBangumiTool(List<String> transcript) {
-        return transcript.stream().anyMatch(line ->
-                line.contains("bangumi_search")
-                        || line.contains("bangumi_person_works")
-                        || line.contains("bangumi_characters"));
-    }
-
-    private boolean needsBangumiToolBeforeFinal(
-            String question, AgentConversationMemory memory, List<String> transcript) {
-        if (usedBangumiTool(transcript)) {
-            return false;
-        }
-        if (isBangumiDomainQuestion(question)) {
-            return true;
-        }
-        String history = memory == null ? "" : memory.formatForPrompt();
-        return isFollowUpQuestion(question) && AgentContextUtil.historyMentionsBangumiTopic(history);
-    }
-
-    private boolean characterQuestion(String question) {
-        if (question == null) {
-            return false;
-        }
-        return question.contains("人物")
-                || question.contains("角色")
-                || question.contains("伙伴")
-                || question.contains("登场");
-    }
-
     private boolean isSiteTool(String toolName) {
         return "fulltext_search".equals(toolName) || "article_rag".equals(toolName);
     }
@@ -335,65 +294,14 @@ public class ChthollyAgent {
                 || observation.contains("向量库中未找到");
     }
 
-    private String augmentObservation(String question, String toolName, String observation) {
-        if (!isEmptySiteResult(observation) || !isBangumiDomainQuestion(question) || !isSiteTool(toolName)) {
+    /** 站内搜索无结果时提示 LLM 考虑 Bangumi 工具（不做关键词/domain 硬编码判断）。 */
+    private String augmentObservation(String toolName, String observation) {
+        if (!isEmptySiteResult(observation) || !isSiteTool(toolName)) {
             return observation;
-        }
-        if (authorWorksQuestion(question)) {
-            return observation + """
-
-                    [系统提示] 站内无相关帖子。作者/作品列表请用 bangumi_person_works 查 Bangumi。
-                    示例：{"action":"bangumi_person_works","input":{"work_title":"少女终末旅行","work_type":"book"}}
-                    勿再调用 fulltext_search / article_rag。""";
         }
         return observation + """
 
-                [系统提示] 站内无结果。动漫/漫画元数据请用 bangumi_search 或 bangumi_person_works，勿重复站内搜索。""";
-    }
-
-    private boolean authorWorksQuestion(String question) {
-        if (question == null) {
-            return false;
-        }
-        return question.contains("作者")
-                && (question.contains("作品") || question.contains("漫画") || question.contains("部"));
-    }
-
-    /** 应用 Bangumi 而非站内搜索的动漫/漫画元数据问题。 */
-    private boolean isBangumiDomainQuestion(String question) {
-        if (question == null || question.isBlank()) {
-            return false;
-        }
-        String q = question.toLowerCase();
-        return q.matches(".*(季|季数|几季|集数|几集|多少集|评分|分数|排名|放送|上映|ova|剧场版).*")
-                || q.contains("re0")
-                || q.contains("re:")
-                || q.contains("从零开始")
-                || q.contains("bangumi")
-                || q.contains("番剧")
-                || q.contains("作者")
-                || q.contains("漫画")
-                || q.contains("作品")
-                || q.contains("漫画家")
-                || q.contains("声优")
-                || q.contains("插画")
-                || q.contains("人物")
-                || q.contains("角色")
-                || q.contains("伙伴");
-    }
-
-    /** 短追问（依赖对话历史理解指代）。 */
-    private boolean isFollowUpQuestion(String question) {
-        if (question == null) {
-            return false;
-        }
-        String q = question.trim();
-        return q.length() <= 20
-                || q.contains("他们")
-                || q.contains("伙伴")
-                || q.contains("还有")
-                || q.contains("分别")
-                || q.contains("哪些");
+                [系统提示] 站内无相关帖子。若用户问的是条目元数据（评分、季数、角色、作者作品等），请改用 bangumi_search、bangumi_characters 或 bangumi_person_works；勿重复 fulltext_search / article_rag。""";
     }
 
     private String buildSystemPrompt(Iterable<AgentTool> tools) {
@@ -411,16 +319,16 @@ public class ChthollyAgent {
         }
         sb.append("""
 
-                工具选择（必须遵守）：
-                1. fulltext_search / article_rag：仅搜索本站博客帖子。用户问动漫库事实时不要先用它们。
-                2. bangumi_search：查条目（动画/漫画）的评分、季数、集数、放送日。问「有几季」时用系列简称（如「盾之勇者」），工具会返回全部相关动画条目。
-                3. bangumi_characters：查条目的登场角色（主役/配角）。问「主要人物」「宿舍伙伴是谁」必用它；追问时 keyword 用对话历史里的作品名。
-                4. bangumi_person_works：查作者/漫画家及其全部作品。问「某作者有哪些漫画」「某作品作者还画过什么」必用它。
-                5. 涉及 Bangumi 能回答的事实（评分/季数/作者/作品列表/角色）时，禁止凭记忆 final，必须先调 2、3 或 4。
-                6. 统计季数时，以 Observation 中「共找到 N 部相关动画条目」为准，不要只凭第一条条目推断。
-                7. 只有用户明确问「站内有没有写过…」时才优先 fulltext_search / article_rag。
-                8. 若有对话历史，追问需结合上文主题选 keyword（如上文谈某作品，追问「宿舍伙伴」应调 bangumi_characters）。
-                9. 获得足够 Observation 后再 action=final；不要编造工具未返回的内容。""");
+                工具选择与意图判断（由你理解用户语义，勿凭记忆编造）：
+                1. fulltext_search / article_rag：仅当用户明确要搜本站博客帖子、文章片段时使用。
+                2. bangumi_search：查 Bangumi 条目（动画/漫画/游戏等）的评分、季数、集数、放送日、排名；统计季数时用系列简称作 keyword，工具会宽召回同系列条目。
+                3. bangumi_characters：查某条目的登场角色；keyword 为条目名（追问时可从对话历史推断作品名）。
+                4. bangumi_person_works：查作者/漫画家/插画及其参与作品；可传 keyword（人名）与 work_title（作品名）。
+                5. 涉及 Bangumi 可查证的事实（评分、季数、角色、作者作品列表等）时，必须先调用 2/3/4 获取 Observation，禁止未调工具就 action=final。
+                6. 统计季数时以 Observation 中「共找到 N 部相关动画条目」为准，勿只凭单条推断。
+                7. 用户用简称、别名、日文名或中文译名提问时，请自行选择最可能匹配的 keyword 传入工具。
+                8. 有对话历史时，短追问（如「他们是谁」「还有谁」）需结合上文确定 keyword 再调工具。
+                9. Observation 已足够回答时再 action=final；回答只基于 Observation 与对话历史，不得臆测。""");
         return sb.toString();
     }
 

@@ -36,6 +36,7 @@ public class BangumiPersonWorksTool implements AgentTool {
         return """
                 查询 Bangumi 人物（作者/漫画家/插画等）及其参与作品列表。
                 适用于「某作者有哪些漫画」「某作品的作者还画过什么」。
+                用户限定漫画/动画时请在 work_type 传 book 或 anime，否则传 all。
                 input: {"keyword":"人名或笔名","work_title":"作品名(可选)","work_type":"book|anime|all"}""";
     }
 
@@ -45,7 +46,7 @@ public class BangumiPersonWorksTool implements AgentTool {
         String workTitle = str(input.get("work_title"));
         String workType = str(input.get("work_type"));
         if (!StringUtils.hasText(workType)) {
-            workType = inferWorkType(input.get("_userQuestion"), workType);
+            workType = "all";
         }
 
         Object userQuestion = input.get("_userQuestion");
@@ -79,23 +80,6 @@ public class BangumiPersonWorksTool implements AgentTool {
         return "Bangumi 未找到相关人物或作品列表。";
     }
 
-    private String inferWorkType(Object userQuestion, String current) {
-        if (StringUtils.hasText(current) && !"all".equalsIgnoreCase(current)) {
-            return current;
-        }
-        if (userQuestion == null) {
-            return "all";
-        }
-        String q = String.valueOf(userQuestion);
-        if (q.contains("漫画") || q.contains("书籍")) {
-            return "book";
-        }
-        if (q.contains("动画") || q.contains("番剧")) {
-            return "anime";
-        }
-        return "all";
-    }
-
     private String extractWorkTitleFromQuestion(String question) {
         Matcher m = WORK_TITLE.matcher(question);
         if (m.find()) {
@@ -104,9 +88,6 @@ public class BangumiPersonWorksTool implements AgentTool {
                     return m.group(i);
                 }
             }
-        }
-        if (question.contains("少女终末旅行")) {
-            return "少女终末旅行";
         }
         String q = question.trim().replaceAll("[？?。！!，,；;].*$", "");
         q = q.replaceAll("^(查找|搜索|查一下|帮我查|查询|请问|告诉我|想知道)", "").trim();
@@ -118,9 +99,6 @@ public class BangumiPersonWorksTool implements AgentTool {
         Set<String> keywords = new LinkedHashSet<>();
         if (StringUtils.hasText(keyword)) {
             keywords.add(keyword.trim());
-        }
-        if (StringUtils.hasText(workTitle) && workTitle.contains("少女终末旅行")) {
-            keywords.add("つくみず");
         }
 
         List<String[]> attempts = new ArrayList<>();
