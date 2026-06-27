@@ -91,6 +91,57 @@ public class BangumiServiceImpl implements BangumiService {
     }
 
     @Override
+    @Transactional
+    public List<BangumiSubjectRow> searchAnimeSeries(String keyword, int limit) {
+        String q = keyword == null ? "" : keyword.trim();
+        if (q.isEmpty()) {
+            return List.of();
+        }
+        int safeLimit = Math.min(Math.max(limit, 1), 20);
+
+        JsonNode resp = bangumiClient.searchSubjects(q, safeLimit);
+        if (resp == null) {
+            throw new IllegalStateException(
+                    "Bangumi API 无法访问。请确认 VPN/代理已开启，并在 .env 设置 BANGUMI_HTTP_PROXY（如 http://127.0.0.1:7897）");
+        }
+        if (!resp.has("data") || !resp.get("data").isArray()) {
+            return List.of();
+        }
+
+        Map<Long, BangumiSubjectRow> merged = new LinkedHashMap<>();
+        for (JsonNode item : resp.get("data")) {
+            if (item.path("type").asInt(0) != 2) {
+                continue;
+            }
+            try {
+                BangumiSubjectRow row = mapSubject(item);
+                if (row.getEpsCount() == null) {
+                    row.setEpsCount(fetchEpisodeTotal(row.getId()));
+                }
+                subjectMapper.upsert(row);
+                merged.putIfAbsent(row.getId(), row);
+            } catch (Exception e) {
+                log.warn("Bangumi 条目回填失败: {}", e.getMessage());
+            }
+        }
+
+        List<BangumiSubjectRow> rows = new ArrayList<>(merged.values());
+        rows.sort((a, b) -> {
+            if (a.getAirDate() == null && b.getAirDate() == null) {
+                return Long.compare(a.getId(), b.getId());
+            }
+            if (a.getAirDate() == null) {
+                return 1;
+            }
+            if (b.getAirDate() == null) {
+                return -1;
+            }
+            return a.getAirDate().compareTo(b.getAirDate());
+        });
+        return rows;
+    }
+
+    @Override
     public String describePersonWorks(String keyword, String workTitleHint, String workType) {
         Integer typeFilter = parseWorkTypeFilter(workType);
         Map<Long, String> personNames = new LinkedHashMap<>();

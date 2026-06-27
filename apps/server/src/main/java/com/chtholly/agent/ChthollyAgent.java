@@ -243,11 +243,12 @@ public class ChthollyAgent {
 
                 工具选择（必须遵守）：
                 1. fulltext_search / article_rag：仅搜索本站博客帖子。用户问动漫库事实时不要先用它们。
-                2. bangumi_search：查条目（动画/漫画）的评分、季数、集数、放送日。
+                2. bangumi_search：查条目（动画/漫画）的评分、季数、集数、放送日。问「有几季」时用系列简称（如「盾之勇者」），工具会返回全部相关动画条目。
                 3. bangumi_person_works：查作者/漫画家及其全部作品。问「某作者有哪些漫画」「某作品作者还画过什么」必用它。
                 4. 涉及 Bangumi 能回答的事实（评分/季数/作者/作品列表）时，禁止凭记忆 final，必须先调 2 或 3。
-                5. 只有用户明确问「站内有没有写过…」时才优先 fulltext_search / article_rag。
-                6. 获得足够 Observation 后再 action=final；不要编造工具未返回的内容。""");
+                5. 统计季数时，以 Observation 中「共找到 N 部相关动画条目」为准，不要只凭第一条条目推断。
+                6. 只有用户明确问「站内有没有写过…」时才优先 fulltext_search / article_rag。
+                7. 获得足够 Observation 后再 action=final；不要编造工具未返回的内容。""");
         return sb.toString();
     }
 

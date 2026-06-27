@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,10 @@ public class BangumiSearchTool implements AgentTool {
 
     @Override
     public String description() {
-        return "搜索 Bangumi 条目（动画/漫画/游戏等）的评分、集数、放送日。input: {\"keyword\":\"条目名\"}";
+        return """
+                搜索 Bangumi 条目（动画/漫画/游戏等）的评分、集数、放送日。
+                问「有几季/多少季」时会自动宽召回同系列全部动画条目。
+                input: {"keyword":"条目名或系列简称"}""";
     }
 
     @Override
@@ -38,6 +42,10 @@ public class BangumiSearchTool implements AgentTool {
         List<String> keywords = buildKeywordCandidates(input);
         if (keywords.isEmpty()) {
             return "错误：缺少参数 keyword";
+        }
+
+        if (isSeasonQuestion(input)) {
+            return searchSeries(keywords);
         }
 
         IllegalStateException lastApiError = null;
@@ -58,11 +66,48 @@ public class BangumiSearchTool implements AgentTool {
         return "Bangumi 未找到与「" + keywords.get(0) + "」相关的条目。";
     }
 
+    private String searchSeries(List<String> keywords) {
+        Map<Long, BangumiSubjectRow> merged = new LinkedHashMap<>();
+        IllegalStateException lastApiError = null;
+
+        for (String keyword : keywords) {
+            try {
+                for (BangumiSubjectRow row : bangumiService.searchAnimeSeries(keyword, 15)) {
+                    merged.putIfAbsent(row.getId(), row);
+                }
+            } catch (IllegalStateException e) {
+                lastApiError = e;
+            }
+        }
+
+        if (merged.isEmpty()) {
+            if (lastApiError != null) {
+                return lastApiError.getMessage();
+            }
+            return "Bangumi 未找到与「" + keywords.get(0) + "」相关的动画条目。";
+        }
+
+        List<BangumiSubjectRow> rows = new ArrayList<>(merged.values());
+        String header = "共找到 " + rows.size() + " 部相关动画条目（按放送日排序，请据此统计季数）：";
+        String body = rows.stream().map(this::formatSubject).collect(Collectors.joining("\n\n"));
+        return header + "\n\n" + body;
+    }
+
+    private boolean isSeasonQuestion(Map<String, Object> input) {
+        Object q = input.get("_userQuestion");
+        if (q == null) {
+            return false;
+        }
+        String s = String.valueOf(q);
+        return s.contains("几季") || s.contains("季数") || s.contains("多少季") || s.contains("一共几季");
+    }
+
     private List<String> buildKeywordCandidates(Map<String, Object> input) {
         Set<String> candidates = new LinkedHashSet<>();
         String keyword = input.get("keyword") == null ? "" : String.valueOf(input.get("keyword")).trim();
         if (StringUtils.hasText(keyword)) {
             candidates.add(keyword);
+            candidates.add(shortSeriesName(keyword));
         }
         Object userQuestion = input.get("_userQuestion");
         if (userQuestion != null) {
@@ -71,12 +116,29 @@ public class BangumiSearchTool implements AgentTool {
         return new ArrayList<>(candidates);
     }
 
+    /** 提取系列简称，便于宽召回多季（如「盾之勇者成名录」→「盾之勇者」）。 */
+    private String shortSeriesName(String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return keyword;
+        }
+        String s = keyword.trim();
+        s = s.replaceAll("(第一季|第二季|第三季|第四季|第五季|Season\\s*\\d+).*$", "");
+        s = s.replaceAll("(的成.*|成名录.*|第二季.*|第三季.*)$", "");
+        if (s.length() >= 2 && s.length() < keyword.length()) {
+            return s;
+        }
+        return keyword;
+    }
+
     private void addTitleCandidates(Set<String> candidates, String question) {
         String title = extractTitle(question);
         if (StringUtils.hasText(title)) {
             candidates.add(title);
+            candidates.add(shortSeriesName(title));
         }
-        // 常见简称回退
+        if (title.contains("盾之勇者") || question.contains("盾之勇者")) {
+            candidates.add("盾之勇者");
+        }
         if (title.contains("高木")) {
             candidates.add("擅长捉弄的高木同学");
             candidates.add("高木同学");
@@ -85,6 +147,7 @@ public class BangumiSearchTool implements AgentTool {
         if (lower.contains("re0") || lower.contains("re:") || title.contains("从零开始")) {
             candidates.add("Re:从零开始的异世界生活");
             candidates.add("Re:ZERO");
+            candidates.add("Re0");
         }
     }
 
@@ -95,7 +158,7 @@ public class BangumiSearchTool implements AgentTool {
         return question.trim()
                 .replaceAll("[？?。！!，,；;].*$", "")
                 .replaceAll("^(查找|搜索|查一下|帮我查|帮我搜|查询|请问|告诉我|想知道|看看)", "")
-                .replaceAll("(的评分|评分多少|多少分|有多少集|集数|怎么样|是什么|信息).*$", "")
+                .replaceAll("(一共有|有几|几季|季数|多少季|的评分|评分多少|多少分|有多少集|集数|怎么样|是什么|信息).*$", "")
                 .trim();
     }
 

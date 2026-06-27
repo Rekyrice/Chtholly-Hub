@@ -10,6 +10,11 @@ public interface BangumiService {
     List<BangumiSubjectRow> search(String keyword, int limit);
 
     /**
+     * 查同一系列的全部动画条目（多季/OVA），始终走 Bangumi API 宽召回，避免本地只缓存一季。
+     */
+    List<BangumiSubjectRow> searchAnimeSeries(String keyword, int limit);
+
+    /**
      * 查询 Bangumi 人物及其参与作品。
      *
      * @param keyword       人物名/笔名，或作品名（配合 workTitleHint）

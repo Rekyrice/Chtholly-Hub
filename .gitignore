@@ -19,9 +19,7 @@ logs/*.log
 
 # --- IDE / 编辑器（个人配置，不纳入版本库）---
 .vscode/
-.cursor/*
-!.cursor/rules/
-!.cursor/rules/**
+.cursor/
 .idea/
 
 # --- 操作系统 ---
