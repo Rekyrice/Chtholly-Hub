@@ -86,6 +86,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- WebSocket：Agent 流式对话 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
         <!-- Spring AI OpenAI Starter：接入 OpenAI 模型调用能力 -->
         <dependency>
             <groupId>org.springframework.ai</groupId>

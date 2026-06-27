@@ -1,0 +1,97 @@
+package com.chtholly.agent.tools;
+
+import com.chtholly.agent.AgentTool;
+import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.Post;
+import lombok.RequiredArgsConstructor;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/** 站内文章语义检索（向量 RAG）。 */
+@Component
+@ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
+@RequiredArgsConstructor
+public class ArticleRagTool implements AgentTool {
+
+    private final VectorStore vectorStore;
+    private final PostMapper postMapper;
+
+    @Override
+    public String name() {
+        return "article_rag";
+    }
+
+    @Override
+    public String description() {
+        return "按语义检索站内 Markdown 帖子片段。input: {\"query\":\"问题或关键词\",\"topK\":5}";
+    }
+
+    @Override
+    public String execute(Map<String, Object> input, long userId) {
+        String query = str(input.get("query"));
+        if (query == null || query.isBlank()) {
+            return "错误：缺少参数 query";
+        }
+        int topK = parseInt(input.get("topK"), 5);
+        topK = Math.min(Math.max(topK, 1), 10);
+
+        List<Document> docs = vectorStore.similaritySearch(
+                SearchRequest.builder().query(query.trim()).topK(topK).build()
+        );
+        if (docs.isEmpty()) {
+            return "向量库中未找到与「" + query + "」相关的帖子片段（可能尚未建立 RAG 索引）。";
+        }
+
+        List<String> blocks = new ArrayList<>();
+        Map<String, Post> postCache = new LinkedHashMap<>();
+        for (Document doc : docs) {
+            Object postIdObj = doc.getMetadata().get("postId");
+            String postId = postIdObj == null ? null : String.valueOf(postIdObj);
+            String title = str(doc.getMetadata().get("title"));
+            String slug = null;
+            if (postId != null) {
+                Post post = postCache.computeIfAbsent(postId, id -> {
+                    try {
+                        return postMapper.findById(Long.parseLong(id));
+                    } catch (NumberFormatException e) {
+                        return null;
+                    }
+                });
+                if (post != null) {
+                    title = post.getTitle() != null ? post.getTitle() : title;
+                    slug = post.getSlug();
+                }
+            }
+            String text = doc.getText();
+            if (text != null && text.length() > 400) {
+                text = text.substring(0, 400) + "…";
+            }
+            blocks.add("【" + (title == null ? "帖子" : title) + "】"
+                    + (slug != null ? " (/post/" + slug + ")" : "")
+                    + "\n" + (text == null ? "" : text));
+        }
+        return blocks.stream().collect(Collectors.joining("\n\n---\n\n"));
+    }
+
+    private int parseInt(Object v, int defaultVal) {
+        if (v == null) return defaultVal;
+        try {
+            return Integer.parseInt(String.valueOf(v));
+        } catch (NumberFormatException e) {
+            return defaultVal;
+        }
+    }
+
+    private String str(Object v) {
+        return v == null ? null : String.valueOf(v);
+    }
+}

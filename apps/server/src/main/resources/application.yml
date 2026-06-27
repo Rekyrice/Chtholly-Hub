@@ -99,6 +99,9 @@ rag:
 llm:
   enabled: ${LLM_ENABLED:false}
 
+agent:
+  max-steps: ${AGENT_MAX_STEPS:5}
+
 counter:
   rebuild:
     enabled: false

@@ -55,6 +55,7 @@ export default function Navbar() {
   const authLinks = user ? (
     <>
       <li className="flex items-stretch">{navLink("/write", "Write")}</li>
+      <li className="flex items-stretch">{navLink("/agent", "Agent")}</li>
       <li className="flex items-center">
         <NotificationBell />
       </li>
@@ -187,6 +188,14 @@ export default function Navbar() {
                 onClick={() => setOpen(false)}
               >
                 Write
+              </Link>
+              <Link
+                href="/agent"
+                className="block px-4 py-3 text-sm uppercase tracking-wide border-b"
+                style={{ color: "#333", borderColor: "#f5f5f5" }}
+                onClick={() => setOpen(false)}
+              >
+                Agent
               </Link>
               <button
                 type="button"
