@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.relation.event.RelationEvent;
 import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.notification.event.FollowCreatedEvent;
+import com.chtholly.relation.event.FollowCanceledEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -141,6 +142,11 @@ public class RelationServiceImpl implements RelationService {
                 outboxMapper.insert(outId, "following", null, "FollowCanceled", payload);
             } catch (Exception e) {
                 log.warn("Unfollow outbox insert failed, from={}, to={}: {}", fromUserId, toUserId, e.getMessage());
+            }
+            try {
+                eventPublisher.publishEvent(new FollowCanceledEvent(fromUserId, toUserId));
+            } catch (Exception e) {
+                log.warn("FollowCanceledEvent failed, from={}, to={}: {}", fromUserId, toUserId, e.getMessage());
             }
             return true;
         }

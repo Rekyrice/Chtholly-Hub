@@ -2,6 +2,7 @@ package com.chtholly.post.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.chtholly.counter.service.UserCounterService;
+import com.chtholly.post.event.PostPublishedEvent;
 import com.chtholly.post.service.PostService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,6 +29,7 @@ import jakarta.annotation.Resource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,6 +74,7 @@ public class PostServiceImpl implements PostService {
     private final OutboxMapper outboxMapper;
     private final TagService tagService;
     private final SearchIndexService searchIndexService;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 手动编写构造器，Spring的@Qualifier直接标注在参数上（核心）
     public PostServiceImpl(
@@ -88,7 +91,8 @@ public class PostServiceImpl implements PostService {
             PostRagIndexer ragIndexService,
             OutboxMapper outboxMapper,
             TagService tagService,
-            SearchIndexService searchIndexService
+            SearchIndexService searchIndexService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.mapper = mapper;
         this.idGen = idGen;
@@ -104,6 +108,7 @@ public class PostServiceImpl implements PostService {
         this.outboxMapper = outboxMapper;
         this.tagService = tagService;
         this.searchIndexService = searchIndexService;
+        this.eventPublisher = eventPublisher;
     }
     /**
      * Creates a new draft post and returns its snowflake ID.
@@ -265,6 +270,15 @@ public class PostServiceImpl implements PostService {
             ragIndexService.ensureIndexed(id);
         } catch (Exception e) {
             log.warn("Pre-index after publish failed, post {} (RAG backfill may recover): {}", id, e.getMessage(), e);
+        }
+
+        if (post != null && post.getPublishTime() != null) {
+            try {
+                eventPublisher.publishEvent(new PostPublishedEvent(
+                        id, creatorId, post.getPublishTime(), post.getVisible()));
+            } catch (Exception e) {
+                log.warn("PostPublishedEvent failed, postId={}: {}", id, e.getMessage());
+            }
         }
     }
 

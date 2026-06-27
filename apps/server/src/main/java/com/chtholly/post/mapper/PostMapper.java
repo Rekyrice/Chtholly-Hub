@@ -7,6 +7,7 @@ import com.chtholly.post.model.PostFeedRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.Instant;
 import java.util.List;
 
 @Mapper
@@ -67,4 +68,17 @@ public interface PostMapper {
 
     // 列出我的已发布帖子ID列表
     List<Long> listMyPublishedIds(@Param("creatorId") long creatorId);
+
+    /** 按 ID 批量查询 Feed 行（仅已发布且 public/followers 可见）。 */
+    List<PostFeedRow> listFeedRowsByIds(@Param("ids") List<Long> ids);
+
+    /** 创作者在指定时间之后发布的公开/粉丝可见帖子 ID（用于 timeline 清理）。 */
+    List<Long> listPublishedIdsByCreatorSince(@Param("creatorId") long creatorId,
+                                              @Param("since") Instant since,
+                                              @Param("limit") int limit);
+
+    /** 多个创作者在指定时间之后的近期公开帖子（拉模式大 V）。 */
+    List<PostFeedRow> listRecentPublicByCreators(@Param("creatorIds") List<Long> creatorIds,
+                                                @Param("since") Instant since,
+                                                @Param("limit") int limit);
 }

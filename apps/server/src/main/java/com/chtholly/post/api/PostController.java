@@ -195,6 +195,18 @@ public class PostController {
     }
 
     /**
+     * 关注时间线：展示当前用户所关注作者的最新文章（推拉结合）。
+     */
+    @Operation(summary = "关注 Feed 列表")
+    @GetMapping("/feed/following")
+    public FeedPageResponse followingFeed(@RequestParam(value = "page", defaultValue = "1") int page,
+                                          @RequestParam(value = "size", defaultValue = "20") int size,
+                                          @AuthenticationPrincipal Jwt jwt) {
+        long userId = jwtService.extractUserId(jwt);
+        return feedService.getFollowingFeed(userId, page, size);
+    }
+
+    /**
      * Returns full post detail by snowflake ID.
      *
      * @param id post snowflake ID

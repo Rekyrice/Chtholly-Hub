@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -64,6 +65,8 @@ class PostServiceImplTest {
     private TagService tagService;
     @Mock
     private SearchIndexService searchIndexService;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     private Cache<String, FeedPageResponse> feedPublicCache;
     private Cache<String, PostDetailResponse> postDetailCache;
@@ -94,7 +97,8 @@ class PostServiceImplTest {
                 ragIndexService,
                 outboxMapper,
                 tagService,
-                searchIndexService
+                searchIndexService,
+                eventPublisher
         );
 
     }

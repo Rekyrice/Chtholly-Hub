@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.api.dto.FeedPageResponse;
+import com.chtholly.post.feed.FeedTimelineProperties;
+import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.counter.service.CounterService;
@@ -19,8 +21,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
@@ -45,6 +51,8 @@ public class PostFeedServiceImpl implements PostFeedService {
     private final Cache<String, FeedPageResponse> feedPublicCache;
     private final Cache<String, FeedPageResponse> feedMineCache;
     private final HotKeyDetector hotKey;
+    private final FeedTimelineService feedTimelineService;
+    private final FeedTimelineProperties feedTimelineProperties;
     private static final Logger log = LoggerFactory.getLogger(PostFeedServiceImpl.class);
     private static final int LAYOUT_VER = 2;
     private final SingleFlightLockRegistry singleFlight = new SingleFlightLockRegistry();
@@ -67,7 +75,9 @@ public class PostFeedServiceImpl implements PostFeedService {
             CounterService counterService,
             @Qualifier("feedPublicCache") Cache<String, FeedPageResponse> feedPublicCache,
             @Qualifier("feedMineCache") Cache<String, FeedPageResponse> feedMineCache,
-            HotKeyDetector hotKey
+            HotKeyDetector hotKey,
+            FeedTimelineService feedTimelineService,
+            FeedTimelineProperties feedTimelineProperties
     ) {
         this.mapper = mapper;
         this.redis = redis;
@@ -76,6 +86,8 @@ public class PostFeedServiceImpl implements PostFeedService {
         this.feedPublicCache = feedPublicCache;
         this.feedMineCache = feedMineCache;
         this.hotKey = hotKey;
+        this.feedTimelineService = feedTimelineService;
+        this.feedTimelineProperties = feedTimelineProperties;
     }
 
     /**
@@ -491,6 +503,86 @@ public class PostFeedServiceImpl implements PostFeedService {
     }
 
     /**
+     * 关注时间线：合并 Redis 推模式 timeline 与大 V 拉模式近期文章，按发布时间降序分页。
+     */
+    @Override
+    public FeedPageResponse getFollowingFeed(long userId, int page, int size) {
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        int safePage = Math.max(page, 1);
+        int candidateLimit = safePage * safeSize + safeSize + 1;
+
+        List<Long> timelineIds = feedTimelineService.getTimelinePostIds(userId, candidateLimit);
+        List<PostFeedRow> bigVRows = loadBigVRecentPosts(feedTimelineService.getFollowedBigVAuthors(userId));
+
+        List<PostFeedRow> timelineRows = timelineIds.isEmpty()
+                ? Collections.emptyList()
+                : mapper.listFeedRowsByIds(timelineIds);
+
+        Map<Long, PostFeedRow> merged = new LinkedHashMap<>();
+        for (PostFeedRow row : timelineRows) {
+            merged.putIfAbsent(row.getId(), row);
+        }
+        for (PostFeedRow row : bigVRows) {
+            merged.putIfAbsent(row.getId(), row);
+        }
+
+        List<PostFeedRow> sorted = new ArrayList<>(merged.values());
+        sorted.sort(Comparator.comparing(
+                PostFeedRow::getPublishTime,
+                Comparator.nullsLast(Comparator.reverseOrder())));
+
+        int offset = (safePage - 1) * safeSize;
+        List<PostFeedRow> slice = sorted.stream()
+                .skip(offset)
+                .limit(safeSize + 1L)
+                .toList();
+        boolean hasMore = slice.size() > safeSize;
+        List<PostFeedRow> pageRows = hasMore ? slice.subList(0, safeSize) : slice;
+
+        List<FeedItemResponse> items = mapRowsToItemsBatch(pageRows, userId);
+        log.info("feed.following user={} page={} size={} timeline={} bigv={} merged={} hasMore={}",
+                userId, safePage, safeSize, timelineRows.size(), bigVRows.size(), sorted.size(), hasMore);
+        return new FeedPageResponse(items, safePage, safeSize, hasMore);
+    }
+
+    /**
+     * 拉模式：读取所关注大 V 的近期文章，按作者维度缓存 5 分钟。
+     */
+    private List<PostFeedRow> loadBigVRecentPosts(List<Long> authorIds) {
+        if (authorIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        int pullHours = feedTimelineProperties.getTimeline().getBigvPullHours();
+        int cacheSeconds = feedTimelineProperties.getTimeline().getBigvCacheSeconds();
+        Instant since = Instant.now().minus(pullHours, ChronoUnit.HOURS);
+
+        List<PostFeedRow> all = new ArrayList<>();
+        for (Long authorId : authorIds) {
+            String cacheKey = "feed:bigv:posts:" + authorId;
+            String cached = redis.opsForValue().get(cacheKey);
+            if (cached != null) {
+                try {
+                    List<PostFeedRow> rows = objectMapper.readValue(cached, new TypeReference<>() {});
+                    all.addAll(rows);
+                    continue;
+                } catch (Exception e) {
+                    log.debug("feed.following bigv cache parse miss authorId={}", authorId);
+                }
+            }
+
+            List<PostFeedRow> rows = mapper.listRecentPublicByCreators(List.of(authorId), since, 50);
+            try {
+                redis.opsForValue().set(cacheKey, objectMapper.writeValueAsString(rows),
+                        Duration.ofSeconds(cacheSeconds));
+            } catch (Exception e) {
+                log.warn("feed.following bigv cache write failed authorId={}: {}", authorId, e.getMessage());
+            }
+            all.addAll(rows);
+        }
+        return all;
+    }
+
+    /**
      * 解析 JSON 数组字符串为 List<String>。
      * @param json JSON 数组字符串
      * @return 字符串列表；解析失败或空字符串返回空列表
@@ -544,6 +636,54 @@ public class PostFeedServiceImpl implements PostFeedService {
                     liked,
                     faved,
                     isTop
+            ));
+        }
+        return items;
+    }
+
+    /**
+     * 批量映射 Feed 行并填充计数与点赞/收藏状态（Pipeline 优化）。
+     */
+    private List<FeedItemResponse> mapRowsToItemsBatch(List<PostFeedRow> rows, long userId) {
+        if (rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<String> idStr = rows.stream().map(r -> String.valueOf(r.getId())).toList();
+        List<Long> idLong = rows.stream().map(PostFeedRow::getId).toList();
+
+        Map<String, Map<String, Long>> countsBatch =
+                counterService.getCountsBatch("post", idStr, List.of("like", "fav"));
+        Map<Long, Boolean> likedBatch = counterService.batchIsLiked(userId, idLong);
+        Map<Long, Boolean> favBatch = counterService.batchIsFaved(userId, idLong);
+
+        List<FeedItemResponse> items = new ArrayList<>(rows.size());
+        for (PostFeedRow r : rows) {
+            List<String> tags = parseStringArray(r.getTags());
+            List<String> imgs = parseStringArray(r.getImgUrls());
+            String cover = imgs.isEmpty() ? null : imgs.getFirst();
+
+            Map<String, Long> counts = countsBatch.getOrDefault(String.valueOf(r.getId()), Map.of());
+            Long likeCount = counts.getOrDefault("like", 0L);
+            Long favoriteCount = counts.getOrDefault("fav", 0L);
+            boolean liked = Boolean.TRUE.equals(likedBatch.get(r.getId()));
+            boolean faved = Boolean.TRUE.equals(favBatch.get(r.getId()));
+
+            items.add(new FeedItemResponse(
+                    String.valueOf(r.getId()),
+                    r.getSlug(),
+                    r.getTitle(),
+                    r.getDescription(),
+                    cover,
+                    tags,
+                    r.getAuthorAvatar(),
+                    r.getAuthorNickname(),
+                    r.getAuthorTagJson(),
+                    likeCount,
+                    favoriteCount,
+                    liked,
+                    faved,
+                    null
             ));
         }
         return items;
