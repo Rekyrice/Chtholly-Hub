@@ -25,6 +25,8 @@ public class User {
     private LocalDate birthday;
     private String school;
     private String tagsJson;
+    private String role;
+    private Instant bannedAt;
     private Instant createdAt;
     private Instant updatedAt;
 }

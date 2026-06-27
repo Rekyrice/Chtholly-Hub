@@ -351,6 +351,57 @@ public class PostServiceImpl implements PostService {
         invalidateCache(id);
     }
 
+    /** 管理员修改帖子可见性（不校验作者）。 */
+    @Transactional
+    @Override
+    public void adminUpdateVisibility(long id, String visible) {
+        if (!isValidVisible(visible)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
+        }
+        invalidateCache(id);
+        int updated = mapper.updateVisibilityById(id, visible);
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "帖子不存在");
+        }
+        invalidateCache(id);
+    }
+
+    /** 管理员软删帖子（不校验作者）。 */
+    @Transactional
+    @Override
+    public void adminDelete(long id) {
+        invalidateCache(id);
+        Post existing = mapper.findById(id);
+        if (existing == null || "deleted".equals(existing.getStatus())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "帖子不存在");
+        }
+        boolean wasPublished = "published".equals(existing.getStatus());
+        List<String> oldTags = parseStringArray(existing.getTags());
+
+        int updated = mapper.softDeleteById(id);
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "帖子不存在");
+        }
+
+        if (wasPublished) {
+            tagService.releasePublishedPostTags(oldTags);
+        }
+
+        try {
+            long outId = idGen.nextId();
+            String payload = objectMapper.writeValueAsString(Map.of("entity", "post", "op", "delete", "id", id));
+            outboxMapper.insert(outId, "post", id, "PostDeleted", payload);
+        } catch (Exception e) {
+            log.warn("Outbox event after admin delete failed, post {}: {}", id, e.getMessage());
+        }
+
+        if (wasPublished) {
+            syncSearchIndexDelete(id);
+        }
+
+        invalidateCache(id);
+    }
+
     /** Canal 关闭时 Outbox 不经 Kafka，本地直连 ES 索引（与 Consumer 幂等）。 */
     private void syncSearchIndexUpsert(long id) {
         try {

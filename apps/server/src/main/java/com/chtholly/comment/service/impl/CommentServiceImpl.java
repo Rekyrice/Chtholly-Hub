@@ -210,6 +210,22 @@ public class CommentServiceImpl implements CommentService {
         }
     }
 
+    @Override
+    @Transactional
+    public void adminDelete(long postId, long commentId) {
+        CommentRow comment = commentMapper.findById(commentId);
+        if (comment == null || !postIdEquals(comment.getPostId(), postId)) {
+            throw new ResourceNotFoundException("评论不存在");
+        }
+        if (comment.getDeletedAt() != null) {
+            return;
+        }
+        int updated = commentMapper.softDeleteById(commentId);
+        if (updated == 0) {
+            throw new ResourceNotFoundException("评论不存在");
+        }
+    }
+
     private String validateAndSanitizeContent(String raw) {
         String content = contentSanitizer.sanitize(raw);
         if (!StringUtils.hasText(content) || content.length() < MIN_CONTENT_LENGTH) {

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.admin.mapper.AdminAuditMapper">
+
+    <insert id="insert" parameterType="com.chtholly.admin.model.AdminAuditLog">
+        INSERT INTO admin_audit_logs (
+            id, admin_user_id, action, target_type, target_id, detail, created_at
+        ) VALUES (
+            #{id}, #{adminUserId}, #{action}, #{targetType}, #{targetId}, #{detailJson}, #{createdAt}
+        )
+    </insert>
+
+</mapper>

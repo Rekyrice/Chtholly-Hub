@@ -102,6 +102,18 @@
         WHERE id = #{id} AND creator_id = #{creatorId}
     </update>
 
+    <update id="updateVisibilityById">
+        UPDATE posts
+        SET visible = #{visible}, update_time = NOW()
+        WHERE id = #{id} AND status != 'deleted'
+    </update>
+
+    <update id="softDeleteById">
+        UPDATE posts
+        SET status = 'deleted', update_time = NOW()
+        WHERE id = #{id}
+    </update>
+
     <!-- 首页 Feed 列表查询（公开可见 + 已发布），置顶优先，其次按发布时间倒序 -->
     <select id="listFeedPublic" resultType="com.chtholly.post.model.PostFeedRow">
         SELECT

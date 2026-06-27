@@ -22,6 +22,7 @@ public enum ErrorCode {
     CONFLICT("CONFLICT", "资源冲突"),
     COMMENT_RATE_LIMIT("COMMENT_RATE_LIMIT", "评论过于频繁，请稍后再试"),
     FORBIDDEN("FORBIDDEN", "权限不足"),
+    USER_BANNED("USER_BANNED", "账号已被封禁"),
     INTERNAL_ERROR("INTERNAL_ERROR", "服务器内部错误");
 
     private final String code;

@@ -23,6 +23,10 @@ public interface PostService {
 
     void delete(long creatorId, long id);
 
+    void adminUpdateVisibility(long id, String visible);
+
+    void adminDelete(long id);
+
     PostDetailResponse getDetail(long id, Long currentUserIdNullable);
 
     PostDetailResponse getDetailBySlug(String slug, Long currentUserIdNullable);

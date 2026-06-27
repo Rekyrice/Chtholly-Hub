@@ -11,4 +11,6 @@ public interface CommentService {
     CommentResponse create(long postId, long userId, CreateCommentRequest request);
 
     void delete(long postId, long commentId, long userId);
+
+    void adminDelete(long postId, long commentId);
 }

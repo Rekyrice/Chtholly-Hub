@@ -1,6 +1,7 @@
 package com.chtholly.auth.service;
 
 import lombok.RequiredArgsConstructor;
+import com.chtholly.admin.security.UserBanService;
 import com.chtholly.auth.api.dto.AuthResponse;
 import com.chtholly.auth.api.dto.AuthUserResponse;
 import com.chtholly.auth.api.dto.LoginRequest;
@@ -66,6 +67,7 @@ public class AuthService {
     private final LoginLogService loginLogService;
     private final LoginFailureGuard loginFailureGuard;
     private final AuthProperties authProperties;
+    private final UserBanService userBanService;
 
     /**
      * 发送验证码并返回过期信息。
@@ -172,6 +174,7 @@ public class AuthService {
         } else {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "请提供验证码或密码");
         }
+        userBanService.assertNotBanned(user);
         loginFailureGuard.onSuccess(identifier);
         TokenPair tokenPair = jwtService.issueTokenPair(user);
         storeRefreshToken(user.getId(), tokenPair);
@@ -203,6 +206,10 @@ public class AuthService {
         }
 
         User user = findUserById(userId).orElseThrow(() -> new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND));
+        if (user.getBannedAt() != null) {
+            refreshTokenStore.revokeToken(userId, tokenId);
+            throw userBanService.bannedException();
+        }
         TokenPair tokenPair = jwtService.issueTokenPair(user);
         refreshTokenStore.revokeToken(userId, tokenId);
         storeRefreshToken(userId, tokenPair);

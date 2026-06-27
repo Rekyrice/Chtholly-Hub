@@ -56,6 +56,10 @@ public interface PostMapper {
     // 软删除
     int softDelete(@Param("id") Long id, @Param("creatorId") Long creatorId);
 
+    int updateVisibilityById(@Param("id") Long id, @Param("visible") String visible);
+
+    int softDeleteById(@Param("id") Long id);
+
     // 详情查询（含作者信息）
     PostDetailRow findDetailById(@Param("id") Long id);
 

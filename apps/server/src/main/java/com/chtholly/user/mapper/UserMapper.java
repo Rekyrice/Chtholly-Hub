@@ -29,4 +29,12 @@ public interface UserMapper {
     boolean existsByHandleExceptId(@Param("handle") String handle, @Param("excludeId") Long excludeId);
 
     List<User> listByIds(@Param("ids") List<Long> ids);
+
+    int updateRole(@Param("id") Long id, @Param("role") String role);
+
+    int updateBannedAt(@Param("id") Long id, @Param("bannedAt") java.time.Instant bannedAt);
+
+    List<User> searchUsers(@Param("keyword") String keyword, @Param("limit") int limit, @Param("offset") int offset);
+
+    long countSearchUsers(@Param("keyword") String keyword);
 }

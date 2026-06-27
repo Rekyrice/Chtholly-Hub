@@ -17,6 +17,8 @@
         <result column="birthday" property="birthday"/>
         <result column="school" property="school"/>
         <result column="tags_json" property="tagsJson"/>
+        <result column="role" property="role"/>
+        <result column="banned_at" property="bannedAt"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
     </resultMap>
@@ -65,6 +67,7 @@
             birthday,
             school,
             tags_json,
+            role,
             created_at,
             updated_at
         ) VALUES (
@@ -79,6 +82,7 @@
             #{birthday},
             #{school},
             #{tagsJson},
+            COALESCE(#{role}, 'USER'),
             #{createdAt},
             #{updatedAt}
         )
@@ -136,6 +140,46 @@
         <foreach collection="ids" item="id" open="(" separator="," close=")">
             #{id}
         </foreach>
+    </select>
+
+    <update id="updateRole">
+        UPDATE users SET role = #{role}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateBannedAt">
+        UPDATE users SET banned_at = #{bannedAt}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <select id="searchUsers" resultMap="UserResultMap">
+        SELECT *
+        FROM users
+        <where>
+            <if test="keyword != null and keyword != ''">
+                (
+                    nickname LIKE CONCAT('%', #{keyword}, '%')
+                    OR phone LIKE CONCAT('%', #{keyword}, '%')
+                    OR email LIKE CONCAT('%', #{keyword}, '%')
+                    OR handle LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countSearchUsers" resultType="long">
+        SELECT COUNT(1)
+        FROM users
+        <where>
+            <if test="keyword != null and keyword != ''">
+                (
+                    nickname LIKE CONCAT('%', #{keyword}, '%')
+                    OR phone LIKE CONCAT('%', #{keyword}, '%')
+                    OR email LIKE CONCAT('%', #{keyword}, '%')
+                    OR handle LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
     </select>
 
 </mapper>

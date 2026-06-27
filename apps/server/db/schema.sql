@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
     birthday DATE NULL,
     school VARCHAR(128) NULL,
     tags_json JSON NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'USER',
+    banned_at DATETIME NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -109,4 +111,15 @@ CREATE TABLE IF NOT EXISTS follower (
     UNIQUE KEY uk_to_from (to_user_id, from_user_id),
     KEY idx_to_created (to_user_id, created_at, from_user_id, rel_status),
     KEY idx_from (from_user_id, to_user_id, rel_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+    id BIGINT NOT NULL PRIMARY KEY,
+    admin_user_id BIGINT NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    target_type VARCHAR(50) NULL,
+    target_id BIGINT NULL,
+    detail JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_admin (admin_user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
