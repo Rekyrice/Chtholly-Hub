@@ -82,6 +82,7 @@ spring:
         dimensions: 1536
   elasticsearch:
     uris: ${ES_URIS:http://localhost:9200}
+    replicas: ${ES_REPLICAS:0}
 
 canal:
   enabled: ${CANAL_ENABLED:false}

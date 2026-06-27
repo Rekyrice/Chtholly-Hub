@@ -114,18 +114,38 @@ public class SearchServiceImpl implements SearchService {
                 return b;
             }, (Class<Map<String, Object>>)(Class<?>) Map.class);
         } catch (Exception e) {
-            log.error("Search failed, q={}, type={}: {}", q, e.getClass().getSimpleName(), e.getMessage(), e);
+            log.error("Search failed for query: {}", q, e);
             return new SearchResponse(Collections.emptyList(), null, false, true);
         }
 
         List<FeedItemResponse> items = new ArrayList<>();
         List<Hit<Map<String, Object>>> hits = resp.hits() == null ? Collections.emptyList() : resp.hits().hits();
+        List<Long> postIds = new ArrayList<>(hits.size());
 
         for (Hit<Map<String, Object>> hit : hits) {
             Map<String, Object> source = hit.source();
             if (source == null) {
                 continue;
             }
+            Long postId = asLong(source.get("content_id"));
+            if (postId != null) {
+                postIds.add(postId);
+            }
+        }
+
+        Map<Long, Boolean> likedMap = currentUserIdNullable == null || postIds.isEmpty()
+                ? Collections.emptyMap()
+                : counterService.batchIsLiked(currentUserIdNullable, postIds);
+        Map<Long, Boolean> favedMap = currentUserIdNullable == null || postIds.isEmpty()
+                ? Collections.emptyMap()
+                : counterService.batchIsFaved(currentUserIdNullable, postIds);
+
+        for (Hit<Map<String, Object>> hit : hits) {
+            Map<String, Object> source = hit.source();
+            if (source == null) {
+                continue;
+            }
+            Long postId = asLong(source.get("content_id"));
             String id = asString(source.get("content_id"));
             String title = asString(source.get("title"));
             String descriptionFromDoc = asString(source.get("description"));
@@ -139,8 +159,8 @@ public class SearchServiceImpl implements SearchService {
             String tagJson = asString(source.get("author_tag_json"));
             Long likeCount = asLong(source.get("like_count"));
             Long favoriteCount = asLong(source.get("favorite_count"));
-            Boolean liked = currentUserIdNullable != null && counterService.isLiked("post", id, currentUserIdNullable);
-            Boolean faved = currentUserIdNullable != null && counterService.isFaved("post", id, currentUserIdNullable);
+            Boolean liked = postId != null && Boolean.TRUE.equals(likedMap.get(postId));
+            Boolean faved = postId != null && Boolean.TRUE.equals(favedMap.get(postId));
             String slug = asString(source.get("slug"));
             items.add(new FeedItemResponse(
                     id,
@@ -171,7 +191,7 @@ public class SearchServiceImpl implements SearchService {
             }
         }
 
-        return new SearchResponse(items, nextAfter, hasMore);
+        return new SearchResponse(items, nextAfter, hasMore, false);
     }
 
     /**

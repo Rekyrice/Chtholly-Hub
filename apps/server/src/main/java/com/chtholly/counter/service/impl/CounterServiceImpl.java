@@ -300,6 +300,43 @@ public class CounterServiceImpl implements CounterService {
         return getBit(CounterKeys.bitmapKey("fav", entityType, entityId, chunk), bit);
     }
 
+    @Override
+    public Map<Long, Boolean> batchIsLiked(long userId, List<Long> postIds) {
+        return batchRelationBits("like", userId, postIds);
+    }
+
+    @Override
+    public Map<Long, Boolean> batchIsFaved(long userId, List<Long> postIds) {
+        return batchRelationBits("fav", userId, postIds);
+    }
+
+    private Map<Long, Boolean> batchRelationBits(String metric, long userId, List<Long> postIds) {
+        if (postIds == null || postIds.isEmpty()) {
+            return Map.of();
+        }
+        long chunk = BitmapShard.chunkOf(userId);
+        long bit = BitmapShard.bitOf(userId);
+        List<Long> ids = postIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Object> pipelineResults = redis.executePipelined((RedisCallback<Object>) connection -> {
+            for (Long postId : ids) {
+                String key = CounterKeys.bitmapKey(metric, "post", String.valueOf(postId), chunk);
+                connection.stringCommands().getBit(key.getBytes(StandardCharsets.UTF_8), bit);
+            }
+            return null;
+        });
+
+        Map<Long, Boolean> out = new LinkedHashMap<>(ids.size());
+        for (int i = 0; i < ids.size(); i++) {
+            Object raw = i < pipelineResults.size() ? pipelineResults.get(i) : null;
+            out.put(ids.get(i), Boolean.TRUE.equals(raw));
+        }
+        return out;
+    }
+
     /**
      * 读取位图某偏移位（GETBIT）。
      * @param key 位图分片键

@@ -38,4 +38,10 @@ public interface CounterService {
      */
     boolean isLiked(String entityType, String entityId, long userId);
     boolean isFaved(String entityType, String entityId, long userId);
+
+    /** 批量查询用户对帖子的点赞状态（Redis Pipeline）。 */
+    Map<Long, Boolean> batchIsLiked(long userId, List<Long> postIds);
+
+    /** 批量查询用户对帖子的收藏状态（Redis Pipeline）。 */
+    Map<Long, Boolean> batchIsFaved(long userId, List<Long> postIds);
 }

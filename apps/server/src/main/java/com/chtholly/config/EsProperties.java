@@ -15,6 +15,9 @@ public class EsProperties {
     private String username;      // spring.elasticsearch.username（可选）
     private String password;      // spring.elasticsearch.password（可选）
 
+    /** 搜索索引副本数，开发默认 0，生产建议 1。 */
+    private String replicas = "0";
+
     // RAG 索引名来自 Spring AI 的配置
     @Value("${spring.ai.vectorstore.elasticsearch.index-name:}")
     private String index;         // e.g. chtholly-ai-index

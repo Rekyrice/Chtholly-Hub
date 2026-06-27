@@ -10,6 +10,8 @@ import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostDetailRow;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -34,7 +36,7 @@ import com.chtholly.post.model.PostFeedRow;
  * 搜索索引写入服务：负责 upsert/软删 以及首次启动的索引回灌。
  */
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class SearchIndexService {
     private static final Logger log = LoggerFactory.getLogger(SearchIndexService.class);
     private static final String INDEX = "chtholly_content_index";
@@ -43,7 +45,8 @@ public class SearchIndexService {
     private final PostMapper postMapper;
     private final CounterService counterService;
     private final ObjectMapper objectMapper;
-    private final RestTemplate http = new RestTemplate();
+    @Qualifier("searchContentRestTemplate")
+    private final RestTemplate contentRestTemplate;
 
     /**
      * 索引为空时回灌已发布帖子（由 SearchIndexInitializer 在索引就绪后调用）。
@@ -173,7 +176,7 @@ public class SearchIndexService {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setAccept(List.of(MediaType.TEXT_HTML, MediaType.TEXT_PLAIN, MediaType.APPLICATION_JSON));
-            ResponseEntity<byte[]> resp = http.exchange(url, HttpMethod.GET, new HttpEntity<>(headers), byte[].class);
+            ResponseEntity<byte[]> resp = contentRestTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(headers), byte[].class);
             byte[] bytes = resp.getBody();
             if (bytes == null || bytes.length == 0) {
                 return null;

@@ -1,5 +1,6 @@
 package com.chtholly.search.index;
 
+import com.chtholly.config.EsProperties;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.mapping.CompletionProperty;
 import co.elastic.clients.elasticsearch._types.mapping.DateProperty;
@@ -26,6 +27,7 @@ public class SearchIndexInitializer {
 
     private final ElasticsearchClient es;
     private final SearchIndexService searchIndexService;
+    private final EsProperties esProperties;
 
     @PostConstruct
     public void ensureIndex() {
@@ -54,7 +56,7 @@ public class SearchIndexInitializer {
             String bodyAnalyzer
     ) {
         return c.index(INDEX)
-                .settings(s -> s.numberOfReplicas("0"))
+                .settings(s -> s.numberOfReplicas(esProperties.getReplicas()))
                 .mappings(m -> m
                 .properties("content_id", Property.of(p -> p.long_(LongNumberProperty.of(b -> b))))
                 .properties("content_type", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
