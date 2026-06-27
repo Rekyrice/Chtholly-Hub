@@ -10,7 +10,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -21,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 @Slf4j
 @Service
@@ -28,12 +31,16 @@ import java.util.Set;
 @ConditionalOnProperty(name = "bangumi.enabled", havingValue = "true", matchIfMissing = true)
 public class BangumiServiceImpl implements BangumiService {
 
+    private static final String API_UNAVAILABLE_USER_MSG = "Bangumi 服务暂时不可用，请稍后再试。";
+    /** describePersonWorks 单次请求最多 Bangumi API 调用次数 */
+    private static final int MAX_PERSON_API_CALLS = 4;
+
     private final BangumiSubjectMapper subjectMapper;
     private final BangumiClient bangumiClient;
     private final ObjectMapper objectMapper;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
-    @Transactional
     public List<BangumiSubjectRow> search(String keyword, int limit) {
         String q = keyword == null ? "" : keyword.trim();
         if (q.isEmpty()) {
@@ -41,57 +48,24 @@ public class BangumiServiceImpl implements BangumiService {
         }
         int safeLimit = Math.min(Math.max(limit, 1), 10);
 
-        List<BangumiSubjectRow> local = searchLocal(q, safeLimit);
+        List<BangumiSubjectRow> local = inReadTransaction(() -> searchLocal(q, safeLimit));
         if (!local.isEmpty()) {
             return local;
         }
 
-        JsonNode resp = bangumiClient.searchSubjects(q, safeLimit);
-        if (resp == null) {
-            throw new IllegalStateException(
-                    "Bangumi API 无法访问。请确认 VPN/代理已开启，并在 .env 设置 BANGUMI_HTTP_PROXY（如 http://127.0.0.1:7897）");
-        }
-        if (!resp.has("data") || !resp.get("data").isArray()) {
-            return List.of();
-        }
+        JsonNode resp = fetchSearchResponse(q, safeLimit);
+        List<BangumiSubjectRow> fetched = mapSubjectsFromApi(resp == null ? null : resp.get("data"), false);
+        inWriteTransaction(() -> persistSubjects(fetched, "search_upsert"));
 
-        for (JsonNode item : resp.get("data")) {
-            try {
-                BangumiSubjectRow row = mapSubject(item);
-                if (row.getEpsCount() == null) {
-                    row.setEpsCount(fetchEpisodeTotal(row.getId()));
-                }
-                subjectMapper.upsert(row);
-                subjectMapper.insertSyncLog(row.getId(), "search_upsert");
-            } catch (Exception e) {
-                log.warn("Bangumi 条目回填失败: {}", e.getMessage());
-            }
-        }
-
-        List<BangumiSubjectRow> refreshed = searchLocal(q, safeLimit);
+        List<BangumiSubjectRow> refreshed = inReadTransaction(() -> searchLocal(q, safeLimit));
         if (!refreshed.isEmpty()) {
             return refreshed;
         }
 
-        // FULLTEXT 对短词可能无命中，直接返回刚写入的数据
-        List<BangumiSubjectRow> fallback = new ArrayList<>();
-        for (JsonNode item : resp.get("data")) {
-            long id = item.path("id").asLong(0);
-            if (id > 0) {
-                BangumiSubjectRow row = subjectMapper.findById(id);
-                if (row != null) {
-                    fallback.add(row);
-                }
-            }
-            if (fallback.size() >= safeLimit) {
-                break;
-            }
-        }
-        return fallback;
+        return inReadTransaction(() -> loadPersistedFallback(fetched, safeLimit));
     }
 
     @Override
-    @Transactional
     public List<BangumiSubjectRow> searchAnimeSeries(String keyword, int limit) {
         String q = keyword == null ? "" : keyword.trim();
         if (q.isEmpty()) {
@@ -99,33 +73,19 @@ public class BangumiServiceImpl implements BangumiService {
         }
         int safeLimit = Math.min(Math.max(limit, 1), 20);
 
-        JsonNode resp = bangumiClient.searchSubjects(q, safeLimit);
-        if (resp == null) {
-            throw new IllegalStateException(
-                    "Bangumi API 无法访问。请确认 VPN/代理已开启，并在 .env 设置 BANGUMI_HTTP_PROXY（如 http://127.0.0.1:7897）");
-        }
-        if (!resp.has("data") || !resp.get("data").isArray()) {
-            return List.of();
-        }
-
+        JsonNode resp = fetchSearchResponse(q, safeLimit);
         Map<Long, BangumiSubjectRow> merged = new LinkedHashMap<>();
-        for (JsonNode item : resp.get("data")) {
-            if (item.path("type").asInt(0) != 2) {
-                continue;
-            }
-            try {
-                BangumiSubjectRow row = mapSubject(item);
-                if (row.getEpsCount() == null) {
-                    row.setEpsCount(fetchEpisodeTotal(row.getId()));
-                }
-                subjectMapper.upsert(row);
-                merged.putIfAbsent(row.getId(), row);
-            } catch (Exception e) {
-                log.warn("Bangumi 条目回填失败: {}", e.getMessage());
-            }
+        for (BangumiSubjectRow row : mapSubjectsFromApi(resp == null ? null : resp.get("data"), true)) {
+            merged.putIfAbsent(row.getId(), row);
         }
 
         List<BangumiSubjectRow> rows = new ArrayList<>(merged.values());
+        inWriteTransaction(() -> {
+            for (BangumiSubjectRow row : rows) {
+                subjectMapper.upsert(row);
+            }
+        });
+
         rows.sort((a, b) -> {
             if (a.getAirDate() == null && b.getAirDate() == null) {
                 return Long.compare(a.getId(), b.getId());
@@ -146,14 +106,16 @@ public class BangumiServiceImpl implements BangumiService {
         Integer typeFilter = parseWorkTypeFilter(workType);
         Map<Long, String> personNames = new LinkedHashMap<>();
         Set<Long> personIds = new LinkedHashSet<>();
+        ApiCallBudget budget = new ApiCallBudget(MAX_PERSON_API_CALLS);
+        Map<Long, String> worksCache = new LinkedHashMap<>();
 
         if (StringUtils.hasText(keyword)) {
-            collectPersonIdsFromSearch(personIds, personNames, keyword.trim());
+            collectPersonIdsFromSearch(personIds, personNames, keyword.trim(), budget);
         }
 
         String workHint = StringUtils.hasText(workTitleHint) ? workTitleHint.trim() : null;
         if (workHint != null) {
-            collectPersonIdsFromWork(personIds, personNames, workHint);
+            collectPersonIdsFromWork(personIds, personNames, workHint, budget);
         }
 
         if (personIds.isEmpty()) {
@@ -163,10 +125,10 @@ public class BangumiServiceImpl implements BangumiService {
         StringBuilder out = new StringBuilder();
         int shown = 0;
         for (Long personId : personIds) {
-            if (shown >= 2) {
+            if (shown >= 2 || !budget.hasRemaining()) {
                 break;
             }
-            String block = formatOnePersonWorks(personId, personNames.get(personId), typeFilter);
+            String block = formatOnePersonWorks(personId, personNames.get(personId), typeFilter, budget, worksCache);
             if (block != null && !block.isBlank()) {
                 if (!out.isEmpty()) {
                     out.append("\n\n");
@@ -193,8 +155,7 @@ public class BangumiServiceImpl implements BangumiService {
         BangumiSubjectRow subject = subjects.get(0);
         JsonNode characters = bangumiClient.getSubjectCharacters(subject.getId());
         if (characters == null) {
-            throw new IllegalStateException(
-                    "Bangumi API 无法访问。请确认 VPN/代理已开启，并在 .env 设置 BANGUMI_HTTP_PROXY（如 http://127.0.0.1:7897）");
+            throw apiUnavailable("getSubjectCharacters subjectId=" + subject.getId());
         }
         if (!characters.isArray() || characters.isEmpty()) {
             return "条目《" + displayName(subject) + "》暂无角色数据。";
@@ -222,6 +183,78 @@ public class BangumiServiceImpl implements BangumiService {
                 + String.join("\n", lines);
     }
 
+    /** 本地 DB 读（短事务）。 */
+    private <T> T inReadTransaction(Supplier<T> action) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setReadOnly(true);
+        return template.execute(status -> action.get());
+    }
+
+    /** 本地 DB 写（独立短事务，不含 HTTP）。 */
+    private void inWriteTransaction(Runnable action) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.executeWithoutResult(status -> action.run());
+    }
+
+    private JsonNode fetchSearchResponse(String keyword, int limit) {
+        assertNoActiveTransaction();
+        JsonNode resp = bangumiClient.searchSubjects(keyword, limit);
+        if (resp == null) {
+            throw apiUnavailable("searchSubjects keyword=" + keyword);
+        }
+        return resp;
+    }
+
+    private List<BangumiSubjectRow> mapSubjectsFromApi(JsonNode data, boolean animeOnly) {
+        List<BangumiSubjectRow> result = new ArrayList<>();
+        if (data == null || !data.isArray()) {
+            return result;
+        }
+        for (JsonNode item : data) {
+            if (animeOnly && item.path("type").asInt(0) != 2) {
+                continue;
+            }
+            try {
+                BangumiSubjectRow row = mapSubject(item);
+                if (row.getEpsCount() == null) {
+                    row.setEpsCount(fetchEpisodeTotal(row.getId()));
+                }
+                result.add(row);
+            } catch (Exception e) {
+                log.warn("Bangumi 条目映射失败: {}", e.getMessage());
+            }
+        }
+        return result;
+    }
+
+    private void persistSubjects(List<BangumiSubjectRow> rows, String syncAction) {
+        for (BangumiSubjectRow row : rows) {
+            try {
+                subjectMapper.upsert(row);
+                subjectMapper.insertSyncLog(row.getId(), syncAction);
+            } catch (Exception e) {
+                log.warn("Bangumi 条目回填失败 id={}: {}", row.getId(), e.getMessage());
+            }
+        }
+    }
+
+    private List<BangumiSubjectRow> loadPersistedFallback(List<BangumiSubjectRow> fetched, int safeLimit) {
+        List<BangumiSubjectRow> fallback = new ArrayList<>();
+        for (BangumiSubjectRow row : fetched) {
+            BangumiSubjectRow db = subjectMapper.findById(row.getId());
+            if (db != null) {
+                fallback.add(db);
+            }
+            if (fallback.size() >= safeLimit) {
+                break;
+            }
+        }
+        if (!fallback.isEmpty()) {
+            return fallback;
+        }
+        return fetched.size() > safeLimit ? fetched.subList(0, safeLimit) : fetched;
+    }
+
     private String displayName(BangumiSubjectRow row) {
         if (row.getNameCn() != null && !row.getNameCn().isBlank()) {
             return row.getNameCn() + "（" + row.getName() + "）";
@@ -229,15 +262,18 @@ public class BangumiServiceImpl implements BangumiService {
         return row.getName();
     }
 
-    private void collectPersonIdsFromSearch(Set<Long> personIds, Map<Long, String> personNames, String keyword) {
-        // career 多值在 Bangumi API 中是「且」关系，不可传多个；先无 filter 搜索
+    private void collectPersonIdsFromSearch(
+            Set<Long> personIds, Map<Long, String> personNames, String keyword, ApiCallBudget budget) {
+        if (!budget.consume()) {
+            log.warn("Bangumi person API budget exhausted before searchPersons keyword={}", keyword);
+            return;
+        }
         JsonNode resp = bangumiClient.searchPersons(keyword, null, 5);
         if (resp == null) {
-            throw new IllegalStateException(
-                    "Bangumi API 无法访问。请确认 VPN/代理已开启，并在 .env 设置 BANGUMI_HTTP_PROXY（如 http://127.0.0.1:7897）");
+            throw apiUnavailable("searchPersons keyword=" + keyword);
         }
         appendPersonNodes(personIds, personNames, resp.path("data"));
-        if (personIds.isEmpty()) {
+        if (personIds.isEmpty() && budget.consume()) {
             resp = bangumiClient.searchPersons(keyword, List.of("mangaka"), 5);
             if (resp != null) {
                 appendPersonNodes(personIds, personNames, resp.path("data"));
@@ -262,31 +298,37 @@ public class BangumiServiceImpl implements BangumiService {
         }
     }
 
-    private void collectPersonIdsFromWork(Set<Long> personIds, Map<Long, String> personNames, String workTitle) {
-        List<BangumiSubjectRow> subjects = search(workTitle, 3);
-        for (BangumiSubjectRow subject : subjects) {
-            JsonNode persons = bangumiClient.getSubjectPersons(subject.getId());
-            if (persons == null || !persons.isArray()) {
+    private void collectPersonIdsFromWork(
+            Set<Long> personIds, Map<Long, String> personNames, String workTitle, ApiCallBudget budget) {
+        List<BangumiSubjectRow> subjects = search(workTitle, 1);
+        if (subjects.isEmpty()) {
+            return;
+        }
+        if (!budget.consume()) {
+            log.warn("Bangumi person API budget exhausted before getSubjectPersons work={}", workTitle);
+            return;
+        }
+        BangumiSubjectRow subject = subjects.get(0);
+        JsonNode persons = bangumiClient.getSubjectPersons(subject.getId());
+        if (persons == null || !persons.isArray()) {
+            return;
+        }
+        for (JsonNode p : persons) {
+            if (!isCreatorPerson(p)) {
                 continue;
             }
-            for (JsonNode p : persons) {
-                if (!isCreatorPerson(p)) {
-                    continue;
+            long id = p.path("id").asLong(0);
+            if (id > 0) {
+                personIds.add(id);
+                String name = text(p, "name");
+                if (!StringUtils.hasText(name)) {
+                    name = text(p, "name_cn");
                 }
-                long id = p.path("id").asLong(0);
-                if (id > 0) {
-                    personIds.add(id);
-                    String name = text(p, "name");
-                    if (!StringUtils.hasText(name)) {
-                        name = text(p, "name_cn");
-                    }
-                    personNames.putIfAbsent(id, name);
-                }
+                personNames.putIfAbsent(id, name);
             }
         }
     }
 
-    /** 条目关联人物用 relation；人物作品列表用 staff。 */
     private boolean isCreatorPerson(JsonNode p) {
         String role = text(p, "staff");
         if (!StringUtils.hasText(role)) {
@@ -309,13 +351,25 @@ public class BangumiServiceImpl implements BangumiService {
         return false;
     }
 
-    private String formatOnePersonWorks(long personId, String personName, Integer typeFilter) {
+    private String formatOnePersonWorks(
+            long personId,
+            String personName,
+            Integer typeFilter,
+            ApiCallBudget budget,
+            Map<Long, String> worksCache) {
+        if (worksCache.containsKey(personId)) {
+            return worksCache.get(personId);
+        }
+        if (!budget.consume()) {
+            log.warn("Bangumi person API budget exhausted before getPersonSubjects personId={}", personId);
+            return null;
+        }
         JsonNode works = bangumiClient.getPersonSubjects(personId);
         if (works == null) {
-            throw new IllegalStateException(
-                    "Bangumi API 无法访问。请确认 VPN/代理已开启，并在 .env 设置 BANGUMI_HTTP_PROXY（如 http://127.0.0.1:7897）");
+            throw apiUnavailable("getPersonSubjects personId=" + personId);
         }
         if (!works.isArray() || works.isEmpty()) {
+            worksCache.put(personId, null);
             return null;
         }
 
@@ -349,13 +403,21 @@ public class BangumiServiceImpl implements BangumiService {
         }
 
         if (lines.isEmpty()) {
+            worksCache.put(personId, null);
             return null;
         }
 
         String filterNote = typeFilter == null ? "全部" : subjectTypeLabel(typeFilter);
-        return "人物：" + personName + " [Bangumi " + personId + "]\n"
+        String block = "人物：" + personName + " [Bangumi " + personId + "]\n"
                 + "参与作品（" + filterNote + "，共 " + lines.size() + " 部）：\n"
                 + String.join("\n", lines);
+        worksCache.put(personId, block);
+        return block;
+    }
+
+    private IllegalStateException apiUnavailable(String context) {
+        log.error("Bangumi API unavailable during {} (check network/proxy, BANGUMI_HTTP_PROXY in env)", context);
+        return new IllegalStateException(API_UNAVAILABLE_USER_MSG);
     }
 
     private Integer parseWorkTypeFilter(String workType) {
@@ -400,6 +462,7 @@ public class BangumiServiceImpl implements BangumiService {
     }
 
     private Integer fetchEpisodeTotal(long subjectId) {
+        assertNoActiveTransaction();
         JsonNode epResp = bangumiClient.listEpisodes(subjectId, 1);
         if (epResp == null) {
             return null;
@@ -447,6 +510,34 @@ public class BangumiServiceImpl implements BangumiService {
             return LocalDate.parse(raw.trim());
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /** 单次 describePersonWorks 请求的 Bangumi API 调用配额。 */
+    private static final class ApiCallBudget {
+        private int remaining;
+
+        private ApiCallBudget(int max) {
+            this.remaining = max;
+        }
+
+        private boolean consume() {
+            if (remaining <= 0) {
+                return false;
+            }
+            remaining--;
+            return true;
+        }
+
+        private boolean hasRemaining() {
+            return remaining > 0;
+        }
+    }
+
+    /** 供单元测试验证 HTTP 调用时未持有 Spring 事务。 */
+    static void assertNoActiveTransaction() {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("HTTP call must not run inside a DB transaction");
         }
     }
 }
