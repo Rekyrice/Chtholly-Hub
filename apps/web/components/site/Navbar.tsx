@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, Search, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { getStoredAuth } from "@/lib/auth/tokens";
+import { getAccessToken, getStoredAuth } from "@/lib/auth/tokens";
 import { authService } from "@/lib/services/authService";
 import { siteConfig } from "@/lib/site.config";
 import type { AuthUser } from "@/lib/types/auth";
@@ -19,6 +19,7 @@ export default function Navbar() {
   const brandAccent = siteConfig.name.endsWith(" Hub") ? "Hub" : "";
 
   const syncUser = useCallback(() => {
+    getAccessToken(); // 顺带清理过期 token
     setUser(getStoredAuth()?.user ?? null);
   }, []);
 

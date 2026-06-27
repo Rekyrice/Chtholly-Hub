@@ -19,9 +19,29 @@ export function saveAuth(token: TokenPair, user?: AuthUser) {
 }
 
 export function clearAuth() {
+  if (typeof window === "undefined") return;
   localStorage.removeItem(AUTH_TOKENS_KEY);
+  window.dispatchEvent(new Event("chtholly-auth-change"));
+}
+
+/** 访问令牌是否在有效期内（留 30s 缓冲避免临界点失败） */
+export function isAccessTokenValid(auth: StoredAuth | null): boolean {
+  if (!auth?.accessToken) return false;
+  if (!auth.accessTokenExpiresAt) return true;
+  const expiresAt = new Date(auth.accessTokenExpiresAt).getTime();
+  if (Number.isNaN(expiresAt)) return true;
+  return Date.now() < expiresAt - 30_000;
 }
 
 export function getAccessToken(): string | null {
-  return getStoredAuth()?.accessToken ?? null;
+  const auth = getStoredAuth();
+  if (!auth || !isAccessTokenValid(auth)) {
+    if (auth?.accessToken) clearAuth();
+    return null;
+  }
+  return auth.accessToken;
+}
+
+export function isLoggedIn(): boolean {
+  return getAccessToken() !== null;
 }

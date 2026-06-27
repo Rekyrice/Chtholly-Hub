@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Clock, Heart, Tag } from "lucide-react";
 import MarkdownContent from "@/components/site/MarkdownContent";
+import CommentSection from "@/components/site/CommentSection";
 import Sidebar from "@/components/site/Sidebar";
 import { postService } from "@/lib/services/postService";
 import { siteConfig } from "@/lib/site.config";
@@ -147,6 +148,7 @@ export default async function PostPage({ params }: Props) {
             </div>
           )}
         </article>
+        <CommentSection postId={post.id} />
       </div>
       <Sidebar />
     </div>

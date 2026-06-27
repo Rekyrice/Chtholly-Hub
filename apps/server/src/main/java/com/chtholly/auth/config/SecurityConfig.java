@@ -57,6 +57,7 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search/suggest").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/*/comments").permitAll()
                         // 帖子详情（公开已发布内容，非公开由服务层校验）
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/detail/*").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/detail/by-slug/**").permitAll()

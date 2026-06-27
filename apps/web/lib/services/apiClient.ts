@@ -1,7 +1,7 @@
 /** 相对路径，经 Next.js rewrites 代理到后端 */
 const BASE_URL = "";
 
-import { AUTH_TOKENS_KEY } from "@/lib/auth/tokens";
+import { clearAuth, getAccessToken } from "@/lib/auth/tokens";
 
 export type ApiFetchOptions = {
   method?: string;
@@ -22,33 +22,40 @@ export class ApiError extends Error {
   }
 }
 
+type ApiFetchInternalOptions = ApiFetchOptions & {
+  /** 401 后已清 token 并重试，避免循环 */
+  _retriedWithoutAuth?: boolean;
+};
+
 export async function apiFetch<TResponse>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<TResponse> {
-  const { method = "GET", headers = {}, body, accessToken, signal } = options;
+  return apiFetchInternal<TResponse>(path, options);
+}
+
+async function apiFetchInternal<TResponse>(
+  path: string,
+  options: ApiFetchInternalOptions,
+): Promise<TResponse> {
+  const {
+    method = "GET",
+    headers = {},
+    body,
+    accessToken,
+    signal,
+    _retriedWithoutAuth = false,
+  } = options;
 
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
-
-  const getStoredAccessToken = (): string | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = localStorage.getItem(AUTH_TOKENS_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { accessToken?: string };
-      return parsed.accessToken ?? null;
-    } catch {
-      return null;
-    }
-  };
 
   const mergedHeaders: Record<string, string> = {
     ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...headers,
   };
 
-  // accessToken 为 null 时不附带 Authorization；undefined 时从本地存储读取
-  const token = accessToken === undefined ? getStoredAccessToken() : accessToken;
+  // accessToken 为 null 时不附带 Authorization；undefined 时从本地存储读取（含过期校验）
+  const token = accessToken === undefined ? getAccessToken() : accessToken;
   if (token) {
     mergedHeaders.Authorization = `Bearer ${token}`;
   }
@@ -86,6 +93,17 @@ export async function apiFetch<TResponse>(
     credentials: "include",
   });
 
+  if (response.status === 401 && token && !_retriedWithoutAuth) {
+    clearAuth();
+    if (isIdempotent) {
+      return apiFetchInternal<TResponse>(path, {
+        ...options,
+        accessToken: null,
+        _retriedWithoutAuth: true,
+      });
+    }
+  }
+
   if (!response.ok) {
     let rawText = "";
     try {
@@ -102,11 +120,13 @@ export async function apiFetch<TResponse>(
       }
     }
     const message =
-      typeof errorData === "object" &&
-      errorData !== null &&
-      "message" in errorData
-        ? (errorData as { message: string }).message
-        : rawText || `请求失败：${response.status}`;
+      response.status === 401 && token
+        ? "登录已过期，请重新登录"
+        : typeof errorData === "object" &&
+            errorData !== null &&
+            "message" in errorData
+          ? (errorData as { message: string }).message
+          : rawText || `请求失败：${response.status}`;
     throw new ApiError(response.status, message, errorData);
   }
 
