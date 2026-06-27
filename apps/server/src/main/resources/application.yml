@@ -170,6 +170,14 @@ auth:
     bcrypt-strength: 12
     min-length: 8
 
+management:
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    elasticsearch:
+      enabled: true
+
 logging:
   level:
     root: INFO
