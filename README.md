@@ -1,6 +1,6 @@
 # Chtholly Hub
 
-Rekyrice 的动漫博客向社区演进的全栈平台（秋招 2026 作品集）。中文名「依米花」为虚构花名，寓意见站内 About 页。
+Rekyrice 的动漫博客向社区演进的全栈平台。中文名「依米花」为虚构花名，寓意见站内 About 页。
 
 - **GitHub**: https://github.com/Rekyrice/Chtholly-Hub
 - **架构**: Monorepo — Next.js 16 前端 + Spring Boot 3.2 后端
