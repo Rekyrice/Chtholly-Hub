@@ -16,6 +16,7 @@ import com.chtholly.search.api.dto.SearchResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 import com.chtholly.search.service.SearchService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -33,6 +34,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SearchServiceImpl implements SearchService {
 
     private final ElasticsearchClient es;
@@ -112,7 +114,8 @@ public class SearchServiceImpl implements SearchService {
                 return b;
             }, (Class<Map<String, Object>>)(Class<?>) Map.class);
         } catch (Exception e) {
-            return new SearchResponse(Collections.emptyList(), null, false);
+            log.error("Search failed, q={}, type={}: {}", q, e.getClass().getSimpleName(), e.getMessage(), e);
+            return new SearchResponse(Collections.emptyList(), null, false, true);
         }
 
         List<FeedItemResponse> items = new ArrayList<>();
@@ -183,6 +186,7 @@ public class SearchServiceImpl implements SearchService {
                             sc -> sc.prefix(prefix).completion(c -> c.field("title_suggest").size(size))))
                     , (Class<Map<String, Object>>)(Class<?>) Map.class);
         } catch (Exception e) {
+            log.warn("Suggest ES query failed, prefix={}: {}", prefix, e.getMessage(), e);
             return new SuggestResponse(Collections.emptyList());
         }
         List<String> items = new ArrayList<>();
@@ -202,7 +206,9 @@ public class SearchServiceImpl implements SearchService {
                     }
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.warn("Suggest response parse failed, prefix={}: {}", prefix, e.getMessage(), e);
+        }
         return new SuggestResponse(items);
     }
 
@@ -253,6 +259,7 @@ public class SearchServiceImpl implements SearchService {
 
             return out;
         } catch (Exception e) {
+            log.warn("Search cursor parse failed, after={}: {}", after, e.getMessage());
             return null;
         }
     }

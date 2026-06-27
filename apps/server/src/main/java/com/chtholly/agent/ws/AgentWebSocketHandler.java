@@ -104,7 +104,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             log.warn("Agent WS 处理失败: {}", e.getMessage());
             try {
                 sendJson(session, "error", objectMapper.createObjectNode().put("message", "处理失败"));
-            } catch (Exception ignored) {
+            } catch (Exception sendEx) {
+                log.warn("Failed to send WS error response: {}", sendEx.getMessage());
             }
         }
     }

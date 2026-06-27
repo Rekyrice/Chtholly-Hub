@@ -19,12 +19,15 @@ export default async function SearchPage({ searchParams }: Props) {
   const keyword = q?.trim() ?? "";
 
   let items: Awaited<ReturnType<typeof searchService.search>>["items"] = [];
+  let degraded = false;
   if (keyword) {
     try {
       const result = await searchService.search(keyword, 20);
       items = result.items;
+      degraded = result.degraded === true;
     } catch {
       items = [];
+      degraded = true;
     }
   }
 
@@ -53,6 +56,14 @@ export default async function SearchPage({ searchParams }: Props) {
 
         {keyword ? (
           <>
+            {degraded && (
+              <div
+                className="mb-4 px-4 py-3 text-sm rounded border"
+                style={{ borderColor: "#ffe0b2", backgroundColor: "#fff3e0", color: "#e65100" }}
+              >
+                搜索服务暂时不可用，请稍后再试。
+              </div>
+            )}
             <p className="mb-4 text-sm" style={{ color: "#757575" }}>
               「{keyword}」共 {items.length} 条结果
             </p>

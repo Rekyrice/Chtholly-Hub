@@ -5,6 +5,8 @@ export type SearchResponse = {
   items: FeedItem[];
   nextAfter: string | null;
   hasMore: boolean;
+  /** ES 不可用或查询失败时为 true */
+  degraded?: boolean;
 };
 
 /** 搜索联想 */

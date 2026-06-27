@@ -11,6 +11,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.*;
@@ -32,6 +34,8 @@ import java.util.*;
  */
 @Component
 public class FeedCacheInvalidationListener {
+
+    private static final Logger log = LoggerFactory.getLogger(FeedCacheInvalidationListener.class);
 
     private final Cache<String, FeedPageResponse> feedPublicCache;
     private final StringRedisTemplate redis;
@@ -84,7 +88,8 @@ public class FeedCacheInvalidationListener {
                         userCounterService.incrementFavsReceived(owner, delta);
                     }
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.warn("Feed cache counter side-effect failed, eid={}: {}", eid, e.getMessage());
             }
 
             long hourSlot = System.currentTimeMillis() / 3600000L;
@@ -115,7 +120,9 @@ public class FeedCacheInvalidationListener {
                         FeedPageResponse resp = objectMapper.readValue(cached, FeedPageResponse.class);
                         FeedPageResponse updated = adjustPageCounts(resp, eid, metric, delta, false);
                         writePageJsonKeepingTtl(key, updated);
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        log.warn("Feed page cache update failed, key={}: {}", key, e.getMessage());
+                    }
                 } else {
                     redis.opsForSet().remove("feed:public:index:" + eid + ":" + hourSlot, key);
                 }
@@ -188,6 +195,8 @@ public class FeedCacheInvalidationListener {
             } else {
                 redis.opsForValue().set(key, json);
             }
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.warn("Feed page JSON write failed, key={}: {}", key, e.getMessage());
+        }
     }
 }

@@ -159,7 +159,9 @@ public class CanalKafkaBridge implements SmartLifecycle {
                             // 序列化并发送到 Kafka 主题（canal-outbox）
                             String json = objectMapper.writeValueAsString(msgNode);
                             kafka.send(OutboxTopics.CANAL_OUTBOX, json);
-                        } catch (Exception ignored) {}
+                        } catch (Exception e) {
+                            log.warn("Canal bridge failed to publish outbox row to Kafka: {}", e.getMessage(), e);
+                        }
                     }
                     // 批次确认（推进位点），避免消息重放
                     connector.ack(batchId);

@@ -184,6 +184,7 @@ public class SearchIndexService {
             Charset charset = pickCharset(bytes, headerCharset, metaCharset);
             return new String(bytes, charset);
         } catch (Exception e) {
+            log.warn("Failed to fetch post content from url={}: {}", url, e.getMessage());
             return null;
         }
     }

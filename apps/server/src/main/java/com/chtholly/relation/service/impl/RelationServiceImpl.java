@@ -30,6 +30,8 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.nio.charset.StandardCharsets;
 import org.springframework.data.redis.core.RedisCallback;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 关系服务实现。
@@ -41,6 +43,8 @@ import org.springframework.data.redis.core.RedisCallback;
  */
 @Service
 public class RelationServiceImpl implements RelationService {
+    private static final Logger log = LoggerFactory.getLogger(RelationServiceImpl.class);
+
     private final RelationMapper mapper;
     private final OutboxMapper outboxMapper;
     private final StringRedisTemplate redis;
@@ -101,7 +105,9 @@ public class RelationServiceImpl implements RelationService {
                 Long outId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
                 String payload = objectMapper.writeValueAsString(new RelationEvent("FollowCreated", fromUserId, toUserId, id));
                 outboxMapper.insert(outId, "following", id, "FollowCreated", payload);
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.warn("Follow outbox insert failed, from={}, to={}: {}", fromUserId, toUserId, e.getMessage());
+            }
 
             User actor = userMapper.findById(fromUserId);
             eventPublisher.publishEvent(new FollowCreatedEvent(
@@ -131,7 +137,9 @@ public class RelationServiceImpl implements RelationService {
                 Long outId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
                 String payload = objectMapper.writeValueAsString(new RelationEvent("FollowCanceled", fromUserId, toUserId, null));
                 outboxMapper.insert(outId, "following", null, "FollowCanceled", payload);
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.warn("Unfollow outbox insert failed, from={}, to={}: {}", fromUserId, toUserId, e.getMessage());
+            }
             return true;
         }
         return false;

@@ -406,7 +406,9 @@ public class PostFeedServiceImpl implements PostFeedService {
                 String itemKey = "feed:item:" + it.id();
                 String itemJson = objectMapper.writeValueAsString(it);
                 redis.opsForValue().set(itemKey, itemJson, frTtl);
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.warn("Failed to cache feed item, id={}: {}", it.id(), e.getMessage());
+            }
         }
     }
 
@@ -458,7 +460,9 @@ public class PostFeedServiceImpl implements PostFeedService {
                 List<FeedItemResponse> enriched = enrich(cachedResp.items(), userId);
                 return new FeedPageResponse(enriched, cachedResp.page(), cachedResp.size(), cachedResp.hasMore());
             }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.warn("Feed mine cache deserialize failed, key={}: {}", key, e.getMessage());
+            }
         }
 
         int offset = (safePage - 1) * safeSize;
@@ -476,7 +480,9 @@ public class PostFeedServiceImpl implements PostFeedService {
             redis.opsForValue().set(key, json, Duration.ofSeconds(baseTtl + jitter));
             feedMineCache.put(key, resp);
             hotKey.record(key);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.warn("Failed to cache feed mine page, key={}: {}", key, e.getMessage());
+        }
         log.info("feed.mine source=db key={} page={} size={} user={} hasMore={}", key, safePage, safeSize, userId, hasMore);
         return resp;
     }

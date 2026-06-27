@@ -9,5 +9,11 @@ import java.util.List;
 public record SearchResponse(
         List<FeedItemResponse> items,
         String nextAfter,
-        boolean hasMore
-) {}
+        boolean hasMore,
+        /** ES 不可用或查询失败时为 true，前端可提示搜索降级。 */
+        boolean degraded
+) {
+    public SearchResponse(List<FeedItemResponse> items, String nextAfter, boolean hasMore) {
+        this(items, nextAfter, hasMore, false);
+    }
+}

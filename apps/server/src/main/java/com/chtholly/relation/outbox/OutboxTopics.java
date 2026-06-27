@@ -10,5 +10,7 @@ public final class OutboxTopics {
      */
     private OutboxTopics() {}
     public static final String CANAL_OUTBOX = "canal-outbox";
+    /** 搜索/Outbox 消费失败时的死信主题，便于人工排查与重放。 */
+    public static final String CANAL_OUTBOX_DLQ = "canal-outbox-dlq";
 }
 

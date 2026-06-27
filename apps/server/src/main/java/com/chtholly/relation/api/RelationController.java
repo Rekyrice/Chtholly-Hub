@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.IntFunction;
 import java.nio.charset.StandardCharsets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 关系接口控制器。
@@ -23,6 +25,8 @@ import java.nio.charset.StandardCharsets;
 @RestController
 @RequestMapping("/api/v1/relation")
 public class RelationController {
+    private static final Logger log = LoggerFactory.getLogger(RelationController.class);
+
     private final RelationService relationService;
     private final JwtService jwtService;
     private final StringRedisTemplate redis;
@@ -126,7 +130,9 @@ public class RelationController {
         if (raw == null || raw.length < 20) {
             try {
                 userCounterService.rebuildAllCounters(userId);
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.warn("User counter rebuild failed on empty SDS, userId={}: {}", userId, e.getMessage());
+            }
 
             // 重建后二次读取
             raw = redis.execute((RedisCallback<byte[]>)
@@ -172,16 +178,22 @@ public class RelationController {
             // 仅校验关注/粉丝的有效关系计数，与 SDS 值对比
             try {
                 dbFollowings = relationMapper.countFollowingActive(userId);
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.warn("Count following active failed, userId={}: {}", userId, e.getMessage());
+            }
             try {
                 dbFollowers = relationMapper.countFollowerActive(userId);
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.warn("Count follower active failed, userId={}: {}", userId, e.getMessage());
+            }
 
             // 段数异常或值不一致则触发全量重建
             if ((seg != 5) || sdsFollowings != (long) dbFollowings || sdsFollowers != (long) dbFollowers) {
                 try {
                     userCounterService.rebuildAllCounters(userId);
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    log.warn("User counter rebuild failed during SDS mismatch, userId={}: {}", userId, e.getMessage());
+                }
 
                 // 重建后读取并直接返回最新值
                 byte[] raw2 = redis.execute((RedisCallback<byte[]>)

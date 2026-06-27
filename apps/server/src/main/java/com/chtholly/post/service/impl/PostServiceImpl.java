@@ -226,7 +226,10 @@ public class PostServiceImpl implements PostService {
 
         try {
             userCounterService.incrementPosts(creatorId, 1);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.warn("Increment posts counter failed after publish, userId={}, postId={}: {}",
+                    creatorId, id, e.getMessage());
+        }
 
         // 写入 Outbox 事件，驱动搜索索引增量更新
         try {
@@ -243,7 +246,7 @@ public class PostServiceImpl implements PostService {
         try {
             ragIndexService.ensureIndexed(id);
         } catch (Exception e) {
-            log.warn("Pre-index after publish failed, post {}: {}", id, e.getMessage());
+            log.warn("Pre-index after publish failed, post {} (RAG backfill may recover): {}", id, e.getMessage(), e);
         }
     }
 
@@ -327,7 +330,7 @@ public class PostServiceImpl implements PostService {
         try {
             searchIndexService.upsertPost(id);
         } catch (Exception e) {
-            log.warn("Search index upsert failed, post {}: {}", id, e.getMessage());
+            log.warn("Search index upsert failed, post {} (will retry on backfill): {}", id, e.getMessage(), e);
         }
     }
 
@@ -335,7 +338,7 @@ public class PostServiceImpl implements PostService {
         try {
             searchIndexService.softDeletePost(id);
         } catch (Exception e) {
-            log.warn("Search index delete failed, post {}: {}", id, e.getMessage());
+            log.warn("Search index delete failed, post {} (will retry on backfill): {}", id, e.getMessage(), e);
         }
     }
 
@@ -499,7 +502,9 @@ public class PostServiceImpl implements PostService {
                 postDetailCache.put(pageKey, resp);
 
                 log.info("detail source=db key={}", pageKey);
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log.warn("Failed to cache post detail, key={}: {}", pageKey, e.getMessage());
+            }
 
             // 10. 释放锁并返回最终结果
             // 返回前调用 enrich 填充用户维度的 liked/faved 状态
@@ -552,8 +557,8 @@ public class PostServiceImpl implements PostService {
             
             // 5. 叠加实时数据（计数与用户状态）并返回
             return enrichDetailResponse(base, uid, true);
-        } catch (Exception ignored) {
-            // 反序列化失败等异常情况，视为未命中，回源修复
+        } catch (Exception e) {
+            log.warn("Post detail cache deserialize failed, key={}: {}", pageKey, e.getMessage());
             return null;
         }
     }
