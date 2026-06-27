@@ -9,6 +9,9 @@ import com.chtholly.post.model.Post;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.chtholly.common.job.CleanupProperties;
+import org.springframework.data.redis.connection.DataType;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
@@ -37,22 +40,27 @@ public class FeedCacheInvalidationListener {
 
     private static final Logger log = LoggerFactory.getLogger(FeedCacheInvalidationListener.class);
 
+    private static final String FEED_PUBLIC_PAGES_KEY = "feed:public:pages";
+
     private final Cache<String, FeedPageResponse> feedPublicCache;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final com.chtholly.counter.service.UserCounterService userCounterService;
     private final com.chtholly.post.mapper.PostMapper postMapper;
+    private final CleanupProperties cleanupProperties;
 
     public FeedCacheInvalidationListener(@Qualifier("feedPublicCache") Cache<String, FeedPageResponse> feedPublicCache,
                                          StringRedisTemplate redis,
                                          ObjectMapper objectMapper,
                                          com.chtholly.counter.service.UserCounterService userCounterService,
-                                         com.chtholly.post.mapper.PostMapper postMapper) {
+                                         com.chtholly.post.mapper.PostMapper postMapper,
+                                         CleanupProperties cleanupProperties) {
         this.feedPublicCache = feedPublicCache;
         this.redis = redis;
         this.objectMapper = objectMapper;
         this.userCounterService = userCounterService;
         this.postMapper = postMapper;
+        this.cleanupProperties = cleanupProperties;
     }
 
     /**
@@ -203,5 +211,56 @@ public class FeedCacheInvalidationListener {
         } catch (Exception e) {
             log.warn("Feed page JSON write failed, key={}: {}", key, e.getMessage());
         }
+    }
+
+    /**
+     * 每小时检查 feed 页面索引容量，超出上限时移除最旧条目。
+     */
+    @Scheduled(cron = "0 0 * * * *")
+    public void trimFeedPublicPagesIndex() {
+        int maxSize = cleanupProperties.feedPages().maxSize();
+        long removed = trimFeedPublicPagesIndex(maxSize);
+        if (removed > 0) {
+            log.info("[Cleanup] feed:public:pages: removed {} entries, maxSize={}", removed, maxSize);
+        }
+    }
+
+    long trimFeedPublicPagesIndex(int maxSize) {
+        DataType type = redis.type(FEED_PUBLIC_PAGES_KEY);
+        if (type == DataType.SET) {
+            return trimLegacySetIndex(maxSize);
+        }
+        if (type == DataType.ZSET || type == DataType.NONE) {
+            return trimSortedSetIndex(maxSize);
+        }
+        log.warn("[Cleanup] feed:public:pages has unexpected type {}, skip trim", type);
+        return 0L;
+    }
+
+    private long trimSortedSetIndex(int maxSize) {
+        Long size = redis.opsForZSet().size(FEED_PUBLIC_PAGES_KEY);
+        if (size == null || size <= maxSize) {
+            return 0L;
+        }
+        long removeCount = size - maxSize;
+        Long removed = redis.opsForZSet().removeRange(FEED_PUBLIC_PAGES_KEY, 0, removeCount - 1);
+        return removed != null ? removed : 0L;
+    }
+
+    private long trimLegacySetIndex(int maxSize) {
+        Long size = redis.opsForSet().size(FEED_PUBLIC_PAGES_KEY);
+        if (size == null || size <= maxSize) {
+            return 0L;
+        }
+        long removeCount = size - maxSize;
+        long removed = 0L;
+        for (long i = 0; i < removeCount; i++) {
+            String member = redis.opsForSet().pop(FEED_PUBLIC_PAGES_KEY);
+            if (member == null) {
+                break;
+            }
+            removed++;
+        }
+        return removed;
     }
 }

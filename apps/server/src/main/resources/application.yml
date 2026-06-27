@@ -106,6 +106,20 @@ app:
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
 
+cleanup:
+  login-logs:
+    retention-days: ${CLEANUP_LOGIN_LOGS_DAYS:90}
+  outbox:
+    retention-days: ${CLEANUP_OUTBOX_DAYS:7}
+  notifications:
+    retention-days: ${CLEANUP_NOTIFICATIONS_DAYS:90}
+  bangumi-sync-log:
+    retention-days: ${CLEANUP_BANGUMI_SYNC_LOG_DAYS:30}
+  dead-letter:
+    retention-days: ${CLEANUP_DEAD_LETTER_DAYS:30}
+  feed-pages:
+    max-size: ${CLEANUP_FEED_PAGES_MAX:1000}
+
 rag:
   enabled: ${LLM_ENABLED:false}
 

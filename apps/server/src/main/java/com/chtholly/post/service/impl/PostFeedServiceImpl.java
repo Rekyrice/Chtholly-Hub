@@ -395,8 +395,8 @@ public class PostFeedServiceImpl implements PostFeedService {
             }
         }
 
-        // 页面键集合索引，用于按页面维度批量失效与清理（即使没有 Redis 整页缓存，依然保留反向索引用于本地缓存通知或其他用途）
-        redis.opsForSet().add("feed:public:pages", pageKey);
+        // 页面键索引（Sorted Set，score = 写入时间戳），供批量失效与容量清理
+        redis.opsForZSet().add("feed:public:pages", pageKey, System.currentTimeMillis());
 
         for (FeedItemResponse it : items) {
             // 反向索引：按小时为每个内容建立“页面引用关系”，支持内容更新时快速定位受影响页面
