@@ -5,6 +5,8 @@ import com.chtholly.common.kafka.deadletter.DeadLetterMessageService;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -13,9 +15,9 @@ import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.List;
 
 /**
  * 计数事件聚合与刷写消费者。
@@ -28,9 +30,11 @@ import java.util.List;
 @Service
 public class CounterAggregationConsumer extends AbstractKafkaConsumer {
 
+    private static final Logger log = LoggerFactory.getLogger(CounterAggregationConsumer.class);
     private static final String CONSUMER_GROUP = "counter-agg";
 
     private final StringRedisTemplate redis;
+    private final DefaultRedisScript<Long> aggIncrScript;
     private final DefaultRedisScript<Long> incrScript;
     private final DefaultRedisScript<Long> decrScript;
 
@@ -40,6 +44,11 @@ public class CounterAggregationConsumer extends AbstractKafkaConsumer {
                                       DeadLetterMessageService deadLetterMessageService) {
         super(kafka, objectMapper, deadLetterMessageService);
         this.redis = redis;
+
+        this.aggIncrScript = new DefaultRedisScript<>();
+        this.aggIncrScript.setResultType(Long.class);
+        this.aggIncrScript.setScriptText(AGG_INCR_LUA);
+
         this.incrScript = new DefaultRedisScript<>();
         this.incrScript.setResultType(Long.class);
         this.incrScript.setScriptText(INCR_FIELD_LUA);
@@ -63,8 +72,9 @@ public class CounterAggregationConsumer extends AbstractKafkaConsumer {
     protected void process(String sourceTopic, String messageKey, String payload, int retryCount) throws Exception {
         CounterEvent evt = objectMapper.readValue(payload, CounterEvent.class);
         String aggKey = CounterKeys.aggKey(evt.getEntityType(), evt.getEntityId());
+        String indexKey = CounterKeys.aggIndexKey();
         String field = String.valueOf(evt.getIdx());
-        redis.opsForHash().increment(aggKey, field, evt.getDelta());
+        redis.execute(aggIncrScript, List.of(aggKey, indexKey), field, String.valueOf(evt.getDelta()));
     }
 
     @Override
@@ -78,58 +88,85 @@ public class CounterAggregationConsumer extends AbstractKafkaConsumer {
      */
     @Scheduled(fixedDelay = 1000L)
     public void flush() {
-        Set<String> keys = redis.keys("agg:" + CounterSchema.SCHEMA_ID + ":*");
-        if (keys.isEmpty()) {
+        String indexKey = CounterKeys.aggIndexKey();
+        Set<String> keys = redis.opsForSet().members(indexKey);
+        if (keys == null || keys.isEmpty()) {
             return;
         }
 
         for (String aggKey : keys) {
-            Map<Object, Object> entries = redis.opsForHash().entries(aggKey);
-            if (entries.isEmpty()) {
+            if (CounterKeys.aggIndexKey().equals(aggKey)) {
                 continue;
             }
-            String[] parts = aggKey.split(":", 4);
-            if (parts.length < 4) {
-                continue;
-            }
-
-            String cntKey = CounterKeys.sdsKey(parts[2], parts[3]);
-
-            for (Map.Entry<Object, Object> e : entries.entrySet()) {
-                String field = String.valueOf(e.getKey());
-                long delta;
-                try {
-                    delta = Long.parseLong(String.valueOf(e.getValue()));
-                } catch (NumberFormatException nfe) {
-                    continue;
-                }
-                if (delta == 0) {
-                    continue;
-                }
-                int idx;
-                try {
-                    idx = Integer.parseInt(field);
-                } catch (NumberFormatException nfe) {
-                    continue;
-                }
-
-                try {
-                    redis.execute(incrScript, List.of(cntKey),
-                            String.valueOf(CounterSchema.SCHEMA_LEN),
-                            String.valueOf(CounterSchema.FIELD_SIZE),
-                            String.valueOf(idx),
-                            String.valueOf(delta));
-                    redis.execute(decrScript, List.of(aggKey), field, String.valueOf(delta));
-                } catch (Exception ex) {
-                    // 留存字段，下一轮 flush 重试
-                }
-            }
-            Long size = redis.opsForHash().size(aggKey);
-            if (size == 0L) {
-                redis.delete(aggKey);
-            }
+            flushAggKey(indexKey, aggKey);
         }
     }
+
+    private void flushAggKey(String indexKey, String aggKey) {
+        Map<Object, Object> entries = redis.opsForHash().entries(aggKey);
+        if (entries.isEmpty()) {
+            redis.opsForSet().remove(indexKey, aggKey);
+            redis.delete(aggKey);
+            return;
+        }
+
+        String[] parts = aggKey.split(":", 4);
+        if (parts.length < 4) {
+            log.warn("counter.agg flush skip malformed aggKey={}", aggKey);
+            return;
+        }
+
+        String cntKey = CounterKeys.sdsKey(parts[2], parts[3]);
+
+        for (Map.Entry<Object, Object> e : entries.entrySet()) {
+            String field = String.valueOf(e.getKey());
+            long delta;
+            try {
+                delta = Long.parseLong(String.valueOf(e.getValue()));
+            } catch (NumberFormatException nfe) {
+                continue;
+            }
+            if (delta == 0) {
+                continue;
+            }
+            int idx;
+            try {
+                idx = Integer.parseInt(field);
+            } catch (NumberFormatException nfe) {
+                continue;
+            }
+
+            try {
+                redis.execute(incrScript, List.of(cntKey),
+                        String.valueOf(CounterSchema.SCHEMA_LEN),
+                        String.valueOf(CounterSchema.FIELD_SIZE),
+                        String.valueOf(idx),
+                        String.valueOf(delta));
+                redis.execute(decrScript, List.of(aggKey), field, String.valueOf(delta));
+            } catch (Exception ex) {
+                // 失败时不删 agg 桶，保留增量供下一轮 flush 重试
+                log.warn("counter.agg flush failed aggKey={} field={} delta={}: {}",
+                        aggKey, field, delta, ex.getMessage(), ex);
+            }
+        }
+
+        Long size = redis.opsForHash().size(aggKey);
+        if (size != null && size == 0L) {
+            redis.delete(aggKey);
+            redis.opsForSet().remove(indexKey, aggKey);
+        }
+    }
+
+    /** 原子写入聚合桶并登记索引，避免 HINCRBY 与 SADD 之间丢 key。 */
+    private static final String AGG_INCR_LUA = """
+            local aggKey = KEYS[1]
+            local indexKey = KEYS[2]
+            local field = ARGV[1]
+            local delta = tonumber(ARGV[2])
+            redis.call('HINCRBY', aggKey, field, delta)
+            redis.call('SADD', indexKey, aggKey)
+            return 1
+            """;
 
     private static final String INCR_FIELD_LUA = """
 

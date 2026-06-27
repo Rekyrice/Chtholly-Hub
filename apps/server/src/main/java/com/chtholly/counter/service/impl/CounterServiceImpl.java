@@ -11,7 +11,9 @@ import com.chtholly.post.model.Post;
 import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -476,13 +478,20 @@ public class CounterServiceImpl implements CounterService {
 
     /**
      * 基于位图分片进行管道化 BITCOUNT 汇总，用于按事实重建计数。
-     * 说明：当前使用 KEYS 枚举分片（生产建议维护索引集合），结果按分片 BITCOUNT 求和。
+     * 使用 SCAN 迭代分片 key，避免 KEYS 阻塞 Redis。
      */
     private long bitCountShardsPipelined(String metric, String etype, String eid) {
         String pattern = String.format("bm:%s:%s:%s:*", metric, etype, eid);
-        // 生产环境建议以索引集合替代 KEYS
-        Set<String> keys = redis.keys(pattern); 
-        if (keys.isEmpty()) return 0L;
+        Set<String> keys = new LinkedHashSet<>();
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
+        try (Cursor<String> cursor = redis.scan(options)) {
+            while (cursor.hasNext()) {
+                keys.add(cursor.next());
+            }
+        }
+        if (keys.isEmpty()) {
+            return 0L;
+        }
 
         // 管道批量 BITCOUNT 汇总
         List<Object> res = redis.executePipelined((RedisCallback<Object>) connection -> {

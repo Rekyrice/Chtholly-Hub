@@ -19,4 +19,9 @@ public final class CounterKeys {
     public static String aggKey(String entityType, String entityId) {
         return String.format("agg:%s:%s:%s", CounterSchema.SCHEMA_ID, entityType, entityId); // 刷写前的增量存储桶
     }
+
+    /** 活跃聚合桶索引（Set）：flush 时 O(1) 枚举，避免 KEYS 阻塞 Redis。 */
+    public static String aggIndexKey() {
+        return String.format("agg:%s:__keys", CounterSchema.SCHEMA_ID);
+    }
 }
