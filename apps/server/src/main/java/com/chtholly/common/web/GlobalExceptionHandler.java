@@ -6,10 +6,15 @@ import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -18,67 +23,66 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     * 业务异常统一返回：HTTP 400。
-     *
-     * @param ex 业务异常，包含错误码与消息。
-     * @return 响应体：code/message。
-     */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Map<String, Object>> handleBusiness(BusinessException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("code", ex.getErrorCode().getCode());
-        body.put("message", ex.getMessage());
-        return ResponseEntity.badRequest().body(body);
+        return ResponseEntity.status(ex.getHttpStatus())
+                .body(ApiErrorBody.of(ex.getErrorCode().getCode(), ex.getMessage()));
     }
 
-    /**
-     * 参数校验失败（@Valid）统一返回：HTTP 400。
-     * 仅取首个字段错误的信息作为提示。
-     *
-     * @param ex Spring 的方法参数校验异常。
-     * @return 响应体：code/message。
-     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiErrorBody.of("FORBIDDEN", "权限不足"));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleNotReadable(HttpMessageNotReadableException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorBody.of("INVALID_BODY", "请求体格式错误"));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ApiErrorBody.of("METHOD_NOT_ALLOWED", "不支持的请求方法"));
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingParam(MissingServletRequestParameterException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorBody.of("MISSING_PARAM", "缺少必要参数: " + ex.getParameterName()));
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNotFound(NoHandlerFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiErrorBody.of("NOT_FOUND", "请求的资源不存在"));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
                 .map(FieldError::getDefaultMessage)
                 .orElse(ErrorCode.BAD_REQUEST.getDefaultMessage());
-        Map<String, Object> body = new HashMap<>();
-        body.put("code", ErrorCode.BAD_REQUEST.getCode());
-        body.put("message", message);
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        Map<String, Object> details = new HashMap<>();
+        for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
+            details.put(fieldError.getField(), fieldError.getDefaultMessage());
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorBody.of(ErrorCode.BAD_REQUEST.getCode(), message, details));
     }
 
-    /**
-     * 约束校验失败（如 @Validated 参数）统一返回：HTTP 400。
-     *
-     * @param ex 参数约束异常。
-     * @return 响应体：code/message。
-     */
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<Map<String, Object>> handleConstraintViolation(ConstraintViolationException ex) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("code", ErrorCode.BAD_REQUEST.getCode());
-        body.put("message", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorBody.of(ErrorCode.BAD_REQUEST.getCode(), ex.getMessage()));
     }
 
-    /**
-     * 未处理异常统一返回：HTTP 500。
-     * 记录错误日志并返回通用提示。
-     *
-     * @param ex 未捕获的异常。
-     * @return 响应体：code/message。
-     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
         log.error("Unhandled exception", ex);
-        Map<String, Object> body = new HashMap<>();
-        body.put("code", "INTERNAL_ERROR");
-        body.put("message", "服务异常，请稍后重试");
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiErrorBody.of("INTERNAL_ERROR", "服务异常，请稍后重试"));
     }
 }
-

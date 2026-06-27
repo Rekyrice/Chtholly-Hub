@@ -17,6 +17,8 @@ public enum ErrorCode {
     TERMS_NOT_ACCEPTED("TERMS_NOT_ACCEPTED", "请先同意服务条款"),
     REFRESH_TOKEN_INVALID("REFRESH_TOKEN_INVALID", "刷新令牌无效"),
     BAD_REQUEST("BAD_REQUEST", "请求参数错误"),
+    RESOURCE_NOT_FOUND("RESOURCE_NOT_FOUND", "资源不存在"),
+    CONFLICT("CONFLICT", "资源冲突"),
     INTERNAL_ERROR("INTERNAL_ERROR", "服务器内部错误");
 
     private final String code;

@@ -6,6 +6,7 @@ import com.chtholly.post.service.PostService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.common.exception.BusinessException;
+import com.chtholly.common.exception.ResourceNotFoundException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.mapper.PostMapper;
@@ -430,7 +431,7 @@ public class PostServiceImpl implements PostService {
             // 6. 处理内容不存在或已删除的情况
             if (row == null || "deleted".equals(row.getStatus())) {
                 redis.opsForValue().set(pageKey, "NULL", java.time.Duration.ofSeconds(30 + java.util.concurrent.ThreadLocalRandom.current().nextInt(31)));
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "内容不存在");
+                throw new ResourceNotFoundException("内容不存在");
             }
 
             // 7. 权限校验
@@ -491,7 +492,7 @@ public class PostServiceImpl implements PostService {
     public PostDetailResponse getDetailBySlug(String slug, Long currentUserIdNullable) {
         Long id = mapper.findIdBySlug(slug);
         if (id == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "内容不存在");
+            throw new ResourceNotFoundException("内容不存在");
         }
         return getDetail(id, currentUserIdNullable);
     }
@@ -514,7 +515,7 @@ public class PostServiceImpl implements PostService {
         
         // 2. 命中空值缓存（防止穿透）
         if ("NULL".equals(cached)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "内容不存在");
+            throw new ResourceNotFoundException("内容不存在");
         }
         
         try {

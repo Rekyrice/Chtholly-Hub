@@ -1,7 +1,12 @@
 package com.chtholly.auth.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.chtholly.common.web.ApiErrorBody;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -13,13 +18,11 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.List;
-
 /**
  * Spring Security 安全配置。
  * <p>
  * - 关闭 CSRF（后端纯 API，使用 JWT 无会话）；
- * - 启用 CORS，当前允许所有来源（后续需替换白名单）；
+ * - 启用 CORS，来源从 {@code app.cors.allowed-origins} 读取；
  * - 无状态会话；
  * - 公开认证相关接口与健康检查，其余接口需鉴权；
  * - 资源服务器启用 JWT 校验。
@@ -27,31 +30,28 @@ import java.util.List;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
+@EnableConfigurationProperties(CorsProperties.class)
+@RequiredArgsConstructor
 public class SecurityConfig {
 
-    /**
-     * 配置 Spring Security 过滤链。
-     *
-     * <p>主要包含：</p>
-     * - 关闭 CSRF；
-     * - 启用 CORS；
-     * - 使用无状态会话策略；
-     * - 公开认证接口与健康检查，其余接口需鉴权；
-     * - 启用资源服务器的 JWT 校验。
-     *
-     * @param http Spring 的 {@link HttpSecurity} 构建器。
-     * @return 构建完成的 {@link SecurityFilterChain}。
-     * @throws Exception 构建过滤链过程中可能抛出的异常。
-     */
+    private final CorsProperties corsProperties;
+    private final ObjectMapper objectMapper;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            response.setStatus(403);
+                            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                            objectMapper.writeValue(response.getOutputStream(),
+                                    ApiErrorBody.of("FORBIDDEN", "权限不足"));
+                        }))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                        // 公开内容：首页 Feed 不需要登录
                         .requestMatchers("/api/v1/posts/feed").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/tags").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search").permitAll()
@@ -61,7 +61,6 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/detail/*").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/detail/by-slug/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/*/qa/stream").permitAll()
-                        // Agent WS：握手在 Handler 内校验短生命周期 ticket
                         .requestMatchers("/api/v1/agent/ws").permitAll()
                         .requestMatchers(
                                 "/api/v1/auth/send-code",
@@ -77,19 +76,12 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /**
-     * 定义并提供 CORS 配置源。
-     *
-     * <p>当前允许所有来源（后续建议替换为产品白名单），允许常见方法与请求头，且不携带凭证。</p>
-     *
-     * @return {@link CorsConfigurationSource}，用于为所有路径注册 CORS 规则。
-     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("*")); // TODO replace with product whitelist
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With"));
+        configuration.setAllowedOrigins(corsProperties.allowedOriginList());
+        configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type", "X-Requested-With"));
         configuration.setAllowCredentials(false);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

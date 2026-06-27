@@ -5,6 +5,8 @@ server:
 spring:
   application:
     name: chtholly-server
+  mvc:
+    throw-exception-if-no-handler-found: true
   autoconfigure:
     exclude:
       - org.springframework.ai.vectorstore.elasticsearch.autoconfigure.ElasticsearchVectorStoreAutoConfiguration
@@ -87,13 +89,17 @@ canal:
   port: 11111
   destination: example
   username: "canal"
-  password: "Canal@123456"
+  password: ${CANAL_PASSWORD:Canal@123456}
   filter: chtholly\.outbox
   batchSize: 1000
   intervalMs: 1000
 
 site:
   owner-user-id: ${SITE_OWNER_USER_ID:1}
+
+app:
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
 
 rag:
   enabled: ${LLM_ENABLED:false}
