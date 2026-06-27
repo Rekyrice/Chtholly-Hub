@@ -26,15 +26,6 @@ if ($other) {
 
 Set-Location (Join-Path $RepoRoot "apps/server")
 
-$javaExe = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME "bin\java.exe" } else { "java" }
-if (Test-Path $javaExe) {
-    $verLine = & $javaExe -version 2>&1 | Select-Object -First 1
-    Write-Host "Java: $verLine" -ForegroundColor DarkGray
-    if ($verLine -notmatch '"21\.') {
-        Write-Host "WARN: 项目需要 JDK 21。请在 .env 设置 JAVA_HOME，或安装 Temurin 21。" -ForegroundColor Yellow
-    }
-}
-
 Write-Host "Compiling..." -ForegroundColor DarkGray
 & mvn -q compile "-Dmaven.test.skip=true"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

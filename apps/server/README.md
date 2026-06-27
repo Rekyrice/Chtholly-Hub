@@ -55,8 +55,6 @@ Invoke-RestMethod http://localhost:8888/api/v1/posts/detail/by-slug/welcome-chth
 
 ## 编译
 
-CLI 需 Lombok 注解处理器（已在 `pom.xml` 配置）。推荐使用 **JDK 21**：
-
 ```powershell
 mvn clean compile "-Dmaven.test.skip=true"
 ```

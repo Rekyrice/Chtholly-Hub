@@ -126,7 +126,7 @@ class PostServiceImplTest {
         assertThat(feedPublicCache.getIfPresent(currentPageKey)).isNull();
         assertThat(feedPublicCache.getIfPresent(previousPageKey)).isNull();
         verify(setOperations, never()).remove(eq(currentIndexKey), eq(""));
-        verify(redis, times(2)).delete("post:detail:" + postId + ":v1");
+        verify(redis, times(2)).delete("post:detail:" + postId + ":v2");
     }
 
     @Test
