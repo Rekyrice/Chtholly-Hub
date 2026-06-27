@@ -90,7 +90,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             String type = root.path("type").asText("");
 
             if ("clear".equals(type)) {
-                memoryStore.clear(userId);
+                memoryStore.clearMemory(userId);
                 sendJson(safe, "cleared", objectMapper.createObjectNode().put("message", "对话记忆已清空"));
                 return;
             }
@@ -111,20 +111,16 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
 
-            AgentConversationMemory memory = memoryStore.getOrCreate(userId);
-            try {
-                agent.run(text, userId, memory, event -> {
-                    try {
-                        if (safe.isOpen()) {
-                            sendJson(safe, event.type(), event.data());
-                        }
-                    } catch (Exception e) {
-                        log.warn("WebSocket 发送失败: {}", e.getMessage());
+            AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId);
+            agent.run(text, userId, memory, event -> {
+                try {
+                    if (safe.isOpen()) {
+                        sendJson(safe, event.type(), event.data());
                     }
-                });
-            } finally {
-                memoryStore.save(userId, memory);
-            }
+                } catch (Exception e) {
+                    log.warn("WebSocket 发送失败: {}", e.getMessage());
+                }
+            });
         } catch (Exception e) {
             log.warn("Agent WS 处理失败: {}", e.getMessage());
             try {

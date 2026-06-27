@@ -1,8 +1,9 @@
 package com.chtholly.agent.memory;
 
 import com.chtholly.agent.config.AgentProperties;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -10,71 +11,101 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
-/** 按用户 ID 将会话记忆持久化到 Redis（滑动 TTL）。 */
+/** 按 userId 将对话记忆持久化到 Redis List（RPUSH + LTRIM），Caffeine 热数据加速。 */
 @Slf4j
 @Component
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 public class AgentMemoryStore {
 
-    private static final String KEY_PREFIX = "agent:conv:";
-    private static final TypeReference<List<AgentTurn>> TURN_LIST_TYPE = new TypeReference<>() {};
+    private static final String KEY_PREFIX = "agent:memory:";
+    /** 本地热数据缓存容量（用户数上限）。 */
+    private static final int LOCAL_CACHE_MAX_SIZE = 1024;
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final AgentProperties properties;
+    private final Cache<Long, List<AgentTurn>> localCache;
 
     public AgentMemoryStore(StringRedisTemplate redis, ObjectMapper objectMapper, AgentProperties properties) {
         this.redis = redis;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        int ttlMinutes = Math.max(5, properties.getMemoryTtlMinutes());
+        this.localCache = Caffeine.newBuilder()
+                .maximumSize(LOCAL_CACHE_MAX_SIZE)
+                .expireAfterAccess(Duration.ofMinutes(ttlMinutes))
+                .build();
     }
 
-    /** 读取用户会话记忆；命中时刷新 TTL（滑动过期）。 */
-    public AgentConversationMemory getOrCreate(long userId) {
-        String key = key(userId);
-        String json = redis.opsForValue().get(key);
-        if (!StringUtils.hasText(json)) {
-            return new AgentConversationMemory(properties.getMemoryMaxTurns());
+    /** 加载用户对话记忆（优先 Caffeine，未命中则 LRANGE Redis List）。 */
+    public AgentConversationMemory getOrCreateMemory(long userId) {
+        List<AgentTurn> turns = localCache.get(userId, this::loadTurnsFromRedis);
+        if (turns == null) {
+            turns = List.of();
         }
-        try {
-            List<AgentTurn> turns = objectMapper.readValue(json, TURN_LIST_TYPE);
-            touchTtl(key);
-            return AgentConversationMemory.restore(turns, properties.getMemoryMaxTurns());
-        } catch (Exception e) {
-            log.warn("Agent 记忆反序列化失败 userId={}: {}", userId, e.getMessage());
-            redis.delete(key);
-            return new AgentConversationMemory(properties.getMemoryMaxTurns());
-        }
+        return new AgentConversationMemory(userId, turns, this);
     }
 
-    /** 写回 Redis 并刷新 TTL。 */
-    public void save(long userId, AgentConversationMemory memory) {
-        if (memory == null || memory.isEmpty()) {
-            clear(userId);
+    /** RPUSH 单条 turn 并 LTRIM 保留最近 maxTurns 条。 */
+    public void addTurn(long userId, AgentTurn turn) {
+        if (turn == null || turn.content() == null || turn.content().isBlank()) {
             return;
         }
+        String key = key(userId);
         try {
-            String json = objectMapper.writeValueAsString(memory.snapshot());
-            redis.opsForValue().set(key(userId), json, ttl());
+            String json = objectMapper.writeValueAsString(turn);
+            redis.opsForList().rightPush(key, json);
+            int max = maxTurns();
+            redis.opsForList().trim(key, -max, -1);
+            redis.expire(key, ttl());
+
+            List<AgentTurn> cached = new ArrayList<>(localCache.get(userId, id -> loadTurnsFromRedis(id)));
+            cached.add(turn);
+            while (cached.size() > max) {
+                cached.remove(0);
+            }
+            localCache.put(userId, List.copyOf(cached));
         } catch (Exception e) {
-            log.warn("Agent 记忆写入 Redis 失败 userId={}: {}", userId, e.getMessage());
+            log.warn("Agent 记忆 RPUSH 失败 userId={}: {}", userId, e.getMessage());
         }
     }
 
-    /** 清空用户会话记忆。 */
-    public void clear(long userId) {
+    /** 清空用户对话记忆。 */
+    public void clearMemory(long userId) {
         redis.delete(key(userId));
+        localCache.invalidate(userId);
     }
 
-    private void touchTtl(String key) {
+    int maxTurns() {
+        return Math.max(2, properties.getMemoryMaxTurns());
+    }
+
+    private List<AgentTurn> loadTurnsFromRedis(long userId) {
+        String key = key(userId);
+        List<String> raw = redis.opsForList().range(key, 0, -1);
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        List<AgentTurn> turns = new ArrayList<>(raw.size());
+        for (String item : raw) {
+            if (!StringUtils.hasText(item)) {
+                continue;
+            }
+            try {
+                turns.add(objectMapper.readValue(item, AgentTurn.class));
+            } catch (Exception e) {
+                log.warn("Agent 记忆条目反序列化失败 userId={}: {}", userId, e.getMessage());
+            }
+        }
         redis.expire(key, ttl());
+        return List.copyOf(turns);
     }
 
     private Duration ttl() {
-        int minutes = Math.max(5, properties.getMemoryTtlMinutes());
-        return Duration.ofMinutes(minutes);
+        return Duration.ofMinutes(Math.max(5, properties.getMemoryTtlMinutes()));
     }
 
     private static String key(long userId) {

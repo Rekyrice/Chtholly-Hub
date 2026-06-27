@@ -34,6 +34,8 @@ class AgentWebSocketHandlerTest {
     @Mock
     private AgentMemoryStore memoryStore;
     @Mock
+    private AgentConversationMemory memory;
+    @Mock
     private AgentWsTicketStore ticketStore;
     @Mock
     private WebSocketSession rawSession;
@@ -68,7 +70,7 @@ class AgentWebSocketHandlerTest {
 
         handler.afterConnectionEstablished(rawSession);
 
-        when(memoryStore.getOrCreate(99L)).thenReturn(new AgentConversationMemory(5));
+        when(memoryStore.getOrCreateMemory(99L)).thenReturn(memory);
         doNothing().when(agent).run(any(), anyLong(), any(), any());
 
         List<String> payloads = new ArrayList<>();
@@ -99,7 +101,7 @@ class AgentWebSocketHandlerTest {
 
         handler.afterConnectionEstablished(rawSession);
 
-        when(memoryStore.getOrCreate(1L)).thenReturn(new AgentConversationMemory(5));
+        when(memoryStore.getOrCreateMemory(1L)).thenReturn(memory);
         doNothing().when(agent).run(any(), anyLong(), any(), any());
 
         doNothing().when(rawSession).sendMessage(any());

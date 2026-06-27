@@ -4,51 +4,38 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * WebSocket 会话级短期记忆：保留最近 N 轮问答，供追问与指代消解。
+ * 用户对话记忆的只读视图；{@link #add} 委托 {@link AgentMemoryStore} 写入 Redis List。
  */
 public class AgentConversationMemory {
 
-    private final int maxTurns;
-    private final List<AgentTurn> turns = new ArrayList<>();
+    private final long userId;
+    private final AgentMemoryStore store;
+    private final List<AgentTurn> turns;
 
-    public AgentConversationMemory(int maxTurns) {
-        this.maxTurns = Math.max(2, maxTurns);
+    AgentConversationMemory(long userId, List<AgentTurn> turns, AgentMemoryStore store) {
+        this.userId = userId;
+        this.store = store;
+        this.turns = new ArrayList<>(turns == null ? List.of() : turns);
     }
 
-    public synchronized void add(AgentTurn turn) {
+    public void add(AgentTurn turn) {
         if (turn == null || turn.content() == null || turn.content().isBlank()) {
             return;
         }
+        store.addTurn(userId, turn);
         turns.add(turn);
-        trim();
+        int max = store.maxTurns();
+        while (turns.size() > max) {
+            turns.remove(0);
+        }
     }
 
-    public synchronized List<AgentTurn> snapshot() {
-        return List.copyOf(turns);
-    }
-
-    public synchronized boolean isEmpty() {
+    public boolean isEmpty() {
         return turns.isEmpty();
     }
 
-    /** 从 Redis 反序列化结果还原记忆对象。 */
-    public static AgentConversationMemory restore(List<AgentTurn> turns, int maxTurns) {
-        AgentConversationMemory memory = new AgentConversationMemory(maxTurns);
-        if (turns == null) {
-            return memory;
-        }
-        for (AgentTurn turn : turns) {
-            memory.add(turn);
-        }
-        return memory;
-    }
-
-    public synchronized void clear() {
-        turns.clear();
-    }
-
     /** 格式化为注入 LLM 的上下文文本。 */
-    public synchronized String formatForPrompt() {
+    public String formatForPrompt() {
         if (turns.isEmpty()) {
             return "";
         }
@@ -61,11 +48,5 @@ public class AgentConversationMemory {
             }
         }
         return sb.toString().trim();
-    }
-
-    private void trim() {
-        while (turns.size() > maxTurns) {
-            turns.remove(0);
-        }
     }
 }
