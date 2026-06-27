@@ -33,8 +33,8 @@ export default function AgentChat() {
     scrollBottom();
   }, [messages, busy, liveSteps]);
 
-  const connect = useCallback(() => {
-    const url = getAgentWsUrl();
+  const connect = useCallback(async () => {
+    const url = await getAgentWsUrl();
     if (!url) return null;
     const ws = new WebSocket(url);
     ws.onopen = () => setConnected(true);
@@ -45,11 +45,14 @@ export default function AgentChat() {
 
   useEffect(() => {
     if (!isLoggedIn()) return;
-    const ws = connect();
-    if (!ws) return;
-    wsRef.current = ws;
+    let closed = false;
+    void connect().then((ws) => {
+      if (closed || !ws) return;
+      wsRef.current = ws;
+    });
     return () => {
-      ws.close();
+      closed = true;
+      wsRef.current?.close();
       wsRef.current = null;
     };
   }, [connect]);
@@ -128,7 +131,11 @@ export default function AgentChat() {
       return;
     }
     if (type === "error") {
-      const msg = String(data.message ?? "出错了");
+      const reason = String(data.reason ?? "");
+      const msg =
+        reason === "RATE_LIMITED"
+          ? "发送过于频繁，请稍后再试。"
+          : String(data.message ?? "出错了");
       const streamId = streamingIdRef.current;
       const steps = [...stepsRef.current];
       if (streamId) {
@@ -173,7 +180,7 @@ export default function AgentChat() {
 
     let ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      ws = connect();
+      ws = await connect();
       if (!ws) {
         setMessages((prev) => [
           ...prev,

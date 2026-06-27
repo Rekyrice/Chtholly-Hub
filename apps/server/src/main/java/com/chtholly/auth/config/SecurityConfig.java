@@ -61,7 +61,7 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/detail/*").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/detail/by-slug/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/*/qa/stream").permitAll()
-                        // Agent WS：握手在 Handler 内校验 JWT
+                        // Agent WS：握手在 Handler 内校验短生命周期 ticket
                         .requestMatchers("/api/v1/agent/ws").permitAll()
                         .requestMatchers(
                                 "/api/v1/auth/send-code",
