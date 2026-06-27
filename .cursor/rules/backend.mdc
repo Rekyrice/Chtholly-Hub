@@ -1,0 +1,13 @@
+---
+description: Spring Boot 后端补充约定（编辑 server 代码时生效）
+globs: apps/server/**/*
+alwaysApply: false
+---
+
+# 后端补充（详情见 AGENTS.md）
+
+- 根包 `com.chtholly`；REST 前缀 `/api/v1/`；公开路由在 `SecurityConfig` 显式 `permitAll`
+- MySQL 库名 `chtholly`；用户字段 `handle`；计数实体类型 `post`
+- 结构变更写 `apps/server/db/migration/V{n}__描述.sql`，**禁止改历史 migration**
+- 构造器注入；事务在 Service 层；MyBatis 只用 `#{param}`；ID 用 `SnowflakeIdGenerator`
+- 单测放 `src/test/java`，包结构与生产代码对应

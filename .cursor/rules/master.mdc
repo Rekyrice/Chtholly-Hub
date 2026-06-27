@@ -1,5 +1,5 @@
 ---
-description: 项目主规则。开始任何任务前务必先阅读 AGENTS.md 获取完整项目上下文。
+description: 项目主规则。开始任何任务前务必先阅读 AGENTS.md。
 globs: **/*
 alwaysApply: true
 ---
@@ -8,23 +8,26 @@ alwaysApply: true
 
 ## 第一原则
 
-**开始任何任务前，务必先阅读项目根目录 `/AGENTS.md`。** 其中包含完整模块地图、架构决策、编码规范与已知技术债，是本项目开发的唯一权威参考。
+**先读 `/AGENTS.md`**（模块地图、架构、编码规范、环境变量）。本文件只补充 AGENTS.md 未覆盖的约束。
 
 ## 核心规则
 
-1. **语言**: Commit message 用英文；与用户对话用中文。
-2. **注释**: 类级 Javadoc 与方法签名用英文；方法体内 WHY 注释用中文。详见 AGENTS.md。
-3. **前端**: 默认 Server Components；仅在需要交互时使用 `"use client"`；类型定义放在 `lib/types/`。
-4. **异常处理**: **禁止** `catch (Exception ignored) {}`；每个 catch 至少记录日志。
-5. **禁止硬编码密钥**: 配置统一通过 `application.yml` 的 `${VAR:default}` 注入。
-6. **Commit 格式**: Conventional Commits（`feat:`、`fix:`、`refactor:`、`chore:`、`docs:`、`test:`）。
+1. **语言**: 与用户对话用中文；Commit message 用英文（Conventional Commits）。
+2. **注释**: 类/方法 Javadoc 英文；方法体内 WHY 注释中文。详见 AGENTS.md。
+3. **异常**: 禁止 `catch (Exception ignored) {}`；每个 catch 至少打日志。
+4. **配置**: 禁止硬编码密钥；用 `application.yml` 的 `${VAR:default}`。
+5. **范围**: 最小 diff，只改当前任务相关文件；未被要求时不 commit/push/新建 markdown。
 
-## 动手改代码前
+## Git 与品牌
 
-1. 查阅 AGENTS.md 模块地图，确定要修改的包
-2. 查阅相关改进计划文档（若存在）:
-   - `docs/prompts/agent-improvements.md` — Agent 模块
-   - `docs/prompts/backend-improvements.md` — 后端基础设施
-   - `docs/prompts/frontend-improvements.md` — 前端设计
-3. 后端改动后执行 `mvn compile`（在 `apps/server` 目录）
-4. 前端改动后执行 `npm run build`（在 `apps/web` 目录）
+- 对外品牌 **Chtholly Hub**；作者名 **Rekyrice**；侧栏/导航用 Rekyrice。
+
+## 完成前验证
+
+- 后端改动：`cd apps/server && mvn compile`（核心逻辑再跑相关 `mvn test`）
+- 前端改动：`cd apps/web && npm run build`
+- 未验证前不得声称「已完成 / 已通过」
+
+## 按目录补充约定
+
+编辑 `apps/server/**` 或 `apps/web/**` 时，Cursor 会自动加载对应 glob 规则（`backend.mdc` / `frontend.mdc`）。
