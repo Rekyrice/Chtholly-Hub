@@ -10,7 +10,7 @@ import type { AgentEventType, AgentWsEnvelope, ChatMessage } from "@/lib/types/a
 const SUGGESTIONS = [
   "站内有没有写过珂朵莉？",
   "帮我搜一下动漫相关的文章",
-  "Chtholly Hub 是什么？",
+  "re0 有几季",
 ];
 
 export default function AgentChat() {
@@ -18,8 +18,10 @@ export default function AgentChat() {
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [showSteps, setShowSteps] = useState(false);
+  const [showSteps, setShowSteps] = useState(true);
+  const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
+  const streamingIdRef = useRef<string | null>(null);
   const stepsRef = useRef<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +31,7 @@ export default function AgentChat() {
 
   useEffect(() => {
     scrollBottom();
-  }, [messages, busy]);
+  }, [messages, busy, liveSteps]);
 
   const connect = useCallback(() => {
     const url = getAgentWsUrl();
@@ -52,8 +54,18 @@ export default function AgentChat() {
     };
   }, [connect]);
 
-  const appendStep = (line: string) => {
+  const pushStep = (line: string) => {
     stepsRef.current = [...stepsRef.current, line];
+    setLiveSteps([...stepsRef.current]);
+  };
+
+  const formatActInput = (input: unknown) => {
+    if (!input || typeof input !== "object") return "";
+    try {
+      return JSON.stringify(input);
+    } catch {
+      return String(input);
+    }
   };
 
   const handleEnvelope = (env: AgentWsEnvelope) => {
@@ -61,45 +73,74 @@ export default function AgentChat() {
     const data = env.data ?? {};
 
     if (type === "think") {
-      appendStep(`💭 ${String(data.content ?? "")}`);
+      pushStep(`💭 ${String(data.content ?? "")}`);
       return;
     }
     if (type === "act") {
-      appendStep(`🔧 调用 ${String(data.tool ?? "")}`);
+      const tool = String(data.tool ?? "");
+      const inputStr = formatActInput(data.input);
+      pushStep(inputStr ? `🔧 ${tool}(${inputStr})` : `🔧 ${tool}`);
       return;
     }
     if (type === "observe") {
       const content = String(data.content ?? "");
-      appendStep(`📋 ${content.length > 120 ? content.slice(0, 120) + "…" : content}`);
+      pushStep(`📋 ${content.length > 200 ? content.slice(0, 200) + "…" : content}`);
+      return;
+    }
+    if (type === "delta") {
+      const chunk = String(data.content ?? "");
+      if (!chunk) return;
+      const streamId = streamingIdRef.current;
+      if (!streamId) {
+        const id = `a-${Date.now()}`;
+        streamingIdRef.current = id;
+        setMessages((prev) => [
+          ...prev,
+          { id, role: "assistant", content: chunk, streaming: true, steps: [...stepsRef.current] },
+        ]);
+        return;
+      }
+      setMessages((prev) =>
+        prev.map((m) => (m.id === streamId ? { ...m, content: m.content + chunk } : m)),
+      );
       return;
     }
     if (type === "final") {
       const content = String(data.content ?? "");
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          role: "assistant",
-          content,
-          steps: [...stepsRef.current],
-        },
-      ]);
+      const streamId = streamingIdRef.current;
+      const steps = [...stepsRef.current];
+      if (streamId) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === streamId ? { ...m, content, streaming: false, steps } : m,
+          ),
+        );
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          { id: `a-${Date.now()}`, role: "assistant", content, steps },
+        ]);
+      }
+      streamingIdRef.current = null;
       stepsRef.current = [];
+      setLiveSteps([]);
       setBusy(false);
       return;
     }
     if (type === "error") {
       const msg = String(data.message ?? "出错了");
+      const streamId = streamingIdRef.current;
+      const steps = [...stepsRef.current];
+      if (streamId) {
+        setMessages((prev) => prev.filter((m) => m.id !== streamId));
+      }
+      streamingIdRef.current = null;
       setMessages((prev) => [
         ...prev,
-        {
-          id: `e-${Date.now()}`,
-          role: "system",
-          content: msg,
-          steps: [...stepsRef.current],
-        },
+        { id: `e-${Date.now()}`, role: "system", content: msg, steps },
       ]);
       stepsRef.current = [];
+      setLiveSteps([]);
       setBusy(false);
     }
   };
@@ -163,8 +204,17 @@ export default function AgentChat() {
     setInput("");
     setBusy(true);
     stepsRef.current = [];
+    setLiveSteps([]);
+    streamingIdRef.current = null;
     ws.send(JSON.stringify({ type: "chat", message: trimmed }));
   };
+
+  const renderSteps = (steps: string[]) => (
+    <details className="mt-2 text-xs opacity-80" open={showSteps}>
+      <summary className="cursor-pointer select-none">推理步骤 ({steps.length})</summary>
+      <pre className="mt-1 whitespace-pre-wrap font-sans leading-relaxed">{steps.join("\n")}</pre>
+    </details>
+  );
 
   if (!isLoggedIn()) {
     return (
@@ -194,7 +244,7 @@ export default function AgentChat() {
             珂朵莉 Agent
           </h1>
           <p className="text-xs mt-0.5" style={{ color: "#9e9e9e" }}>
-            ReAct 推理 · 站内搜索 · 语义检索
+            ReAct 推理 · 流式回答 · Bangumi / 站内检索
             {connected ? " · 已连接" : " · 未连接"}
           </p>
         </div>
@@ -209,7 +259,7 @@ export default function AgentChat() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {messages.length === 0 && (
+        {messages.length === 0 && !busy && (
           <div className="text-center py-8">
             <p className="text-sm mb-4" style={{ color: "#9e9e9e" }}>
               问我站内文章、动漫话题吧。
@@ -250,17 +300,22 @@ export default function AgentChat() {
               }}
             >
               {msg.content}
-              {showSteps && msg.steps && msg.steps.length > 0 && (
-                <details className="mt-2 text-xs opacity-80">
-                  <summary className="cursor-pointer">推理步骤</summary>
-                  <pre className="mt-1 whitespace-pre-wrap font-sans">{msg.steps.join("\n")}</pre>
-                </details>
+              {msg.streaming && (
+                <span className="inline-block w-1.5 h-4 ml-0.5 align-middle animate-pulse" style={{ backgroundColor: "#009688" }} />
               )}
+              {showSteps && msg.steps && msg.steps.length > 0 && renderSteps(msg.steps)}
             </div>
           </div>
         ))}
 
-        {busy && (
+        {busy && showSteps && liveSteps.length > 0 && (
+          <div className="px-4 py-3 text-xs rounded border" style={{ borderColor: "#e0e0e0", color: "#616161", background: "#fafafa" }}>
+            <p className="font-medium mb-1">推理中…</p>
+            <pre className="whitespace-pre-wrap font-sans leading-relaxed">{liveSteps.join("\n")}</pre>
+          </div>
+        )}
+
+        {busy && liveSteps.length === 0 && !messages.some((m) => m.streaming) && (
           <p className="text-xs px-2" style={{ color: "#9e9e9e" }}>
             珂朵莉思考中…
           </p>

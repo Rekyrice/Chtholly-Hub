@@ -26,7 +26,7 @@ public class FulltextSearchTool implements AgentTool {
 
     @Override
     public String description() {
-        return "搜索 Chtholly Hub 站内已发布帖子。input: {\"q\":\"关键词\"}";
+        return "搜索 Chtholly Hub 站内已发布帖子（仅博客，不含 Bangumi 动漫库）。input: {\"q\":\"关键词\"}";
     }
 
     @Override

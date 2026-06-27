@@ -30,7 +30,7 @@ public class BangumiSearchTool implements AgentTool {
 
     @Override
     public String description() {
-        return "搜索 Bangumi 番剧元数据（评分、集数、放送日等）。input: {\"keyword\":\"番剧名\"}";
+        return "搜索 Bangumi 条目（动画/漫画/游戏等）的评分、集数、放送日。input: {\"keyword\":\"条目名\"}";
     }
 
     @Override
@@ -80,6 +80,11 @@ public class BangumiSearchTool implements AgentTool {
         if (title.contains("高木")) {
             candidates.add("擅长捉弄的高木同学");
             candidates.add("高木同学");
+        }
+        String lower = title.toLowerCase();
+        if (lower.contains("re0") || lower.contains("re:") || title.contains("从零开始")) {
+            candidates.add("Re:从零开始的异世界生活");
+            candidates.add("Re:ZERO");
         }
     }
 

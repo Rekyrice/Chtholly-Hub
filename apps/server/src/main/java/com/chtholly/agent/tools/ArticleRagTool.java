@@ -32,7 +32,7 @@ public class ArticleRagTool implements AgentTool {
 
     @Override
     public String description() {
-        return "按语义检索站内 Markdown 帖子片段。input: {\"query\":\"问题或关键词\",\"topK\":5}";
+        return "按语义检索站内 Markdown 帖子片段（仅博客，不含 Bangumi）。input: {\"query\":\"问题或关键词\",\"topK\":5}";
     }
 
     @Override

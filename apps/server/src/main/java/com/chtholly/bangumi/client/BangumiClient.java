@@ -20,6 +20,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -52,6 +53,34 @@ public class BangumiClient {
 
         Map<String, Object> body = Map.of("keyword", keyword, "sort", "match");
         return exchangeJson(url, HttpMethod.POST, body);
+    }
+
+    /** 搜索人物（作者/漫画家/声优等）。 */
+    public JsonNode searchPersons(String keyword, List<String> careers, int limit) {
+        String url = UriComponentsBuilder
+                .fromHttpUrl(properties.getBaseUrl() + "/v0/search/persons")
+                .queryParam("limit", Math.min(Math.max(limit, 1), 25))
+                .queryParam("offset", 0)
+                .toUriString();
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("keyword", keyword);
+        if (careers != null && !careers.isEmpty()) {
+            body.put("filter", Map.of("career", careers));
+        }
+        return exchangeJson(url, HttpMethod.POST, body);
+    }
+
+    /** 条目关联人物（含 staff 角色，如「漫画」）。 */
+    public JsonNode getSubjectPersons(long subjectId) {
+        String url = properties.getBaseUrl() + "/v0/subjects/" + subjectId + "/persons";
+        return exchangeJson(url, HttpMethod.GET, null);
+    }
+
+    /** 人物参与的全部条目。 */
+    public JsonNode getPersonSubjects(long personId) {
+        String url = properties.getBaseUrl() + "/v0/persons/" + personId + "/subjects";
+        return exchangeJson(url, HttpMethod.GET, null);
     }
 
     /** 获取条目详情。 */

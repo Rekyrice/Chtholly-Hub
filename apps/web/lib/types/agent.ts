@@ -1,4 +1,4 @@
-export type AgentEventType = "think" | "act" | "observe" | "final" | "error";
+export type AgentEventType = "think" | "act" | "observe" | "delta" | "final" | "error";
 
 export interface AgentWsEnvelope {
   type: AgentEventType;
@@ -11,4 +11,6 @@ export interface ChatMessage {
   content: string;
   /** 推理过程（折叠展示） */
   steps?: string[];
+  /** 是否正在流式输出 */
+  streaming?: boolean;
 }
