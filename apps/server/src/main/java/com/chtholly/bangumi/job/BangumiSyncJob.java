@@ -20,8 +20,7 @@ public class BangumiSyncJob {
     @Scheduled(cron = "${bangumi.sync.cron:0 0 4 * * *}")
     public void syncCalendar() {
         try {
-            JsonNode calendar = bangumiClient.fetchCalendar();
-            int days = calendar == null ? 0 : calendar.size();
+            int days = bangumiClient.fetchCalendar().map(JsonNode::size).orElse(0);
             log.info("Bangumi 日历同步完成，weekdays={}", days);
         } catch (Exception e) {
             log.warn("Bangumi 日历同步失败: {}", e.getMessage());

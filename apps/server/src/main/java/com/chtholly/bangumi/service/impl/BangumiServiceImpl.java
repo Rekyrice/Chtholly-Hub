@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -153,10 +154,8 @@ public class BangumiServiceImpl implements BangumiService {
         }
 
         BangumiSubjectRow subject = subjects.get(0);
-        JsonNode characters = bangumiClient.getSubjectCharacters(subject.getId());
-        if (characters == null) {
-            throw apiUnavailable("getSubjectCharacters subjectId=" + subject.getId());
-        }
+        JsonNode characters = bangumiClient.getSubjectCharacters(subject.getId())
+                .orElseThrow(() -> apiUnavailable("getSubjectCharacters subjectId=" + subject.getId()));
         if (!characters.isArray() || characters.isEmpty()) {
             return "条目《" + displayName(subject) + "》暂无角色数据。";
         }
@@ -198,10 +197,8 @@ public class BangumiServiceImpl implements BangumiService {
 
     private JsonNode fetchSearchResponse(String keyword, int limit) {
         assertNoActiveTransaction();
-        JsonNode resp = bangumiClient.searchSubjects(keyword, limit);
-        if (resp == null) {
-            throw apiUnavailable("searchSubjects keyword=" + keyword);
-        }
+        JsonNode resp = bangumiClient.searchSubjects(keyword, limit)
+                .orElseThrow(() -> apiUnavailable("searchSubjects keyword=" + keyword));
         return resp;
     }
 
@@ -268,16 +265,14 @@ public class BangumiServiceImpl implements BangumiService {
             log.warn("Bangumi person API budget exhausted before searchPersons keyword={}", keyword);
             return;
         }
-        JsonNode resp = bangumiClient.searchPersons(keyword, null, 5);
-        if (resp == null) {
+        Optional<JsonNode> resp = bangumiClient.searchPersons(keyword, null, 5);
+        if (resp.isEmpty()) {
             throw apiUnavailable("searchPersons keyword=" + keyword);
         }
-        appendPersonNodes(personIds, personNames, resp.path("data"));
+        appendPersonNodes(personIds, personNames, resp.get().path("data"));
         if (personIds.isEmpty() && budget.consume()) {
-            resp = bangumiClient.searchPersons(keyword, List.of("mangaka"), 5);
-            if (resp != null) {
-                appendPersonNodes(personIds, personNames, resp.path("data"));
-            }
+            bangumiClient.searchPersons(keyword, List.of("mangaka"), 5)
+                    .ifPresent(r -> appendPersonNodes(personIds, personNames, r.path("data")));
         }
     }
 
@@ -309,11 +304,11 @@ public class BangumiServiceImpl implements BangumiService {
             return;
         }
         BangumiSubjectRow subject = subjects.get(0);
-        JsonNode persons = bangumiClient.getSubjectPersons(subject.getId());
-        if (persons == null || !persons.isArray()) {
+        Optional<JsonNode> persons = bangumiClient.getSubjectPersons(subject.getId());
+        if (persons.isEmpty() || !persons.get().isArray()) {
             return;
         }
-        for (JsonNode p : persons) {
+        for (JsonNode p : persons.get()) {
             if (!isCreatorPerson(p)) {
                 continue;
             }
@@ -364,10 +359,8 @@ public class BangumiServiceImpl implements BangumiService {
             log.warn("Bangumi person API budget exhausted before getPersonSubjects personId={}", personId);
             return null;
         }
-        JsonNode works = bangumiClient.getPersonSubjects(personId);
-        if (works == null) {
-            throw apiUnavailable("getPersonSubjects personId=" + personId);
-        }
+        JsonNode works = bangumiClient.getPersonSubjects(personId)
+                .orElseThrow(() -> apiUnavailable("getPersonSubjects personId=" + personId));
         if (!works.isArray() || works.isEmpty()) {
             worksCache.put(personId, null);
             return null;
@@ -463,12 +456,12 @@ public class BangumiServiceImpl implements BangumiService {
 
     private Integer fetchEpisodeTotal(long subjectId) {
         assertNoActiveTransaction();
-        JsonNode epResp = bangumiClient.listEpisodes(subjectId, 1);
-        if (epResp == null) {
-            return null;
-        }
-        int total = epResp.path("total").asInt(-1);
-        return total >= 0 ? total : null;
+        return bangumiClient.listEpisodes(subjectId, 1)
+                .map(epResp -> {
+                    int total = epResp.path("total").asInt(-1);
+                    return total >= 0 ? total : null;
+                })
+                .orElse(null);
     }
 
     private BangumiSubjectRow mapSubject(JsonNode node) throws Exception {

@@ -18,6 +18,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -80,9 +81,9 @@ class BangumiServiceImplTest {
         AtomicBoolean httpOutsideTransaction = new AtomicBoolean(false);
         when(bangumiClient.searchSubjects(eq("foo"), eq(5))).thenAnswer(inv -> {
             httpOutsideTransaction.set(!TransactionSynchronizationManager.isActualTransactionActive());
-            return resp;
+            return Optional.of(resp);
         });
-        when(bangumiClient.listEpisodes(100L, 1)).thenReturn(objectMapper.createObjectNode().put("total", 12));
+        when(bangumiClient.listEpisodes(100L, 1)).thenReturn(Optional.of(objectMapper.createObjectNode().put("total", 12)));
         when(subjectMapper.findById(100L)).thenReturn(null);
 
         service.search("foo", 5);
@@ -95,7 +96,7 @@ class BangumiServiceImplTest {
     void search_apiUnavailable_usesFriendlyMessage() {
         when(subjectMapper.searchByKeyword(anyString(), anyInt())).thenReturn(List.of());
         when(subjectMapper.searchByKeywordLike(anyString(), anyInt())).thenReturn(List.of());
-        when(bangumiClient.searchSubjects(anyString(), anyInt())).thenReturn(null);
+        when(bangumiClient.searchSubjects(anyString(), anyInt())).thenReturn(Optional.empty());
 
         IllegalStateException ex = org.assertj.core.api.Assertions.catchThrowableOfType(
                 () -> service.search("foo", 5), IllegalStateException.class);
@@ -112,7 +113,7 @@ class BangumiServiceImplTest {
         when(bangumiClient.searchSubjects(anyString(), anyInt())).thenAnswer(inv -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             Thread.sleep(50);
-            return null;
+            return Optional.empty();
         });
 
         int txBefore = transactionManager.getBeginCount();
