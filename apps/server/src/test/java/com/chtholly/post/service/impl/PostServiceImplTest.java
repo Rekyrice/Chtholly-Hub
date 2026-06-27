@@ -14,6 +14,7 @@ import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.tag.service.TagService;
+import com.chtholly.search.index.SearchIndexService;
 import com.chtholly.post.model.Post;
 import com.chtholly.storage.config.OssProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,6 +62,8 @@ class PostServiceImplTest {
     private OutboxMapper outboxMapper;
     @Mock
     private TagService tagService;
+    @Mock
+    private SearchIndexService searchIndexService;
 
     private Cache<String, FeedPageResponse> feedPublicCache;
     private Cache<String, PostDetailResponse> postDetailCache;
@@ -90,7 +93,8 @@ class PostServiceImplTest {
                 hotKeyDetector,
                 ragIndexService,
                 outboxMapper,
-                tagService
+                tagService,
+                searchIndexService
         );
 
     }

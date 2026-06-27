@@ -6,10 +6,9 @@ import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.FieldValueFactorModifier;
 import co.elastic.clients.elasticsearch._types.query_dsl.FunctionBoostMode;
-import co.elastic.clients.elasticsearch.core.search.HighlightField;
-import co.elastic.clients.elasticsearch.core.search.Suggestion;
-import co.elastic.clients.util.NamedValue;
+import co.elastic.clients.elasticsearch.core.search.CompletionSuggestOption;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch.core.search.Suggestion;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.search.api.dto.SearchResponse;
@@ -89,8 +88,8 @@ public class SearchServiceImpl implements SearchService {
                         ))
                         // 返回 title/body 高亮片段，后续合并为 snippet
                         .highlight(h -> h
-                                .fields(new NamedValue<>("title", new HighlightField.Builder().build()))
-                                .fields(new NamedValue<>("body", new HighlightField.Builder().build()))
+                                .fields("title", f -> f)
+                                .fields("body", f -> f)
                         )
                         .sort(sorts);
                 // 游标分页：携带上一次最后命中的 sort 值
@@ -179,10 +178,10 @@ public class SearchServiceImpl implements SearchService {
             var sugg = resp.suggest();
             List<Suggestion<Map<String, Object>>> entry = sugg == null ? null : sugg.get("title_suggest");
             if (entry != null) {
-                for (var s : entry) {
+                for (Suggestion<Map<String, Object>> s : entry) {
                     var comp = s.completion();
                     if (comp != null && comp.options() != null) {
-                        for (var opt : comp.options()) {
+                        for (CompletionSuggestOption<Map<String, Object>> opt : comp.options()) {
                             String text = opt.text();
                             if (text != null && !text.isBlank()) {
                                 items.add(text);

@@ -39,7 +39,20 @@ docker run -d --name elasticsearch --restart always `
   -e "discovery.type=single-node" `
   -e "xpack.security.enabled=false" `
   -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" `
+  -e "cluster.routing.allocation.disk.watermark.low=95%" `
+  -e "cluster.routing.allocation.disk.watermark.high=97%" `
+  -e "cluster.routing.allocation.disk.watermark.flood_stage=99%" `
   docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+```
+
+单节点 + D 盘空间紧张时，默认 90% 高水位会导致索引分片无法分配（`red`）。上面三行把阈值放宽到 **97% / 99%**（仅开发环境建议）。
+
+已运行的容器可临时调整（重启 ES 后需重跑）：
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:9200/_cluster/settings" -Method Put -ContentType "application/json" -Body '{"persistent":{"cluster.routing.allocation.disk.watermark.low":"95%","cluster.routing.allocation.disk.watermark.high":"97%","cluster.routing.allocation.disk.watermark.flood_stage":"99%"}}'
+Invoke-RestMethod -Uri "http://localhost:9200/chtholly_content_index" -Method Delete -ErrorAction SilentlyContinue
+Invoke-RestMethod -Uri "http://localhost:9200/_cluster/reroute?retry_failed=true" -Method Post
 ```
 
 验证：`curl http://localhost:9200`

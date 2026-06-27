@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { Menu, Search, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getStoredAuth } from "@/lib/auth/tokens";
 import { authService } from "@/lib/services/authService";
@@ -99,7 +99,27 @@ export default function Navbar() {
           </span>
         </Link>
 
-        <ul className="hidden md:flex items-stretch h-[52px]">
+        <ul className="hidden md:flex items-stretch h-[52px] gap-1">
+          <li className="flex items-center px-2">
+            <form action="/search" method="get" className="flex items-center">
+              <input
+                type="search"
+                name="q"
+                placeholder="搜索"
+                aria-label="搜索帖子"
+                className="w-36 px-2 py-1 text-sm border outline-none focus:border-[#009688]"
+                style={{ borderColor: "#e0e0e0", color: "#424242" }}
+              />
+              <button
+                type="submit"
+                className="ml-1 p-1.5 rounded hover:bg-black/5"
+                aria-label="提交搜索"
+                style={{ color: "#727272" }}
+              >
+                <Search size={18} />
+              </button>
+            </form>
+          </li>
           {siteConfig.nav.map((item) => (
             <li key={item.href} className="flex items-stretch">
               {navLink(item.href, item.label)}
@@ -135,6 +155,24 @@ export default function Navbar() {
               {item.label}
             </Link>
           ))}
+          <form
+            action="/search"
+            method="get"
+            className="flex items-center gap-2 px-4 py-3 border-b"
+            style={{ borderColor: "#f5f5f5" }}
+            onSubmit={() => setOpen(false)}
+          >
+            <input
+              type="search"
+              name="q"
+              placeholder="搜索帖子"
+              className="flex-1 px-2 py-1.5 text-sm border outline-none"
+              style={{ borderColor: "#e0e0e0" }}
+            />
+            <button type="submit" style={{ color: siteConfig.theme.primary }}>
+              <Search size={18} />
+            </button>
+          </form>
           {user ? (
             <>
               <Link

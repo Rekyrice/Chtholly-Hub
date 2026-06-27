@@ -86,6 +86,7 @@ public class SearchIndexService {
             Map<String, Object> doc = new HashMap<>();
             doc.put("content_id", row.getId());
             doc.put("content_type", row.getType());
+            doc.put("slug", row.getSlug());
             doc.put("title", row.getTitle());
             doc.put("description", row.getDescription());
             doc.put("author_id", row.getCreatorId());

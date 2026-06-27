@@ -20,6 +20,7 @@ import com.chtholly.storage.config.OssProperties;
 import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.tag.service.TagService;
+import com.chtholly.search.index.SearchIndexService;
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import jakarta.annotation.Resource;
 import org.slf4j.Logger;
@@ -60,6 +61,7 @@ public class PostServiceImpl implements PostService {
     private final PostRagIndexer ragIndexService;
     private final OutboxMapper outboxMapper;
     private final TagService tagService;
+    private final SearchIndexService searchIndexService;
 
     // 手动编写构造器，Spring的@Qualifier直接标注在参数上（核心）
     public PostServiceImpl(
@@ -75,7 +77,8 @@ public class PostServiceImpl implements PostService {
             HotKeyDetector hotKey,
             PostRagIndexer ragIndexService,
             OutboxMapper outboxMapper,
-            TagService tagService
+            TagService tagService,
+            SearchIndexService searchIndexService
     ) {
         this.mapper = mapper;
         this.idGen = idGen;
@@ -90,6 +93,7 @@ public class PostServiceImpl implements PostService {
         this.ragIndexService = ragIndexService;
         this.outboxMapper = outboxMapper;
         this.tagService = tagService;
+        this.searchIndexService = searchIndexService;
     }
     /**
      * 创建草稿并返回新 ID。
@@ -182,6 +186,7 @@ public class PostServiceImpl implements PostService {
 
         if (wasPublished) {
             tagService.syncPublishedPostTags(creatorId, oldTags, tags);
+            syncSearchIndexUpsert(id);
         }
 
         // 元数据变更后写入 Outbox 事件，驱动搜索索引更新
@@ -231,6 +236,8 @@ public class PostServiceImpl implements PostService {
         } catch (Exception e) {
             log.warn("Outbox event after publish failed, post {}: {}", id, e.getMessage());
         }
+
+        syncSearchIndexUpsert(id);
 
         // 发布成功后触发一次预索引，减少首次问答冷启动
         try {
@@ -308,7 +315,28 @@ public class PostServiceImpl implements PostService {
             log.warn("Outbox event after delete failed, post {}: {}", id, e.getMessage());
         }
 
+        if (wasPublished) {
+            syncSearchIndexDelete(id);
+        }
+
         invalidateCache(id);
+    }
+
+    /** Canal 关闭时 Outbox 不经 Kafka，本地直连 ES 索引（与 Consumer 幂等）。 */
+    private void syncSearchIndexUpsert(long id) {
+        try {
+            searchIndexService.upsertPost(id);
+        } catch (Exception e) {
+            log.warn("Search index upsert failed, post {}: {}", id, e.getMessage());
+        }
+    }
+
+    private void syncSearchIndexDelete(long id) {
+        try {
+            searchIndexService.softDeletePost(id);
+        } catch (Exception e) {
+            log.warn("Search index delete failed, post {}: {}", id, e.getMessage());
+        }
     }
 
     private boolean isValidVisible(String visible) {
