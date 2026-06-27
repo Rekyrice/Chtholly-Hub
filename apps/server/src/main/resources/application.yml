@@ -109,6 +109,7 @@ agent:
   memory-max-turns: ${AGENT_MEMORY_MAX_TURNS:20}
   memory-ttl-minutes: ${AGENT_MEMORY_TTL_MINUTES:120}
   stream-char-delay-ms: ${AGENT_STREAM_CHAR_DELAY_MS:50}
+  tool-timeout-seconds: ${AGENT_TOOL_TIMEOUT_SECONDS:15}
 
 bangumi:
   enabled: ${BANGUMI_ENABLED:true}

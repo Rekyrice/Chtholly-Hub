@@ -21,4 +21,6 @@ public class AgentProperties {
     private int memoryTtlMinutes = 120;
     /** 流式输出每个字符间隔毫秒（0 表示不节流）。 */
     private int streamCharDelayMs = 50;
+    /** 单次工具执行超时（秒）。 */
+    private int toolTimeoutSeconds = 15;
 }

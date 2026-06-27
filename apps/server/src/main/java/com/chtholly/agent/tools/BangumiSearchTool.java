@@ -1,5 +1,7 @@
 package com.chtholly.agent.tools;
 
+import com.chtholly.agent.AgentTool;
+import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.memory.AgentContextUtil;
 import com.chtholly.agent.AgentTool;
 import com.chtholly.bangumi.model.BangumiSubjectRow;
@@ -34,8 +36,14 @@ public class BangumiSearchTool implements AgentTool {
     public String description() {
         return """
                 搜索 Bangumi 条目（动画/漫画/游戏等）的评分、集数、放送日。
-                问「有几季/多少季」时会自动宽召回同系列全部动画条目。
-                input: {"keyword":"条目名或系列简称"}""";
+                问「有几季/多少季」时会自动宽召回同系列全部动画条目。""";
+    }
+
+    @Override
+    public Map<String, ParamDef> parameterSchema() {
+        return Map.of(
+                "keyword", new ParamDef("条目名或系列简称", String.class, true)
+        );
     }
 
     @Override

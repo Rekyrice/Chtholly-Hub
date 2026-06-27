@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -128,13 +129,7 @@ public class ChthollyAgent {
                 inputMap.put("_conversationHistory", memory.formatForPrompt());
             }
             emitAct(sink, tool.name(), action.input());
-            String observation;
-            try {
-                observation = tool.execute(inputMap, userId);
-            } catch (Exception e) {
-                log.warn("工具 {} 执行失败: {}", tool.name(), e.getMessage());
-                observation = "工具执行失败：" + e.getMessage();
-            }
+            String observation = executeTool(tool, inputMap, userId);
             observation = augmentObservation(question, tool.name(), observation);
             emitObserve(sink, observation);
             transcript.add("Assistant: " + llmOut);
@@ -189,6 +184,31 @@ public class ChthollyAgent {
             }
             log.warn("Agent 流式回答失败: {}", e.getMessage());
             emitError(sink, "生成回答失败，请重试");
+        }
+    }
+
+    private String executeTool(AgentTool tool, Map<String, Object> inputMap, long userId) {
+        Optional<String> validationError = AgentToolParamValidator.validate(inputMap, tool.parameterSchema());
+        if (validationError.isPresent()) {
+            return validationError.get();
+        }
+
+        int timeoutSec = Math.max(1, properties.getToolTimeoutSeconds());
+        CompletableFuture<String> future = CompletableFuture.supplyAsync(
+                () -> tool.execute(inputMap, userId),
+                LLM_EXECUTOR);
+        try {
+            return future.get(timeoutSec, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            log.warn("工具 {} 执行超时 (>{}s)", tool.name(), timeoutSec);
+            return "Tool execution timed out";
+        } catch (ExecutionException e) {
+            log.warn("工具 {} 执行失败: {}", tool.name(), e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+            return "工具执行失败：" + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "工具执行被中断";
         }
     }
 
@@ -385,7 +405,9 @@ public class ChthollyAgent {
         sb.append("工具完成后：{\"action\":\"final\",\"answer\":\"占位，实际由系统流式生成\"}\n\n");
         sb.append("可用工具：\n");
         for (AgentTool tool : tools) {
-            sb.append("- ").append(tool.name()).append(": ").append(tool.description()).append("\n");
+            sb.append("- ").append(tool.name()).append(": ").append(tool.description());
+            appendParameterSchema(sb, tool.parameterSchema());
+            sb.append('\n');
         }
         sb.append("""
 
@@ -400,6 +422,34 @@ public class ChthollyAgent {
                 8. 若有对话历史，追问需结合上文主题选 keyword（如上文谈某作品，追问「宿舍伙伴」应调 bangumi_characters）。
                 9. 获得足够 Observation 后再 action=final；不要编造工具未返回的内容。""");
         return sb.toString();
+    }
+
+    private void appendParameterSchema(StringBuilder sb, Map<String, ParamDef> schema) {
+        if (schema == null || schema.isEmpty()) {
+            return;
+        }
+        sb.append("\n  参数：");
+        for (Map.Entry<String, ParamDef> entry : schema.entrySet()) {
+            ParamDef def = entry.getValue();
+            sb.append("\n    - ").append(entry.getKey())
+                    .append(" (").append(schemaTypeLabel(def.type()))
+                    .append(def.required() ? ", 必填" : ", 可选")
+                    .append("): ")
+                    .append(def.description());
+        }
+    }
+
+    private static String schemaTypeLabel(Class<?> type) {
+        if (type == String.class) {
+            return "string";
+        }
+        if (type == Integer.class || type == int.class) {
+            return "integer";
+        }
+        if (type == Boolean.class || type == boolean.class) {
+            return "boolean";
+        }
+        return type.getSimpleName();
     }
 
     private AgentAction parseAction(String llmOut) throws Exception {
