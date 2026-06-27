@@ -20,6 +20,8 @@ public interface UserMapper {
 
     User findById(@Param("id") Long id);
 
+    User findByHandle(@Param("handle") String handle);
+
     void updatePassword(@Param("id") Long id, @Param("passwordHash") String passwordHash);
 
     void updateProfile(User user);

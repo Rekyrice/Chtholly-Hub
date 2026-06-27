@@ -90,6 +90,13 @@
         WHERE id = #{id}
     </select>
 
+    <select id="findByHandle" parameterType="string" resultMap="UserResultMap">
+        SELECT *
+        FROM users
+        WHERE handle = #{handle}
+        LIMIT 1
+    </select>
+
     <update id="updatePassword">
         UPDATE users
         SET password_hash = #{passwordHash},

@@ -251,6 +251,15 @@
         FROM posts
         WHERE creator_id = #{creatorId} AND status = 'published'
     </select>
+
+    <select id="countPublicPublishedByCreator" parameterType="long" resultType="long">
+        SELECT COUNT(1)
+        FROM posts
+        WHERE creator_id = #{creatorId}
+          AND status = 'published'
+          AND visible = 'public'
+    </select>
+
     <select id="listMyPublishedIds" parameterType="long" resultType="long">
         SELECT id FROM posts WHERE creator_id = #{creatorId} AND status = 'published'
     </select>

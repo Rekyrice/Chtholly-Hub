@@ -60,6 +60,9 @@ public interface PostMapper {
     // 统计我的已发布帖子数量
     long countMyPublished(@Param("creatorId") long creatorId);
 
+    /** 公开个人主页：已发布且 public 可见的帖子数 */
+    long countPublicPublishedByCreator(@Param("creatorId") long creatorId);
+
     // 列出我的已发布帖子ID列表
     List<Long> listMyPublishedIds(@Param("creatorId") long creatorId);
 }

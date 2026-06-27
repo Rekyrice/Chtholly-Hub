@@ -35,31 +35,37 @@ export default async function Sidebar() {
       }}
     >
       <div className="widget" style={{ textAlign: "center" }}>
-        <div
-          style={{
-            width: 160,
-            height: 160,
-            margin: "0 auto",
-            borderRadius: "50%",
-            overflow: "hidden",
-            boxShadow: "0 2px 14px rgba(0,0,0,0.08)",
-            border: "2px solid rgba(255,255,255,0.75)",
-            background: "#e0f2f1",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: siteConfig.theme.primary,
-            fontSize: 48,
-            fontWeight: 700,
-          }}
+        <Link
+          href={`/user/${siteConfig.ownerHandle}`}
+          style={{ textDecoration: "none", color: "inherit" }}
+          className="hover:opacity-90"
         >
-          仁
-        </div>
-        <div
-          style={{ marginTop: 14, fontSize: 18, color: "#424242", fontWeight: 500 }}
-        >
-          {profileName}
-        </div>
+          <div
+            style={{
+              width: 160,
+              height: 160,
+              margin: "0 auto",
+              borderRadius: "50%",
+              overflow: "hidden",
+              boxShadow: "0 2px 14px rgba(0,0,0,0.08)",
+              border: "2px solid rgba(255,255,255,0.75)",
+              background: "#e0f2f1",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: siteConfig.theme.primary,
+              fontSize: 48,
+              fontWeight: 700,
+            }}
+          >
+            仁
+          </div>
+          <div
+            style={{ marginTop: 14, fontSize: 18, color: "#424242", fontWeight: 500 }}
+          >
+            {profileName}
+          </div>
+        </Link>
         <p style={{ marginTop: 8, fontSize: 14, color: "#727272" }}>
           {siteConfig.author.bio}
         </p>
