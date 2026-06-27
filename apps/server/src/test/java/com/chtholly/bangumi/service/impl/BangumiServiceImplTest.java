@@ -106,6 +106,29 @@ class BangumiServiceImplTest {
     }
 
     @Test
+    void given_localMiss_when_apiReturnsData_then_persistsAndReturnsFromDb() {
+        BangumiSubjectRow persisted = new BangumiSubjectRow();
+        persisted.setId(100L);
+        persisted.setName("Persisted Anime");
+
+        when(subjectMapper.searchByKeyword("bar", 5))
+                .thenReturn(List.of())
+                .thenReturn(List.of(persisted));
+        when(subjectMapper.searchByKeywordLike("bar", 5)).thenReturn(List.of());
+
+        ObjectNode resp = buildSubjectSearchResponse(100L, "Persisted Anime");
+        when(bangumiClient.searchSubjects(eq("bar"), eq(5))).thenReturn(Optional.of(resp));
+        when(bangumiClient.listEpisodes(100L, 1)).thenReturn(Optional.of(objectMapper.createObjectNode().put("total", 12)));
+
+        List<BangumiSubjectRow> rows = service.search("bar", 5);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).getName()).isEqualTo("Persisted Anime");
+        verify(bangumiClient).searchSubjects("bar", 5);
+        verify(subjectMapper).upsert(any(BangumiSubjectRow.class));
+    }
+
+    @Test
     void search_httpTimeout_doesNotLeaveTransactionOpen() {
         when(subjectMapper.searchByKeyword(anyString(), anyInt())).thenReturn(List.of());
         when(subjectMapper.searchByKeywordLike(anyString(), anyInt())).thenReturn(List.of());

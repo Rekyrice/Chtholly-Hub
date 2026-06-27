@@ -1,5 +1,6 @@
 package com.chtholly.notification.service.impl;
 
+import com.chtholly.common.exception.BusinessException;
 import com.chtholly.notification.mapper.NotificationMapper;
 import com.chtholly.notification.model.NotificationCountStats;
 import com.chtholly.notification.model.NotificationRow;
@@ -16,6 +17,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -49,6 +51,50 @@ class NotificationServiceImplTest {
         assertThat(response.total()).isEqualTo(10);
         assertThat(response.unreadCount()).isEqualTo(3);
         verify(notificationMapper).countStatsByUser(1L);
+    }
+
+    @Test
+    void given_invalidPageSize_when_list_then_clampsToSafeBounds() {
+        NotificationCountStats stats = new NotificationCountStats();
+        stats.setTotal(0);
+        stats.setUnread(0);
+        when(notificationMapper.listByUser(eq(3L), eq(50), eq(0))).thenReturn(List.of());
+        when(notificationMapper.countStatsByUser(3L)).thenReturn(stats);
+
+        service.list(3L, 0, 200);
+
+        verify(notificationMapper).listByUser(3L, 50, 0);
+    }
+
+    @Test
+    void given_ownNotification_when_markRead_then_succeeds() {
+        NotificationRow row = new NotificationRow();
+        row.setId(99L);
+        row.setUserId(5L);
+        when(notificationMapper.findById(99L)).thenReturn(row);
+
+        service.markRead(5L, 99L);
+
+        verify(notificationMapper).markRead(99L, 5L);
+    }
+
+    @Test
+    void given_otherUsersNotification_when_markRead_then_forbidden() {
+        NotificationRow row = new NotificationRow();
+        row.setId(99L);
+        row.setUserId(8L);
+        when(notificationMapper.findById(99L)).thenReturn(row);
+
+        assertThatThrownBy(() -> service.markRead(5L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("通知不存在");
+    }
+
+    @Test
+    void given_user_when_unreadCount_then_returnsMapperValue() {
+        when(notificationMapper.countUnread(7L)).thenReturn(12L);
+
+        assertThat(service.unreadCount(7L).unreadCount()).isEqualTo(12L);
     }
 
     @Test

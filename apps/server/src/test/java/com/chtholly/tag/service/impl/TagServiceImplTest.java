@@ -1,6 +1,7 @@
 package com.chtholly.tag.service.impl;
 
 import com.chtholly.tag.mapper.TagMapper;
+import com.chtholly.tag.model.Tag;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +16,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class TagServiceImplTest {
@@ -43,6 +45,32 @@ class TagServiceImplTest {
         service.releasePublishedPostTags(List.of("orphan"));
 
         verify(tagMapper).decrementUsage("orphan");
+    }
+
+    @Test
+    void given_newTagName_when_syncPublishedPostTags_then_nameNormalizedAndSlugGenerated() {
+        service.syncPublishedPostTags(7L, List.of(), List.of("  Spring Boot  "));
+
+        verify(tagMapper).upsert("Spring Boot", "spring-boot", 7L);
+        verify(tagMapper).incrementUsage("Spring Boot");
+    }
+
+    @Test
+    void given_newTag_when_listTags_then_usageCountIsZero() {
+        Tag tag = Tag.builder()
+                .id(1L)
+                .name("Java")
+                .slug("java")
+                .usageCount(0)
+                .build();
+        when(tagMapper.listOrderByUsage(10)).thenReturn(List.of(tag));
+
+        var tags = service.listTags(10);
+
+        assertThat(tags).hasSize(1);
+        assertThat(tags.get(0).name()).isEqualTo("Java");
+        assertThat(tags.get(0).slug()).isEqualTo("java");
+        assertThat(tags.get(0).usageCount()).isZero();
     }
 
     @Test
