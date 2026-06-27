@@ -57,6 +57,34 @@ Invoke-RestMethod -Uri "http://localhost:9200/_cluster/reroute?retry_failed=true
 
 验证：`curl http://localhost:9200`
 
+## 生产部署（M1-3）
+
+单机 **4C8G** ECS 可用仓库内 Compose 一键起站：
+
+```bash
+cp .env.prod.example .env
+# 编辑 .env：MYSQL_PASSWORD、OSS 凭证等
+
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+| 服务 | 容器内 | 说明 |
+|------|--------|------|
+| **nginx** | `:80` | 对外入口；`/api` → server，其余 → web |
+| **web** | `:3000` | Next.js standalone |
+| **server** | `:8888` | Spring Boot |
+| mysql / redis / es / kafka | 内网 | 与本地开发同栈 |
+
+**首次部署还需初始化数据库**（在 MySQL 容器就绪后）：
+
+1. 导入 `apps/server/db/schema.sql` 与 migration / seed（见 [apps/server/db/README.md](../apps/server/db/README.md)）
+2. 上传 OSS 种子正文：`node scripts/oss/upload-seed-markdown.mjs`
+3. 重启 `server` 容器以触发 ES 索引回灌
+
+Nginx 配置：`docker/nginx/default.conf`。内存紧张时可去掉 `kafka` 服务并改用 Spring Event 降级（需后续代码开关；当前默认带 Kafka）。
+
+HTTPS：在 Nginx 前加云厂商 LB / Certbot，或把 `443` 配进 Nginx。
+
 ## 与本项目的关系
 
 1. 复制 Monorepo 根目录 `.env.example` → `.env`，填入 MySQL 密码与 OSS 凭证  

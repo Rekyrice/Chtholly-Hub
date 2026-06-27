@@ -9,7 +9,8 @@ Monorepo：Next.js 前端 + Spring Boot 后端。
 apps/web/           Next.js 站点（Sakuga 视觉）
 apps/server/        Spring Boot API
   db/               MySQL：schema、migration、seed（见 apps/server/db/README.md）
-docker/             本地依赖说明（实际容器在外部目录）
+docker/             本地依赖说明 + nginx 生产配置
+docker-compose.prod.yml  单机生产 Compose
 scripts/dev/        本地启动脚本
 scripts/oss/        OSS 正文 seed 与上传脚本
 ```
@@ -72,9 +73,9 @@ copy .env.example .env
 
 | 阶段 | 能力 | 状态 |
 |------|------|------|
-| Phase A | 只读博客：Feed、slug 详情、About / Archive / Tag | ✅ 已实现 |
-| Phase B | 登录、Markdown 发帖 | 待开发 |
-| Phase 3+ | 社区互动、搜索、AI | 待开发 |
+| Phase A | 只读博客：Feed、slug 详情、About / Archive / Tag | ✅ |
+| M1 | 登录、发帖、标签 API、搜索、Compose 部署 | 进行中 |
+| M2+ | 评论、Agent、Bangumi | 待开发 |
 
 ### Phase A 页面
 
@@ -87,6 +88,17 @@ copy .env.example .env
 | `/tag/[name]` | 标签筛选，如 `/tag/动漫` |
 
 前端站点配置见 `apps/web/lib/site.config.ts`；服务端 API 请求在 Node 环境直连 `localhost:8888`。
+
+## 生产部署
+
+见 [docker/README.md](docker/README.md) 生产章节。概要：
+
+```bash
+cp .env.prod.example .env
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+浏览器访问 `http://<服务器IP>/`；API 经 Nginx 同域 `/api/v1/...` 转发，无需 CORS 额外配置。
 
 ## 参考项目（同级目录，不纳入本仓）
 

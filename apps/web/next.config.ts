@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
+const apiOrigin = process.env.API_SERVER_URL ?? "http://localhost:8888";
+
 const nextConfig: NextConfig = {
+  output: "standalone",
   images: {
     remotePatterns: [
       {
@@ -11,12 +14,16 @@ const nextConfig: NextConfig = {
     ],
   },
   async rewrites() {
-    return [
-      {
-        source: "/api/v1/:path*",
-        destination: "http://localhost:8888/api/v1/:path*",
-      },
-    ];
+    // 生产环境由 Nginx 反代 /api；开发时 Node 代理到 Spring Boot
+    if (process.env.NODE_ENV === "development") {
+      return [
+        {
+          source: "/api/v1/:path*",
+          destination: `${apiOrigin}/api/v1/:path*`,
+        },
+      ];
+    }
+    return [];
   },
 };
 
