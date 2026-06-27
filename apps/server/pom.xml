@@ -21,6 +21,8 @@
         <java.version>21</java.version>
         <lombok.version>1.18.38</lombok.version>
         <maven.compiler.proc>full</maven.compiler.proc>
+        <!-- Spring AI VectorStore 需 DenseVectorSimilarity（8.18.1+）；客户端可连 ES 8.11 服务 -->
+        <elasticsearch.version>8.18.1</elasticsearch.version>
     </properties>
 
     <repositories>
@@ -70,14 +72,14 @@
         <dependency>
             <groupId>co.elastic.clients</groupId>
             <artifactId>elasticsearch-java</artifactId>
-            <version>8.11.0</version>
+            <version>${elasticsearch.version}</version>
         </dependency>
 
-        <!-- Elasticsearch 低层 REST 客户端（版本与 Docker ES 8.11 对齐） -->
+        <!-- Elasticsearch 低层 REST 客户端（版本与 elasticsearch-java 对齐） -->
         <dependency>
             <groupId>org.elasticsearch.client</groupId>
             <artifactId>elasticsearch-rest-client</artifactId>
-            <version>8.11.0</version>
+            <version>${elasticsearch.version}</version>
         </dependency>
 
         <!-- Spring Web：提供 MVC、REST Controller、RestTemplate 等 Web 能力 -->

@@ -1,6 +1,10 @@
 # Chtholly Hub backend - verification codes go to logs/dev-verification.log
 . (Join-Path $PSScriptRoot "load-env.ps1")
 
+if (-not $RepoRoot) {
+    $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+}
+
 $serverPort = if ($env:SERVER_PORT) { [int]$env:SERVER_PORT } else { 8888 }
 
 $logDir = Join-Path $RepoRoot "logs"
