@@ -1,15 +1,23 @@
 package com.chtholly.agent.tools;
 
 import com.chtholly.agent.AgentTool;
+import com.chtholly.bangumi.model.BangumiSubjectRow;
+import com.chtholly.bangumi.service.BangumiService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-/** Bangumi 番剧搜索占位（M2-4 接入后替换实现）。 */
+/** Bangumi 番剧搜索：本地缓存 + API 回填。 */
 @Component
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
+@RequiredArgsConstructor
 public class BangumiSearchTool implements AgentTool {
+
+    private final BangumiService bangumiService;
 
     @Override
     public String name() {
@@ -18,7 +26,7 @@ public class BangumiSearchTool implements AgentTool {
 
     @Override
     public String description() {
-        return "搜索 Bangumi 番剧元数据（集数、Staff 等）。input: {\"keyword\":\"番剧名\"}";
+        return "搜索 Bangumi 番剧元数据（评分、集数、放送日等）。input: {\"keyword\":\"番剧名\"}";
     }
 
     @Override
@@ -27,7 +35,56 @@ public class BangumiSearchTool implements AgentTool {
         if (keyword.isEmpty()) {
             return "错误：缺少参数 keyword";
         }
-        return "Bangumi 数据库尚未接入（计划 M2-4）。当前无法查询「" + keyword + "」。"
-                + "请改用 fulltext_search 搜索站内文章，或 article_rag 做语义检索。";
+
+        List<BangumiSubjectRow> items = bangumiService.search(keyword, 5);
+        if (items.isEmpty()) {
+            return "Bangumi 未找到与「" + keyword + "」相关的条目。";
+        }
+
+        return items.stream().map(this::formatSubject).collect(Collectors.joining("\n\n"));
+    }
+
+    private String formatSubject(BangumiSubjectRow row) {
+        String displayName = row.getNameCn() != null && !row.getNameCn().isBlank()
+                ? row.getNameCn() + "（" + row.getName() + "）"
+                : row.getName();
+        StringBuilder sb = new StringBuilder();
+        sb.append("- 《").append(displayName).append("》");
+        sb.append(" [Bangumi ").append(row.getId()).append("]");
+        sb.append("\n  类型：").append(typeLabel(row.getType()));
+        if (row.getScore() != null) {
+            sb.append(" | 评分：").append(row.getScore());
+        }
+        if (row.getRank() != null && row.getRank() > 0) {
+            sb.append(" | 排名：").append(row.getRank());
+        }
+        if (row.getEpsCount() != null) {
+            sb.append(" | 集数：").append(row.getEpsCount());
+        }
+        if (row.getAirDate() != null) {
+            sb.append(" | 放送/发售：").append(row.getAirDate());
+        }
+        if (row.getSummary() != null && !row.getSummary().isBlank()) {
+            String summary = row.getSummary().strip();
+            if (summary.length() > 180) {
+                summary = summary.substring(0, 180) + "…";
+            }
+            sb.append("\n  简介：").append(summary);
+        }
+        return sb.toString();
+    }
+
+    private String typeLabel(Integer type) {
+        if (type == null) {
+            return "未知";
+        }
+        return switch (type) {
+            case 1 -> "书籍";
+            case 2 -> "动画";
+            case 3 -> "音乐";
+            case 4 -> "游戏";
+            case 6 -> "三次元";
+            default -> "类型" + type;
+        };
     }
 }

@@ -102,6 +102,16 @@ llm:
 agent:
   max-steps: ${AGENT_MAX_STEPS:5}
 
+bangumi:
+  enabled: ${BANGUMI_ENABLED:true}
+  base-url: https://api.bgm.tv
+  access-token: ${BANGUMI_ACCESS_TOKEN:}
+  user-agent: ChthollyHub/1.0 (https://github.com/chtholly-hub)
+  rate-per-second: 1
+  sync:
+    enabled: ${BANGUMI_SYNC_ENABLED:false}
+    cron: "0 0 4 * * *"
+
 counter:
   rebuild:
     enabled: false

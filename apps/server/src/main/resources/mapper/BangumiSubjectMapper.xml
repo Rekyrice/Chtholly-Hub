@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.bangumi.mapper.BangumiSubjectMapper">
+
+    <select id="searchByKeyword" resultType="com.chtholly.bangumi.model.BangumiSubjectRow">
+        SELECT
+            id,
+            type,
+            name,
+            name_cn AS nameCn,
+            summary,
+            nsfw,
+            air_date AS airDate,
+            score,
+            rank,
+            eps_count AS epsCount,
+            raw_json AS rawJson,
+            synced_at AS syncedAt
+        FROM bangumi_subjects
+        WHERE MATCH(name, name_cn) AGAINST(#{keyword} IN NATURAL LANGUAGE MODE)
+        ORDER BY score DESC, rank ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findById" resultType="com.chtholly.bangumi.model.BangumiSubjectRow">
+        SELECT
+            id,
+            type,
+            name,
+            name_cn AS nameCn,
+            summary,
+            nsfw,
+            air_date AS airDate,
+            score,
+            rank,
+            eps_count AS epsCount,
+            raw_json AS rawJson,
+            synced_at AS syncedAt
+        FROM bangumi_subjects
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <insert id="upsert">
+        INSERT INTO bangumi_subjects (
+            id, type, name, name_cn, summary, nsfw, air_date, score, rank, eps_count, raw_json
+        ) VALUES (
+            #{id}, #{type}, #{name}, #{nameCn}, #{summary}, #{nsfw}, #{airDate}, #{score}, #{rank}, #{epsCount}, #{rawJson}
+        )
+        ON DUPLICATE KEY UPDATE
+            type = VALUES(type),
+            name = VALUES(name),
+            name_cn = VALUES(name_cn),
+            summary = VALUES(summary),
+            nsfw = VALUES(nsfw),
+            air_date = VALUES(air_date),
+            score = VALUES(score),
+            rank = VALUES(rank),
+            eps_count = COALESCE(VALUES(eps_count), eps_count),
+            raw_json = VALUES(raw_json),
+            synced_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <insert id="insertSyncLog">
+        INSERT INTO bangumi_sync_log (subject_id, action) VALUES (#{subjectId}, #{action})
+    </insert>
+
+</mapper>
