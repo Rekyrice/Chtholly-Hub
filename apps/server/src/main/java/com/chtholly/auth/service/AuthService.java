@@ -11,6 +11,7 @@ import com.chtholly.auth.api.dto.SendCodeResponse;
 import com.chtholly.auth.api.dto.TokenRefreshRequest;
 import com.chtholly.auth.api.dto.TokenResponse;
 import com.chtholly.auth.audit.LoginLogService;
+import com.chtholly.auth.security.LoginFailureGuard;
 import com.chtholly.auth.config.AuthProperties;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
@@ -63,6 +64,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final RefreshTokenStore refreshTokenStore;
     private final LoginLogService loginLogService;
+    private final LoginFailureGuard loginFailureGuard;
     private final AuthProperties authProperties;
 
     /**
@@ -144,6 +146,7 @@ public class AuthService {
     public AuthResponse login(LoginRequest request, ClientInfo clientInfo) {
         validateIdentifier(request.identifierType(), request.identifier());
         String identifier = normalizeIdentifier(request.identifierType(), request.identifier());
+        loginFailureGuard.assertNotLocked(identifier, clientInfo.ip());
         Optional<User> userOptional = findUserByIdentifier(request.identifierType(), identifier);
         if (userOptional.isEmpty()) {
             throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND);
@@ -154,14 +157,22 @@ public class AuthService {
             channel = "PASSWORD";
             if (!StringUtils.hasText(user.getPasswordHash()) || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
                 loginLogService.record(user.getId(), identifier, channel, clientInfo.ip(), clientInfo.userAgent(), "FAILED");
+                loginFailureGuard.onFailure(identifier, clientInfo.ip());
                 throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
             }
         } else if (StringUtils.hasText(request.code())) {
             channel = "CODE";
-            ensureVerificationSuccess(verificationService.verify(VerificationScene.LOGIN, identifier, request.code()));
+            try {
+                ensureVerificationSuccess(verificationService.verify(VerificationScene.LOGIN, identifier, request.code()));
+            } catch (BusinessException ex) {
+                loginLogService.record(user.getId(), identifier, channel, clientInfo.ip(), clientInfo.userAgent(), "FAILED");
+                loginFailureGuard.onFailure(identifier, clientInfo.ip());
+                throw ex;
+            }
         } else {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "请提供验证码或密码");
         }
+        loginFailureGuard.onSuccess(identifier);
         TokenPair tokenPair = jwtService.issueTokenPair(user);
         storeRefreshToken(user.getId(), tokenPair);
         loginLogService.record(user.getId(), identifier, channel, clientInfo.ip(), clientInfo.userAgent(), "SUCCESS");

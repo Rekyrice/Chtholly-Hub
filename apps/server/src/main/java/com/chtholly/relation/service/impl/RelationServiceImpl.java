@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.chtholly.user.mapper.UserMapper;
 import com.chtholly.user.domain.User;
+import com.chtholly.common.util.SensitiveDataUtil;
 import com.chtholly.profile.api.dto.ProfileResponse;
 
 import java.time.Duration;
@@ -285,7 +286,7 @@ public class RelationServiceImpl implements RelationService {
         for (Long id : ids) {
             User u = m.get(id);
             if (u == null) continue;
-            out.add(new ProfileResponse(u.getId(), u.getNickname(), u.getAvatar(), u.getBio(), u.getHandle(), u.getGender(), u.getBirthday(), u.getSchool(), u.getPhone(), u.getEmail(), u.getTagsJson()));
+            out.add(new ProfileResponse(u.getId(), u.getNickname(), u.getAvatar(), u.getBio(), u.getHandle(), u.getGender(), u.getBirthday(), u.getSchool(), SensitiveDataUtil.maskPhone(u.getPhone()), SensitiveDataUtil.maskEmail(u.getEmail()), u.getTagsJson()));
         }
         return out;
     }

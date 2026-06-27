@@ -13,9 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.net.URL;
 import java.util.Date;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -25,13 +25,11 @@ public class OssStorageService {
 
     public String uploadAvatar(long userId, MultipartFile file) {
         ensureConfigured();
+        ImageUploadValidator.validateAvatar(file);
 
-        String original = file.getOriginalFilename();
-        String ext = "";
-        if (original != null && original.contains(".")) {
-            ext = original.substring(original.lastIndexOf('.'));
-        }
-        String objectKey = props.getFolder() + "/" + userId + "-" + Instant.now().toEpochMilli() + ext;
+        String contentType = file.getContentType().trim().toLowerCase();
+        String ext = ImageUploadValidator.extensionForContentType(contentType);
+        String objectKey = props.getFolder() + "/" + userId + "/" + UUID.randomUUID() + ext;
 
         OSS client = new OSSClientBuilder().build(props.getEndpoint(), props.getAccessKeyId(), props.getAccessKeySecret());
 

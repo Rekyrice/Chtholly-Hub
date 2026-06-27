@@ -7,6 +7,7 @@ import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.auth.token.JwtService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
+import com.chtholly.storage.ImageUploadValidator;
 import com.chtholly.storage.OssStorageService;
 import com.chtholly.storage.api.dto.StoragePresignRequest;
 import com.chtholly.storage.api.dto.StoragePresignResponse;
@@ -63,6 +64,9 @@ public class StorageController {
         }
 
         String scene = request.scene();
+        if ("post_image".equals(scene)) {
+            ImageUploadValidator.validateImageContentType(request.contentType());
+        }
         String objectKey;
         String ext = normalizeExt(request.ext(), request.contentType(), scene);
 
@@ -99,6 +103,7 @@ public class StorageController {
                 case "image/jpeg" -> ".jpg";
                 case "image/png" -> ".png";
                 case "image/webp" -> ".webp";
+                case "image/gif" -> ".gif";
                 default -> ".img";
             };
         }
