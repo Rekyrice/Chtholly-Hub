@@ -52,6 +52,13 @@ public class SecurityConfig {
                         }))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers(
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/api-docs",
+                                "/api-docs/**",
+                                "/v3/api-docs/**"
+                        ).permitAll()
                         .requestMatchers("/api/v1/posts/feed").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/tags").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search").permitAll()

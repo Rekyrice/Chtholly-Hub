@@ -1,11 +1,14 @@
 package com.chtholly.user.api.dto;
 
-/** 公开用户资料（个人主页用，不含手机号等敏感字段）。 */
+import io.swagger.v3.oas.annotations.media.Schema;
+
+/** 公开用户资料。 */
+@Schema(description = "公开用户资料")
 public record PublicUserResponse(
-        String id,
-        String handle,
-        String nickname,
-        String avatar,
-        String bio,
-        long publicPostCount
+        @Schema(description = "用户 ID") String id,
+        @Schema(description = "handle") String handle,
+        @Schema(description = "昵称") String nickname,
+        @Schema(description = "头像 URL") String avatar,
+        @Schema(description = "简介") String bio,
+        @Schema(description = "公开帖子数") long publicPostCount
 ) {}

@@ -1,10 +1,11 @@
 package com.chtholly.search.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.util.List;
 
-/**
- * 联想响应：返回候选标题列表。
- */
+/** 搜索联想建议响应。 */
+@Schema(description = "搜索联想建议")
 public record SuggestResponse(
-        List<String> items
+        @Schema(description = "候选标题列表") List<String> items
 ) {}

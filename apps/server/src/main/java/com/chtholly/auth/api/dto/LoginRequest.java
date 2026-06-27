@@ -1,21 +1,16 @@
 package com.chtholly.auth.api.dto;
 
+import com.chtholly.auth.model.IdentifierType;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import com.chtholly.auth.model.IdentifierType;
 
-/**
- * 登录请求。
- * <p>
- * 支持两种渠道：
- * - 验证码登录：填写 `code`；
- * - 密码登录：填写 `password`（用户已设置时）。
- * `identifierType` 指定账号类型（手机号/邮箱），`identifier` 为账号值。
- */
+/** 登录请求（验证码或密码二选一）。 */
+@Schema(description = "登录请求")
 public record LoginRequest(
-        @NotNull(message = "账号类型不能为空") IdentifierType identifierType,
-        @NotBlank(message = "账号不能为空") String identifier,
-        String code,
-        String password
+        @Schema(description = "账号类型：PHONE 或 EMAIL") @NotNull(message = "账号类型不能为空") IdentifierType identifierType,
+        @Schema(description = "手机号或邮箱") @NotBlank(message = "账号不能为空") String identifier,
+        @Schema(description = "验证码（验证码登录时填写）") String code,
+        @Schema(description = "密码（密码登录时填写）") String password
 ) {
 }

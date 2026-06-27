@@ -10,6 +10,8 @@ import com.chtholly.post.api.dto.FeedPageResponse;
 import com.chtholly.post.service.PostService;
 import com.chtholly.post.service.PostFeedService;
 import com.chtholly.post.api.dto.PostDetailResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +20,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+@Tag(name = "文章", description = "文章 CRUD、Feed、发布")
 @RestController
 @RequestMapping("/api/v1/posts")
 @Validated
@@ -28,9 +31,7 @@ public class PostController {
     private final PostFeedService feedService;
     private final JwtService jwtService;
 
-    /**
-     * 创建草稿，返回新 ID。默认类型为 image_text。
-     */
+    @Operation(summary = "创建草稿")
     @PostMapping("/drafts")
     public PostDraftCreateResponse createDraft(@AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);
@@ -38,9 +39,7 @@ public class PostController {
         return new PostDraftCreateResponse(String.valueOf(id));
     }
 
-    /**
-     * 上传内容成功后回传确认，写入对象存储信息。
-     */
+    @Operation(summary = "确认内容上传")
     @PostMapping("/{id}/content/confirm")
     public ResponseEntity<Void> confirmContent(@PathVariable("id") long id,
                                                @Valid @RequestBody PostContentConfirmRequest request,
@@ -50,9 +49,7 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * 更新元数据（标题、标签、可见性、置顶、图片列表等）。
-     */
+    @Operation(summary = "更新帖子元数据")
     @PatchMapping("/{id}")
     public ResponseEntity<Void> patchMetadata(@PathVariable("id") long id,
                                               @Valid @RequestBody PostPatchRequest request,
@@ -62,9 +59,7 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * 发布帖子（状态置为 published）。
-     */
+    @Operation(summary = "发布帖子")
     @PostMapping("/{id}/publish")
     public ResponseEntity<Void> publish(@PathVariable("id") long id,
                                         @AuthenticationPrincipal Jwt jwt) {
@@ -73,9 +68,7 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * 设置置顶状态。
-     */
+    @Operation(summary = "设置置顶")
     @PatchMapping("/{id}/top")
     public ResponseEntity<Void> patchTop(@PathVariable("id") long id,
                                          @Valid @RequestBody PostTopPatchRequest request,
@@ -85,9 +78,7 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * 设置可见性（权限）。
-     */
+    @Operation(summary = "设置可见性")
     @PatchMapping("/{id}/visibility")
     public ResponseEntity<Void> patchVisibility(@PathVariable("id") long id,
                                                 @Valid @RequestBody PostVisibilityPatchRequest request,
@@ -97,9 +88,7 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * 删除帖子（软删除）。
-     */
+    @Operation(summary = "删除帖子（软删除）")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable("id") long id,
                                        @AuthenticationPrincipal Jwt jwt) {
@@ -108,9 +97,7 @@ public class PostController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * 首页 Feed（公开、已发布）分页查询；默认每页 20，最大 50。
-     */
+    @Operation(summary = "公开 Feed 列表")
     @GetMapping("/feed")
     public FeedPageResponse feed(@RequestParam(value = "page", defaultValue = "1") int page,
                                  @RequestParam(value = "size", defaultValue = "20") int size,
@@ -121,9 +108,7 @@ public class PostController {
         return feedService.getPublicFeed(page, size, ownerId, tag, userId);
     }
 
-    /**
-     * 我的帖子（当前用户已发布）分页查询；默认每页 20，最大 50。
-     */
+    @Operation(summary = "我的已发布帖子")
     @GetMapping("/mine")
     public FeedPageResponse mine(@RequestParam(value = "page", defaultValue = "1") int page,
                                  @RequestParam(value = "size", defaultValue = "20") int size,
@@ -132,9 +117,7 @@ public class PostController {
         return feedService.getMyPublished(userId, page, size);
     }
 
-    /**
-     * 帖子详情（公开：published+public；非公开需作者本人）。
-     */
+    @Operation(summary = "帖子详情（按 ID）")
     @GetMapping("/detail/{id}")
     public PostDetailResponse detail(@PathVariable("id") long id,
                                          @AuthenticationPrincipal Jwt jwt) {
@@ -142,9 +125,7 @@ public class PostController {
         return service.getDetail(id, userId);
     }
 
-    /**
-     * 帖子详情（按 slug 查询，权限规则同 {@link #detail}）。
-     */
+    @Operation(summary = "帖子详情（按 slug）")
     @GetMapping("/detail/by-slug/{slug}")
     public PostDetailResponse detailBySlug(@PathVariable("slug") String slug,
                                          @AuthenticationPrincipal Jwt jwt) {

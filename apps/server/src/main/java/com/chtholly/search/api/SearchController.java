@@ -3,6 +3,8 @@ package com.chtholly.search.api;
 import com.chtholly.search.api.dto.SearchResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 import com.chtholly.search.service.SearchService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
@@ -15,11 +17,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.chtholly.auth.token.JwtService;
 
-/**
- * 搜索接口控制器：
- * - 提供关键词检索与联想建议两个 GET API
- * - 参数通过 Spring Validation 进行基本校验
- */
+/** 搜索接口：关键词检索与联想建议。 */
+@Tag(name = "搜索", description = "全文搜索、联想建议")
 @RestController
 @RequestMapping("/api/v1/search")
 @Validated
@@ -29,13 +28,7 @@ public class SearchController {
     private final SearchService searchService;
     private final JwtService jwtService;
 
-    /**
-     * 关键词检索。
-     * @param q 关键词（必填）
-     * @param size 返回条数（默认 20，最小 1）
-     * @param tagsCsv 标签过滤（逗号分隔，可选）
-     * @param after 游标（Base64URL，可选）
-     */
+    @Operation(summary = "关键词搜索")
     @GetMapping
     public SearchResponse search(@RequestParam("q") @NotBlank String q,
                                  @RequestParam(value = "size", required = false, defaultValue = "20") @Min(1) int size,
@@ -46,11 +39,7 @@ public class SearchController {
         return searchService.search(q, size, tagsCsv, after, userId);
     }
 
-    /**
-     * 联想建议（Completion Suggester）。
-     * @param prefix 前缀（必填）
-     * @param size 返回条数（默认 10，最小 1）
-     */
+    @Operation(summary = "搜索联想建议")
     @GetMapping("/suggest")
     public SuggestResponse suggest(@RequestParam("prefix") @NotBlank String prefix,
                                    @RequestParam(value = "size", required = false, defaultValue = "10") @Min(1) int size) {

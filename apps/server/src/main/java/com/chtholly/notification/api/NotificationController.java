@@ -4,6 +4,8 @@ import com.chtholly.auth.token.JwtService;
 import com.chtholly.notification.api.dto.NotificationListResponse;
 import com.chtholly.notification.api.dto.UnreadCountResponse;
 import com.chtholly.notification.service.NotificationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 当前用户通知 API。 */
+@Tag(name = "通知", description = "通知列表、已读标记")
 @RestController
 @RequestMapping("/api/v1/notifications")
 @Validated
@@ -26,6 +29,7 @@ public class NotificationController {
     private final NotificationService notificationService;
     private final JwtService jwtService;
 
+    @Operation(summary = "通知分页列表")
     @GetMapping
     public NotificationListResponse list(@AuthenticationPrincipal Jwt jwt,
                                          @RequestParam(value = "page", defaultValue = "1") int page,
@@ -34,18 +38,21 @@ public class NotificationController {
         return notificationService.list(userId, page, size);
     }
 
+    @Operation(summary = "未读通知数量")
     @GetMapping("/unread-count")
     public UnreadCountResponse unreadCount(@AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);
         return notificationService.unreadCount(userId);
     }
 
+    @Operation(summary = "标记单条通知已读")
     @PatchMapping("/{id}/read")
     public void markRead(@AuthenticationPrincipal Jwt jwt, @PathVariable("id") long id) {
         long userId = jwtService.extractUserId(jwt);
         notificationService.markRead(userId, id);
     }
 
+    @Operation(summary = "全部标记已读")
     @PostMapping("/read-all")
     public void markAllRead(@AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);

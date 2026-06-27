@@ -1,16 +1,15 @@
 package com.chtholly.auth.api.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.time.Instant;
 
-/**
- * 令牌响应。
- * <p>
- * 返回访问令牌与刷新令牌及其过期时间，供客户端持久化与后续调用使用。
- */
+/** JWT 令牌对。 */
+@Schema(description = "Token 响应")
 public record TokenResponse(
-        String accessToken,
-        Instant accessTokenExpiresAt,
-        String refreshToken,
-        Instant refreshTokenExpiresAt
+        @Schema(description = "Access Token") String accessToken,
+        @Schema(description = "Access Token 过期时间") Instant accessTokenExpiresAt,
+        @Schema(description = "Refresh Token") String refreshToken,
+        @Schema(description = "Refresh Token 过期时间") Instant refreshTokenExpiresAt
 ) {
 }

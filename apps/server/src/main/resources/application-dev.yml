@@ -1,0 +1,6 @@
+# 本地开发 profile：默认启用 Swagger（可被 SWAGGER_ENABLED 覆盖）
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}

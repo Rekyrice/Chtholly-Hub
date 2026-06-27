@@ -16,6 +16,8 @@ import com.chtholly.auth.api.dto.TokenResponse;
 import com.chtholly.auth.model.ClientInfo;
 import com.chtholly.auth.service.AuthService;
 import com.chtholly.auth.token.JwtService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -33,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 集成：使用 Spring Security 的资源服务器能力，`/me` 通过 `@AuthenticationPrincipal Jwt` 提取用户。
  * 客户端信息：从请求头解析 IP 与 UA，用于审计登录日志。
  */
+@Tag(name = "认证", description = "登录、注册、Token 管理")
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
@@ -53,6 +56,7 @@ public class AuthController {
      *                - scene：验证码使用场景（REGISTER/LOGIN/RESET_PASSWORD）。
      * @return 响应体，包含目标标识、场景以及验证码过期秒数。
      */
+    @Operation(summary = "发送验证码")
     @PostMapping("/send-code")
     public SendCodeResponse sendCode(@Valid @RequestBody SendCodeRequest request) {
         return authService.sendCode(request);
@@ -67,6 +71,7 @@ public class AuthController {
      * @param httpRequest 用于解析客户端信息（IP 与 User-Agent），记录审计日志。
      * @return 认证响应，包含用户信息与令牌对。
      */
+    @Operation(summary = "注册并登录")
     @PostMapping("/register")
     public AuthResponse register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
         return authService.register(request, resolveClient(httpRequest));
@@ -81,6 +86,7 @@ public class AuthController {
      * @param httpRequest 用于解析客户端信息（IP 与 User-Agent），记录审计日志。
      * @return 认证响应，包含用户信息与令牌对。
      */
+    @Operation(summary = "登录")
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         return authService.login(request, resolveClient(httpRequest));
@@ -94,6 +100,7 @@ public class AuthController {
      * @param request 请求体，包含：refreshToken（刷新令牌）。
      * @return 新的令牌响应（accessToken/refreshToken 及其过期时间）。
      */
+    @Operation(summary = "刷新 Token")
     @PostMapping("/token/refresh")
     public TokenResponse refresh(@Valid @RequestBody TokenRefreshRequest request) {
         return authService.refresh(request);
@@ -107,6 +114,7 @@ public class AuthController {
      * @param request 请求体，包含：refreshToken（欲撤销的刷新令牌）。
      * @return 空响应，HTTP 204 No Content。
      */
+    @Operation(summary = "登出")
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@Valid @RequestBody LogoutRequest request) {
         authService.logout(request.refreshToken());
@@ -121,6 +129,7 @@ public class AuthController {
      * @param request 请求体，包含：标识类型与值、验证码、新密码。
      * @return 空响应，HTTP 204 No Content。
      */
+    @Operation(summary = "重置密码")
     @PostMapping("/password/reset")
     public ResponseEntity<Void> resetPassword(@Valid @RequestBody PasswordResetRequest request) {
         authService.resetPassword(request);
@@ -135,6 +144,7 @@ public class AuthController {
      * @param jwt 当前请求绑定的 JWT 令牌（来自 `Authorization: Bearer`）。
      * @return 用户信息响应。
      */
+    @Operation(summary = "当前登录用户信息")
     @GetMapping("/me")
     public AuthUserResponse me(@AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);

@@ -1,12 +1,11 @@
 package com.chtholly.auth.api.dto;
 
-/**
- * 认证响应。
- * <p>
- * 登录/注册成功后返回：包含用户信息与令牌信息的组合结果。
- */
+import io.swagger.v3.oas.annotations.media.Schema;
+
+/** 认证响应（用户 + Token）。 */
+@Schema(description = "认证响应")
 public record AuthResponse(
-        AuthUserResponse user,
-        TokenResponse token
+        @Schema(description = "用户信息") AuthUserResponse user,
+        @Schema(description = "令牌对") TokenResponse token
 ) {
 }

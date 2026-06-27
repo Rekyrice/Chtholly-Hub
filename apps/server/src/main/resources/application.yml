@@ -175,6 +175,16 @@ logging:
     root: INFO
     '[com.chtholly]': DEBUG
 
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /api-docs
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
 oss:
   endpoint: ${OSS_ENDPOINT:oss-cn-beijing.aliyuncs.com}
   access-key-id: ${OSS_ACCESS_KEY_ID:}
