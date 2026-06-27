@@ -19,6 +19,8 @@ public enum ErrorCode {
     BAD_REQUEST("BAD_REQUEST", "请求参数错误"),
     RESOURCE_NOT_FOUND("RESOURCE_NOT_FOUND", "资源不存在"),
     CONFLICT("CONFLICT", "资源冲突"),
+    COMMENT_RATE_LIMIT("COMMENT_RATE_LIMIT", "评论过于频繁，请稍后再试"),
+    FORBIDDEN("FORBIDDEN", "权限不足"),
     INTERNAL_ERROR("INTERNAL_ERROR", "服务器内部错误");
 
     private final String code;

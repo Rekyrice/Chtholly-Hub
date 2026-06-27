@@ -4,7 +4,7 @@
         "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.chtholly.comment.mapper.CommentMapper">
 
-    <select id="listByPostId" resultType="com.chtholly.comment.model.CommentRow">
+    <sql id="commentSelect">
         SELECT
             c.id,
             c.post_id AS postId,
@@ -12,26 +12,43 @@
             c.user_id AS userId,
             c.content,
             c.created_at AS createdAt,
+            c.deleted_at AS deletedAt,
+            c.updated_at AS updatedAt,
             u.nickname AS authorNickname,
             u.avatar AS authorAvatar
         FROM comments c
         JOIN users u ON c.user_id = u.id
+    </sql>
+
+    <select id="listRootByPostId" resultType="com.chtholly.comment.model.CommentRow">
+        <include refid="commentSelect"/>
         WHERE c.post_id = #{postId}
+          AND c.parent_id IS NULL
+          AND c.deleted_at IS NULL
+        ORDER BY c.created_at ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="listRepliesByParentIds" resultType="com.chtholly.comment.model.CommentRow">
+        <include refid="commentSelect"/>
+        WHERE c.post_id = #{postId}
+          AND c.parent_id IN
+        <foreach collection="parentIds" item="pid" open="(" separator="," close=")">
+            #{pid}
+        </foreach>
         ORDER BY c.created_at ASC
     </select>
 
+    <select id="findByIds" resultType="com.chtholly.comment.model.CommentRow">
+        <include refid="commentSelect"/>
+        WHERE c.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
     <select id="findById" resultType="com.chtholly.comment.model.CommentRow">
-        SELECT
-            c.id,
-            c.post_id AS postId,
-            c.parent_id AS parentId,
-            c.user_id AS userId,
-            c.content,
-            c.created_at AS createdAt,
-            u.nickname AS authorNickname,
-            u.avatar AS authorAvatar
-        FROM comments c
-        JOIN users u ON c.user_id = u.id
+        <include refid="commentSelect"/>
         WHERE c.id = #{id}
         LIMIT 1
     </select>
@@ -41,8 +58,27 @@
         VALUES (#{id}, #{postId}, #{parentId}, #{userId}, #{content})
     </insert>
 
-    <select id="countByPostId" resultType="long">
-        SELECT COUNT(1) FROM comments WHERE post_id = #{postId}
+    <select id="countRootByPostId" resultType="long">
+        SELECT COUNT(1)
+        FROM comments
+        WHERE post_id = #{postId}
+          AND parent_id IS NULL
+          AND deleted_at IS NULL
     </select>
+
+    <update id="softDelete">
+        UPDATE comments
+        SET deleted_at = NOW()
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="softDeleteById">
+        UPDATE comments
+        SET deleted_at = NOW()
+        WHERE id = #{id}
+          AND deleted_at IS NULL
+    </update>
 
 </mapper>

@@ -5,46 +5,120 @@ import com.chtholly.comment.api.dto.CommentResponse;
 import com.chtholly.comment.api.dto.CreateCommentRequest;
 import com.chtholly.comment.mapper.CommentMapper;
 import com.chtholly.comment.model.CommentRow;
+import com.chtholly.comment.service.CommentContentSanitizer;
+import com.chtholly.comment.service.CommentRateLimiter;
 import com.chtholly.comment.service.CommentService;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
+import com.chtholly.common.exception.ResourceNotFoundException;
 import com.chtholly.notification.event.CommentCreatedEvent;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.model.Post;
 import com.chtholly.post.mapper.PostMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class CommentServiceImpl implements CommentService {
 
+    private static final String DELETED_PLACEHOLDER = "该评论已删除";
+    private static final int MIN_CONTENT_LENGTH = 1;
+    private static final int MAX_CONTENT_LENGTH = 2000;
+
     private final CommentMapper commentMapper;
     private final PostMapper postMapper;
     private final SnowflakeIdGenerator idGen;
     private final ApplicationEventPublisher eventPublisher;
+    private final CommentContentSanitizer contentSanitizer;
+    private final CommentRateLimiter commentRateLimiter;
 
     @Override
     @Transactional(readOnly = true)
-    public CommentListResponse listByPost(long postId, Long viewerUserIdNullable) {
+    public CommentListResponse listByPost(long postId, Long viewerUserIdNullable, int page, int size) {
         assertCommentablePost(postId, viewerUserIdNullable);
-        List<CommentRow> rows = commentMapper.listByPostId(postId);
-        List<CommentResponse> tree = buildTree(rows);
-        return new CommentListResponse(tree, commentMapper.countByPostId(postId));
+        long total = commentMapper.countRootByPostId(postId);
+        int offset = (page - 1) * size;
+        List<CommentRow> roots = commentMapper.listRootByPostId(postId, size, offset);
+        boolean hasMore = (long) page * size < total;
+
+        if (roots.isEmpty()) {
+            return new CommentListResponse(List.of(), total, page, size, hasMore);
+        }
+
+        List<Long> rootIds = roots.stream().map(CommentRow::getId).toList();
+        List<CommentRow> level1 = commentMapper.listRepliesByParentIds(postId, rootIds);
+        List<Long> level1Ids = level1.stream().map(CommentRow::getId).toList();
+        List<CommentRow> level2 = level1Ids.isEmpty()
+                ? List.of()
+                : commentMapper.listRepliesByParentIds(postId, level1Ids);
+
+        Set<Long> loadedIds = new HashSet<>();
+        roots.forEach(r -> loadedIds.add(r.getId()));
+        level1.forEach(r -> loadedIds.add(r.getId()));
+        level2.forEach(r -> loadedIds.add(r.getId()));
+
+        Set<Long> missingParentIds = new HashSet<>();
+        for (CommentRow reply : concat(level1, level2)) {
+            if (reply.getParentId() != null && !loadedIds.contains(reply.getParentId())) {
+                missingParentIds.add(reply.getParentId());
+            }
+        }
+        List<CommentRow> parentStubs = missingParentIds.isEmpty()
+                ? List.of()
+                : commentMapper.findByIds(new ArrayList<>(missingParentIds));
+
+        Map<Long, List<CommentRow>> repliesByParent = new LinkedHashMap<>();
+        for (CommentRow row : concat(level1, level2)) {
+            repliesByParent.computeIfAbsent(row.getParentId(), k -> new ArrayList<>()).add(row);
+        }
+
+        List<CommentResponse> items = new ArrayList<>();
+        for (CommentRow root : roots) {
+            List<CommentResponse> replyDtos = repliesByParent.getOrDefault(root.getId(), List.of()).stream()
+                    .map(r -> toResponse(r, repliesByParent.getOrDefault(r.getId(), List.of()).stream()
+                            .map(child -> toResponse(child, List.of()))
+                            .toList()))
+                    .toList();
+            items.add(toResponse(root, replyDtos));
+        }
+
+        for (CommentRow stub : parentStubs) {
+            if (stub.getParentId() != null) {
+                continue;
+            }
+            List<CommentResponse> replyDtos = repliesByParent.getOrDefault(stub.getId(), List.of()).stream()
+                    .map(r -> toResponse(r, repliesByParent.getOrDefault(r.getId(), List.of()).stream()
+                            .map(child -> toResponse(child, List.of()))
+                            .toList()))
+                    .toList();
+            if (!replyDtos.isEmpty()) {
+                items.add(toResponse(stub, replyDtos));
+            }
+        }
+
+        return new CommentListResponse(items, total, page, size, hasMore);
     }
 
     @Override
     @Transactional
     public CommentResponse create(long postId, long userId, CreateCommentRequest request) {
         assertCommentablePost(postId, userId);
+        commentRateLimiter.checkAndIncrement(userId);
+
+        String content = validateAndSanitizeContent(request.content());
         Long parentId = parseParentId(request.parentId());
         CommentRow parent = null;
         if (parentId != null) {
@@ -52,13 +126,16 @@ public class CommentServiceImpl implements CommentService {
             if (parent == null || !postIdEquals(parent.getPostId(), postId)) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "回复目标不存在");
             }
+            if (parent.getDeletedAt() != null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "无法回复已删除的评论");
+            }
             if (parent.getParentId() != null) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持回复顶级评论");
             }
         }
 
         long id = idGen.nextId();
-        commentMapper.insert(id, postId, parentId, userId, request.content().trim());
+        commentMapper.insert(id, postId, parentId, userId, content);
         CommentRow row = commentMapper.findById(id);
         Post post = postMapper.findById(postId);
         eventPublisher.publishEvent(new CommentCreatedEvent(
@@ -74,6 +151,44 @@ public class CommentServiceImpl implements CommentService {
                 parent == null ? null : parent.getUserId()
         ));
         return toResponse(row, Collections.emptyList());
+    }
+
+    @Override
+    @Transactional
+    public void delete(long postId, long commentId, long userId) {
+        assertCommentablePost(postId, userId);
+        CommentRow comment = commentMapper.findById(commentId);
+        if (comment == null || !postIdEquals(comment.getPostId(), postId)) {
+            throw new ResourceNotFoundException("评论不存在");
+        }
+        if (comment.getDeletedAt() != null) {
+            return;
+        }
+
+        Post post = postMapper.findById(postId);
+        boolean isCommentAuthor = comment.getUserId() != null && userId == comment.getUserId();
+        boolean isPostAuthor = post.getCreatorId() != null && userId == post.getCreatorId();
+        if (!isCommentAuthor && !isPostAuthor) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权删除该评论", HttpStatus.FORBIDDEN.value());
+        }
+
+        int updated = isCommentAuthor
+                ? commentMapper.softDelete(commentId, userId)
+                : commentMapper.softDeleteById(commentId);
+        if (updated == 0) {
+            throw new ResourceNotFoundException("评论不存在");
+        }
+    }
+
+    private String validateAndSanitizeContent(String raw) {
+        String content = contentSanitizer.sanitize(raw);
+        if (!StringUtils.hasText(content) || content.length() < MIN_CONTENT_LENGTH) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "评论内容不能为空");
+        }
+        if (content.length() > MAX_CONTENT_LENGTH) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "评论内容不能超过 " + MAX_CONTENT_LENGTH + " 字");
+        }
+        return content;
     }
 
     private void assertCommentablePost(long postId, Long viewerUserIdNullable) {
@@ -104,29 +219,17 @@ public class CommentServiceImpl implements CommentService {
         return a != null && a == b;
     }
 
-    private List<CommentResponse> buildTree(List<CommentRow> rows) {
-        Map<Long, List<CommentRow>> repliesByParent = new LinkedHashMap<>();
-        List<CommentRow> roots = new ArrayList<>();
-
-        for (CommentRow row : rows) {
-            if (row.getParentId() == null) {
-                roots.add(row);
-            } else {
-                repliesByParent.computeIfAbsent(row.getParentId(), k -> new ArrayList<>()).add(row);
-            }
-        }
-
-        List<CommentResponse> out = new ArrayList<>();
-        for (CommentRow root : roots) {
-            List<CommentResponse> replyDtos = repliesByParent.getOrDefault(root.getId(), List.of()).stream()
-                    .map(r -> toResponse(r, Collections.emptyList()))
-                    .toList();
-            out.add(toResponse(root, replyDtos));
+    @SafeVarargs
+    private static <T> List<T> concat(List<T>... lists) {
+        List<T> out = new ArrayList<>();
+        for (List<T> list : lists) {
+            out.addAll(list);
         }
         return out;
     }
 
     private CommentResponse toResponse(CommentRow row, List<CommentResponse> replies) {
+        String content = row.getDeletedAt() != null ? DELETED_PLACEHOLDER : row.getContent();
         return new CommentResponse(
                 String.valueOf(row.getId()),
                 String.valueOf(row.getPostId()),
@@ -134,7 +237,7 @@ public class CommentServiceImpl implements CommentService {
                 String.valueOf(row.getUserId()),
                 row.getAuthorNickname(),
                 row.getAuthorAvatar(),
-                row.getContent(),
+                content,
                 row.getCreatedAt(),
                 replies
         );

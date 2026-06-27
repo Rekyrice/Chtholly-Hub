@@ -6,7 +6,9 @@ import com.chtholly.comment.api.dto.CreateCommentRequest;
 
 public interface CommentService {
 
-    CommentListResponse listByPost(long postId, Long viewerUserIdNullable);
+    CommentListResponse listByPost(long postId, Long viewerUserIdNullable, int page, int size);
 
     CommentResponse create(long postId, long userId, CreateCommentRequest request);
+
+    void delete(long postId, long commentId, long userId);
 }

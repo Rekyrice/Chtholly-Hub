@@ -88,6 +88,13 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- HTML 解析与 XSS 过滤 -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.17.2</version>
+        </dependency>
+
         <!-- WebSocket：Agent 流式对话 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

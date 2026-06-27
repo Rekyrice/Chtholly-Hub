@@ -13,6 +13,9 @@ export type CommentItem = {
 export type CommentListResponse = {
   items: CommentItem[];
   total: number;
+  page: number;
+  size: number;
+  hasMore: boolean;
 };
 
 export type CreateCommentRequest = {

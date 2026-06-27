@@ -147,6 +147,10 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
+comment:
+  rate-limit-per-minute: 5
+  sensitive-words: []
+
 auth:
   jwt:
     issuer: chtholly
