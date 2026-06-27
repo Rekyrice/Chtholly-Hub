@@ -1,5 +1,7 @@
 package com.chtholly.post.api;
 
+import com.chtholly.common.ratelimit.RateLimit;
+import com.chtholly.common.ratelimit.RateLimitDimension;
 import com.chtholly.auth.token.JwtService;
 import com.chtholly.post.api.dto.PostContentConfirmRequest;
 import com.chtholly.post.api.dto.PostDraftCreateResponse;
@@ -41,6 +43,7 @@ public class PostController {
      * @return new draft post ID
      */
     @Operation(summary = "创建草稿")
+    @RateLimit(key = "posts:drafts", maxRequests = 10, windowSeconds = 60, dimension = RateLimitDimension.USER)
     @PostMapping("/drafts")
     public PostDraftCreateResponse createDraft(@AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);
@@ -92,6 +95,7 @@ public class PostController {
      * @return HTTP 204 on success
      */
     @Operation(summary = "发布帖子")
+    @RateLimit(key = "posts:publish", maxRequests = 5, windowSeconds = 60, dimension = RateLimitDimension.USER)
     @PostMapping("/{id}/publish")
     public ResponseEntity<Void> publish(@PathVariable("id") long id,
                                         @AuthenticationPrincipal Jwt jwt) {

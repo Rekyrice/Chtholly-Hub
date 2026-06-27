@@ -3,6 +3,9 @@ package com.chtholly.auth.api;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import com.chtholly.common.ratelimit.RateLimit;
+import com.chtholly.common.ratelimit.RateLimitDimension;
+import com.chtholly.common.ratelimit.RateLimits;
 import com.chtholly.auth.api.dto.AuthResponse;
 import com.chtholly.auth.api.dto.AuthUserResponse;
 import com.chtholly.auth.api.dto.LoginRequest;
@@ -50,6 +53,10 @@ public class AuthController {
      * @return target identifier, scene, and code expiry seconds
      */
     @Operation(summary = "发送验证码")
+    @RateLimits({
+            @RateLimit(key = "auth:send-code", maxRequests = 5, windowSeconds = 60, dimension = RateLimitDimension.IP),
+            @RateLimit(key = "auth:send-code", maxRequests = 30, windowSeconds = 3600, dimension = RateLimitDimension.IP)
+    })
     @PostMapping("/send-code")
     public SendCodeResponse sendCode(@Valid @RequestBody SendCodeRequest request) {
         return authService.sendCode(request);
@@ -63,6 +70,7 @@ public class AuthController {
      * @return authenticated user profile and tokens
      */
     @Operation(summary = "注册并登录")
+    @RateLimit(key = "auth:register", maxRequests = 5, windowSeconds = 3600, dimension = RateLimitDimension.IP)
     @PostMapping("/register")
     public AuthResponse register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
         return authService.register(request, resolveClient(httpRequest));
@@ -76,6 +84,11 @@ public class AuthController {
      * @return authenticated user profile and tokens
      */
     @Operation(summary = "登录")
+    @RateLimits({
+            @RateLimit(key = "auth:login:ip", maxRequests = 20, windowSeconds = 60, dimension = RateLimitDimension.IP),
+            @RateLimit(key = "auth:login:id", maxRequests = 10, windowSeconds = 60,
+                    dimension = RateLimitDimension.IDENTIFIER, identifierParam = "identifier")
+    })
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         return authService.login(request, resolveClient(httpRequest));

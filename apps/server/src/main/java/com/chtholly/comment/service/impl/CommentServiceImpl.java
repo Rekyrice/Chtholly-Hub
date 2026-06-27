@@ -6,7 +6,6 @@ import com.chtholly.comment.api.dto.CreateCommentRequest;
 import com.chtholly.comment.mapper.CommentMapper;
 import com.chtholly.comment.model.CommentRow;
 import com.chtholly.comment.service.CommentContentSanitizer;
-import com.chtholly.comment.service.CommentRateLimiter;
 import com.chtholly.comment.service.CommentService;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
@@ -32,7 +31,7 @@ import java.util.Set;
 
 /**
  * Default implementation of {@link CommentService}.
- * Handles two-level nested comments on published posts with sanitization, rate limiting,
+ * Handles two-level nested comments on published posts with sanitization
  * and {@link CommentCreatedEvent} publishing for downstream notifications.
  */
 @Service
@@ -48,7 +47,6 @@ public class CommentServiceImpl implements CommentService {
     private final SnowflakeIdGenerator idGen;
     private final ApplicationEventPublisher eventPublisher;
     private final CommentContentSanitizer contentSanitizer;
-    private final CommentRateLimiter commentRateLimiter;
 
     /**
      * Lists paginated root comments and their nested replies for a post.
@@ -134,13 +132,12 @@ public class CommentServiceImpl implements CommentService {
      * @param userId author user ID
      * @param request comment content and optional parent comment ID
      * @return the newly created comment
-     * @throws BusinessException if validation fails, rate limit is exceeded, or the parent is invalid
+     * @throws BusinessException if validation fails or the parent is invalid
      */
     @Override
     @Transactional
     public CommentResponse create(long postId, long userId, CreateCommentRequest request) {
         assertCommentablePost(postId, userId);
-        commentRateLimiter.checkAndIncrement(userId);
 
         String content = validateAndSanitizeContent(request.content());
         Long parentId = parseParentId(request.parentId());

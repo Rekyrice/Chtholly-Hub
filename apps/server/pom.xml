@@ -137,6 +137,12 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
+        <!-- AOP：@RateLimit 注解拦截 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
         <!-- Redisson：分布式锁、限流等高级 Redis 能力封装 -->
         <dependency>
             <groupId>org.redisson</groupId>

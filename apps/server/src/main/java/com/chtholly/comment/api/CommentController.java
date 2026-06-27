@@ -1,5 +1,7 @@
 package com.chtholly.comment.api;
 
+import com.chtholly.common.ratelimit.RateLimit;
+import com.chtholly.common.ratelimit.RateLimitDimension;
 import com.chtholly.auth.token.JwtService;
 import com.chtholly.comment.api.dto.CommentListResponse;
 import com.chtholly.comment.api.dto.CommentResponse;
@@ -66,6 +68,7 @@ public class CommentController {
      * @return created comment payload
      */
     @Operation(summary = "创建评论或回复")
+    @RateLimit(key = "comments:create", maxRequests = 10, windowSeconds = 60, dimension = RateLimitDimension.USER)
     @PostMapping
     public CommentResponse create(@PathVariable("postId") long postId,
                                   @Valid @RequestBody CreateCommentRequest request,

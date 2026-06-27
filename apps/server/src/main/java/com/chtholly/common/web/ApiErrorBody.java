@@ -20,4 +20,11 @@ public final class ApiErrorBody {
         body.put("details", details != null ? details : Map.of());
         return body;
     }
+
+    /** 429 限流响应体，含 retryAfterSeconds。 */
+    public static Map<String, Object> rateLimited(String message, int retryAfterSeconds) {
+        Map<String, Object> body = of("RATE_LIMITED", message);
+        body.put("retryAfterSeconds", retryAfterSeconds);
+        return body;
+    }
 }

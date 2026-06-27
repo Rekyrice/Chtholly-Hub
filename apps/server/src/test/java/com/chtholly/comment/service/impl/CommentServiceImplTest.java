@@ -6,7 +6,6 @@ import com.chtholly.comment.api.dto.CreateCommentRequest;
 import com.chtholly.comment.mapper.CommentMapper;
 import com.chtholly.comment.model.CommentRow;
 import com.chtholly.comment.service.CommentContentSanitizer;
-import com.chtholly.comment.service.CommentRateLimiter;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
@@ -41,15 +40,13 @@ class CommentServiceImplTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private CommentContentSanitizer contentSanitizer;
-    @Mock
-    private CommentRateLimiter commentRateLimiter;
 
     private CommentServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new CommentServiceImpl(
-                commentMapper, postMapper, idGen, eventPublisher, contentSanitizer, commentRateLimiter);
+                commentMapper, postMapper, idGen, eventPublisher, contentSanitizer);
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.chtholly.common.web;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.common.exception.ResourceNotFoundException;
+import com.chtholly.common.ratelimit.RateLimitException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -91,5 +92,16 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).containsEntry("code", "BAD_REQUEST");
+    }
+
+    @Test
+    void rateLimitReturns429WithRetryAfter() {
+        ResponseEntity<Map<String, Object>> response = handler.handleRateLimit(new RateLimitException(45));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("45");
+        assertThat(response.getBody()).containsEntry("code", "RATE_LIMITED");
+        assertThat(response.getBody()).containsEntry("message", "请求过于频繁，请稍后再试");
+        assertThat(response.getBody()).containsEntry("retryAfterSeconds", 45);
     }
 }

@@ -1,5 +1,7 @@
 package com.chtholly.storage.api;
 
+import com.chtholly.common.ratelimit.RateLimit;
+import com.chtholly.common.ratelimit.RateLimitDimension;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.auth.token.JwtService;
@@ -41,6 +43,7 @@ public class StorageController {
      * @param jwt authenticated user JWT
      * @return presigned URL, object key, required headers, and expiry seconds
      */
+    @RateLimit(key = "storage:presign", maxRequests = 20, windowSeconds = 60, dimension = RateLimitDimension.USER)
     @PostMapping("/presign")
     public StoragePresignResponse presign(@Valid @RequestBody StoragePresignRequest request,
                                           @AuthenticationPrincipal Jwt jwt) {
