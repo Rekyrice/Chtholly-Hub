@@ -1,0 +1,40 @@
+# Caddy 自动 HTTPS 示例（Let's Encrypt）
+# 用法：cp docker-compose.caddy.example.yml docker-compose.prod.yml 后按需修改域名
+# 或将 nginx 服务替换为 caddy 服务
+
+{
+	# 生产请填写真实邮箱以接收证书到期提醒
+	email admin@yourdomain.com
+}
+
+yourdomain.com, www.yourdomain.com {
+	encode gzip
+
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000"
+	}
+
+	handle_path /uploads/* {
+		root * /app/uploads
+		file_server
+	}
+
+	handle /api/v1/agent/ws* {
+		reverse_proxy server:8888
+	}
+
+	handle /api/* {
+		reverse_proxy server:8888
+	}
+
+	handle /live2d/* {
+		reverse_proxy web:3000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

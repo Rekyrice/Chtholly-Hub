@@ -90,7 +90,16 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 Nginx 配置：`docker/nginx/default.conf`。内存紧张时可去掉 `kafka` 服务并改用 Spring Event 降级（需后续代码开关；当前默认带 Kafka）。
 
-HTTPS：在 Nginx 前加云厂商 LB / Certbot，或把 `443` 配进 Nginx。
+HTTPS：在 Nginx 前加云厂商 LB / Certbot，或取消注释 `docker/nginx/default.conf` 末尾的 443 模板并挂载证书。
+
+**不想手动配证书？** 可使用 Caddy 自动 HTTPS 示例：
+
+```bash
+# 编辑 docker/caddy/Caddyfile 中的域名后
+docker compose -f docker-compose.caddy.example.yml up -d --build
+```
+
+Caddy 会从 Let's Encrypt 自动申请证书，并启用 HSTS。
 
 ## ECS 单机部署（M1-7）
 
