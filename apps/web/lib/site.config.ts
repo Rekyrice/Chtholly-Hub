@@ -4,6 +4,12 @@ const ownerHandle = process.env.NEXT_PUBLIC_OWNER_HANDLE ?? "rekyrice";
 export const siteConfig = {
   name: "Chtholly Hub",
   description: "Rekyrice 的个人动漫博客",
+  /** Hero 打字机轮播副标题 */
+  heroQuotes: [
+    "Rekyrice 的个人动漫博客",
+    "私は幸せになりたい —— コトリ",
+    "如果幸福有颜色，那一定是被终末之红染尽的蓝色",
+  ],
   author: {
     name: "Rekyrice",
     /** 中文名「依米花」，仅用于 About 等解释性页面 */
@@ -24,6 +30,7 @@ export const siteConfig = {
   nav: [
     { href: "/", label: "Home" },
     { href: "/archive", label: "Archive" },
+    { href: "/agent", label: "Agent" },
     { href: `/user/${ownerHandle}`, label: "Profile" },
     { href: "/about", label: "About" },
   ],
