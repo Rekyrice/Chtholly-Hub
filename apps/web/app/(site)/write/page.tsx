@@ -43,9 +43,8 @@ export default function WritePage() {
         contentType: "text/markdown",
       });
       const etagRaw = await storageService.uploadPut(
-        presign.putUrl,
+        presign,
         markdown,
-        presign.headers,
       );
       const etag = etagRaw || (await sha256Hex(markdown)).slice(0, 32);
       const size = new TextEncoder().encode(markdown).length;

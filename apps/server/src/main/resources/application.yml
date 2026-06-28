@@ -222,6 +222,12 @@ oss:
   public-domain: ${OSS_PUBLIC_DOMAIN:}
   folder: ${OSS_FOLDER:post}
 
+storage:
+  type: ${STORAGE_TYPE:local}
+  local:
+    base-path: ${STORAGE_LOCAL_PATH:./uploads}
+    public-url-prefix: /uploads
+
 cache:
   l2:
     public-cfg:

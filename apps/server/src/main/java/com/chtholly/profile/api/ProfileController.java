@@ -1,10 +1,13 @@
 package com.chtholly.profile.api;
 
+import com.chtholly.common.exception.BusinessException;
+import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.profile.api.dto.ProfilePatchRequest;
 import com.chtholly.profile.api.dto.ProfileResponse;
-import com.chtholly.storage.OssStorageService;
-import com.chtholly.auth.token.JwtService;
 import com.chtholly.profile.service.ProfileService;
+import com.chtholly.storage.ImageUploadValidator;
+import com.chtholly.storage.StorageService;
+import com.chtholly.auth.token.JwtService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -18,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 /**
  * REST API for the authenticated user's profile updates and avatar upload.
  */
@@ -29,7 +33,7 @@ public class ProfileController {
 
     private final ProfileService profileService;
     private final JwtService jwtService;
-    private final OssStorageService ossStorageService;
+    private final StorageService storageService;
 
     /**
      * Partially updates the caller's profile fields.
@@ -57,8 +61,13 @@ public class ProfileController {
     public ProfileResponse uploadAvatar(@AuthenticationPrincipal Jwt jwt,
                                         @RequestPart("file") MultipartFile file) {
         long userId = jwtService.extractUserId(jwt);
-        String url = ossStorageService.uploadAvatar(userId, file);
-
+        ImageUploadValidator.validateAvatar(file);
+        String url;
+        try {
+            url = storageService.uploadAvatar(userId, file.getInputStream(), file.getContentType());
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "头像文件读取失败");
+        }
         return profileService.updateAvatar(userId, url);
     }
 }

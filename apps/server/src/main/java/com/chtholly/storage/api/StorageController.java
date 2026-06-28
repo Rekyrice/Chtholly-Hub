@@ -1,31 +1,43 @@
 package com.chtholly.storage.api;
 
-import com.chtholly.common.ratelimit.RateLimit;
-import com.chtholly.common.ratelimit.RateLimitDimension;
+import com.chtholly.auth.token.JwtService;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
-import com.chtholly.auth.token.JwtService;
+import com.chtholly.common.ratelimit.RateLimit;
+import com.chtholly.common.ratelimit.RateLimitDimension;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
 import com.chtholly.storage.ImageUploadValidator;
-import com.chtholly.storage.OssStorageService;
+import com.chtholly.storage.PresignedUrl;
+import com.chtholly.storage.StorageObjectKeyValidator;
+import com.chtholly.storage.StorageService;
+import com.chtholly.storage.StorageUploadValidator;
 import com.chtholly.storage.api.dto.StoragePresignRequest;
 import com.chtholly.storage.api.dto.StoragePresignResponse;
+import com.chtholly.storage.api.dto.StorageUploadResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.util.DigestUtils;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.Map;
 import java.util.UUID;
 
 /**
- * REST endpoints for OSS presigned uploads (post content and inline images).
+ * 存储直传：OSS 预签名 PUT 或本地 multipart 上传。
  */
 @RestController
 @RequestMapping("/api/v1/storage")
@@ -33,17 +45,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class StorageController {
 
-    private final OssStorageService ossStorageService;
+    private final StorageService storageService;
     private final JwtService jwtService;
     private final PostMapper postMapper;
 
-    /**
-     * Issues a presigned PUT URL for direct client-to-OSS upload.
-     *
-     * @param request upload scene, content type, and target post metadata
-     * @param jwt authenticated user JWT
-     * @return presigned URL, object key, required headers, and expiry seconds
-     */
     @RateLimit(key = "storage:presign", maxRequests = 20, windowSeconds = 60, dimension = RateLimitDimension.USER)
     @PostMapping("/presign")
     public StoragePresignResponse presign(@Valid @RequestBody StoragePresignRequest request,
@@ -57,7 +62,6 @@ public class StorageController {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "postId 非法");
         }
 
-        // 权限校验：postId 必须属于当前用户
         Post post = postMapper.findById(postId);
         if (post == null || post.getCreatorId() == null || post.getCreatorId() != userId) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
@@ -80,10 +84,67 @@ public class StorageController {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的上传场景");
         }
 
-        int expiresIn = 600; // 10 分钟
-        String putUrl = ossStorageService.generatePresignedPutUrl(objectKey, request.contentType(), expiresIn);
-        Map<String, String> headers = Map.of("Content-Type", request.contentType());
-        return new StoragePresignResponse(objectKey, putUrl, headers, expiresIn);
+        PresignedUrl presigned = storageService.generatePresignedPutUrl(objectKey, request.contentType());
+        return new StoragePresignResponse(
+                objectKey,
+                presigned.url(),
+                presigned.headers(),
+                presigned.expiresInSeconds(),
+                presigned.method());
+    }
+
+    /**
+     * 本地存储模式下的 multipart 上传端点（OSS 模式不应调用）。
+     */
+    @RateLimit(key = "storage:upload", maxRequests = 30, windowSeconds = 60, dimension = RateLimitDimension.USER)
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public StorageUploadResponse upload(@AuthenticationPrincipal Jwt jwt,
+                                        @RequestParam("objectKey") String objectKey,
+                                        @RequestParam("file") MultipartFile file) {
+        long userId = jwtService.extractUserId(jwt);
+        StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
+        verifyUploadPermission(userId, objectKey);
+        StorageUploadValidator.validate(objectKey, file);
+
+        byte[] data;
+        try {
+            data = file.getBytes();
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件读取失败");
+        }
+
+        try {
+            storageService.uploadObject(
+                    objectKey,
+                    new ByteArrayInputStream(data),
+                    file.getContentType(),
+                    data.length);
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件写入失败");
+        }
+
+        String etag = DigestUtils.md5DigestAsHex(data);
+        return new StorageUploadResponse(etag);
+    }
+
+    private void verifyUploadPermission(long userId, String objectKey) {
+        if (!objectKey.startsWith("posts/")) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的上传路径");
+        }
+        String[] parts = objectKey.split("/");
+        if (parts.length < 2) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "objectKey 非法");
+        }
+        long postId;
+        try {
+            postId = Long.parseLong(parts[1]);
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "objectKey 非法");
+        }
+        Post post = postMapper.findById(postId);
+        if (post == null || post.getCreatorId() == null || post.getCreatorId() != userId) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
+        }
     }
 
     private String normalizeExt(String ext, String contentType, String scene) {

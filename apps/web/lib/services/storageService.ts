@@ -5,6 +5,8 @@ export type PresignResponse = {
   putUrl: string;
   headers: Record<string, string>;
   expiresIn: number;
+  /** PUT：OSS 预签名；POST：本地 multipart 上传 */
+  method: string;
 };
 
 export const storageService = {
@@ -19,9 +21,34 @@ export const storageService = {
       body: params,
     }),
 
-  /** 直传 OSS，返回 ETag */
-  uploadPut: async (putUrl: string, body: Blob | string, headers: Record<string, string>) => {
-    const res = await fetch(putUrl, { method: "PUT", headers, body });
+  /** 直传存储，返回 ETag */
+  uploadPut: async (
+    presign: PresignResponse,
+    body: Blob | string,
+  ): Promise<string> => {
+    const method = (presign.method ?? "PUT").toUpperCase();
+    if (method === "POST") {
+      const form = new FormData();
+      form.append("objectKey", presign.objectKey);
+      const contentType =
+        presign.headers["Content-Type"] ?? "application/octet-stream";
+      const blob =
+        typeof body === "string"
+          ? new Blob([body], { type: contentType })
+          : body;
+      form.append("file", blob, "upload");
+      const res = await apiFetch<{ etag: string }>("/api/v1/storage/upload", {
+        method: "POST",
+        body: form,
+      });
+      return res.etag ?? "";
+    }
+
+    const res = await fetch(presign.putUrl, {
+      method: "PUT",
+      headers: presign.headers,
+      body,
+    });
     if (!res.ok) {
       throw new Error(`OSS 上传失败：${res.status}`);
     }

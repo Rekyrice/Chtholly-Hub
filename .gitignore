@@ -17,6 +17,10 @@ scripts/oss/node_modules/
 logs/*.log
 *.log
 
+# --- 本地文件存储 ---
+uploads/
+apps/server/uploads/
+
 # --- IDE / 编辑器（个人配置，不纳入版本库）---
 .vscode/
 .cursor/*

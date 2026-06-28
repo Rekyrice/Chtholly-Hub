@@ -14,7 +14,7 @@ import java.util.Set;
  */
 public final class ImageUploadValidator {
 
-    public static final long MAX_AVATAR_BYTES = 5L * 1024 * 1024;
+    public static final long MAX_AVATAR_BYTES = StorageUploadValidator.MAX_AVATAR_BYTES;
 
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
             "image/jpeg",
@@ -33,11 +33,27 @@ public final class ImageUploadValidator {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "头像文件不能为空");
         }
         if (file.getSize() > MAX_AVATAR_BYTES) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "头像不能超过 5MB");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "头像不能超过 10MB");
         }
         String contentType = normalizeContentType(file.getContentType());
         assertAllowedImageType(contentType);
         validateMagicBytes(file, contentType);
+    }
+
+    /**
+     * 校验 multipart 文件的 magic bytes（供本地上传端点复用）。
+     */
+    public static void validateMagicBytes(MultipartFile file, String contentType) {
+        byte[] header = new byte[12];
+        int read;
+        try (InputStream in = file.getInputStream()) {
+            read = in.read(header);
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件读取失败");
+        }
+        if (read < 3 || !matchesMagic(header, read, contentType)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件内容与类型不匹配");
+        }
     }
 
     /**
@@ -71,19 +87,6 @@ public final class ImageUploadValidator {
             return null;
         }
         return contentType.trim().toLowerCase(Locale.ROOT);
-    }
-
-    private static void validateMagicBytes(MultipartFile file, String contentType) {
-        byte[] header = new byte[12];
-        int read;
-        try (InputStream in = file.getInputStream()) {
-            read = in.read(header);
-        } catch (IOException e) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "头像文件读取失败");
-        }
-        if (read < 3 || !matchesMagic(header, read, contentType)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "文件内容与类型不匹配");
-        }
     }
 
     static boolean matchesMagic(byte[] header, int read, String contentType) {

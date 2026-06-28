@@ -7,12 +7,14 @@ import com.chtholly.storage.config.OssProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /** 阿里云 OSS 连通性探测（listObjects maxKeys=1）。 */
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "storage.type", havingValue = "oss")
 public class OssHealthIndicator implements HealthIndicator {
 
     private final OssProperties props;

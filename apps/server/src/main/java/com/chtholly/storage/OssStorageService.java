@@ -2,47 +2,92 @@ package com.chtholly.storage;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
-import com.aliyun.oss.model.PutObjectRequest;
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
-import com.chtholly.storage.config.OssProperties;
+import com.aliyun.oss.model.PutObjectRequest;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
+import com.chtholly.storage.config.OssProperties;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class OssStorageService {
+@ConditionalOnProperty(name = "storage.type", havingValue = "oss")
+public class OssStorageService implements StorageService {
+
+    private static final int PRESIGN_EXPIRES_SECONDS = 600;
 
     private final OssProperties props;
 
-    public String uploadAvatar(long userId, MultipartFile file) {
+    @Override
+    public String uploadAvatar(long userId, InputStream inputStream, String contentType) throws IOException {
         ensureConfigured();
-        ImageUploadValidator.validateAvatar(file);
+        String normalizedType = contentType == null ? null : contentType.trim().toLowerCase();
+        String ext = ImageUploadValidator.extensionForContentType(normalizedType);
+        String date = LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.BASIC_ISO_DATE);
+        String objectKey = props.getFolder() + "/" + userId + "/" + date + "/" + UUID.randomUUID() + ext;
 
-        String contentType = file.getContentType().trim().toLowerCase();
-        String ext = ImageUploadValidator.extensionForContentType(contentType);
-        String objectKey = props.getFolder() + "/" + userId + "/" + UUID.randomUUID() + ext;
-
-        OSS client = new OSSClientBuilder().build(props.getEndpoint(), props.getAccessKeyId(), props.getAccessKeySecret());
-
+        OSS client = newClient();
         try {
-            PutObjectRequest request = new PutObjectRequest(props.getBucket(), objectKey, file.getInputStream());
+            PutObjectRequest request = new PutObjectRequest(props.getBucket(), objectKey, inputStream);
             client.putObject(request);
-        } catch (IOException e) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "头像文件读取失败");
         } finally {
             client.shutdown();
         }
 
         return publicUrl(objectKey);
+    }
+
+    @Override
+    public PresignedUrl generatePresignedPutUrl(String objectKey, String contentType) {
+        ensureConfigured();
+        StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
+        OSS client = newClient();
+        try {
+            Date expiration = new Date(System.currentTimeMillis() + PRESIGN_EXPIRES_SECONDS * 1000L);
+            GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
+                    props.getBucket(), objectKey, HttpMethod.PUT);
+            request.setExpiration(expiration);
+            if (contentType != null && !contentType.isBlank()) {
+                request.setContentType(contentType);
+            }
+            URL url = client.generatePresignedUrl(request);
+            Map<String, String> headers = contentType != null && !contentType.isBlank()
+                    ? Map.of("Content-Type", contentType)
+                    : Map.of();
+            return new PresignedUrl(url.toString(), headers, PRESIGN_EXPIRES_SECONDS, "PUT");
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    @Override
+    public void uploadObject(String objectKey, InputStream inputStream, String contentType, long size) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "OSS 模式请使用预签名直传");
+    }
+
+    @Override
+    public void deleteObject(String objectKey) {
+        ensureConfigured();
+        StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
+        OSS client = newClient();
+        try {
+            client.deleteObject(props.getBucket(), objectKey);
+        } finally {
+            client.shutdown();
+        }
     }
 
     private String publicUrl(String objectKey) {
@@ -52,34 +97,13 @@ public class OssStorageService {
         return "https://" + props.getBucket() + "." + props.getEndpoint() + "/" + objectKey;
     }
 
-    /**
-     * 生成用于直传的 PUT 预签名 URL。
-     * 客户端必须在上传时设置与签名一致的 Content-Type。
-     *
-     * @param objectKey 目标对象键
-     * @param contentType 上传内容类型（如 text/markdown, image/png）
-     * @param expiresInSeconds 有效期秒数（建议 300-900）
-     * @return 可直接用于 PUT 上传的预签名 URL
-     */
-    public String generatePresignedPutUrl(String objectKey, String contentType, int expiresInSeconds) {
-        ensureConfigured();
-        OSS client = new OSSClientBuilder().build(props.getEndpoint(), props.getAccessKeyId(), props.getAccessKeySecret());
-        try {
-            Date expiration = new Date(System.currentTimeMillis() + expiresInSeconds * 1000L);
-            GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(props.getBucket(), objectKey, HttpMethod.PUT);
-            request.setExpiration(expiration);
-            if (contentType != null && !contentType.isBlank()) {
-                request.setContentType(contentType);
-            }
-            URL url = client.generatePresignedUrl(request);
-            return url.toString();
-        } finally {
-            client.shutdown();
-        }
+    private OSS newClient() {
+        return new OSSClientBuilder().build(props.getEndpoint(), props.getAccessKeyId(), props.getAccessKeySecret());
     }
 
     private void ensureConfigured() {
-        if (props.getEndpoint() == null || props.getAccessKeyId() == null || props.getAccessKeySecret() == null || props.getBucket() == null) {
+        if (props.getEndpoint() == null || props.getAccessKeyId() == null
+                || props.getAccessKeySecret() == null || props.getBucket() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "对象存储未配置");
         }
     }
