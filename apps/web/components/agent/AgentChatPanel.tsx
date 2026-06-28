@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ExternalLink, Minus, Send, Settings } from "lucide-react";
 import AgentMessageList from "@/components/agent/AgentMessageList";
+import AgentWorkspaceSettings from "@/components/agent/AgentWorkspaceSettings";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ export default function AgentChatPanel({
     busy,
     showSteps,
     setShowSteps,
+    richMarkdown,
     liveSteps,
     sendMessage,
     clearConversation,
@@ -73,15 +75,19 @@ export default function AgentChatPanel({
               <ExternalLink size={16} />
             </Link>
           )}
-          <button
-            type="button"
-            className="floating-agent-icon-btn"
-            onClick={() => setShowSteps((v) => !v)}
-            aria-label={showSteps ? "隐藏推理步骤" : "显示推理步骤"}
-            title="推理步骤"
-          >
-            <Settings size={16} />
-          </button>
+          {isWorkspace ? (
+            <AgentWorkspaceSettings />
+          ) : (
+            <button
+              type="button"
+              className="floating-agent-icon-btn"
+              onClick={() => setShowSteps((v) => !v)}
+              aria-label={showSteps ? "隐藏推理步骤" : "显示推理步骤"}
+              title="推理步骤"
+            >
+              <Settings size={16} />
+            </button>
+          )}
           {onMinimize && (
             <button
               type="button"
@@ -110,7 +116,7 @@ export default function AgentChatPanel({
           busy={busy}
           showSteps={showSteps}
           liveSteps={liveSteps}
-          rich={isWorkspace}
+          rich={isWorkspace && richMarkdown}
           onSuggestion={fillAndSend}
         />
       </div>
@@ -141,7 +147,7 @@ export default function AgentChatPanel({
         </button>
       </form>
 
-      {messages.length > 0 && (
+      {!isWorkspace && messages.length > 0 && (
         <div className="px-4 pb-2 shrink-0">
           <button
             type="button"

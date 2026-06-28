@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal } from "lucide-react";
+import { MoreVertical } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { AgentSessionRecord } from "@/lib/agent/sessions";
 import { cn } from "@/lib/utils";
@@ -97,7 +97,7 @@ export default function AgentSessionItem({
       </button>
 
       {!renaming && (
-        <div className="relative" ref={menuRef}>
+        <div className="agent-session-menu-wrap" ref={menuRef}>
           <button
             type="button"
             className="agent-session-menu-btn"
@@ -108,7 +108,7 @@ export default function AgentSessionItem({
               setMenuOpen((v) => !v);
             }}
           >
-            <MoreHorizontal size={16} />
+            <MoreVertical size={15} />
           </button>
 
           {menuOpen && (

@@ -13,6 +13,8 @@ export type AgentSessionRecord = {
 const STORAGE_KEY = "chtholly-agent-sessions";
 const ACTIVE_KEY = "chtholly-agent-active-session";
 const SHOW_STEPS_KEY = "chtholly-agent-show-steps";
+const WORKSPACE_DARK_KEY = "chtholly-agent-workspace-dark";
+const RICH_MARKDOWN_KEY = "chtholly-agent-rich-markdown";
 
 export function createSessionId() {
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -72,6 +74,44 @@ export function saveShowStepsPreference(show: boolean) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(SHOW_STEPS_KEY, String(show));
+  } catch {
+    // 存储失败时忽略
+  }
+}
+
+export function loadWorkspaceDarkPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(WORKSPACE_DARK_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function saveWorkspaceDarkPreference(dark: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(WORKSPACE_DARK_KEY, String(dark));
+  } catch {
+    // 存储失败时忽略
+  }
+}
+
+export function loadRichMarkdownPreference(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = localStorage.getItem(RICH_MARKDOWN_KEY);
+    if (raw === null) return true;
+    return raw === "true";
+  } catch {
+    return true;
+  }
+}
+
+export function saveRichMarkdownPreference(rich: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(RICH_MARKDOWN_KEY, String(rich));
   } catch {
     // 存储失败时忽略
   }

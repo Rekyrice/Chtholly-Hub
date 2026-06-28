@@ -13,11 +13,15 @@ import {
 import {
   createSessionId,
   loadActiveSessionId,
+  loadRichMarkdownPreference,
   loadShowStepsPreference,
   loadStoredSessions,
+  loadWorkspaceDarkPreference,
   saveActiveSessionId,
+  saveRichMarkdownPreference,
   saveShowStepsPreference,
   saveStoredSessions,
+  saveWorkspaceDarkPreference,
   sessionTitleFromMessages,
   type AgentSessionRecord,
 } from "@/lib/agent/sessions";
@@ -36,6 +40,10 @@ type AgentChatContextValue = {
   busy: boolean;
   showSteps: boolean;
   setShowSteps: (value: boolean | ((prev: boolean) => boolean)) => void;
+  workspaceDark: boolean;
+  setWorkspaceDark: (value: boolean | ((prev: boolean) => boolean)) => void;
+  richMarkdown: boolean;
+  setRichMarkdown: (value: boolean | ((prev: boolean) => boolean)) => void;
   liveSteps: string[];
   sendMessage: (text: string) => Promise<void>;
   clearConversation: () => void;
@@ -69,6 +77,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showSteps, setShowStepsState] = useState(false);
+  const [workspaceDark, setWorkspaceDarkState] = useState(false);
+  const [richMarkdown, setRichMarkdownState] = useState(true);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
@@ -94,6 +104,22 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     setShowStepsState((prev) => {
       const next = typeof value === "function" ? value(prev) : value;
       saveShowStepsPreference(next);
+      return next;
+    });
+  }, []);
+
+  const setWorkspaceDark = useCallback((value: boolean | ((prev: boolean) => boolean)) => {
+    setWorkspaceDarkState((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      saveWorkspaceDarkPreference(next);
+      return next;
+    });
+  }, []);
+
+  const setRichMarkdown = useCallback((value: boolean | ((prev: boolean) => boolean)) => {
+    setRichMarkdownState((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      saveRichMarkdownPreference(next);
       return next;
     });
   }, []);
@@ -127,6 +153,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     setActiveSessionId(activeId);
     setMessages(active?.messages ?? []);
     setShowStepsState(loadShowStepsPreference());
+    setWorkspaceDarkState(loadWorkspaceDarkPreference());
+    setRichMarkdownState(loadRichMarkdownPreference());
     saveActiveSessionId(activeId);
     setHydrated(true);
   }, []);
@@ -535,6 +563,10 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       busy,
       showSteps,
       setShowSteps,
+      workspaceDark,
+      setWorkspaceDark,
+      richMarkdown,
+      setRichMarkdown,
       liveSteps,
       sendMessage,
       clearConversation,
@@ -553,6 +585,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       connected,
       busy,
       showSteps,
+      workspaceDark,
+      richMarkdown,
       liveSteps,
       sendMessage,
       clearConversation,
