@@ -406,6 +406,12 @@
     flex-shrink: 0;
   }
 
+  .navbar-brand-icon--lg {
+    width: 100%;
+    height: 100%;
+    font-size: 2.75rem;
+  }
+
   .sakuga-navbar {
     position: fixed;
     top: 0;

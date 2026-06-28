@@ -32,8 +32,10 @@ export default async function Sidebar() {
           href={`/user/${siteConfig.ownerHandle}`}
           className="no-underline text-inherit hover:opacity-90 transition-opacity duration-150"
         >
-          <div className="w-40 h-40 mx-auto rounded-full overflow-hidden shadow-md border-2 border-surface avatar-ring flex items-center justify-center text-sky text-5xl font-bold">
-            仁
+          <div className="w-40 h-40 mx-auto rounded-full overflow-hidden shadow-md border-2 border-surface flex items-center justify-center">
+            <span className="navbar-brand-icon navbar-brand-icon--lg" aria-hidden="true">
+              C
+            </span>
           </div>
           <div className="mt-3.5 text-lg text-text font-medium">{profileName}</div>
         </Link>
