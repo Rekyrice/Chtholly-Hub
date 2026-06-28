@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Heart, User } from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
 import type { FeedItem } from "@/lib/types/post";
 import { siteConfig } from "@/lib/site.config";
 
@@ -20,14 +19,14 @@ export default function PostCard({
   return (
     <article className="post-card">
       {post.coverImage && (
-        <div className="p-2.5 pb-0">
-          <Link href={`/post/${post.slug}`} className="group block">
+        <div className="post-card-image">
+          <Link href={`/post/${post.slug}`} className="block">
             <div className="relative w-full aspect-[1038/576] overflow-hidden rounded-lg">
               <Image
                 src={post.coverImage}
                 alt={post.title}
                 fill
-                className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                className="object-cover"
                 sizes="(max-width: 768px) 100vw, 848px"
               />
             </div>
@@ -41,9 +40,7 @@ export default function PostCard({
             href={`/tag/${encodeURIComponent(post.tags[0])}`}
             className="inline-block mb-2.5 no-underline"
           >
-            <Badge className="uppercase tracking-wide bg-sky text-on-primary hover:bg-sky-deep">
-              {post.tags[0]}
-            </Badge>
+            <span className="tag-badge">{post.tags[0]}</span>
           </Link>
         )}
 
