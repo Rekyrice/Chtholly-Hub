@@ -11,6 +11,7 @@ import org.redisson.api.RRateLimiter;
 import org.redisson.api.RateIntervalUnit;
 import org.redisson.api.RateType;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -44,6 +45,7 @@ public class BangumiClient {
     private static final long RETRY_DELAY_MS = 1000L;
 
     private final BangumiProperties properties;
+    @Qualifier("bangumiRestTemplate")
     private final RestTemplate bangumiRestTemplate;
     private final RedissonClient redisson;
     private final ObjectMapper objectMapper;

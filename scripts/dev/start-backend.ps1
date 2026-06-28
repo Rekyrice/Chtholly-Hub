@@ -28,11 +28,12 @@ if ($other) {
     exit 1
 }
 
-Set-Location (Join-Path $RepoRoot "apps/server")
-
 Write-Host "Applying DB migrations..." -ForegroundColor DarkGray
 & (Join-Path $PSScriptRoot "apply-migrations.ps1")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+# apply-migrations 会再次 load-env 并把 cwd 切回仓库根目录，此处必须重新进入 apps/server
+Set-Location (Join-Path $RepoRoot "apps/server")
 
 Write-Host "Compiling..." -ForegroundColor DarkGray
 & mvn -q compile "-Dmaven.test.skip=true"

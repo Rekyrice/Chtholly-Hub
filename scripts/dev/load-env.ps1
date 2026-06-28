@@ -26,5 +26,3 @@ if ($env:LLM_ENABLED -eq "true") {
         $env:SPRING_PROFILES_ACTIVE = "llm"
     }
 }
-
-Set-Location $RepoRoot

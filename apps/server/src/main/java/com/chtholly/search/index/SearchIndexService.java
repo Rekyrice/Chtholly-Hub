@@ -9,8 +9,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostDetailRow;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +34,6 @@ import com.chtholly.post.model.PostFeedRow;
  * 搜索索引写入服务：负责 upsert/软删 以及首次启动的索引回灌。
  */
 @Service
-@RequiredArgsConstructor(onConstructor_ = @Autowired)
 public class SearchIndexService {
     private static final Logger log = LoggerFactory.getLogger(SearchIndexService.class);
     private static final String INDEX = "chtholly_content_index";
@@ -45,8 +42,20 @@ public class SearchIndexService {
     private final PostMapper postMapper;
     private final CounterService counterService;
     private final ObjectMapper objectMapper;
-    @Qualifier("searchContentRestTemplate")
     private final RestTemplate contentRestTemplate;
+
+    public SearchIndexService(
+            ElasticsearchClient es,
+            PostMapper postMapper,
+            CounterService counterService,
+            ObjectMapper objectMapper,
+            @Qualifier("searchContentRestTemplate") RestTemplate contentRestTemplate) {
+        this.es = es;
+        this.postMapper = postMapper;
+        this.counterService = counterService;
+        this.objectMapper = objectMapper;
+        this.contentRestTemplate = contentRestTemplate;
+    }
 
     /**
      * 索引为空时回灌已发布帖子（由 SearchIndexInitializer 在索引就绪后调用）。
