@@ -11,9 +11,12 @@ import { siteConfig } from "@/lib/site.config";
 import { cn } from "@/lib/utils";
 import type { AuthUser } from "@/lib/types/auth";
 
+const SCROLL_THRESHOLD = 100;
+
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [isScrolled, setIsScrolled] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const brandMain = siteConfig.name.replace(/ Hub$/, "");
@@ -29,6 +32,16 @@ export default function Navbar() {
     window.addEventListener("chtholly-auth-change", syncUser);
     return () => window.removeEventListener("chtholly-auth-change", syncUser);
   }, [syncUser]);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setIsScrolled(window.scrollY > SCROLL_THRESHOLD);
+    };
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const handleLogout = async () => {
     await authService.logout();
@@ -54,7 +67,6 @@ export default function Navbar() {
   const authLinks = user ? (
     <>
       <li className="flex items-stretch">{navLink("/write", "Write")}</li>
-      <li className="flex items-stretch">{navLink("/agent", "Agent")}</li>
       <li className="flex items-center">
         <NotificationBell />
       </li>
@@ -76,11 +88,15 @@ export default function Navbar() {
   );
 
   return (
-    <nav className="sakuga-navbar" data-testid="navbar">
+    <nav
+      className={cn("sakuga-navbar", isScrolled && "sakuga-navbar--scrolled")}
+      data-testid="navbar"
+      data-scrolled={isScrolled}
+    >
       <div className="sakuga-container w-full flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 py-2.5 shrink-0">
-          <span className="inline-flex items-center justify-center rounded-full bg-sky text-on-primary text-sm font-bold w-8 h-8">
-            仁
+        <Link href="/" className="flex items-center gap-2.5 py-2 shrink-0">
+          <span className="navbar-brand-icon" aria-hidden="true">
+            C
           </span>
           <span className="font-extrabold text-lg tracking-wide leading-none font-[Lato,'Noto_Sans_SC',sans-serif]">
             <span className="text-text">{brandMain}</span>
@@ -88,7 +104,12 @@ export default function Navbar() {
           </span>
         </Link>
 
-        <ul className="hidden md:flex items-stretch h-[52px] gap-1">
+        <ul
+          className={cn(
+            "hidden md:flex items-stretch gap-1 transition-all duration-300 ease-in-out",
+            isScrolled ? "h-[44px]" : "h-[52px]",
+          )}
+        >
           <li className="flex items-center px-2">
             <form action="/search" method="get" className="flex items-center">
               <input
@@ -158,9 +179,6 @@ export default function Navbar() {
             <>
               <Link href="/write" className="mobile-nav-link" onClick={() => setOpen(false)}>
                 Write
-              </Link>
-              <Link href="/agent" className="mobile-nav-link" onClick={() => setOpen(false)}>
-                Agent
               </Link>
               <button
                 type="button"
