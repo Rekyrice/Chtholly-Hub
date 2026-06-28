@@ -2,7 +2,7 @@
 
 `phase_a_seed.sql` 写入：
 
-- 用户 **Rekyrice**（`id=1`，`handle=rekyrice`）
+- 用户 **Rekyrice**（`id=1`，`handle=Rekyrice`）
 - 3 篇已发布帖子（slug、OSS `content_url` 等）
 
 使用 **`ON DUPLICATE KEY UPDATE`**，可重复导入以修正元数据，不会重复插行。

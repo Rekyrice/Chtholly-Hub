@@ -1,5 +1,5 @@
 /** Phase A 站点静态配置（后续可改为 CMS / API 驱动） */
-const ownerHandle = process.env.NEXT_PUBLIC_OWNER_HANDLE ?? "rekyrice";
+const ownerHandle = process.env.NEXT_PUBLIC_OWNER_HANDLE ?? "Rekyrice";
 
 export const siteConfig = {
   name: "Chtholly Hub",
