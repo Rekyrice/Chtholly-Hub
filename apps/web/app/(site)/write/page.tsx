@@ -4,11 +4,12 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Button } from "@/components/ui/Button";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { ApiError } from "@/lib/services/apiClient";
 import { postService } from "@/lib/services/postService";
 import { storageService } from "@/lib/services/storageService";
-import { siteConfig } from "@/lib/site.config";
+import { cn } from "@/lib/utils";
 import { sha256Hex } from "@/lib/utils/sha256";
 
 export default function WritePage() {
@@ -42,10 +43,7 @@ export default function WritePage() {
         postId: id,
         contentType: "text/markdown",
       });
-      const etagRaw = await storageService.uploadPut(
-        presign,
-        markdown,
-      );
+      const etagRaw = await storageService.uploadPut(presign, markdown);
       const etag = etagRaw || (await sha256Hex(markdown)).slice(0, 32);
       const size = new TextEncoder().encode(markdown).length;
       const sha256 = await sha256Hex(markdown);
@@ -77,81 +75,60 @@ export default function WritePage() {
   };
 
   return (
-    <div className="post-card p-6 md:p-10 max-w-4xl mx-auto">
+    <div className="post-card p-6 md:p-10 max-w-4xl mx-auto" data-testid="write-page">
       <h1 className="entry-title entry-title-single text-center mb-6">Write</h1>
 
       <form onSubmit={onPublish} className="space-y-4">
         <div>
-          <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-            标题
-          </label>
+          <label className="field-label">标题</label>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full px-3 py-2 border"
-            style={{ borderColor: "#e0e0e0", fontSize: 16 }}
+            className="field-input"
             required
           />
         </div>
 
         <div>
-          <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-            标签（逗号分隔）
-          </label>
+          <label className="field-label">标签（逗号分隔）</label>
           <input
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             placeholder="动漫, 追番"
-            className="w-full px-3 py-2 border"
-            style={{ borderColor: "#e0e0e0", fontSize: 16 }}
+            className="field-input"
           />
         </div>
 
         <div>
-          <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-            摘要
-          </label>
+          <label className="field-label">摘要</label>
           <input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full px-3 py-2 border"
-            style={{ borderColor: "#e0e0e0", fontSize: 16 }}
+            className="field-input"
           />
         </div>
 
         <div className="flex gap-2 mb-2">
-          <button
+          <Button
             type="button"
+            size="sm"
+            variant={!preview ? "primary" : "ghost"}
             onClick={() => setPreview(false)}
-            style={{
-              padding: "4px 12px",
-              fontSize: 13,
-              border: "none",
-              cursor: "pointer",
-              background: !preview ? siteConfig.theme.primary : "#f5f5f5",
-              color: !preview ? "#fff" : "#424242",
-            }}
           >
             编辑
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            size="sm"
+            variant={preview ? "primary" : "ghost"}
             onClick={() => setPreview(true)}
-            style={{
-              padding: "4px 12px",
-              fontSize: 13,
-              border: "none",
-              cursor: "pointer",
-              background: preview ? siteConfig.theme.primary : "#f5f5f5",
-              color: preview ? "#fff" : "#424242",
-            }}
           >
             预览
-          </button>
+          </Button>
         </div>
 
         {preview ? (
-          <div className="prose-anime border p-4 min-h-[240px]" style={{ borderColor: "#e0e0e0" }}>
+          <div className="prose-anime border border-border p-4 min-h-[240px] rounded-xl">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
           </div>
         ) : (
@@ -160,31 +137,24 @@ export default function WritePage() {
             onChange={(e) => setMarkdown(e.target.value)}
             rows={16}
             placeholder="# 用 Markdown 写正文…"
-            className="w-full px-3 py-2 border font-mono"
-            style={{ borderColor: "#e0e0e0", fontSize: 15, lineHeight: 1.6 }}
+            className={cn(
+              "field-input font-mono text-[15px] leading-relaxed resize-y min-h-[240px]",
+            )}
             required
           />
         )}
 
-        {error && (
-          <p className="text-sm" style={{ color: "#d32f2f" }}>
-            {error}
-          </p>
-        )}
+        {error && <p className="text-sm text-error">{error}</p>}
 
-        <button
+        <Button
           type="submit"
-          disabled={loading}
-          className="w-full py-2.5 text-white uppercase tracking-wide"
-          style={{
-            background: siteConfig.theme.primary,
-            border: "none",
-            cursor: loading ? "wait" : "pointer",
-            opacity: loading ? 0.7 : 1,
-          }}
+          loading={loading}
+          size="lg"
+          className="w-full tracking-wide"
+          data-testid="write-publish"
         >
-          {loading ? "发布中…" : "发布"}
-        </button>
+          发布
+        </Button>
       </form>
     </div>
   );

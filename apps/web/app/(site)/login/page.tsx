@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { ApiError } from "@/lib/services/apiClient";
 import { authService } from "@/lib/services/authService";
 import { siteConfig } from "@/lib/site.config";
@@ -14,17 +15,6 @@ import {
 
 type Mode = "login" | "register";
 type LoginMethod = "password" | "code";
-
-const tabBtn = (active: boolean) => ({
-  padding: "6px 16px",
-  fontSize: 13,
-  border: "none",
-  cursor: "pointer" as const,
-  background: active ? siteConfig.theme.primary : "#f5f5f5",
-  color: active ? "#fff" : "#424242",
-});
-
-const inputStyle = { borderColor: "#e0e0e0", fontSize: 16 };
 
 function PasswordInput(props: {
   value: string;
@@ -41,20 +31,39 @@ function PasswordInput(props: {
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         placeholder={props.placeholder}
-        className="w-full px-3 py-2 border pr-16"
-        style={inputStyle}
+        className="field-input pr-16"
         required={props.required}
         minLength={props.minLength}
       />
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-xs"
-        style={{ color: siteConfig.theme.primary, background: "none", border: "none", cursor: "pointer" }}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-sky bg-transparent border-0 cursor-pointer transition-colors duration-150 hover:text-sky-deep"
       >
         {visible ? "隐藏" : "显示"}
       </button>
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      variant={active ? "primary" : "ghost"}
+      size="sm"
+      onClick={onClick}
+    >
+      {children}
+    </Button>
   );
 }
 
@@ -185,42 +194,40 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="max-w-md mx-auto post-card p-8">
+    <div className="max-w-md mx-auto post-card p-8" data-testid="login-page">
       <h1 className="entry-title entry-title-single text-center mb-2">Login</h1>
-      <p className="text-center mb-8" style={{ color: "#727272", fontSize: 14 }}>
+      <p className="text-center mb-8 text-sm text-text-secondary">
         {mode === "login" ? "密码登录为主 · 验证码备用" : "用户名注册"} · {siteConfig.name}
       </p>
 
       <div className="flex gap-2 mb-6 justify-center">
         {(["login", "register"] as Mode[]).map((m) => (
-          <button
+          <TabButton
             key={m}
-            type="button"
+            active={mode === m}
             onClick={() => {
               setMode(m);
               setError("");
             }}
-            style={tabBtn(mode === m)}
           >
             {m === "login" ? "登录" : "注册"}
-          </button>
+          </TabButton>
         ))}
       </div>
 
       {mode === "login" && (
         <div className="flex gap-2 mb-6 justify-center">
           {(["password", "code"] as LoginMethod[]).map((m) => (
-            <button
+            <TabButton
               key={m}
-              type="button"
+              active={loginMethod === m}
               onClick={() => {
                 setLoginMethod(m);
                 setError("");
               }}
-              style={tabBtn(loginMethod === m)}
             >
               {m === "password" ? "密码登录" : "验证码登录"}
-            </button>
+            </TabButton>
           ))}
         </div>
       )}
@@ -229,23 +236,18 @@ export default function LoginPage() {
         {mode === "login" && loginMethod === "password" && (
           <>
             <div>
-              <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-                用户名或手机号
-              </label>
+              <label className="field-label">用户名或手机号</label>
               <input
                 type="text"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 placeholder="用户名或手机号"
-                className="w-full px-3 py-2 border"
-                style={inputStyle}
+                className="field-input"
                 required
               />
             </div>
             <div>
-              <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-                密码
-              </label>
+              <label className="field-label">密码</label>
               <PasswordInput value={password} onChange={setPassword} placeholder="登录密码" required />
             </div>
           </>
@@ -254,52 +256,38 @@ export default function LoginPage() {
         {mode === "login" && loginMethod === "code" && (
           <>
             <div>
-              <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-                手机号
-              </label>
+              <label className="field-label">手机号</label>
               <input
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="11 位手机号"
-                className="w-full px-3 py-2 border"
-                style={inputStyle}
+                className="field-input"
                 required
               />
             </div>
             <div>
-              <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-                验证码
-              </label>
+              <label className="field-label">验证码</label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   placeholder="6 位验证码"
-                  className="flex-1 px-3 py-2 border"
-                  style={inputStyle}
+                  className="field-input flex-1"
                   required
                 />
-                <button
+                <Button
                   type="button"
+                  size="sm"
                   disabled={countdown > 0}
                   onClick={() => void sendCode()}
-                  style={{
-                    padding: "0 12px",
-                    fontSize: 13,
-                    whiteSpace: "nowrap",
-                    background: siteConfig.theme.primary,
-                    color: "#fff",
-                    border: "none",
-                    cursor: countdown > 0 ? "not-allowed" : "pointer",
-                    opacity: countdown > 0 ? 0.6 : 1,
-                  }}
+                  className="whitespace-nowrap"
                 >
                   {countdown > 0 ? `${countdown}s` : "获取验证码"}
-                </button>
+                </Button>
               </div>
-              <p className="mt-1 text-xs" style={{ color: "#9e9e9e" }}>
+              <p className="mt-1 text-xs text-hint">
                 开发环境验证码见后端日志（LoggingCodeSender）
               </p>
             </div>
@@ -309,8 +297,8 @@ export default function LoginPage() {
         {mode === "register" && (
           <>
             <div>
-              <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-                用户名 <span style={{ color: "#d32f2f" }}>*</span>
+              <label className="field-label">
+                用户名 <span className="text-error">*</span>
               </label>
               <input
                 type="text"
@@ -321,32 +309,24 @@ export default function LoginPage() {
                 }}
                 onBlur={onHandleBlur}
                 placeholder="3-32 字符，字母/数字/下划线"
-                className="w-full px-3 py-2 border"
-                style={inputStyle}
+                className="field-input"
                 required
               />
-              {handleHint && (
-                <p className="mt-1 text-xs" style={{ color: "#d32f2f" }}>
-                  {handleHint}
-                </p>
-              )}
+              {handleHint && <p className="mt-1 text-xs text-error">{handleHint}</p>}
             </div>
             <div>
-              <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-                昵称（可选）
-              </label>
+              <label className="field-label">昵称（可选）</label>
               <input
                 type="text"
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 placeholder="不填则自动生成"
-                className="w-full px-3 py-2 border"
-                style={inputStyle}
+                className="field-input"
               />
             </div>
             <div>
-              <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-                密码 <span style={{ color: "#d32f2f" }}>*</span>
+              <label className="field-label">
+                密码 <span className="text-error">*</span>
               </label>
               <PasswordInput
                 value={password}
@@ -357,8 +337,8 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="block mb-1 text-sm" style={{ color: "#616161" }}>
-                确认密码 <span style={{ color: "#d32f2f" }}>*</span>
+              <label className="field-label">
+                确认密码 <span className="text-error">*</span>
               </label>
               <PasswordInput
                 value={confirmPassword}
@@ -368,7 +348,7 @@ export default function LoginPage() {
                 minLength={8}
               />
             </div>
-            <label className="flex items-start gap-2 text-sm" style={{ color: "#616161" }}>
+            <label className="flex items-start gap-2 text-sm text-text-secondary">
               <input
                 type="checkbox"
                 checked={agreeTerms}
@@ -380,35 +360,27 @@ export default function LoginPage() {
           </>
         )}
 
-        {error && (
-          <p className="text-sm" style={{ color: "#d32f2f" }}>
-            {error}
-          </p>
-        )}
+        {error && <p className="text-sm text-error">{error}</p>}
 
-        <button
+        <Button
           type="submit"
-          disabled={loading}
-          className="w-full py-2.5 text-white uppercase tracking-wide"
-          style={{
-            background: siteConfig.theme.primary,
-            border: "none",
-            cursor: loading ? "wait" : "pointer",
-            opacity: loading ? 0.7 : 1,
-          }}
+          loading={loading}
+          size="lg"
+          className="w-full tracking-wide"
+          data-testid="login-submit"
         >
-          {loading ? "处理中…" : mode === "login" ? "登录" : "注册"}
-        </button>
+          {mode === "login" ? "登录" : "注册"}
+        </Button>
       </form>
 
-      <p className="text-center mt-6 text-sm" style={{ color: "#757575" }}>
+      <p className="text-center mt-6 text-sm text-text-secondary">
         {mode === "login" ? (
           <>
             没有账号？{" "}
             <button
               type="button"
               onClick={() => setMode("register")}
-              style={{ color: siteConfig.theme.primary, background: "none", border: "none", cursor: "pointer" }}
+              className="text-sky bg-transparent border-0 cursor-pointer transition-colors duration-150 hover:text-sky-deep"
             >
               去注册
             </button>
@@ -419,7 +391,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => setMode("login")}
-              style={{ color: siteConfig.theme.primary, background: "none", border: "none", cursor: "pointer" }}
+              className="text-sky bg-transparent border-0 cursor-pointer transition-colors duration-150 hover:text-sky-deep"
             >
               去登录
             </button>

@@ -5,8 +5,8 @@ import { Clock, Heart, Tag } from "lucide-react";
 import MarkdownContent from "@/components/site/MarkdownContent";
 import CommentSection from "@/components/site/CommentSection";
 import Sidebar from "@/components/site/Sidebar";
+import { Badge } from "@/components/ui/Badge";
 import { postService } from "@/lib/services/postService";
-import { siteConfig } from "@/lib/site.config";
 import { formatDate } from "@/lib/utils";
 
 interface Props {
@@ -57,13 +57,7 @@ export default async function PostPage({ params }: Props) {
         <article className="post-card">
           {cover && (
             <div className="post-card-image">
-              <div
-                style={{
-                  position: "relative",
-                  width: "100%",
-                  aspectRatio: "1038/576",
-                }}
-              >
+              <div className="relative w-full aspect-[1038/576]">
                 <Image
                   src={cover}
                   alt={post.title}
@@ -80,29 +74,15 @@ export default async function PostPage({ params }: Props) {
             <h1 className="entry-title entry-title-single">{post.title}</h1>
             <div className="entry-meta">
               {post.publishTime && (
-                <span style={{ marginRight: 16 }}>
-                  <Clock
-                    size={13}
-                    style={{
-                      display: "inline",
-                      marginRight: 4,
-                      verticalAlign: "middle",
-                    }}
-                  />
+                <span className="mr-4 inline-flex items-center gap-1">
+                  <Clock size={13} className="inline" />
                   {formatDate(post.publishTime)}
                 </span>
               )}
-              <span style={{ marginRight: 16 }}>{post.authorNickname}</span>
+              <span className="mr-4">{post.authorNickname}</span>
               {post.likeCount > 0 && (
-                <span>
-                  <Heart
-                    size={13}
-                    style={{
-                      display: "inline",
-                      marginRight: 3,
-                      verticalAlign: "middle",
-                    }}
-                  />
+                <span className="inline-flex items-center gap-1">
+                  <Heart size={13} className="inline" />
                   {post.likeCount}
                 </span>
               )}
@@ -112,36 +92,18 @@ export default async function PostPage({ params }: Props) {
           <MarkdownContent content={markdown} />
 
           {post.tags.length > 0 && (
-            <div
-              style={{
-                padding: "0 72px 24px",
-                borderTop: "1px solid #f0f0f0",
-                paddingTop: 20,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <Tag size={14} style={{ color: "#9e9e9e" }} />
+            <div className="px-[72px] pb-6 pt-5 border-t border-border max-md:px-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <Tag size={14} className="text-text-secondary" />
                 {post.tags.map((tag) => (
                   <Link
                     key={tag}
                     href={`/tag/${encodeURIComponent(tag)}`}
-                    style={{
-                      padding: "3px 10px",
-                      fontSize: 12,
-                      color: "#fff",
-                      backgroundColor: siteConfig.theme.primary,
-                      textDecoration: "none",
-                    }}
-                    className="hover:opacity-80 transition-opacity"
+                    className="no-underline hover:opacity-80 transition-opacity duration-150"
                   >
-                    {tag}
+                    <Badge className="bg-sky text-on-primary text-xs px-2.5 py-0.5">
+                      {tag}
+                    </Badge>
                   </Link>
                 ))}
               </div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Sidebar from "@/components/site/Sidebar";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { postService } from "@/lib/services/postService";
 import { siteConfig } from "@/lib/site.config";
 import { archiveGroupKey, formatArchiveMonth } from "@/lib/utils";
@@ -12,7 +13,6 @@ type ArchiveEntry = {
   publishTime: string;
 };
 
-/** 拉取 Feed 并补充 publishTime（Feed 不含日期，需查详情） */
 async function loadArchiveEntries(): Promise<ArchiveEntry[]> {
   const feed = await postService.feed(1, 100, siteConfig.ownerUserId);
   const details = await Promise.all(
@@ -55,10 +55,8 @@ export default async function ArchivePage() {
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 lg:items-start">
       <div>
         <div className="post-card mb-6 p-5">
-          <h1 className="entry-title" style={{ marginBottom: 0 }}>
-            Archive
-          </h1>
-          <p style={{ textAlign: "center", color: "#727272", marginTop: 12 }}>
+          <h1 className="entry-title mb-0">Archive</h1>
+          <p className="text-center text-text-secondary mt-3">
             共 {entries.length} 篇文章
           </p>
         </div>
@@ -69,37 +67,18 @@ export default async function ArchivePage() {
             const monthLabel = formatArchiveMonth(group[0].publishTime);
             return (
               <div key={key} className="post-card mb-6">
-                <div className="entry-header" style={{ paddingBottom: 0 }}>
-                  <h2
-                    className="entry-title"
-                    style={{ fontSize: 22, marginBottom: 0 }}
-                  >
-                    {monthLabel}
-                  </h2>
+                <div className="entry-header pb-0">
+                  <h2 className="entry-title text-[22px] mb-0">{monthLabel}</h2>
                 </div>
-                <ul
-                  style={{
-                    listStyle: "none",
-                    padding: "0 72px 36px",
-                    margin: 0,
-                  }}
-                >
+                <ul className="list-none px-[72px] pb-9 m-0 max-md:px-6">
                   {group.map((entry) => (
                     <li
                       key={entry.slug}
-                      style={{
-                        borderBottom: "1px solid #f5f5f5",
-                        padding: "12px 0",
-                      }}
+                      className="border-b border-border py-3 last:border-b-0"
                     >
                       <Link
                         href={`/post/${entry.slug}`}
-                        style={{
-                          color: "#424242",
-                          textDecoration: "none",
-                          fontSize: 16,
-                        }}
-                        className="hover:text-[#009688]"
+                        className="text-text text-base no-underline hover:text-sky transition-colors duration-150"
                       >
                         {entry.title}
                       </Link>
@@ -110,9 +89,7 @@ export default async function ArchivePage() {
             );
           })
         ) : (
-          <div className="post-card p-16 text-center" style={{ color: "#9e9e9e" }}>
-            暂无归档内容
-          </div>
+          <EmptyState className="post-card" title="暂无归档内容" />
         )}
       </div>
       <Sidebar />

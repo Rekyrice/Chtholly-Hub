@@ -1,5 +1,6 @@
 import Sidebar from "@/components/site/Sidebar";
 import PostCard from "@/components/site/PostCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { searchService } from "@/lib/services/searchService";
 
 interface Props {
@@ -41,13 +42,11 @@ export default async function SearchPage({ searchParams }: Props) {
               name="q"
               defaultValue={keyword}
               placeholder="搜索帖子标题或正文…"
-              className="flex-1 px-3 py-2 text-sm border outline-none focus:border-[#009688]"
-              style={{ borderColor: "#e0e0e0", color: "#424242" }}
+              className="field-input flex-1 text-sm"
             />
             <button
               type="submit"
-              className="px-4 py-2 text-sm text-white"
-              style={{ backgroundColor: "#009688" }}
+              className="px-4 py-2 text-sm bg-sky text-on-primary rounded-lg transition-colors duration-150 hover:bg-sky-deep"
             >
               搜索
             </button>
@@ -57,14 +56,11 @@ export default async function SearchPage({ searchParams }: Props) {
         {keyword ? (
           <>
             {degraded && (
-              <div
-                className="mb-4 px-4 py-3 text-sm rounded border"
-                style={{ borderColor: "#ffe0b2", backgroundColor: "#fff3e0", color: "#e65100" }}
-              >
+              <div className="mb-4 px-4 py-3 text-sm rounded-lg border alert-warn">
                 搜索服务暂时不可用，请稍后再试。
               </div>
             )}
-            <p className="mb-4 text-sm" style={{ color: "#757575" }}>
+            <p className="mb-4 text-sm text-text-secondary">
               「{keyword}」共 {items.length} 条结果
             </p>
             {items.length > 0 ? (
@@ -72,15 +68,19 @@ export default async function SearchPage({ searchParams }: Props) {
                 <PostCard key={post.id} post={post} highlightDescription />
               ))
             ) : (
-              <div className="post-card p-10 text-center" style={{ color: "#9e9e9e" }}>
-                未找到相关帖子
-              </div>
+              <EmptyState
+                className="post-card"
+                title="未找到相关帖子"
+                description="换个关键词试试"
+              />
             )}
           </>
         ) : (
-          <div className="post-card p-10 text-center" style={{ color: "#9e9e9e" }}>
-            输入关键词开始搜索
-          </div>
+          <EmptyState
+            className="post-card"
+            title="输入关键词开始搜索"
+            description="支持搜索帖子标题与正文"
+          />
         )}
       </div>
       <Sidebar />

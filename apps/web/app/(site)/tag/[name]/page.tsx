@@ -1,5 +1,7 @@
 import Sidebar from "@/components/site/Sidebar";
 import PostCard from "@/components/site/PostCard";
+import { Badge } from "@/components/ui/Badge";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { postService } from "@/lib/services/postService";
 import { tagService } from "@/lib/services/tagService";
 import { siteConfig } from "@/lib/site.config";
@@ -42,17 +44,10 @@ export default async function TagPage({ params }: Props) {
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 lg:items-start">
       <div>
         <div className="post-card mb-6 p-5 flex items-center gap-3">
-          <span
-            style={{
-              padding: "4px 12px",
-              fontSize: 13,
-              color: "#fff",
-              backgroundColor: siteConfig.theme.primary,
-            }}
-          >
+          <Badge className="bg-sky text-on-primary text-[13px] px-3 py-1">
             # {tagName}
-          </span>
-          <span style={{ fontSize: 14, color: "#757575" }}>
+          </Badge>
+          <span className="text-sm text-text-secondary">
             {usageCount ?? items.length} 篇文章
           </span>
         </div>
@@ -60,9 +55,7 @@ export default async function TagPage({ params }: Props) {
         {items.length > 0 ? (
           items.map((post) => <PostCard key={post.id} post={post} />)
         ) : (
-          <div className="post-card p-10 text-center" style={{ color: "#9e9e9e" }}>
-            该标签暂无文章
-          </div>
+          <EmptyState className="post-card" title="该标签暂无文章" />
         )}
       </div>
       <Sidebar />
