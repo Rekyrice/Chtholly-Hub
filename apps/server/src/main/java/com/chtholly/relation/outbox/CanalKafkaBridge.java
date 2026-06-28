@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.core.task.TaskExecutor;
@@ -24,6 +25,7 @@ import java.net.InetSocketAddress;
  * 可靠性：解析失败或非关心类型不提交位点；停止时断开 Canal 连接并清理资源。
  */
 @Service
+@ConditionalOnProperty(name = "kafka.enabled", havingValue = "true")
 public class CanalKafkaBridge implements SmartLifecycle {
     private final KafkaTemplate<String, String> kafka;
     private final ObjectMapper objectMapper;

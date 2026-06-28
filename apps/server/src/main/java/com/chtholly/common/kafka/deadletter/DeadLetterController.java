@@ -6,6 +6,7 @@ import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.common.kafka.DeadLetterStatus;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +24,7 @@ import java.util.List;
 @RequestMapping("/api/v1/admin/dead-letters")
 @RequireRole(Role.ADMIN)
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "kafka.enabled", havingValue = "true")
 public class DeadLetterController {
 
     private final DeadLetterMessageService deadLetterMessageService;

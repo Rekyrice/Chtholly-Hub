@@ -41,6 +41,7 @@ services:
 
   kafka:
     image: apache/kafka:latest
+    profiles: ["kafka"]
     restart: unless-stopped
     hostname: kafka
     environment:
@@ -68,10 +69,9 @@ services:
         condition: service_started
       elasticsearch:
         condition: service_started
-      kafka:
-        condition: service_started
     environment:
       SERVER_PORT: 8888
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_DATABASE: ${MYSQL_DATABASE:-chtholly}
@@ -79,7 +79,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       ES_URIS: http://elasticsearch:9200
       CANAL_ENABLED: "false"
       LLM_ENABLED: "false"

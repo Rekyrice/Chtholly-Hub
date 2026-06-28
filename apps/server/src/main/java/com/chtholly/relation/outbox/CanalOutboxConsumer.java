@@ -8,7 +8,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.relation.event.RelationEvent;
 import com.chtholly.relation.processor.RelationEventProcessor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
@@ -20,7 +22,9 @@ import java.util.List;
  * Canal Outbox 消费者。
  * 职责：消费 Canal 桥接写入的 outbox 主题消息，提取 payload 并反序列化为 RelationEvent，交由处理器落库与更新缓存/计数。
  */
+@Slf4j
 @Service
+@ConditionalOnProperty(name = "kafka.enabled", havingValue = "true")
 public class CanalOutboxConsumer extends AbstractKafkaConsumer {
 
     private static final String CONSUMER_GROUP = "relation-outbox-consumer";
@@ -64,7 +68,12 @@ public class CanalOutboxConsumer extends AbstractKafkaConsumer {
             }
 
             RelationEvent evt = objectMapper.readValue(payloadNode.asText(), RelationEvent.class);
-            processor.process(evt);
+            try {
+                processor.process(evt);
+            } catch (Exception e) {
+                log.error("Canal outbox processing failed", e);
+                throw e;
+            }
             if (eventId != null) {
                 idempotencyGuard.markConsumed(IDEMPOTENCY_SCOPE, eventId);
             }

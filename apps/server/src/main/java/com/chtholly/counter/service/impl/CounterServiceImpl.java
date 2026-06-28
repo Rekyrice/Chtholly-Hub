@@ -4,8 +4,8 @@ import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.counter.event.CounterEventPublisher;
 import com.chtholly.counter.event.CounterEvent;
-import com.chtholly.counter.event.CounterEventProducer;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
 import com.chtholly.user.domain.User;
@@ -17,7 +17,6 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
-import org.springframework.context.ApplicationEventPublisher;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.RLock;
 import org.redisson.api.RRateLimiter;
@@ -42,8 +41,7 @@ public class CounterServiceImpl implements CounterService {
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> toggleScript;
-    private final CounterEventProducer eventProducer;
-    private final ApplicationEventPublisher eventPublisher;
+    private final CounterEventPublisher counterEventPublisher;
     private final RedissonClient redisson;
     private final PostMapper postMapper;
     private final UserMapper userMapper;
@@ -58,12 +56,11 @@ public class CounterServiceImpl implements CounterService {
     @Value("${counter.rebuild.backoff.max-ms:30000}")
     private long backoffMaxMs;
 
-    public CounterServiceImpl(StringRedisTemplate redis, CounterEventProducer eventProducer,
-                              ApplicationEventPublisher eventPublisher, RedissonClient redisson,
+    public CounterServiceImpl(StringRedisTemplate redis, CounterEventPublisher counterEventPublisher,
+                              RedissonClient redisson,
                               PostMapper postMapper, UserMapper userMapper) {
         this.redis = redis;
-        this.eventProducer = eventProducer;
-        this.eventPublisher = eventPublisher;
+        this.counterEventPublisher = counterEventPublisher;
         this.redisson = redisson;
         this.postMapper = postMapper;
         this.userMapper = userMapper;
@@ -123,8 +120,7 @@ public class CounterServiceImpl implements CounterService {
         if (ok) {
             int delta = add ? 1 : -1;
             CounterEvent event = enrichEvent(etype, eid, metric, idx, uid, delta);
-            eventProducer.publish(event);
-            eventPublisher.publishEvent(event);
+            counterEventPublisher.publish(event);
         }
         return ok;
     }

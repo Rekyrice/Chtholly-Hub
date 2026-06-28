@@ -5,6 +5,7 @@ import com.chtholly.common.kafka.deadletter.DeadLetterMessageService;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -21,7 +22,7 @@ import java.util.List;
  * 默认关闭，仅当 counter.rebuild.enabled=true 时启用。
  */
 @Service
-@ConditionalOnProperty(name = "counter.rebuild.enabled", havingValue = "true")
+@ConditionalOnExpression("${counter.rebuild.enabled:false} == true && ${kafka.enabled:false} == true")
 public class CounterRebuildConsumer extends AbstractKafkaConsumer {
 
     private static final String CONSUMER_GROUP = "counter-rebuild";

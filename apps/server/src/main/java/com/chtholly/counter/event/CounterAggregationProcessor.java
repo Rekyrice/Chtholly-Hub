@@ -1,18 +1,11 @@
 package com.chtholly.counter.event;
 
-import com.chtholly.common.kafka.AbstractKafkaConsumer;
-import com.chtholly.common.kafka.deadletter.DeadLetterMessageService;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -21,31 +14,20 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 计数事件聚合与刷写消费者。
- *
- * <p>职责：</p>
- * - 消费点赞/收藏等增量事件，写入 Redis 聚合桶（Hash）；
- * - 以固定延迟定时任务将聚合增量折叠到 SDS 固定结构计数；
- * - 刷写成功后删除聚合字段，避免重复加算。
+ * 计数事件聚合与刷写核心逻辑（Kafka / Spring Event 共用）。
  */
 @Service
-public class CounterAggregationConsumer extends AbstractKafkaConsumer {
+public class CounterAggregationProcessor {
 
-    private static final Logger log = LoggerFactory.getLogger(CounterAggregationConsumer.class);
-    private static final String CONSUMER_GROUP = "counter-agg";
+    private static final Logger log = LoggerFactory.getLogger(CounterAggregationProcessor.class);
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> aggIncrScript;
     private final DefaultRedisScript<Long> incrScript;
     private final DefaultRedisScript<Long> decrScript;
 
-    public CounterAggregationConsumer(ObjectMapper objectMapper,
-                                      StringRedisTemplate redis,
-                                      KafkaTemplate<String, String> kafka,
-                                      DeadLetterMessageService deadLetterMessageService) {
-        super(kafka, objectMapper, deadLetterMessageService);
+    public CounterAggregationProcessor(StringRedisTemplate redis) {
         this.redis = redis;
-
         this.aggIncrScript = new DefaultRedisScript<>();
         this.aggIncrScript.setResultType(Long.class);
         this.aggIncrScript.setScriptText(AGG_INCR_LUA);
@@ -59,34 +41,15 @@ public class CounterAggregationConsumer extends AbstractKafkaConsumer {
         this.decrScript.setScriptText(DECR_FIELD_LUA);
     }
 
-    @KafkaListener(topics = CounterTopics.EVENTS, groupId = CONSUMER_GROUP)
-    public void onMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
-        consumeRecord(record, ack);
-    }
-
-    @KafkaListener(topics = CounterTopics.EVENTS + "-retry", groupId = CONSUMER_GROUP + "-retry")
-    public void onRetryMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
-        consumeRetryRecord(record, ack);
-    }
-
-    @Override
-    protected void process(String sourceTopic, String messageKey, String payload, int retryCount) throws Exception {
-        CounterEvent evt = objectMapper.readValue(payload, CounterEvent.class);
+    /** 将单条计数增量写入 Redis 聚合桶。 */
+    public void applyEvent(CounterEvent evt) {
         String aggKey = CounterKeys.aggKey(evt.getEntityType(), evt.getEntityId());
         String indexKey = CounterKeys.aggIndexKey();
         String field = String.valueOf(evt.getIdx());
         redis.execute(aggIncrScript, List.of(aggKey, indexKey), field, String.valueOf(evt.getDelta()));
     }
 
-    @Override
-    protected String consumerName() {
-        return CONSUMER_GROUP;
-    }
-
-    /**
-     * 将聚合增量刷写到 SDS 固定结构计数。
-     * 固定延迟 1s，保证秒级最终一致性。
-     */
+    /** 将聚合增量刷写到 SDS 固定结构计数，固定延迟 1s。 */
     @Scheduled(fixedDelay = 1000L)
     public void flush() {
         String indexKey = CounterKeys.aggIndexKey();
@@ -145,7 +108,6 @@ public class CounterAggregationConsumer extends AbstractKafkaConsumer {
                         String.valueOf(delta));
                 redis.execute(decrScript, List.of(aggKey), field, String.valueOf(delta));
             } catch (Exception ex) {
-                // 失败时不删 agg 桶，保留增量供下一轮 flush 重试
                 log.warn("counter.agg flush failed aggKey={} field={} delta={}: {}",
                         aggKey, field, delta, ex.getMessage(), ex);
             }
@@ -158,7 +120,6 @@ public class CounterAggregationConsumer extends AbstractKafkaConsumer {
         }
     }
 
-    /** 原子写入聚合桶并登记索引，避免 HINCRBY 与 SADD 之间丢 key。 */
     private static final String AGG_INCR_LUA = """
             local aggKey = KEYS[1]
             local indexKey = KEYS[2]

@@ -2,6 +2,9 @@
 server:
   port: ${SERVER_PORT:8888}
 
+kafka:
+  enabled: ${KAFKA_ENABLED:false}
+
 spring:
   application:
     name: chtholly-server

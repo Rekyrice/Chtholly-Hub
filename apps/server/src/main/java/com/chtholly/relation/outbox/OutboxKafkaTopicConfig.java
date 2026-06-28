@@ -1,6 +1,7 @@
 package com.chtholly.relation.outbox;
 
 import org.apache.kafka.clients.admin.NewTopic;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.TopicBuilder;
@@ -9,6 +10,7 @@ import org.springframework.kafka.config.TopicBuilder;
  * Outbox 相关 Kafka 主题：应用启动时由 Spring KafkaAdmin 自动创建（若不存在）。
  */
 @Configuration
+@ConditionalOnProperty(name = "kafka.enabled", havingValue = "true")
 public class OutboxKafkaTopicConfig {
 
     @Bean

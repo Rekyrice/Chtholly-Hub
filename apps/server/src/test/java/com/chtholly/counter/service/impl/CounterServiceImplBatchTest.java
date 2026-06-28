@@ -1,6 +1,6 @@
 package com.chtholly.counter.service.impl;
 
-import com.chtholly.counter.event.CounterEventProducer;
+import com.chtholly.counter.event.CounterEventPublisher;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.user.mapper.UserMapper;
@@ -10,7 +10,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.redisson.api.RedissonClient;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -30,9 +29,7 @@ class CounterServiceImplBatchTest {
     @Mock
     private StringRedisTemplate redis;
     @Mock
-    private CounterEventProducer eventProducer;
-    @Mock
-    private ApplicationEventPublisher eventPublisher;
+    private CounterEventPublisher counterEventPublisher;
     @Mock
     private RedissonClient redisson;
     @Mock
@@ -44,7 +41,7 @@ class CounterServiceImplBatchTest {
 
     @BeforeEach
     void setUp() {
-        counterService = new CounterServiceImpl(redis, eventProducer, eventPublisher, redisson, postMapper, userMapper);
+        counterService = new CounterServiceImpl(redis, counterEventPublisher, redisson, postMapper, userMapper);
     }
 
     @Test

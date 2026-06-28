@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
@@ -23,6 +24,7 @@ import java.util.List;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(name = "kafka.enabled", havingValue = "true")
 public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
 
     private static final String CONSUMER_GROUP = "search-index-consumer";
@@ -81,7 +83,12 @@ public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
         if ("delete".equalsIgnoreCase(op)) {
             indexService.softDeletePost(postId);
         } else {
-            indexService.upsertPost(postId);
+            try {
+                indexService.upsertPost(postId);
+            } catch (Exception e) {
+                log.error("Canal outbox processing failed", e);
+                throw e;
+            }
         }
         if (eventId != null) {
             idempotencyGuard.markConsumed(IDEMPOTENCY_SCOPE, eventId);
