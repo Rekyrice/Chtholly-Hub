@@ -1,7 +1,7 @@
 "use client";
 
-import { MoreVertical } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import AgentSessionDotsIcon from "@/components/agent/AgentSessionDotsIcon";
 import type { AgentSessionRecord } from "@/lib/agent/sessions";
 import { cn } from "@/lib/utils";
 
@@ -108,7 +108,7 @@ export default function AgentSessionItem({
               setMenuOpen((v) => !v);
             }}
           >
-            <MoreVertical size={15} />
+            <AgentSessionDotsIcon />
           </button>
 
           {menuOpen && (
