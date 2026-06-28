@@ -1,28 +1,14 @@
 "use client";
 
 import { MessageCircle, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import AgentChatPanel from "@/components/agent/AgentChatPanel";
-import { useAgentChat } from "@/hooks/useAgentChat";
-import { getStoredAuth } from "@/lib/auth/tokens";
+import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import { cn } from "@/lib/utils";
 
 export default function FloatingAgent() {
-  const [loggedIn, setLoggedIn] = useState(false);
+  const { loggedIn } = useAgentChatContext();
   const [open, setOpen] = useState(false);
-
-  const syncAuth = useCallback(() => {
-    setLoggedIn(!!getStoredAuth()?.user);
-  }, []);
-
-  useEffect(() => {
-    syncAuth();
-    window.addEventListener("chtholly-auth-change", syncAuth);
-    return () => window.removeEventListener("chtholly-auth-change", syncAuth);
-  }, [syncAuth]);
-
-  const chat = useAgentChat({ enabled: loggedIn && open });
-  const { connected } = chat;
 
   useEffect(() => {
     if (!open) return;
@@ -47,17 +33,14 @@ export default function FloatingAgent() {
       )}
 
       <div
-        className={cn(
-          "floating-agent-panel",
-          open && "floating-agent-panel--open",
-        )}
+        className={cn("floating-agent-panel", open && "floating-agent-panel--open")}
         aria-hidden={!open}
       >
         {open && (
           <AgentChatPanel
-            connected={connected}
-            chat={chat}
+            variant="float"
             onMinimize={() => setOpen(false)}
+            onExpand={() => setOpen(false)}
           />
         )}
       </div>
