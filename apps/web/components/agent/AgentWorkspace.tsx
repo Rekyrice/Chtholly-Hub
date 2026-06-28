@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import AgentChatPanel from "@/components/agent/AgentChatPanel";
 import AgentLive2DStage from "@/components/agent/AgentLive2DStage";
 import AgentSessionSidebar from "@/components/agent/AgentSessionSidebar";
@@ -11,22 +11,27 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function AgentWorkspace() {
-  const { loggedIn, activeSessionId, switchSession } = useAgentChatContext();
+  const { loggedIn, activeSessionId, sessions, switchSession } = useAgentChatContext();
   const searchParams = useSearchParams();
   const router = useRouter();
   const sessionParam = searchParams.get("session");
+  const appliedUrlSessionRef = useRef(false);
 
+  // 首次进入：支持 ?session= 深链到指定会话（仅一次）
   useEffect(() => {
-    if (!sessionParam || sessionParam === activeSessionId) return;
-    switchSession(sessionParam);
-  }, [sessionParam, activeSessionId, switchSession]);
-
-  useEffect(() => {
-    if (!sessionParam && activeSessionId) {
-      router.replace(`/agent?session=${encodeURIComponent(activeSessionId)}`, {
-        scroll: false,
-      });
+    if (appliedUrlSessionRef.current || !sessionParam || sessions.length === 0) return;
+    appliedUrlSessionRef.current = true;
+    if (sessions.some((s) => s.id === sessionParam) && sessionParam !== activeSessionId) {
+      switchSession(sessionParam);
     }
+  }, [sessionParam, sessions, activeSessionId, switchSession]);
+
+  // 会话切换后同步 URL，避免旧 query 把 activeSessionId 拉回上一会话
+  useEffect(() => {
+    if (!activeSessionId || sessionParam === activeSessionId) return;
+    router.replace(`/agent?session=${encodeURIComponent(activeSessionId)}`, {
+      scroll: false,
+    });
   }, [sessionParam, activeSessionId, router]);
 
   if (!loggedIn) {

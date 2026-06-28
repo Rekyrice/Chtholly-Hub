@@ -73,6 +73,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const streamingIdRef = useRef<string | null>(null);
   const stepsRef = useRef<string[]>([]);
+  /** 区分「仅清后端记忆」与「用户主动清空对话」 */
+  const backendClearIntentRef = useRef<"none" | "backend" | "user">("none");
   const activeSessionIdRef = useRef(activeSessionId);
   const messagesRef = useRef(messages);
   const sessionsRef = useRef(sessions);
@@ -258,7 +260,10 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (type === "cleared") {
-        setMessages([]);
+        if (backendClearIntentRef.current === "user") {
+          setMessages([]);
+        }
+        backendClearIntentRef.current = "none";
         stepsRef.current = [];
         setLiveSteps([]);
         streamingIdRef.current = null;
@@ -314,7 +319,16 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     };
   }, [loggedIn, hydrated, connect]);
 
+  /** 仅清空服务端 Redis 记忆，不改动当前会话的本地消息列表 */
+  const clearBackendMemory = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    backendClearIntentRef.current = "backend";
+    ws.send(JSON.stringify({ type: "clear" }));
+  }, []);
+
   const clearConversation = useCallback(() => {
+    backendClearIntentRef.current = "user";
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       setMessages([]);
@@ -322,6 +336,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       setLiveSteps([]);
       streamingIdRef.current = null;
       setBusy(false);
+      backendClearIntentRef.current = "none";
       return;
     }
     ws.send(JSON.stringify({ type: "clear" }));
@@ -403,21 +418,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
 
       persistActiveSession(messagesRef.current);
 
-      let target = sessionsRef.current.find((s) => s.id === sessionId);
-      if (!target) {
-        target = {
-          id: sessionId,
-          title: "新对话",
-          messages: [],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        setSessions((prev) => {
-          const next = upsertSessionRecord(prev, target!);
-          saveStoredSessions(next);
-          return next;
-        });
-      }
+      const target = sessionsRef.current.find((s) => s.id === sessionId);
+      if (!target) return;
 
       setActiveSessionId(sessionId);
       saveActiveSessionId(sessionId);
@@ -427,9 +429,9 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       setLiveSteps([]);
       streamingIdRef.current = null;
       setBusy(false);
-      clearConversation();
+      clearBackendMemory();
     },
-    [clearConversation, persistActiveSession],
+    [clearBackendMemory, persistActiveSession],
   );
 
   const createSession = useCallback(() => {
@@ -455,9 +457,9 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     setLiveSteps([]);
     streamingIdRef.current = null;
     setBusy(false);
-    clearConversation();
+    clearBackendMemory();
     return id;
-  }, [clearConversation, persistActiveSession]);
+  }, [clearBackendMemory, persistActiveSession]);
 
   const value = useMemo<AgentChatContextValue>(
     () => ({
