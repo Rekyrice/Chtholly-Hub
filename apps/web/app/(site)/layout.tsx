@@ -1,6 +1,7 @@
 import Navbar from "@/components/site/Navbar";
 import SiteHeader from "@/components/site/SiteHeader";
 import Footer from "@/components/site/Footer";
+import FloatingAgent from "@/components/agent/FloatingAgent";
 
 export default function SiteLayout({
   children,
@@ -20,6 +21,7 @@ export default function SiteLayout({
           <Footer />
         </div>
       </div>
+      <FloatingAgent />
     </div>
   );
 }
