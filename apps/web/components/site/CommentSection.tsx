@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import { isLoggedIn } from "@/lib/auth/tokens";
 import { commentService } from "@/lib/services/commentService";
-import { siteConfig } from "@/lib/site.config";
 import type { CommentItem } from "@/lib/types/comment";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 interface Props {
   postId: string;
@@ -51,32 +51,17 @@ function CommentForm({
         placeholder={placeholder}
         rows={3}
         maxLength={2000}
-        className="w-full px-3 py-2 text-sm border outline-none focus:border-[#009688] resize-y"
-        style={{ borderColor: "#e0e0e0", color: "#424242" }}
+        className="field-input text-sm resize-y min-h-[80px]"
       />
-      {error && (
-        <p className="mt-1 text-xs" style={{ color: "#e53935" }}>
-          {error}
-        </p>
-      )}
+      {error && <p className="mt-1 text-xs text-error">{error}</p>}
       <div className="mt-2 flex gap-2">
-        <button
-          type="submit"
-          disabled={submitting || !content.trim()}
-          className="px-4 py-1.5 text-sm text-white disabled:opacity-50"
-          style={{ backgroundColor: siteConfig.theme.primary }}
-        >
-          {submitting ? "发送中…" : submitLabel}
-        </button>
+        <Button type="submit" size="sm" loading={submitting} disabled={!content.trim()}>
+          {submitLabel}
+        </Button>
         {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-3 py-1.5 text-sm"
-            style={{ color: "#757575" }}
-          >
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
             取消
-          </button>
+          </Button>
         )}
       </div>
     </form>
@@ -95,30 +80,19 @@ function CommentBubble({
   canReply?: boolean;
 }) {
   return (
-    <div
-      className={isReply ? "ml-8 mt-3 pt-3 border-t" : ""}
-      style={isReply ? { borderColor: "#f0f0f0" } : undefined}
-    >
+    <div className={cn(isReply && "ml-8 mt-3 pt-3 border-t border-border")}>
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="text-sm font-medium" style={{ color: "#424242" }}>
-          {comment.authorNickname}
-        </span>
-        <span className="text-xs" style={{ color: "#9e9e9e" }}>
-          {formatDate(comment.createdAt)}
-        </span>
+        <span className="text-sm font-medium text-text">{comment.authorNickname}</span>
+        <span className="text-xs text-text-secondary">{formatDate(comment.createdAt)}</span>
       </div>
-      <p
-        className="mt-1 text-sm leading-relaxed whitespace-pre-wrap"
-        style={{ color: "#616161" }}
-      >
+      <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-text-secondary">
         {comment.content}
       </p>
       {canReply && onReply && (
         <button
           type="button"
           onClick={onReply}
-          className="mt-1 text-xs hover:underline"
-          style={{ color: siteConfig.theme.primary }}
+          className="mt-1 text-xs text-sky hover:underline bg-transparent border-0 cursor-pointer transition-colors duration-150"
         >
           回复
         </button>
@@ -163,18 +137,14 @@ export default function CommentSection({ postId }: Props) {
 
   return (
     <section className="post-card mt-8 p-6 lg:p-8">
-      <h2 className="text-lg font-medium mb-4" style={{ color: "#424242" }}>
+      <h2 className="text-lg font-medium mb-4 text-text">
         评论 {total > 0 ? `(${total})` : ""}
       </h2>
 
       {loading ? (
-        <p className="text-sm" style={{ color: "#9e9e9e" }}>
-          加载中…
-        </p>
+        <p className="text-sm text-text-secondary">加载中…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm mb-4" style={{ color: "#9e9e9e" }}>
-          暂无评论，来抢沙发吧。
-        </p>
+        <p className="text-sm mb-4 text-text-secondary">暂无评论，来抢沙发吧。</p>
       ) : (
         <div className="space-y-5 mb-6">
           {items.map((comment) => (
@@ -209,8 +179,8 @@ export default function CommentSection({ postId }: Props) {
           onSubmit={(content) => handleCreate(content)}
         />
       ) : (
-        <p className="text-sm" style={{ color: "#757575" }}>
-          <Link href="/login" style={{ color: siteConfig.theme.primary }}>
+        <p className="text-sm text-text-secondary">
+          <Link href="/login" className="text-sky hover:text-sky-deep transition-colors duration-150">
             登录
           </Link>
           后参与讨论

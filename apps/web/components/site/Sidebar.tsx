@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Badge } from "@/components/ui/Badge";
 import { postService } from "@/lib/services/postService";
 import { tagService } from "@/lib/services/tagService";
 import { siteConfig } from "@/lib/site.config";
@@ -25,69 +26,26 @@ export default async function Sidebar() {
   const profileName = siteConfig.author.name;
 
   return (
-    <aside
-      className="sidebar-scroll-hidden"
-      style={{
-        position: "sticky",
-        top: 52,
-        maxHeight: "calc(100vh - 52px)",
-        overflowY: "auto",
-      }}
-    >
-      <div className="widget" style={{ textAlign: "center" }}>
+    <aside className="sidebar-scroll-hidden sticky top-[52px] max-h-[calc(100vh-52px)] overflow-y-auto">
+      <div className="widget text-center">
         <Link
           href={`/user/${siteConfig.ownerHandle}`}
-          style={{ textDecoration: "none", color: "inherit" }}
-          className="hover:opacity-90"
+          className="no-underline text-inherit hover:opacity-90 transition-opacity duration-150"
         >
-          <div
-            style={{
-              width: 160,
-              height: 160,
-              margin: "0 auto",
-              borderRadius: "50%",
-              overflow: "hidden",
-              boxShadow: "0 2px 14px rgba(0,0,0,0.08)",
-              border: "2px solid rgba(255,255,255,0.75)",
-              background: "#e0f2f1",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: siteConfig.theme.primary,
-              fontSize: 48,
-              fontWeight: 700,
-            }}
-          >
+          <div className="w-40 h-40 mx-auto rounded-full overflow-hidden shadow-md border-2 border-surface avatar-ring flex items-center justify-center text-sky text-5xl font-bold">
             仁
           </div>
-          <div
-            style={{ marginTop: 14, fontSize: 18, color: "#424242", fontWeight: 500 }}
-          >
-            {profileName}
-          </div>
+          <div className="mt-3.5 text-lg text-text font-medium">{profileName}</div>
         </Link>
-        <p style={{ marginTop: 8, fontSize: 14, color: "#727272" }}>
-          {siteConfig.author.bio}
-        </p>
-        <div
-          style={{
-            marginTop: 12,
-            display: "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap: 6,
-          }}
-        >
-          <Link href="/" style={{ textDecoration: "none" }} className="hover:opacity-80">
-            <div style={{ fontSize: 30, lineHeight: 1.1, color: "#424242" }}>
-              {items.length}
-            </div>
-            <div style={{ fontSize: 14, color: "#727272" }}>文章</div>
+        <p className="mt-2 text-sm text-text-secondary">{siteConfig.author.bio}</p>
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
+          <Link href="/" className="no-underline hover:opacity-80 transition-opacity duration-150">
+            <div className="text-3xl leading-tight text-text">{items.length}</div>
+            <div className="text-sm text-text-secondary">文章</div>
           </Link>
-          <Link href="/archive" style={{ textDecoration: "none" }} className="hover:opacity-80">
-            <div style={{ fontSize: 30, lineHeight: 1.1, color: "#424242" }}>
-              {tags.length}
-            </div>
-            <div style={{ fontSize: 14, color: "#727272" }}>标签</div>
+          <Link href="/archive" className="no-underline hover:opacity-80 transition-opacity duration-150">
+            <div className="text-3xl leading-tight text-text">{tags.length}</div>
+            <div className="text-sm text-text-secondary">标签</div>
           </Link>
         </div>
       </div>
@@ -95,20 +53,15 @@ export default async function Sidebar() {
       {items.length > 0 && (
         <div className="widget">
           <h3 className="widget-title">最新文章</h3>
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          <ul className="list-none p-0 m-0">
             {items.slice(0, 5).map((post) => (
               <li
                 key={post.id}
-                style={{
-                  borderBottom: "1px solid #f5f5f5",
-                  padding: "8px 0",
-                  fontSize: 14,
-                }}
+                className="border-b border-border py-2 text-sm last:border-b-0"
               >
                 <Link
                   href={`/post/${post.slug}`}
-                  style={{ color: "#424242", textDecoration: "none", display: "block" }}
-                  className="hover:text-[#009688]"
+                  className="text-text no-underline block hover:text-sky transition-colors duration-150"
                 >
                   {post.title}
                 </Link>
@@ -121,23 +74,15 @@ export default async function Sidebar() {
       {tags.length > 0 && (
         <div className="widget">
           <h3 className="widget-title">标签</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          <div className="flex flex-wrap gap-1.5">
             {tags.map((tag) => (
               <Link
                 key={tag.id}
                 href={`/tag/${encodeURIComponent(tag.name)}`}
-                style={{
-                  padding: "3px 10px",
-                  fontSize: 12,
-                  color: "#ffffff",
-                  backgroundColor: siteConfig.theme.primary,
-                  textDecoration: "none",
-                  letterSpacing: 0.5,
-                }}
-                className="hover:opacity-80 transition-opacity"
+                className="no-underline hover:opacity-80 transition-opacity duration-150"
                 title={`${tag.usageCount} 篇`}
               >
-                {tag.name}
+                <Badge className="bg-sky text-on-primary hover:bg-sky-deep">{tag.name}</Badge>
               </Link>
             ))}
           </div>

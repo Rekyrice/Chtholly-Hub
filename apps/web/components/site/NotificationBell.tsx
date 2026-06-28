@@ -5,9 +5,8 @@ import { Bell } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isLoggedIn } from "@/lib/auth/tokens";
 import { notificationService } from "@/lib/services/notificationService";
-import { siteConfig } from "@/lib/site.config";
 import type { NotificationItem } from "@/lib/types/notification";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 function notificationHref(item: NotificationItem): string | null {
   if (item.postSlug) {
@@ -119,38 +118,26 @@ export default function NotificationBell() {
       <button
         type="button"
         onClick={handleOpen}
-        className="relative p-2 rounded-full hover:bg-black/5"
+        className="relative p-2 rounded-full text-text-secondary hover:bg-cloud transition-colors duration-150"
         aria-label="通知"
       >
-        <Bell size={20} style={{ color: "#616161" }} />
+        <Bell size={20} />
         {unread > 0 && (
-          <span
-            className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-medium text-white flex items-center justify-center"
-            style={{ backgroundColor: siteConfig.theme.primary }}
-          >
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-medium bg-sky text-on-primary flex items-center justify-center">
             {unread > 99 ? "99+" : unread}
           </span>
         )}
       </button>
 
       {open && (
-        <div
-          className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white shadow-lg border z-50"
-          style={{ borderColor: "#e0e0e0" }}
-        >
-          <div
-            className="flex items-center justify-between px-4 py-3 border-b"
-            style={{ borderColor: "#f0f0f0" }}
-          >
-            <span className="text-sm font-medium" style={{ color: "#424242" }}>
-              通知
-            </span>
+        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-surface shadow-lg border border-border z-50 rounded-lg">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <span className="text-sm font-medium text-text">通知</span>
             {unread > 0 && (
               <button
                 type="button"
                 onClick={handleMarkAll}
-                className="text-xs hover:underline"
-                style={{ color: siteConfig.theme.primary }}
+                className="text-xs text-sky hover:underline bg-transparent border-0 cursor-pointer transition-colors duration-150"
               >
                 全部已读
               </button>
@@ -158,13 +145,9 @@ export default function NotificationBell() {
           </div>
 
           {loading ? (
-            <p className="px-4 py-6 text-sm text-center" style={{ color: "#9e9e9e" }}>
-              加载中…
-            </p>
+            <p className="px-4 py-6 text-sm text-center text-text-secondary">加载中…</p>
           ) : items.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-center" style={{ color: "#9e9e9e" }}>
-              暂无通知
-            </p>
+            <p className="px-4 py-6 text-sm text-center text-text-secondary">暂无通知</p>
           ) : (
             <ul>
               {items.map((item) => {
@@ -173,15 +156,14 @@ export default function NotificationBell() {
                 const inner = (
                   <>
                     <p
-                      className="text-sm leading-snug"
-                      style={{
-                        color: unreadItem ? "#424242" : "#757575",
-                        fontWeight: unreadItem ? 500 : 400,
-                      }}
+                      className={cn(
+                        "text-sm leading-snug",
+                        unreadItem ? "text-text font-medium" : "text-text-secondary font-normal",
+                      )}
                     >
                       {item.message}
                     </p>
-                    <p className="mt-1 text-xs" style={{ color: "#9e9e9e" }}>
+                    <p className="mt-1 text-xs text-text-secondary">
                       {formatDate(item.createdAt)}
                     </p>
                   </>
@@ -190,17 +172,16 @@ export default function NotificationBell() {
                 return (
                   <li
                     key={item.id}
-                    className="border-b last:border-b-0"
-                    style={{
-                      borderColor: "#f5f5f5",
-                      backgroundColor: unreadItem ? "#f9fdfc" : "transparent",
-                    }}
+                    className={cn(
+                      "border-b border-border last:border-b-0",
+                      unreadItem && "notification-unread",
+                    )}
                   >
                     {href ? (
                       <Link
                         href={href}
                         onClick={() => void handleItemClick(item)}
-                        className="block px-4 py-3 hover:bg-black/[0.02]"
+                        className="block px-4 py-3 hover:bg-cloud transition-colors duration-150"
                       >
                         {inner}
                       </Link>
@@ -208,7 +189,7 @@ export default function NotificationBell() {
                       <button
                         type="button"
                         onClick={() => void handleItemClick(item)}
-                        className="block w-full text-left px-4 py-3 hover:bg-black/[0.02]"
+                        className="block w-full text-left px-4 py-3 hover:bg-cloud transition-colors duration-150"
                       >
                         {inner}
                       </button>

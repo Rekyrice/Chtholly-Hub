@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Heart, User } from "lucide-react";
+import { Badge } from "@/components/ui/Badge";
 import type { FeedItem } from "@/lib/types/post";
 import { siteConfig } from "@/lib/site.config";
 
@@ -19,17 +20,9 @@ export default function PostCard({
   return (
     <article className="post-card">
       {post.coverImage && (
-        <div style={{ padding: "10px 10px 0" }}>
+        <div className="p-2.5 pb-0">
           <Link href={`/post/${post.slug}`} className="group block">
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                aspectRatio: "1038/576",
-                overflow: "hidden",
-                borderRadius: "8px",
-              }}
-            >
+            <div className="relative w-full aspect-[1038/576] overflow-hidden rounded-lg">
               <Image
                 src={post.coverImage}
                 alt={post.title}
@@ -46,19 +39,11 @@ export default function PostCard({
         {post.tags.length > 0 && (
           <Link
             href={`/tag/${encodeURIComponent(post.tags[0])}`}
-            style={{
-              display: "inline-block",
-              fontSize: 12,
-              color: "#ffffff",
-              backgroundColor: siteConfig.theme.primary,
-              padding: "2px 8px",
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              marginBottom: 10,
-              textDecoration: "none",
-            }}
+            className="inline-block mb-2.5 no-underline"
           >
-            {post.tags[0]}
+            <Badge className="uppercase tracking-wide bg-sky text-on-primary hover:bg-sky-deep">
+              {post.tags[0]}
+            </Badge>
           </Link>
         )}
 
@@ -67,39 +52,28 @@ export default function PostCard({
         </h2>
 
         <div className="entry-meta">
-          <span style={{ marginRight: 16 }}>
-            <User
-              size={13}
-              style={{ display: "inline", marginRight: 4, verticalAlign: "middle" }}
-            />
+          <span className="mr-4 inline-flex items-center gap-1">
+            <User size={13} className="inline" />
             {post.authorNickname || authorName}
           </span>
           {post.likeCount != null && post.likeCount > 0 && (
-            <span>
-              <Heart
-                size={13}
-                style={{
-                  display: "inline",
-                  marginRight: 3,
-                  verticalAlign: "middle",
-                }}
-              />
+            <span className="inline-flex items-center gap-1">
+              <Heart size={13} className="inline" />
               {post.likeCount}
             </span>
           )}
         </div>
       </div>
 
-      {post.description && (
-        highlightDescription ? (
+      {post.description &&
+        (highlightDescription ? (
           <div
             className="entry-summary search-snippet"
             dangerouslySetInnerHTML={{ __html: post.description }}
           />
         ) : (
           <div className="entry-summary">{post.description}</div>
-        )
-      )}
+        ))}
     </article>
   );
 }

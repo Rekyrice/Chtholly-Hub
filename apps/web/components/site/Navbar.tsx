@@ -4,15 +4,15 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, Search, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { getAccessToken, getStoredAuth } from "@/lib/auth/tokens";
-import { authService } from "@/lib/services/authService";
 import NotificationBell from "@/components/site/NotificationBell";
+import { authService } from "@/lib/services/authService";
+import { getAccessToken, getStoredAuth } from "@/lib/auth/tokens";
 import { siteConfig } from "@/lib/site.config";
+import { cn } from "@/lib/utils";
 import type { AuthUser } from "@/lib/types/auth";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
-  // 首屏必须与 SSR 一致为 null，登录态仅在 mount 后从 localStorage 同步
   const [user, setUser] = useState<AuthUser | null>(null);
   const pathname = usePathname();
   const router = useRouter();
@@ -20,7 +20,7 @@ export default function Navbar() {
   const brandAccent = siteConfig.name.endsWith(" Hub") ? "Hub" : "";
 
   const syncUser = useCallback(() => {
-    getAccessToken(); // 顺带清理过期 token
+    getAccessToken();
     setUser(getStoredAuth()?.user ?? null);
   }, []);
 
@@ -39,12 +39,11 @@ export default function Navbar() {
   };
 
   const navLink = (href: string, label: string) => {
-    const active =
-      href === "/" ? pathname === "/" : pathname.startsWith(href);
+    const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
     return (
       <Link
         href={href}
-        className={`sakuga-nav-link flex items-center ${active ? "active" : ""}`}
+        className={cn("sakuga-nav-link flex items-center", active && "active")}
         onClick={() => setOpen(false)}
       >
         {label}
@@ -59,15 +58,14 @@ export default function Navbar() {
       <li className="flex items-center">
         <NotificationBell />
       </li>
-      <li className="flex items-center px-3 text-sm" style={{ color: "#727272" }}>
+      <li className="flex items-center px-3 text-sm text-text-secondary">
         {user.nickname || user.phone}
       </li>
       <li className="flex items-center">
         <button
           type="button"
           onClick={handleLogout}
-          className="sakuga-nav-link"
-          style={{ background: "none", border: "none", cursor: "pointer" }}
+          className="sakuga-nav-link bg-transparent border-0 cursor-pointer transition-colors duration-150"
         >
           退出
         </button>
@@ -78,30 +76,15 @@ export default function Navbar() {
   );
 
   return (
-    <nav className="sakuga-navbar">
+    <nav className="sakuga-navbar" data-testid="navbar">
       <div className="sakuga-container w-full flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 py-2.5 flex-shrink-0">
-          <span
-            className="inline-flex items-center justify-center rounded-full text-white text-sm font-bold"
-            style={{ width: 32, height: 32, backgroundColor: siteConfig.theme.primary }}
-          >
+        <Link href="/" className="flex items-center gap-2 py-2.5 shrink-0">
+          <span className="inline-flex items-center justify-center rounded-full bg-sky text-on-primary text-sm font-bold w-8 h-8">
             仁
           </span>
-          <span
-            style={{
-              fontFamily: 'Lato, "Noto Sans SC", sans-serif',
-              fontWeight: 800,
-              fontSize: 18,
-              letterSpacing: 0.6,
-              lineHeight: 1,
-            }}
-          >
-            <span style={{ color: "#101114" }}>{brandMain}</span>
-            {brandAccent && (
-              <span style={{ color: siteConfig.theme.primary, marginLeft: 4 }}>
-                {brandAccent}
-              </span>
-            )}
+          <span className="font-extrabold text-lg tracking-wide leading-none font-[Lato,'Noto_Sans_SC',sans-serif]">
+            <span className="text-text">{brandMain}</span>
+            {brandAccent && <span className="text-sky ml-1">{brandAccent}</span>}
           </span>
         </Link>
 
@@ -113,14 +96,13 @@ export default function Navbar() {
                 name="q"
                 placeholder="搜索"
                 aria-label="搜索帖子"
-                className="w-36 px-2 py-1 text-sm border outline-none focus:border-[#009688]"
-                style={{ borderColor: "#e0e0e0", color: "#424242" }}
+                data-testid="navbar-search"
+                className="w-36 px-2 py-1 text-sm border border-border text-text bg-surface outline-none transition-colors duration-150 focus:border-sky rounded-md"
               />
               <button
                 type="submit"
-                className="ml-1 p-1.5 rounded hover:bg-black/5"
+                className="ml-1 p-1.5 rounded-md text-text-secondary hover:bg-cloud transition-colors duration-150"
                 aria-label="提交搜索"
-                style={{ color: "#727272" }}
               >
                 <Search size={18} />
               </button>
@@ -136,8 +118,7 @@ export default function Navbar() {
 
         <button
           type="button"
-          className="md:hidden p-2"
-          style={{ color: "#333" }}
+          className="md:hidden p-2 text-text transition-colors duration-150"
           onClick={() => setOpen(!open)}
           aria-label="菜单"
         >
@@ -146,16 +127,12 @@ export default function Navbar() {
       </div>
 
       {open && (
-        <div
-          className="md:hidden absolute top-full left-0 right-0 z-50"
-          style={{ background: "#fff", borderTop: "1px solid #eee" }}
-        >
+        <div className="md:hidden absolute top-full left-0 right-0 z-50 mobile-nav-panel">
           {siteConfig.nav.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="block px-4 py-3 text-sm uppercase tracking-wide border-b"
-              style={{ color: "#333", borderColor: "#f5f5f5" }}
+              className="mobile-nav-link"
               onClick={() => setOpen(false)}
             >
               {item.label}
@@ -164,43 +141,30 @@ export default function Navbar() {
           <form
             action="/search"
             method="get"
-            className="flex items-center gap-2 px-4 py-3 border-b"
-            style={{ borderColor: "#f5f5f5" }}
+            className="flex items-center gap-2 px-4 py-3 border-b border-border"
             onSubmit={() => setOpen(false)}
           >
             <input
               type="search"
               name="q"
               placeholder="搜索帖子"
-              className="flex-1 px-2 py-1.5 text-sm border outline-none"
-              style={{ borderColor: "#e0e0e0" }}
+              className="field-input flex-1 text-sm py-1.5"
             />
-            <button type="submit" style={{ color: siteConfig.theme.primary }}>
+            <button type="submit" className="text-sky transition-colors duration-150">
               <Search size={18} />
             </button>
           </form>
           {user ? (
             <>
-              <Link
-                href="/write"
-                className="block px-4 py-3 text-sm uppercase tracking-wide border-b"
-                style={{ color: "#333", borderColor: "#f5f5f5" }}
-                onClick={() => setOpen(false)}
-              >
+              <Link href="/write" className="mobile-nav-link" onClick={() => setOpen(false)}>
                 Write
               </Link>
-              <Link
-                href="/agent"
-                className="block px-4 py-3 text-sm uppercase tracking-wide border-b"
-                style={{ color: "#333", borderColor: "#f5f5f5" }}
-                onClick={() => setOpen(false)}
-              >
+              <Link href="/agent" className="mobile-nav-link" onClick={() => setOpen(false)}>
                 Agent
               </Link>
               <button
                 type="button"
-                className="block w-full text-left px-4 py-3 text-sm uppercase tracking-wide"
-                style={{ color: "#009688" }}
+                className="mobile-nav-link w-full text-left text-sky border-b-0"
                 onClick={() => {
                   setOpen(false);
                   void handleLogout();
@@ -212,8 +176,7 @@ export default function Navbar() {
           ) : (
             <Link
               href="/login"
-              className="block px-4 py-3 text-sm uppercase tracking-wide"
-              style={{ color: "#009688" }}
+              className="mobile-nav-link border-b-0 text-sky"
               onClick={() => setOpen(false)}
             >
               Login
