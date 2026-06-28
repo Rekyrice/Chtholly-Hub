@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
@@ -44,13 +45,13 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
             groupId = CONSUMER_GROUP,
             properties = {"auto.offset.reset=earliest"}
     )
-    public void onMessage(String message, Acknowledgment ack) {
-        consumeMessage(CounterTopics.EVENTS, null, message, ack);
+    public void onMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
+        consumeRecord(record, ack);
     }
 
     @KafkaListener(topics = CounterTopics.EVENTS + "-retry", groupId = CONSUMER_GROUP + "-retry")
-    public void onRetryMessage(String message, Acknowledgment ack) {
-        consumeRetryEnvelope(message, ack);
+    public void onRetryMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
+        consumeRetryRecord(record, ack);
     }
 
     @Override

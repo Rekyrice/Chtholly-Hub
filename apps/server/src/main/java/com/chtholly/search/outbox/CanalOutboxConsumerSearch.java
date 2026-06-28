@@ -9,6 +9,7 @@ import com.chtholly.search.index.SearchIndexService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
@@ -41,13 +42,13 @@ public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
     }
 
     @KafkaListener(topics = OutboxTopics.CANAL_OUTBOX, groupId = CONSUMER_GROUP)
-    public void onMessage(String message, Acknowledgment ack) {
-        consumeMessage(OutboxTopics.CANAL_OUTBOX, null, message, ack);
+    public void onMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
+        consumeRecord(record, ack);
     }
 
     @KafkaListener(topics = OutboxTopics.CANAL_OUTBOX + "-retry", groupId = CONSUMER_GROUP + "-retry")
-    public void onRetryMessage(String message, Acknowledgment ack) {
-        consumeRetryEnvelope(message, ack);
+    public void onRetryMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
+        consumeRetryRecord(record, ack);
     }
 
     @Override

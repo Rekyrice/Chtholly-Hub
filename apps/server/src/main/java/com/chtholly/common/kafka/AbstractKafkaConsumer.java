@@ -2,10 +2,12 @@ package com.chtholly.common.kafka;
 
 import com.chtholly.common.kafka.deadletter.DeadLetterMessageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.chtholly.common.tracing.CorrelationIdSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
  * Kafka 消费者通用基类：统一 try/catch、死信落库、重试 topic 与 DLQ 转发，并始终 ack 当前消息。
@@ -19,6 +21,22 @@ public abstract class AbstractKafkaConsumer {
     protected final KafkaTemplate<String, String> kafkaTemplate;
     protected final ObjectMapper objectMapper;
     protected final DeadLetterMessageService deadLetterMessageService;
+
+    /**
+     * 消费原始 topic 消息（从 Kafka Header 传播 correlation ID）。
+     */
+    protected void consumeRecord(ConsumerRecord<String, String> record, Acknowledgment ack) {
+        CorrelationIdSupport.runWithContext(CorrelationIdSupport.contextFromKafka(record), () ->
+                consumeMessage(record.topic(), record.key(), record.value(), ack));
+    }
+
+    /**
+     * 消费重试 topic 消息（从 Kafka Header 传播 correlation ID）。
+     */
+    protected void consumeRetryRecord(ConsumerRecord<String, String> record, Acknowledgment ack) {
+        CorrelationIdSupport.runWithContext(CorrelationIdSupport.contextFromKafka(record), () ->
+                consumeRetryEnvelope(record.value(), ack));
+    }
 
     /**
      * 消费原始 topic 消息。

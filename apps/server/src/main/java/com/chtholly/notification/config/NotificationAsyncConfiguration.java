@@ -1,5 +1,6 @@
 package com.chtholly.notification.config;
 
+import com.chtholly.common.tracing.MdcTaskDecorator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +27,7 @@ public class NotificationAsyncConfiguration implements AsyncConfigurer {
         executor.setMaxPoolSize(5);
         executor.setQueueCapacity(200);
         executor.setThreadNamePrefix("notif-");
+        executor.setTaskDecorator(new MdcTaskDecorator());
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.initialize();
         return executor;

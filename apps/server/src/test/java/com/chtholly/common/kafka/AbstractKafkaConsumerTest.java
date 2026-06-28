@@ -2,6 +2,8 @@ package com.chtholly.common.kafka;
 
 import com.chtholly.common.kafka.deadletter.DeadLetterMessageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -10,6 +12,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
 
+import org.slf4j.MDC;
+
+import java.nio.charset.StandardCharsets;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -35,6 +42,20 @@ class AbstractKafkaConsumerTest {
     void setUp() {
         consumer = new TestConsumer(kafkaTemplate, new ObjectMapper(), deadLetterMessageService);
         ack = mock(Acknowledgment.class);
+    }
+
+    @Test
+    void consumeRecordPropagatesKafkaCorrelationHeader() {
+        ConsumerRecord<String, String> record = new ConsumerRecord<>("counter-events", 0, 0L, null, "{}");
+        record.headers().add(new RecordHeader(
+                "X-Correlation-Id",
+                "kafka-trace".getBytes(StandardCharsets.UTF_8)));
+        consumer.captureMdc = true;
+
+        consumer.consumeRecord(record, ack);
+
+        assertEquals("kafka-trace", consumer.lastCorrelationId);
+        verify(ack).acknowledge();
     }
 
     @Test
@@ -74,6 +95,8 @@ class AbstractKafkaConsumerTest {
 
     private static class TestConsumer extends AbstractKafkaConsumer {
         private boolean failNext;
+        private boolean captureMdc;
+        private String lastCorrelationId;
 
         TestConsumer(KafkaTemplate<String, String> kafkaTemplate,
                      ObjectMapper objectMapper,
@@ -83,6 +106,9 @@ class AbstractKafkaConsumerTest {
 
         @Override
         protected void process(String sourceTopic, String messageKey, String payload, int retryCount) {
+            if (captureMdc) {
+                lastCorrelationId = MDC.get("correlationId");
+            }
             if (failNext) {
                 throw new RuntimeException("boom");
             }

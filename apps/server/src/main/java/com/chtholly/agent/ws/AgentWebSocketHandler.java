@@ -1,5 +1,6 @@
 package com.chtholly.agent.ws;
 
+import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.ChthollyAgent;
 import com.chtholly.agent.memory.AgentConversationMemory;
@@ -10,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -58,13 +60,16 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             session.close(CloseStatus.NOT_ACCEPTABLE.withReason("Unauthorized"));
             return;
         }
+        String correlationId = CorrelationIdSupport.generate();
+        session.getAttributes().put(CorrelationIdSupport.MDC_CORRELATION_ID, correlationId);
+        CorrelationIdSupport.putHttp(correlationId, "WS", session.getUri() == null ? "/api/v1/agent/ws" : session.getUri().getPath());
         WebSocketSession safe = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_SIZE_LIMIT);
         safeSessions.put(session.getId(), safe);
         sessionUsers.put(session.getId(), userId);
         sessionConnectedAt.put(session.getId(), System.currentTimeMillis());
         heartbeat.start(safe);
         agentMetrics.wsConnected();
-        log.info("[AgentWS] Connected: userId={}, sessionId={}", userId, session.getId());
+        log.info("[{}] [AgentWS] Connected: userId={}, sessionId={}", correlationId, userId, session.getId());
     }
 
     @Override
@@ -73,7 +78,13 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (userId == null) {
             return;
         }
-        executor.submit(() -> handlePayload(session, userId, message.getPayload()));
+        executor.submit(() -> {
+            String correlationId = (String) session.getAttributes().get(CorrelationIdSupport.MDC_CORRELATION_ID);
+            String path = session.getUri() == null ? "/api/v1/agent/ws" : session.getUri().getPath();
+            CorrelationIdSupport.runWithContext(
+                    CorrelationIdSupport.context(correlationId, "WS", path),
+                    () -> handlePayload(session, userId, message.getPayload()));
+        });
     }
 
     @Override
@@ -90,8 +101,10 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         heartbeat.stop(session.getId());
         agentMetrics.wsDisconnected();
         long durationSec = connectedAt == null ? 0 : (System.currentTimeMillis() - connectedAt) / 1000;
-        log.info("[AgentWS] Disconnected: userId={}, sessionId={}, duration={}s",
-                userId, session.getId(), durationSec);
+        String correlationId = (String) session.getAttributes().get(CorrelationIdSupport.MDC_CORRELATION_ID);
+        log.info("[{}] [AgentWS] Disconnected: userId={}, sessionId={}, duration={}s",
+                correlationId, userId, session.getId(), durationSec);
+        MDC.clear();
     }
 
     private void handlePayload(WebSocketSession session, long userId, String payload) {
