@@ -16,6 +16,7 @@ import com.chtholly.post.service.PostFeedService;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
