@@ -41,6 +41,8 @@ type AgentChatContextValue = {
   clearConversation: () => void;
   switchSession: (sessionId: string) => void;
   createSession: () => string;
+  renameSession: (sessionId: string, title: string) => void;
+  deleteSession: (sessionId: string) => void;
   fillAndSend: (text: string) => void;
 };
 
@@ -132,18 +134,17 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const persistActiveSession = useCallback((nextMessages: ChatMessage[]) => {
     const id = activeSessionIdRef.current;
     if (!id) return;
-    const record: AgentSessionRecord = {
-      id,
-      title: sessionTitleFromMessages(nextMessages),
-      messages: nextMessages,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
     setSessions((prev) => {
       const existing = prev.find((s) => s.id === id);
       const merged: AgentSessionRecord = {
-        ...record,
-        createdAt: existing?.createdAt ?? record.createdAt,
+        id,
+        title: existing?.titleLocked
+          ? existing.title
+          : sessionTitleFromMessages(nextMessages),
+        messages: nextMessages,
+        createdAt: existing?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+        titleLocked: existing?.titleLocked,
       };
       const next = upsertSessionRecord(prev, merged);
       saveStoredSessions(next);
@@ -461,6 +462,67 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     return id;
   }, [clearBackendMemory, persistActiveSession]);
 
+  const renameSession = useCallback((sessionId: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setSessions((prev) => {
+      const next = prev.map((s) =>
+        s.id === sessionId
+          ? { ...s, title: trimmed, titleLocked: true, updatedAt: Date.now() }
+          : s,
+      );
+      saveStoredSessions(next);
+      return next;
+    });
+  }, []);
+
+  const deleteSession = useCallback(
+    (sessionId: string) => {
+      const isActive = sessionId === activeSessionIdRef.current;
+      if (isActive) {
+        persistActiveSession(messagesRef.current);
+      }
+
+      let nextSessions = sessionsRef.current.filter((s) => s.id !== sessionId);
+
+      if (nextSessions.length === 0) {
+        const id = createSessionId();
+        const record: AgentSessionRecord = {
+          id,
+          title: "新对话",
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        nextSessions = [record];
+        setActiveSessionId(id);
+        saveActiveSessionId(id);
+        setMessages([]);
+        setInput("");
+        stepsRef.current = [];
+        setLiveSteps([]);
+        streamingIdRef.current = null;
+        setBusy(false);
+        clearBackendMemory();
+      } else if (isActive) {
+        const fallback = [...nextSessions].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+        setActiveSessionId(fallback.id);
+        saveActiveSessionId(fallback.id);
+        setMessages(fallback.messages);
+        setInput("");
+        stepsRef.current = [];
+        setLiveSteps([]);
+        streamingIdRef.current = null;
+        setBusy(false);
+        clearBackendMemory();
+      }
+
+      setSessions(nextSessions);
+      saveStoredSessions(nextSessions);
+    },
+    [clearBackendMemory, persistActiveSession],
+  );
+
   const value = useMemo<AgentChatContextValue>(
     () => ({
       loggedIn,
@@ -478,6 +540,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       clearConversation,
       switchSession,
       createSession,
+      renameSession,
+      deleteSession,
       fillAndSend,
     }),
     [
@@ -494,6 +558,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       clearConversation,
       switchSession,
       createSession,
+      renameSession,
+      deleteSession,
       fillAndSend,
     ],
   );

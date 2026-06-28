@@ -6,6 +6,8 @@ export type AgentSessionRecord = {
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+  /** 用户手动重命名后，不再被首条消息自动覆盖标题 */
+  titleLocked?: boolean;
 };
 
 const STORAGE_KEY = "chtholly-agent-sessions";

@@ -1,11 +1,18 @@
 "use client";
 
 import { Plus } from "lucide-react";
+import AgentSessionItem from "@/components/agent/AgentSessionItem";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
-import { cn } from "@/lib/utils";
 
 export default function AgentSessionSidebar() {
-  const { sessions, activeSessionId, switchSession, createSession } = useAgentChatContext();
+  const {
+    sessions,
+    activeSessionId,
+    switchSession,
+    createSession,
+    renameSession,
+    deleteSession,
+  } = useAgentChatContext();
 
   return (
     <aside className="agent-session-sidebar" data-testid="agent-session-sidebar">
@@ -24,21 +31,14 @@ export default function AgentSessionSidebar() {
       </div>
       <ul className="agent-session-list">
         {sessions.map((session) => (
-          <li key={session.id}>
-            <button
-              type="button"
-              className={cn(
-                "agent-session-item",
-                session.id === activeSessionId && "agent-session-item--active",
-              )}
-              onClick={() => switchSession(session.id)}
-            >
-              <span className="block truncate text-sm">{session.title}</span>
-              <span className="block text-xs text-text-secondary mt-0.5">
-                {new Date(session.updatedAt).toLocaleDateString("zh-CN")}
-              </span>
-            </button>
-          </li>
+          <AgentSessionItem
+            key={session.id}
+            session={session}
+            active={session.id === activeSessionId}
+            onSelect={() => switchSession(session.id)}
+            onRename={(title) => renameSession(session.id, title)}
+            onDelete={() => deleteSession(session.id)}
+          />
         ))}
       </ul>
     </aside>

@@ -50,7 +50,7 @@
   --tag-badge-bg-end: color-mix(in srgb, var(--color-violet) 12%, transparent);
   --skeleton-base: color-mix(in srgb, var(--color-border) 60%, var(--color-surface));
   --skeleton-highlight: color-mix(in srgb, var(--color-sky) 8%, var(--color-surface));
-  --feed-ma-top: 60px;
+  --feed-ma-top: 0;
   --post-card-gap: 48px;
   --widget-gap: 40px;
 
@@ -630,25 +630,115 @@
     flex: 1;
   }
 
+  .agent-session-row {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    border-radius: 8px;
+  }
+
+  .agent-session-row:hover,
+  .agent-session-row:focus-within {
+    background: color-mix(in srgb, var(--color-sky) 8%, transparent);
+  }
+
+  .agent-session-row--active {
+    background: color-mix(in srgb, var(--color-sky) 12%, var(--color-surface));
+  }
+
+  .agent-session-row--active .agent-session-item {
+    color: var(--color-sky);
+  }
+
   .agent-session-item {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     text-align: left;
-    padding: 0.625rem 0.75rem;
+    padding: 0.625rem 0.25rem 0.625rem 0.75rem;
     border: none;
     border-radius: 8px;
     background: transparent;
     color: var(--color-text);
     cursor: pointer;
+    transition: color 0.15s ease;
+  }
+
+  .agent-session-menu-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    margin-right: 0.25rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+
+  .agent-session-row:hover .agent-session-menu-btn,
+  .agent-session-row:focus-within .agent-session-menu-btn,
+  .agent-session-menu-btn[aria-expanded="true"] {
+    opacity: 1;
+  }
+
+  .agent-session-menu-btn:hover {
+    background: color-mix(in srgb, var(--color-sky) 12%, transparent);
+    color: var(--color-sky);
+  }
+
+  .agent-session-menu {
+    position: absolute;
+    right: 0.25rem;
+    top: calc(100% - 4px);
+    z-index: 20;
+    min-width: 120px;
+    padding: 0.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px var(--agent-panel-shadow);
+  }
+
+  .agent-session-menu-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text);
+    font-size: 0.8125rem;
+    text-align: left;
+    cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease;
   }
 
-  .agent-session-item:hover {
-    background: color-mix(in srgb, var(--color-sky) 8%, transparent);
+  .agent-session-menu-item:hover {
+    background: var(--color-cloud);
   }
 
-  .agent-session-item--active {
-    background: color-mix(in srgb, var(--color-sky) 12%, var(--color-surface));
-    color: var(--color-sky);
+  .agent-session-menu-item--danger {
+    color: var(--color-sunset);
+  }
+
+  .agent-session-menu-item--danger:hover {
+    background: color-mix(in srgb, var(--color-sunset) 10%, transparent);
+  }
+
+  .agent-session-rename-input {
+    width: 100%;
+    margin-top: 0.125rem;
+    padding: 0.25rem 0.375rem;
+    font-size: 0.8125rem;
+    border: 1px solid var(--color-sky);
+    border-radius: 4px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    outline: none;
   }
 
   .agent-workspace-chat-shell {
