@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Sidebar from "@/components/site/Sidebar";
+import { AnimateIn } from "@/components/ui/AnimateIn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { postService } from "@/lib/services/postService";
 import { siteConfig } from "@/lib/site.config";
@@ -53,39 +54,43 @@ export default async function ArchivePage() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 lg:items-start">
-      <div>
-        <div className="post-card mb-6 p-5">
-          <h1 className="entry-title mb-0">Archive</h1>
-          <p className="text-center text-text-secondary mt-3">
-            共 {entries.length} 篇文章
-          </p>
-        </div>
+      <div className="feed-ma">
+        <AnimateIn delay={0}>
+          <div className="post-card mb-6 p-5">
+            <h1 className="entry-title mb-0">Archive</h1>
+            <p className="text-center text-text-secondary mt-3">
+              共 {entries.length} 篇文章
+            </p>
+          </div>
+        </AnimateIn>
 
         {sortedKeys.length > 0 ? (
-          sortedKeys.map((key) => {
+          sortedKeys.map((key, index) => {
             const group = groups.get(key)!;
             const monthLabel = formatArchiveMonth(group[0].publishTime);
             return (
-              <div key={key} className="post-card mb-6">
-                <div className="entry-header pb-0">
-                  <h2 className="entry-title text-[22px] mb-0">{monthLabel}</h2>
-                </div>
-                <ul className="list-none px-[72px] pb-9 m-0 max-md:px-6">
-                  {group.map((entry) => (
-                    <li
-                      key={entry.slug}
-                      className="border-b border-border py-3 last:border-b-0"
-                    >
-                      <Link
-                        href={`/post/${entry.slug}`}
-                        className="text-text text-base no-underline hover:text-sky transition-colors duration-150"
+              <AnimateIn key={key} delay={(index + 1) * 100}>
+                <div className="post-card mb-6">
+                  <div className="entry-header pb-0">
+                    <h2 className="entry-title text-[22px] mb-0">{monthLabel}</h2>
+                  </div>
+                  <ul className="list-none px-[72px] pb-9 m-0 max-md:px-6">
+                    {group.map((entry) => (
+                      <li
+                        key={entry.slug}
+                        className="border-b border-border py-3 last:border-b-0"
                       >
-                        {entry.title}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                        <Link
+                          href={`/post/${entry.slug}`}
+                          className="text-text text-base no-underline hover:text-sky transition-colors duration-150"
+                        >
+                          {entry.title}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </AnimateIn>
             );
           })
         ) : (
