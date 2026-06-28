@@ -11,3 +11,5 @@ alwaysApply: false
 - RSC/SSR 用 `apiClient.ts` + `API_SERVER_URL`（默认 `http://localhost:8888`，**非 8080**）
 - 沿用现有 Sakuga 视觉与组件；localStorage 仅放 `useEffect`，避免 hydration 不一致
 - 站点配置 `lib/site.config.ts`；产品名 Chtholly Hub，作者 Rekyrice
+- 样式与组件：遵守 `styling.mdc`、`components.mdc`（Design Token、禁止 inline 色值）
+- UI 改动完成后用 **Playwright MCP**（`@playwright/mcp`）对 `http://localhost:3000` 截图验收（见 `.cursor/mcp.json`）

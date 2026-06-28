@@ -1,0 +1,40 @@
+---
+description: 组件层样式约定（禁止 inline 颜色/间距/字体）
+globs: apps/web/**/components/**/*
+alwaysApply: false
+---
+
+# 组件样式
+
+## 禁止 inline style 表达设计
+
+以下不得出现在 `style={{ ... }}` 中：
+
+- `color`、`background`、`backgroundColor`、`borderColor`
+- `fontSize`、`fontWeight`、`letterSpacing`、`lineHeight`
+- `padding`、`margin`、`gap`（布局例外见下）
+
+改用 Tailwind 工具类或 `globals.css` 中的语义类（如 `.sakuga-nav-link`、`.post-card`）。
+
+## 布局例外
+
+仅允许 inline style 用于：
+
+- 动态计算值（如 `width: ${percent}%`、图表尺寸）
+- 第三方库要求的 style prop
+
+## 交互元素
+
+所有可点击/可聚焦元素**必须**包含 transition，例如：
+
+```tsx
+className="... transition-colors duration-150 hover:text-[var(--blog-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blog-primary)]"
+```
+
+## 可测试性
+
+新增交互组件优先加 `data-testid`（如 `data-testid="navbar-search"`），便于 Playwright MCP 截图与 E2E 验收。
+
+## 验收
+
+改完 UI 后：dev server 运行 → Playwright MCP 截图桌面/移动视口 → 与预期对比后再声称完成。

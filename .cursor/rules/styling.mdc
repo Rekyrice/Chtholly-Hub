@@ -1,0 +1,36 @@
+---
+description: 前端样式与 Design Token 约定（禁止硬编码颜色）
+globs: apps/web/**/*.tsx,apps/web/**/*.css
+alwaysApply: false
+---
+
+# 样式与 Design Token
+
+## 颜色
+
+- **禁止**在 TSX/CSS 中硬编码 hex/rgb（如 `#009688`、`#424242`）
+- **必须**使用 `apps/web/app/globals.css` 中已定义的 CSS 变量，例如：
+  - `--blog-primary`、`--blog-body-bg`、`--foreground`、`--background`
+- Tailwind 优先使用映射到 token 的类；新增 token 时同步更新 `@theme inline` 与 `:root`
+
+## 示例
+
+```tsx
+// ❌ BAD
+<button style={{ background: "#009688", color: "#fff" }} />
+<div className="text-[#424242]" />
+
+// ✅ GOOD
+<button className="bg-[var(--blog-primary)] text-white transition-colors duration-150" />
+<p className="text-[var(--foreground)]" />
+```
+
+## site.config.ts
+
+- `theme.primary` 等仅作 SSR 兜底；**新代码不从这里取色**
+- 视觉改色只改 `globals.css` 变量
+
+## 动效
+
+- hover/focus 状态使用 `transition-colors duration-150`（或 `transition-all duration-150`）
+- 尊重 `prefers-reduced-motion`
