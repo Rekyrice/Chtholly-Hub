@@ -391,30 +391,25 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
 
       persistActiveSession(messagesRef.current);
 
-      setSessions((prev) => {
-        let target = prev.find((s) => s.id === sessionId);
-        if (!target) {
-          target = {
-            id: sessionId,
-            title: "新对话",
-            messages: [],
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          const next = upsertSessionRecord(prev, target);
+      let target = sessionsRef.current.find((s) => s.id === sessionId);
+      if (!target) {
+        target = {
+          id: sessionId,
+          title: "新对话",
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setSessions((prev) => {
+          const next = upsertSessionRecord(prev, target!);
           saveStoredSessions(next);
-          setActiveSessionId(sessionId);
-          saveActiveSessionId(sessionId);
-          setMessages([]);
           return next;
-        }
+        });
+      }
 
-        setActiveSessionId(sessionId);
-        saveActiveSessionId(sessionId);
-        setMessages(target.messages);
-        return prev;
-      });
-
+      setActiveSessionId(sessionId);
+      saveActiveSessionId(sessionId);
+      setMessages(target.messages);
       setInput("");
       stepsRef.current = [];
       setLiveSteps([]);
