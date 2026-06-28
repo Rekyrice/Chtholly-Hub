@@ -1,6 +1,7 @@
 package com.chtholly.comment.service.impl;
 
-import com.chtholly.comment.api.dto.CommentListResponse;
+import com.chtholly.common.api.pagination.PageRequest;
+import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.comment.api.dto.CommentResponse;
 import com.chtholly.comment.api.dto.CreateCommentRequest;
 import com.chtholly.comment.mapper.CommentMapper;
@@ -60,15 +61,15 @@ public class CommentServiceImpl implements CommentService {
      */
     @Override
     @Transactional(readOnly = true)
-    public CommentListResponse listByPost(long postId, Long viewerUserIdNullable, int page, int size) {
+    public PageResponse<CommentResponse> listByPost(long postId, Long viewerUserIdNullable, int page, int size) {
         assertCommentablePost(postId, viewerUserIdNullable);
+        PageRequest pageRequest = PageRequest.of(page, size);
         long total = commentMapper.countRootByPostId(postId);
-        int offset = (page - 1) * size;
-        List<CommentRow> roots = commentMapper.listRootByPostId(postId, size, offset);
-        boolean hasMore = (long) page * size < total;
+        List<CommentRow> roots = commentMapper.listRootByPostId(postId, pageRequest.size(), pageRequest.offset());
+        boolean hasMore = (long) pageRequest.page() * pageRequest.size() < total;
 
         if (roots.isEmpty()) {
-            return new CommentListResponse(List.of(), total, page, size, hasMore);
+            return PageResponse.offset(List.of(), pageRequest.page(), pageRequest.size(), total);
         }
 
         List<Long> rootIds = roots.stream().map(CommentRow::getId).toList();
@@ -122,7 +123,7 @@ public class CommentServiceImpl implements CommentService {
             }
         }
 
-        return new CommentListResponse(items, total, page, size, hasMore);
+        return PageResponse.offset(items, pageRequest.page(), pageRequest.size(), total);
     }
 
     /**

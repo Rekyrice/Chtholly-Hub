@@ -1,6 +1,6 @@
 package com.chtholly.comment.service.impl;
 
-import com.chtholly.comment.api.dto.CommentListResponse;
+import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.comment.api.dto.CommentResponse;
 import com.chtholly.comment.api.dto.CreateCommentRequest;
 import com.chtholly.comment.mapper.CommentMapper;
@@ -65,7 +65,7 @@ class CommentServiceImplTest {
         when(commentMapper.listRepliesByParentIds(eq(1L), eq(List.of(100L, 101L)))).thenReturn(List.of(reply));
         when(commentMapper.listRepliesByParentIds(eq(1L), eq(List.of(200L)))).thenReturn(List.of());
 
-        CommentListResponse response = service.listByPost(1L, null, 2, 10);
+        PageResponse<CommentResponse> response = service.listByPost(1L, null, 2, 10);
 
         assertThat(response.page()).isEqualTo(2);
         assertThat(response.size()).isEqualTo(10);
@@ -92,7 +92,7 @@ class CommentServiceImplTest {
         when(commentMapper.listRepliesByParentIds(eq(1L), eq(List.of(100L)))).thenReturn(List.of(deletedReply));
         when(commentMapper.listRepliesByParentIds(eq(1L), eq(List.of(200L)))).thenReturn(List.of());
 
-        CommentListResponse response = service.listByPost(1L, null, 1, 20);
+        PageResponse<CommentResponse> response = service.listByPost(1L, null, 1, 20);
 
         assertThat(response.items().get(0).replies().get(0).content()).isEqualTo("该评论已删除");
     }
@@ -164,7 +164,7 @@ class CommentServiceImplTest {
         when(commentMapper.listRepliesByParentIds(eq(1L), eq(List.of(100L)))).thenReturn(List.of(replyA, replyB));
         when(commentMapper.listRepliesByParentIds(eq(1L), eq(List.of(200L, 201L)))).thenReturn(List.of());
 
-        CommentListResponse response = service.listByPost(1L, null, 1, 20);
+        PageResponse<CommentResponse> response = service.listByPost(1L, null, 1, 20);
 
         assertThat(response.items()).hasSize(1);
         assertThat(response.items().get(0).id()).isEqualTo("100");

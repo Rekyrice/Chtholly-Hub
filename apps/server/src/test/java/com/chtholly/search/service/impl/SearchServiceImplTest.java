@@ -5,7 +5,8 @@ import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.HitsMetadata;
 import com.chtholly.counter.service.CounterService;
-import com.chtholly.search.api.dto.SearchResponse;
+import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.post.api.dto.FeedItemResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -70,7 +71,7 @@ class SearchServiceImplTest {
         when(esResp.hits()).thenReturn(hitsMeta);
         when(es.search(any(Function.class), any(Class.class))).thenReturn(esResp);
 
-        SearchResponse response = service.search("re0", 10, null, null, null);
+        PageResponse<FeedItemResponse> response = service.search("re0", 10, null, null, null);
 
         assertThat(response.degraded()).isFalse();
         assertThat(response.items()).hasSize(1);
@@ -84,11 +85,11 @@ class SearchServiceImplTest {
     void given_esThrows_when_search_then_returnsDegradedResponse() throws Exception {
         when(es.search(any(Function.class), any(Class.class))).thenThrow(new RuntimeException("ES down"));
 
-        SearchResponse response = service.search("fail", 10, null, null, null);
+        PageResponse<FeedItemResponse> response = service.search("fail", 10, null, null, null);
 
         assertThat(response.degraded()).isTrue();
         assertThat(response.items()).isEmpty();
-        assertThat(response.nextAfter()).isNull();
+        assertThat(response.nextCursor()).isNull();
         assertThat(response.hasMore()).isFalse();
     }
 
@@ -118,13 +119,13 @@ class SearchServiceImplTest {
         when(esResp.hits()).thenReturn(hitsMeta);
         when(es.search(any(Function.class), any(Class.class))).thenReturn(esResp);
 
-        SearchResponse first = service.search("cursor", 1, null, null, null);
+        PageResponse<FeedItemResponse> first = service.search("cursor", 1, null, null, null);
 
-        assertThat(first.nextAfter()).isNotNull();
-        String decoded = new String(Base64.getUrlDecoder().decode(first.nextAfter()));
+        assertThat(first.nextCursor()).isNotNull();
+        String decoded = new String(Base64.getUrlDecoder().decode(first.nextCursor()));
         assertThat(decoded).isEqualTo("1.25,1234567890,5,8,99");
 
-        SearchResponse second = service.search("cursor", 1, null, first.nextAfter(), null);
+        PageResponse<FeedItemResponse> second = service.search("cursor", 1, null, first.nextCursor(), null);
 
         assertThat(second.degraded()).isFalse();
         verify(es, times(2)).search(any(Function.class), any(Class.class));

@@ -12,7 +12,9 @@ import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.Suggestion;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.counter.service.CounterService;
-import com.chtholly.search.api.dto.SearchResponse;
+import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.common.api.pagination.Pagination;
+import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 import com.chtholly.search.service.SearchService;
 import lombok.RequiredArgsConstructor;
@@ -55,7 +57,8 @@ public class SearchServiceImpl implements SearchService {
      * @return Search results; empty with {@code degraded=true} on ES failure.
      */
     @SuppressWarnings("unchecked")
-    public SearchResponse search(String q, int size, String tagsCsv, String after, Long currentUserIdNullable) {
+    public PageResponse<FeedItemResponse> search(String q, int size, String tagsCsv, String after, Long currentUserIdNullable) {
+        int safeSize = Pagination.clampSize(size);
         List<String> tags = parseCsv(tagsCsv);
         List<FieldValue> afterValues = parseAfter(after);
 
@@ -72,7 +75,7 @@ public class SearchServiceImpl implements SearchService {
         try {
             resp = es.search(s -> {
                 var b = s.index(INDEX)
-                        .size(size)
+                        .size(safeSize)
                         // 召回与加权：先构造 bool 查询，再用 function_score 做互动数据加权
                         .query(qb -> qb.functionScore(fs -> fs
                                 .query(qb2 -> qb2.bool(bq -> {
@@ -123,7 +126,7 @@ public class SearchServiceImpl implements SearchService {
             }, (Class<Map<String, Object>>)(Class<?>) Map.class);
         } catch (Exception e) {
             log.error("Search failed for query: {}", q, e);
-            return new SearchResponse(Collections.emptyList(), null, false, true);
+            return new PageResponse<>(Collections.emptyList(), 0, safeSize, 0L, false, null, true);
         }
 
         List<FeedItemResponse> items = new ArrayList<>();
@@ -188,18 +191,18 @@ public class SearchServiceImpl implements SearchService {
             ));
         }
 
-        String nextAfter = null;
-        boolean hasMore = items.size() >= size;
+        String nextCursor = null;
+        boolean hasMore = items.size() >= safeSize;
 
         if (!hits.isEmpty()) {
             List<FieldValue> sv = hits.getLast().sort();
             if (sv != null && !sv.isEmpty()) {
                 List<String> parts = sv.stream().map(this::fieldValueToString).collect(Collectors.toList());
-                nextAfter = Base64.getUrlEncoder().withoutPadding().encodeToString(String.join(",", parts).getBytes());
+                nextCursor = Base64.getUrlEncoder().withoutPadding().encodeToString(String.join(",", parts).getBytes());
             }
         }
 
-        return new SearchResponse(items, nextAfter, hasMore, false);
+        return new PageResponse<>(items, 0, safeSize, 0L, hasMore, nextCursor, false);
     }
 
     /**

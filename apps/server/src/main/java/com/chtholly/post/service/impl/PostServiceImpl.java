@@ -16,7 +16,8 @@ import com.chtholly.common.web.HttpCacheHelper;
 import com.chtholly.post.model.PostDetailEtagRow;
 import com.chtholly.post.model.PostDetailRow;
 import com.chtholly.post.util.SlugUtils;
-import com.chtholly.post.api.dto.FeedPageResponse;
+import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.chtholly.counter.service.CounterService;
@@ -65,7 +66,7 @@ public class PostServiceImpl implements PostService {
     private final UserCounterService userCounterService;
     private final StringRedisTemplate redis;
     @Qualifier("feedPublicCache")
-    private final Cache<String, FeedPageResponse> feedPublicCache;
+    private final Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     @Qualifier("postDetailCache")
     private final Cache<String, PostDetailResponse> postDetailCache;
     private final HotKeyDetector hotKey;
@@ -87,7 +88,7 @@ public class PostServiceImpl implements PostService {
             CounterService counterService,
             UserCounterService userCounterService,
             StringRedisTemplate redis,
-            @Qualifier("feedPublicCache") Cache<String, FeedPageResponse> feedPublicCache,
+            @Qualifier("feedPublicCache") Cache<String, PageResponse<FeedItemResponse>> feedPublicCache,
             @Qualifier("postDetailCache") Cache<String, PostDetailResponse> postDetailCache,
             HotKeyDetector hotKey,
             PostRagIndexer ragIndexService,

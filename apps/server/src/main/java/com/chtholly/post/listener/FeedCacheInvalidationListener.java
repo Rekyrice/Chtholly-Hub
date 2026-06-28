@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.chtholly.counter.event.CounterEvent;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.chtholly.post.api.dto.FeedItemResponse;
-import com.chtholly.post.api.dto.FeedPageResponse;
+import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.model.Post;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -42,14 +42,14 @@ public class FeedCacheInvalidationListener {
 
     private static final String FEED_PUBLIC_PAGES_KEY = "feed:public:pages";
 
-    private final Cache<String, FeedPageResponse> feedPublicCache;
+    private final Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final com.chtholly.counter.service.UserCounterService userCounterService;
     private final com.chtholly.post.mapper.PostMapper postMapper;
     private final CleanupProperties cleanupProperties;
 
-    public FeedCacheInvalidationListener(@Qualifier("feedPublicCache") Cache<String, FeedPageResponse> feedPublicCache,
+    public FeedCacheInvalidationListener(@Qualifier("feedPublicCache") Cache<String, PageResponse<FeedItemResponse>> feedPublicCache,
                                          StringRedisTemplate redis,
                                          ObjectMapper objectMapper,
                                          com.chtholly.counter.service.UserCounterService userCounterService,
@@ -121,17 +121,18 @@ public class FeedCacheInvalidationListener {
             }
 
             for (String key : keys) {
-                FeedPageResponse local = feedPublicCache.getIfPresent(key);
+                PageResponse<FeedItemResponse> local = feedPublicCache.getIfPresent(key);
                 if (local != null) {
-                    FeedPageResponse updatedLocal = adjustPageCounts(local, eid, metric, delta, true);
+                    PageResponse<FeedItemResponse> updatedLocal = adjustPageCounts(local, eid, metric, delta, true);
                     feedPublicCache.put(key, updatedLocal);
                 }
 
                 String cached = redis.opsForValue().get(key);
                 if (cached != null) {
                     try {
-                        FeedPageResponse resp = objectMapper.readValue(cached, FeedPageResponse.class);
-                        FeedPageResponse updated = adjustPageCounts(resp, eid, metric, delta, false);
+                        PageResponse<FeedItemResponse> resp = objectMapper.readValue(cached,
+                                new TypeReference<PageResponse<FeedItemResponse>>() {});
+                        PageResponse<FeedItemResponse> updated = adjustPageCounts(resp, eid, metric, delta, false);
                         writePageJsonKeepingTtl(key, updated);
                     } catch (Exception e) {
                         log.warn("Feed page cache update failed, key={}: {}", key, e.getMessage());
@@ -152,7 +153,7 @@ public class FeedCacheInvalidationListener {
      * - preserveUserFlags=false：写回 Redis 页面 JSON 时不携带用户态标志；
      * - 返回新的页面响应快照。
      */
-    private FeedPageResponse adjustPageCounts(FeedPageResponse page, String eid, String metric, int delta, boolean preserveUserFlags) {
+    private PageResponse<FeedItemResponse> adjustPageCounts(PageResponse<FeedItemResponse> page, String eid, String metric, int delta, boolean preserveUserFlags) {
         List<FeedItemResponse> items = new ArrayList<>(page.items().size());
         for (FeedItemResponse it : page.items()) {
                 if (eid.equals(it.id())) {
@@ -189,7 +190,7 @@ public class FeedCacheInvalidationListener {
                 items.add(it);
             }
 
-        return new FeedPageResponse(items, page.page(), page.size(), page.hasMore(), page.nextCursor());
+        return PageResponse.offset(items, page.page(), page.size(), page.total(), page.hasMore(), page.nextCursor());
     }
 
     /**
@@ -199,7 +200,7 @@ public class FeedCacheInvalidationListener {
      * - 保持页面缓存的过期策略一致，避免因覆盖写导致 TTL 重置；
      * - 若键未设置 TTL，则直接写入最新 JSON。
      */
-    private void writePageJsonKeepingTtl(String key, FeedPageResponse page) {
+    private void writePageJsonKeepingTtl(String key, PageResponse<FeedItemResponse> page) {
         try {
             String json = objectMapper.writeValueAsString(page);
             long ttl = redis.getExpire(key);

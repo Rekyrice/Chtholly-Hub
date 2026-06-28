@@ -1,10 +1,13 @@
 package com.chtholly.search.api;
 
-import com.chtholly.search.api.dto.SearchResponse;
+import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.common.api.pagination.Pagination;
+import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 import com.chtholly.search.service.SearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
@@ -42,13 +45,15 @@ public class SearchController {
      */
     @Operation(summary = "关键词搜索")
     @GetMapping
-    public SearchResponse search(@RequestParam("q") @NotBlank String q,
-                                 @RequestParam(value = "size", required = false, defaultValue = "20") @Min(1) int size,
+    public PageResponse<FeedItemResponse> search(@RequestParam("q") @NotBlank String q,
+                                 @RequestParam(value = "size", required = false, defaultValue = "20") @Min(1) @Max(50) int size,
                                  @RequestParam(value = "tags", required = false) String tagsCsv,
                                  @RequestParam(value = "after", required = false) String after,
+                                 @RequestParam(value = "cursor", required = false) String cursor,
                                  @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        return searchService.search(q, size, tagsCsv, after, userId);
+        String pageCursor = cursor != null && !cursor.isBlank() ? cursor : after;
+        return searchService.search(q, size, tagsCsv, pageCursor, userId);
     }
 
     /**

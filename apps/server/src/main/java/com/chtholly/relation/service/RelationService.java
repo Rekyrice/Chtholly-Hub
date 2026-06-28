@@ -2,6 +2,7 @@ package com.chtholly.relation.service;
 
 import java.util.List;
 import java.util.Map;
+import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.profile.api.dto.ProfileResponse;
 
 /**
@@ -71,23 +72,15 @@ public interface RelationService {
     List<Long> followersCursor(long userId, int limit, Long cursor);
 
     /**
-     * 关注列表（资料视图）：在 ID 列表基础上聚合用户资料，支持偏移或游标。
-     * @param userId 用户ID
-     * @param limit 返回数量上限
-     * @param offset 偏移量（游标为空时生效）
-     * @param cursor 游标（上一页末条分数）
-     * @return 关注用户的资料视图列表
+     * 关注列表（资料视图，游标分页）。
      */
-    List<ProfileResponse> followingProfiles(long userId, int limit, int offset, Long cursor);
+    PageResponse<ProfileResponse> followingProfilesPage(long userId, int size, String cursor,
+                                                        Integer legacyOffset, Long legacyCursorMs);
 
     /**
-     * 粉丝列表（资料视图）：在 ID 列表基础上聚合用户资料，支持偏移或游标。
-     * @param userId 用户ID
-     * @param limit 返回数量上限
-     * @param offset 偏移量（游标为空时生效）
-     * @param cursor 游标（上一页末条分数）
-     * @return 粉丝用户的资料视图列表
+     * 粉丝列表（资料视图，游标分页）。
      */
-    List<ProfileResponse> followersProfiles(long userId, int limit, int offset, Long cursor);
+    PageResponse<ProfileResponse> followersProfilesPage(long userId, int size, String cursor,
+                                                          Integer legacyOffset, Long legacyCursorMs);
 }
 

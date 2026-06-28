@@ -2,11 +2,14 @@ package com.chtholly.relation.api;
 
 import com.chtholly.relation.service.RelationService;
 import com.chtholly.auth.token.JwtService;
+import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.profile.api.dto.ProfileResponse;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
@@ -88,30 +91,33 @@ public class RelationController {
      * @return following user profiles
      */
     @GetMapping("/following")
-    public List<ProfileResponse> following(@RequestParam("userId") long userId,
-                                @RequestParam(value = "limit", defaultValue = "20") int limit,
-                                @RequestParam(value = "offset", defaultValue = "0") int offset,
-                                @RequestParam(value = "cursor", required = false) Long cursor) {
-        int l = Math.min(Math.max(limit, 1), 100);
-        return relationService.followingProfiles(userId, l, Math.max(offset, 0), cursor);
+    public PageResponse<ProfileResponse> following(@RequestParam("userId") long userId,
+                                @RequestParam(value = "size", defaultValue = "20") @Min(1) @Max(50) int size,
+                                @RequestParam(value = "cursor", required = false) String cursor,
+                                @RequestParam(value = "limit", required = false) Integer limit,
+                                @RequestParam(value = "offset", required = false) Integer offset,
+                                @RequestParam(value = "cursorMs", required = false) Long cursorMs) {
+        int resolvedSize = limit != null ? limit : size;
+        return relationService.followingProfilesPage(userId, resolvedSize, cursor, offset, cursorMs);
     }
 
     /**
-     * Lists followers of the given user, with offset or cursor pagination.
+     * Lists followers of the given user, with cursor pagination.
      *
      * @param userId subject user snowflake ID
-     * @param limit maximum profiles to return (clamped to 100)
-     * @param offset zero-based offset when {@code cursor} is absent
-     * @param cursor optional millisecond timestamp cursor
-     * @return follower user profiles
+     * @param size items per page (1–50)
+     * @param cursor optional Base64URL cursor
+     * @return follower user profiles page
      */
     @GetMapping("/followers")
-    public List<ProfileResponse> followers(@RequestParam("userId") long userId,
-                                          @RequestParam(value = "limit", defaultValue = "20") int limit,
-                                          @RequestParam(value = "offset", defaultValue = "0") int offset,
-                                          @RequestParam(value = "cursor", required = false) Long cursor) {
-        int l = Math.min(Math.max(limit, 1), 100);
-        return relationService.followersProfiles(userId, l, Math.max(offset, 0), cursor);
+    public PageResponse<ProfileResponse> followers(@RequestParam("userId") long userId,
+                                          @RequestParam(value = "size", defaultValue = "20") @Min(1) @Max(50) int size,
+                                          @RequestParam(value = "cursor", required = false) String cursor,
+                                          @RequestParam(value = "limit", required = false) Integer limit,
+                                          @RequestParam(value = "offset", required = false) Integer offset,
+                                          @RequestParam(value = "cursorMs", required = false) Long cursorMs) {
+        int resolvedSize = limit != null ? limit : size;
+        return relationService.followersProfilesPage(userId, resolvedSize, cursor, offset, cursorMs);
     }
 
     /**

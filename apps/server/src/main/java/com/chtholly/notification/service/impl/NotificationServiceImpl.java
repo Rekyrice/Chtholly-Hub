@@ -2,6 +2,8 @@ package com.chtholly.notification.service.impl;
 
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
+import com.chtholly.common.api.pagination.PageRequest;
+import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.notification.api.dto.NotificationListResponse;
 import com.chtholly.notification.api.dto.NotificationResponse;
 import com.chtholly.notification.api.dto.UnreadCountResponse;
@@ -47,17 +49,16 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional(readOnly = true)
     public NotificationListResponse list(long userId, int page, int size) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.min(Math.max(size, 1), 50);
-        int offset = (safePage - 1) * safeSize;
-
-        List<NotificationResponse> items = notificationMapper.listByUser(userId, safeSize, offset).stream()
+        PageRequest pageRequest = PageRequest.of(page, size);
+        List<NotificationResponse> items = notificationMapper.listByUser(userId, pageRequest.size(), pageRequest.offset()).stream()
                 .map(this::toResponse)
                 .toList();
         NotificationCountStats stats = notificationMapper.countStatsByUser(userId);
         long total = stats == null ? 0L : stats.getTotal();
         long unread = stats == null ? 0L : stats.getUnread();
-        return new NotificationListResponse(items, total, unread);
+        PageResponse<NotificationResponse> pageResponse = PageResponse.offset(
+                items, pageRequest.page(), pageRequest.size(), total);
+        return NotificationListResponse.from(pageResponse, unread);
     }
 
     /**

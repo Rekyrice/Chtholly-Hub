@@ -1,7 +1,10 @@
 package com.chtholly.relation.service.impl;
 
+import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.common.api.pagination.Pagination;
 import com.chtholly.relation.mapper.RelationMapper;
 import com.chtholly.relation.service.RelationService;
+import com.chtholly.relation.util.RelationCursor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.relation.event.RelationEvent;
 import com.chtholly.relation.outbox.OutboxMapper;
@@ -267,17 +270,67 @@ public class RelationServiceImpl implements RelationService {
     }
 
     @Override
-    public List<ProfileResponse> followingProfiles(long userId, int limit, int offset, Long cursor) {
-        List<Long> ids = cursor != null ? followingCursor(userId, limit, cursor)
-                                        : following(userId, limit, offset);
-        return toProfiles(ids);
+    public PageResponse<ProfileResponse> followingProfilesPage(long userId, int size, String cursor,
+                                                               Integer legacyOffset, Long legacyCursorMs) {
+        return profilesPage(userId, size, cursor, legacyOffset, legacyCursorMs, true);
     }
 
     @Override
-    public List<ProfileResponse> followersProfiles(long userId, int limit, int offset, Long cursor) {
-        List<Long> ids = cursor != null ? followersCursor(userId, limit, cursor)
-                                        : followers(userId, limit, offset);
-        return toProfiles(ids);
+    public PageResponse<ProfileResponse> followersProfilesPage(long userId, int size, String cursor,
+                                                               Integer legacyOffset, Long legacyCursorMs) {
+        return profilesPage(userId, size, cursor, legacyOffset, legacyCursorMs, false);
+    }
+
+    private PageResponse<ProfileResponse> profilesPage(long userId, int size, String cursor,
+                                                         Integer legacyOffset, Long legacyCursorMs,
+                                                         boolean following) {
+        int safeSize = Pagination.clampSize(size);
+        int fetch = safeSize + 1;
+        String zsetKey = following ? "uf:flws:" + userId : "uf:fans:" + userId;
+
+        if (legacyOffset != null && legacyOffset > 0 && !hasCursorInput(cursor, legacyCursorMs)) {
+            int offset = Math.max(legacyOffset, 0);
+            List<Long> ids = following
+                    ? following(userId, fetch, offset)
+                    : followers(userId, fetch, offset);
+            boolean hasMore = ids.size() > safeSize;
+            if (hasMore) {
+                ids = ids.subList(0, safeSize);
+            }
+            int page = offset / safeSize + 1;
+            return PageResponse.offset(toProfiles(ids), page, safeSize, 0L, hasMore);
+        }
+
+        Long cursorMs = resolveCursorMillis(cursor, legacyCursorMs);
+        List<Long> ids = following
+                ? followingCursor(userId, fetch, cursorMs)
+                : followersCursor(userId, fetch, cursorMs);
+        boolean hasMore = ids.size() > safeSize;
+        if (hasMore) {
+            ids = ids.subList(0, safeSize);
+        }
+        String nextCursor = null;
+        if (hasMore && !ids.isEmpty()) {
+            long lastId = ids.getLast();
+            Double score = redis.opsForZSet().score(zsetKey, String.valueOf(lastId));
+            if (score != null) {
+                nextCursor = RelationCursor.encode(score.longValue(), lastId);
+            }
+        }
+        return PageResponse.cursor(toProfiles(ids), safeSize, hasMore, nextCursor);
+    }
+
+    private static boolean hasCursorInput(String cursor, Long legacyCursorMs) {
+        return (cursor != null && !cursor.isBlank()) || legacyCursorMs != null;
+    }
+
+    private static Long resolveCursorMillis(String cursor, Long legacyCursorMs) {
+        if (cursor != null && !cursor.isBlank()) {
+            return RelationCursor.decode(cursor)
+                    .map(RelationCursor.RelationCursorPoint::createdAtMillis)
+                    .orElse(null);
+        }
+        return legacyCursorMs;
     }
 
     /**

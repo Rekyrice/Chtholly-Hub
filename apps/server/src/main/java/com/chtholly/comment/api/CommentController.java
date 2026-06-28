@@ -3,7 +3,7 @@ package com.chtholly.comment.api;
 import com.chtholly.common.ratelimit.RateLimit;
 import com.chtholly.common.ratelimit.RateLimitDimension;
 import com.chtholly.auth.token.JwtService;
-import com.chtholly.comment.api.dto.CommentListResponse;
+import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.comment.api.dto.CommentResponse;
 import com.chtholly.comment.api.dto.CreateCommentRequest;
 import com.chtholly.comment.service.CommentService;
@@ -51,7 +51,7 @@ public class CommentController {
      */
     @Operation(summary = "评论列表（树形分页）")
     @GetMapping
-    public CommentListResponse list(@PathVariable("postId") long postId,
+    public PageResponse<CommentResponse> list(@PathVariable("postId") long postId,
                                     @RequestParam(defaultValue = "1") @Min(1) int page,
                                     @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size,
                                     @AuthenticationPrincipal Jwt jwt) {

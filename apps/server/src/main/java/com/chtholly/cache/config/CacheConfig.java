@@ -2,7 +2,8 @@ package com.chtholly.cache.config;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.chtholly.post.api.dto.FeedPageResponse;
+import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,10 +20,10 @@ public class CacheConfig {
     /**
      * 公共信息流（广场/推荐）分页缓存。
      *
-     * <p>键通常由分页游标、页大小、过滤条件等组合而成；值为一页的 {@link FeedPageResponse}。</p>
+     * <p>键通常由分页游标、页大小、过滤条件等组合而成；值为一页的 {@link PageResponse}。</p>
      */
     @Bean("feedPublicCache")
-    public Cache<String, FeedPageResponse> feedPublicCache(CacheProperties props) {
+    public Cache<String, PageResponse<FeedItemResponse>> feedPublicCache(CacheProperties props) {
         return Caffeine.newBuilder()
                 .maximumSize(props.getL2().getPublicCfg().getMaxSize())
                 .expireAfterWrite(Duration.ofSeconds(props.getL2().getPublicCfg().getTtlSeconds()))
@@ -35,7 +36,7 @@ public class CacheConfig {
      * <p>键通常包含用户标识与分页参数；TTL 与容量由配置项控制。</p>
      */
     @Bean("feedMineCache")
-    public Cache<String, FeedPageResponse> feedMineCache(CacheProperties props) {
+    public Cache<String, PageResponse<FeedItemResponse>> feedMineCache(CacheProperties props) {
         return Caffeine.newBuilder()
                 .maximumSize(props.getL2().getMineCfg().getMaxSize())
                 .expireAfterWrite(Duration.ofSeconds(props.getL2().getMineCfg().getTtlSeconds()))

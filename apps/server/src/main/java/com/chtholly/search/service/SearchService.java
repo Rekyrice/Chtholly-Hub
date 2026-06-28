@@ -1,6 +1,7 @@
 package com.chtholly.search.service;
 
-import com.chtholly.search.api.dto.SearchResponse;
+import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 
 /**
@@ -15,7 +16,7 @@ public interface SearchService {
      * @param after 游标（Base64URL）
      * @param currentUserIdNullable 当前用户ID（可空）
      */
-    SearchResponse search(String q, int size, String tagsCsv, String after, Long currentUserIdNullable);
+    PageResponse<FeedItemResponse> search(String q, int size, String tagsCsv, String after, Long currentUserIdNullable);
     /**
      * 联想建议（Completion Suggester）。
      * @param prefix 前缀

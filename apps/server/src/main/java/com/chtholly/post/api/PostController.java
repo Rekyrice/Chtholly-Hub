@@ -9,13 +9,15 @@ import com.chtholly.post.api.dto.PostDraftCreateResponse;
 import com.chtholly.post.api.dto.PostPatchRequest;
 import com.chtholly.post.api.dto.PostTopPatchRequest;
 import com.chtholly.post.api.dto.PostVisibilityPatchRequest;
-import com.chtholly.post.api.dto.FeedPageResponse;
+import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.service.PostService;
 import com.chtholly.post.service.PostFeedService;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -169,15 +171,15 @@ public class PostController {
      */
     @Operation(summary = "公开 Feed 列表")
     @GetMapping("/feed")
-    public ResponseEntity<FeedPageResponse> feed(@RequestParam(value = "page", required = false) Integer page,
+    public ResponseEntity<PageResponse<FeedItemResponse>> feed(@RequestParam(value = "page", required = false) Integer page,
                                  @RequestParam(value = "cursor", required = false) String cursor,
-                                 @RequestParam(value = "size", defaultValue = "20") int size,
+                                 @RequestParam(value = "size", defaultValue = "20") @Min(1) @Max(50) int size,
                                  @RequestParam(value = "ownerId", required = false) Long ownerId,
                                  @RequestParam(value = "tag", required = false) String tag,
                                  @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
                                  @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        FeedPageResponse body = feedService.getPublicFeed(page, cursor, size, ownerId, tag, userId);
+        PageResponse<FeedItemResponse> body = feedService.getPublicFeed(page, cursor, size, ownerId, tag, userId);
         String pageKey = feedService.publicFeedPageKey(page, cursor, size, ownerId, tag);
         long hourSlot = System.currentTimeMillis() / 3600000L;
         int itemCount = body.items() != null ? body.items().size() : 0;
@@ -195,8 +197,8 @@ public class PostController {
      */
     @Operation(summary = "我的已发布帖子")
     @GetMapping("/mine")
-    public FeedPageResponse mine(@RequestParam(value = "page", defaultValue = "1") int page,
-                                 @RequestParam(value = "size", defaultValue = "20") int size,
+    public PageResponse<FeedItemResponse> mine(@RequestParam(value = "page", defaultValue = "1") int page,
+                                 @RequestParam(value = "size", defaultValue = "20") @Min(1) @Max(50) int size,
                                  @AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);
         return feedService.getMyPublished(userId, page, size);
@@ -207,8 +209,8 @@ public class PostController {
      */
     @Operation(summary = "关注 Feed 列表")
     @GetMapping("/feed/following")
-    public FeedPageResponse followingFeed(@RequestParam(value = "page", defaultValue = "1") int page,
-                                          @RequestParam(value = "size", defaultValue = "20") int size,
+    public PageResponse<FeedItemResponse> followingFeed(@RequestParam(value = "page", defaultValue = "1") int page,
+                                          @RequestParam(value = "size", defaultValue = "20") @Min(1) @Max(50) int size,
                                           @AuthenticationPrincipal Jwt jwt) {
         long userId = jwtService.extractUserId(jwt);
         return feedService.getFollowingFeed(userId, page, size);

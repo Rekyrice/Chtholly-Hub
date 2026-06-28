@@ -4,7 +4,8 @@ import com.chtholly.post.service.PostFeedService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.post.api.dto.FeedItemResponse;
-import com.chtholly.post.api.dto.FeedPageResponse;
+import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.common.api.pagination.Pagination;
 import com.chtholly.post.feed.FeedTimelineProperties;
 import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.mapper.PostMapper;
@@ -49,8 +50,8 @@ public class PostFeedServiceImpl implements PostFeedService {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final CounterService counterService;
-    private final Cache<String, FeedPageResponse> feedPublicCache;
-    private final Cache<String, FeedPageResponse> feedMineCache;
+    private final Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
+    private final Cache<String, PageResponse<FeedItemResponse>> feedMineCache;
     private final HotKeyDetector hotKey;
     private final FeedTimelineService feedTimelineService;
     private final FeedTimelineProperties feedTimelineProperties;
@@ -74,8 +75,8 @@ public class PostFeedServiceImpl implements PostFeedService {
             StringRedisTemplate redis,
             ObjectMapper objectMapper,
             CounterService counterService,
-            @Qualifier("feedPublicCache") Cache<String, FeedPageResponse> feedPublicCache,
-            @Qualifier("feedMineCache") Cache<String, FeedPageResponse> feedMineCache,
+            @Qualifier("feedPublicCache") Cache<String, PageResponse<FeedItemResponse>> feedPublicCache,
+            @Qualifier("feedMineCache") Cache<String, PageResponse<FeedItemResponse>> feedMineCache,
             HotKeyDetector hotKey,
             FeedTimelineService feedTimelineService,
             FeedTimelineProperties feedTimelineProperties
@@ -111,7 +112,7 @@ public class PostFeedServiceImpl implements PostFeedService {
      * <p>{@code cursor} 优先于 {@code page}：传 cursor 时走游标分页，否则走 offset 分页（向后兼容）。
      */
     @Override
-    public FeedPageResponse getPublicFeed(Integer page, String cursor, int size, Long ownerId, String tag,
+    public PageResponse<FeedItemResponse> getPublicFeed(Integer page, String cursor, int size, Long ownerId, String tag,
                                           Long currentUserIdNullable) {
         if (tag != null && !tag.isBlank()) {
             int safePage = page != null ? Math.max(page, 1) : 1;
@@ -150,7 +151,7 @@ public class PostFeedServiceImpl implements PostFeedService {
     /**
      * 公开 Feed — offset 分页（向后兼容 page 参数）。
      */
-    private FeedPageResponse getPublicFeedByOffset(int safePage, int size, Long currentUserIdNullable) {
+    private PageResponse<FeedItemResponse> getPublicFeedByOffset(int safePage, int size, Long currentUserIdNullable) {
         int safeSize = Math.min(Math.max(size, 1), 50);
         String localPageKey = cacheKeyByPage(safePage, safeSize);
 
@@ -158,17 +159,17 @@ public class PostFeedServiceImpl implements PostFeedService {
         String idsKey = "feed:public:ids:" + safeSize + ":" + hourSlot + ":" + safePage;
         String hasMoreKey = idsKey + ":hasMore";
 
-        FeedPageResponse local = feedPublicCache.getIfPresent(localPageKey);
+        PageResponse<FeedItemResponse> local = feedPublicCache.getIfPresent(localPageKey);
         if (local != null && local.items() != null) {
             for (FeedItemResponse item : local.items()) {
                 recordItemHotKey(item.id());
             }
             log.info("feed.public source=local localPageKey={} page={} size={}", localPageKey, safePage, safeSize);
             List<FeedItemResponse> enrichedLocal = enrich(local.items(), currentUserIdNullable);
-            return buildResponse(enrichedLocal, safePage, safeSize, local.hasMore(), local.nextCursor());
+            return PageResponse.offset(enrichedLocal, safePage, safeSize, 0L, local.hasMore(), local.nextCursor());
         }
 
-        FeedPageResponse fromCache = assembleFromCache(idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable);
+        PageResponse<FeedItemResponse> fromCache = assembleFromCache(idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable);
         if (fromCache != null) {
             feedPublicCache.put(localPageKey, fromCache);
             if (fromCache.items() != null) {
@@ -181,7 +182,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         }
 
         return singleFlight.runExclusive(idsKey, () -> {
-            FeedPageResponse again = assembleFromCache(idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable);
+            PageResponse<FeedItemResponse> again = assembleFromCache(idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable);
             if (again != null) {
                 feedPublicCache.put(localPageKey, again);
                 if (again.items() != null) {
@@ -203,7 +204,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
             String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
 
-            FeedPageResponse respForCache = new FeedPageResponse(items, safePage, safeSize, hasMore, nextCursor);
+            PageResponse<FeedItemResponse> respForCache = PageResponse.offset(items, safePage, safeSize, 0L, hasMore, nextCursor);
             int baseTtl = 60;
             int jitter = ThreadLocalRandom.current().nextInt(30);
             Duration frTtl = Duration.ofSeconds(baseTtl + jitter);
@@ -220,7 +221,7 @@ public class PostFeedServiceImpl implements PostFeedService {
     /**
      * 公开 Feed — 游标分页；cursor 为空表示首页（缓存槽位 head）。
      */
-    private FeedPageResponse getPublicFeedByCursor(String cursor, int size, Long currentUserIdNullable) {
+    private PageResponse<FeedItemResponse> getPublicFeedByCursor(String cursor, int size, Long currentUserIdNullable) {
         int safeSize = Math.min(Math.max(size, 1), 50);
         String cursorSlot = FeedCursor.cacheSlot(cursor);
         String localPageKey = cacheKeyByCursor(cursorSlot, safeSize);
@@ -229,7 +230,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         String idsKey = "feed:public:ids:" + safeSize + ":" + hourSlot + ":" + cursorSlot;
         String hasMoreKey = idsKey + ":hasMore";
 
-        FeedPageResponse local = feedPublicCache.getIfPresent(localPageKey);
+        PageResponse<FeedItemResponse> local = feedPublicCache.getIfPresent(localPageKey);
         if (local != null && local.items() != null) {
             for (FeedItemResponse item : local.items()) {
                 recordItemHotKey(item.id());
@@ -239,7 +240,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             return buildResponse(enrichedLocal, 0, safeSize, local.hasMore(), local.nextCursor());
         }
 
-        FeedPageResponse fromCache = assembleFromCache(idsKey, hasMoreKey, 0, safeSize, currentUserIdNullable);
+        PageResponse<FeedItemResponse> fromCache = assembleFromCache(idsKey, hasMoreKey, 0, safeSize, currentUserIdNullable);
         if (fromCache != null) {
             feedPublicCache.put(localPageKey, stripUserFlags(fromCache));
             if (fromCache.items() != null) {
@@ -252,7 +253,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         }
 
         return singleFlight.runExclusive(idsKey, () -> {
-            FeedPageResponse again = assembleFromCache(idsKey, hasMoreKey, 0, safeSize, currentUserIdNullable);
+            PageResponse<FeedItemResponse> again = assembleFromCache(idsKey, hasMoreKey, 0, safeSize, currentUserIdNullable);
             if (again != null) {
                 feedPublicCache.put(localPageKey, stripUserFlags(again));
                 if (again.items() != null) {
@@ -279,7 +280,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
             String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
 
-            FeedPageResponse respForCache = new FeedPageResponse(items, 0, safeSize, hasMore, nextCursor);
+            PageResponse<FeedItemResponse> respForCache = PageResponse.offset(items, 0, safeSize, 0L, hasMore, nextCursor);
             int baseTtl = 60;
             int jitter = ThreadLocalRandom.current().nextInt(30);
             Duration frTtl = Duration.ofSeconds(baseTtl + jitter);
@@ -293,9 +294,9 @@ public class PostFeedServiceImpl implements PostFeedService {
         });
     }
 
-    private FeedPageResponse buildResponse(List<FeedItemResponse> items, int page, int size,
+    private PageResponse<FeedItemResponse> buildResponse(List<FeedItemResponse> items, int page, int size,
                                            boolean hasMore, String nextCursor) {
-        return new FeedPageResponse(items, page, size, hasMore, nextCursor);
+        return PageResponse.offset(items, page, size, 0L, hasMore, nextCursor);
     }
 
     private String nextCursorFromRows(List<PostFeedRow> rows) {
@@ -310,7 +311,7 @@ public class PostFeedServiceImpl implements PostFeedService {
     }
 
     /** 剥离用户态标志，供 L1 缓存共享片段。 */
-    private FeedPageResponse stripUserFlags(FeedPageResponse page) {
+    private PageResponse<FeedItemResponse> stripUserFlags(PageResponse<FeedItemResponse> page) {
         if (page.items() == null) {
             return page;
         }
@@ -321,13 +322,13 @@ public class PostFeedServiceImpl implements PostFeedService {
                     it.tags(), it.authorAvatar(), it.authorNickname(), it.tagJson(),
                     it.likeCount(), it.favoriteCount(), null, null, it.isTop()));
         }
-        return new FeedPageResponse(neutral, page.page(), page.size(), page.hasMore(), page.nextCursor());
+        return PageResponse.offset(neutral, page.page(), page.size(), page.total(), page.hasMore(), page.nextCursor());
     }
 
     /**
      * 按创作者过滤的公开 Feed（不走公共缓存，Phase A 站长列表专用）。
      */
-    private FeedPageResponse getPublicFeedByOwner(long ownerId, int page, int size, Long currentUserIdNullable) {
+    private PageResponse<FeedItemResponse> getPublicFeedByOwner(long ownerId, int page, int size, Long currentUserIdNullable) {
         int safeSize = Math.min(Math.max(size, 1), 50);
         int safePage = Math.max(page, 1);
         int offset = (safePage - 1) * safeSize;
@@ -341,11 +342,11 @@ public class PostFeedServiceImpl implements PostFeedService {
         List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, false);
         String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
         log.info("feed.public source=db ownerId={} page={} size={} hasMore={}", ownerId, safePage, safeSize, hasMore);
-        return new FeedPageResponse(items, safePage, safeSize, hasMore, nextCursor);
+        return PageResponse.offset(items, safePage, safeSize, 0L, hasMore, nextCursor);
     }
 
     /** 按标签过滤的公开 Feed（不走页面级缓存，M1 直查 DB）。 */
-    private FeedPageResponse getPublicFeedByTag(String tagName, Long ownerId, int page, int size, Long currentUserIdNullable) {
+    private PageResponse<FeedItemResponse> getPublicFeedByTag(String tagName, Long ownerId, int page, int size, Long currentUserIdNullable) {
         int safeSize = Math.min(Math.max(size, 1), 50);
         int safePage = Math.max(page, 1);
         int offset = (safePage - 1) * safeSize;
@@ -359,7 +360,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, false);
         String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
         log.info("feed.public source=db tag={} ownerId={} page={} size={} hasMore={}", tagName, ownerId, safePage, safeSize, hasMore);
-        return new FeedPageResponse(items, safePage, safeSize, hasMore, nextCursor);
+        return PageResponse.offset(items, safePage, safeSize, 0L, hasMore, nextCursor);
     }
 
     /**
@@ -439,7 +440,7 @@ public class PostFeedServiceImpl implements PostFeedService {
      * @param uid 当前用户 ID（用于 liked/faved）
      * @return 组装完成的页面；不存在时返回 null
      */
-    private FeedPageResponse assembleFromCache(String idsKey, String hasMoreKey, int page, int size, Long uid) {
+    private PageResponse<FeedItemResponse> assembleFromCache(String idsKey, String hasMoreKey, int page, int size, Long uid) {
         // 需要展示帖子的 ID 列表
         List<String> idList = redis.opsForList().range(idsKey, 0, size - 1);
         String hasMoreStr = redis.opsForValue().get(hasMoreKey);
@@ -499,7 +500,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         boolean hasMore = hasMoreStr != null ? "1".equals(hasMoreStr) : (idList.size() == size);
         String nextCursor = redis.opsForValue().get(idsKey + ":nextCursor");
 
-        return new FeedPageResponse(enriched, page, size, hasMore, nextCursor);
+        return PageResponse.offset(enriched, page, size, 0L, hasMore, nextCursor);
     }
 
     /**
@@ -578,12 +579,12 @@ public class PostFeedServiceImpl implements PostFeedService {
      * @param size   Items per page (clamped to 1–50).
      * @return Personal feed page; shorter Redis TTL than public feed.
      */
-    public FeedPageResponse getMyPublished(long userId, int page, int size) {
+    public PageResponse<FeedItemResponse> getMyPublished(long userId, int page, int size) {
         int safeSize = Math.min(Math.max(size, 1), 50);
         int safePage = Math.max(page, 1);
         String key = myCacheKey(userId, safePage, safeSize);
 
-        FeedPageResponse local = feedMineCache.getIfPresent(key);
+        PageResponse<FeedItemResponse> local = feedMineCache.getIfPresent(key);
         if (local != null) {
             hotKey.record(key);
             maybeExtendTtlMine(key);
@@ -594,7 +595,8 @@ public class PostFeedServiceImpl implements PostFeedService {
         String cached = redis.opsForValue().get(key);
         if (cached != null) {
             try {
-                FeedPageResponse cachedResp = objectMapper.readValue(cached, FeedPageResponse.class);
+                PageResponse<FeedItemResponse> cachedResp = objectMapper.readValue(cached,
+                        new TypeReference<PageResponse<FeedItemResponse>>() {});
                 boolean hasCounts = cachedResp.items() != null && cachedResp.items().stream()
                         .allMatch(it -> it.likeCount() != null && it.favoriteCount() != null);
                 if (hasCounts) {
@@ -604,7 +606,8 @@ public class PostFeedServiceImpl implements PostFeedService {
                     maybeExtendTtlMine(key);
                     log.info("feed.mine source=page key={} page={} size={} user={}", key, safePage, safeSize, userId);
                 List<FeedItemResponse> enriched = enrich(cachedResp.items(), userId);
-                return new FeedPageResponse(enriched, cachedResp.page(), cachedResp.size(), cachedResp.hasMore(), cachedResp.nextCursor());
+                return PageResponse.offset(enriched, cachedResp.page(), cachedResp.size(), cachedResp.total(),
+                        cachedResp.hasMore(), cachedResp.nextCursor());
             }
             } catch (Exception e) {
                 log.warn("Feed mine cache deserialize failed, key={}: {}", key, e.getMessage());
@@ -618,7 +621,8 @@ public class PostFeedServiceImpl implements PostFeedService {
 
         List<FeedItemResponse> items = mapRowsToItems(rows, userId, true);
 
-        FeedPageResponse resp = new FeedPageResponse(items, safePage, safeSize, hasMore,
+        long total = mapper.countMyPublished(userId);
+        PageResponse<FeedItemResponse> resp = PageResponse.offset(items, safePage, safeSize, total, hasMore,
                 hasMore ? nextCursorFromRows(rows) : null);
         try {
             String json = objectMapper.writeValueAsString(resp);
@@ -639,7 +643,7 @@ public class PostFeedServiceImpl implements PostFeedService {
      * 关注时间线：合并 Redis 推模式 timeline 与大 V 拉模式近期文章，按发布时间降序分页。
      */
     @Override
-    public FeedPageResponse getFollowingFeed(long userId, int page, int size) {
+    public PageResponse<FeedItemResponse> getFollowingFeed(long userId, int page, int size) {
         int safeSize = Math.min(Math.max(size, 1), 50);
         int safePage = Math.max(page, 1);
         int candidateLimit = safePage * safeSize + safeSize + 1;
@@ -675,7 +679,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         List<FeedItemResponse> items = mapRowsToItemsBatch(pageRows, userId);
         log.info("feed.following user={} page={} size={} timeline={} bigv={} merged={} hasMore={}",
                 userId, safePage, safeSize, timelineRows.size(), bigVRows.size(), sorted.size(), hasMore);
-        return new FeedPageResponse(items, safePage, safeSize, hasMore,
+        return PageResponse.offset(items, safePage, safeSize, 0L, hasMore,
                 hasMore ? nextCursorFromRows(pageRows) : null);
     }
 

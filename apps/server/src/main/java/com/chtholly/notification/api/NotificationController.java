@@ -7,7 +7,8 @@ import com.chtholly.notification.api.dto.UnreadCountResponse;
 import com.chtholly.notification.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.RequiredArgsConstructor;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -44,8 +45,8 @@ public class NotificationController {
     @Operation(summary = "通知分页列表")
     @GetMapping
     public ResponseEntity<NotificationListResponse> list(@AuthenticationPrincipal Jwt jwt,
-                                         @RequestParam(value = "page", defaultValue = "1") int page,
-                                         @RequestParam(value = "size", defaultValue = "20") int size) {
+                                         @RequestParam(value = "page", defaultValue = "1") @Min(1) int page,
+                                         @RequestParam(value = "size", defaultValue = "20") @Min(1) @Max(50) int size) {
         long userId = jwtService.extractUserId(jwt);
         NotificationListResponse body = notificationService.list(userId, page, size);
         return HttpCacheHelper.okPrivate(body);
