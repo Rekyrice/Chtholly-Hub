@@ -13,8 +13,10 @@ import {
 import {
   createSessionId,
   loadActiveSessionId,
+  loadShowStepsPreference,
   loadStoredSessions,
   saveActiveSessionId,
+  saveShowStepsPreference,
   saveStoredSessions,
   sessionTitleFromMessages,
   type AgentSessionRecord,
@@ -64,7 +66,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [showSteps, setShowSteps] = useState(true);
+  const [showSteps, setShowStepsState] = useState(false);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
@@ -82,6 +84,14 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const syncAuth = useCallback(() => {
     purgeExpiredAuth();
     setLoggedIn(isLoggedIn());
+  }, []);
+
+  const setShowSteps = useCallback((value: boolean | ((prev: boolean) => boolean)) => {
+    setShowStepsState((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      saveShowStepsPreference(next);
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -112,6 +122,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     );
     setActiveSessionId(activeId);
     setMessages(active?.messages ?? []);
+    setShowStepsState(loadShowStepsPreference());
     saveActiveSessionId(activeId);
     setHydrated(true);
   }, []);

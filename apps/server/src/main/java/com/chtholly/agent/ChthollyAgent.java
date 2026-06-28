@@ -356,6 +356,10 @@ public class ChthollyAgent {
         return "fulltext_search".equals(toolName) || "article_rag".equals(toolName);
     }
 
+    private boolean isBangumiTool(String toolName) {
+        return toolName != null && toolName.startsWith("bangumi_");
+    }
+
     private boolean isEmptySiteResult(String observation) {
         if (observation == null) {
             return true;
@@ -365,17 +369,26 @@ public class ChthollyAgent {
                 || observation.contains("向量库中未找到");
     }
 
+    private boolean isToolTimeout(String observation) {
+        return observation != null && observation.contains("Tool execution timed out");
+    }
+
     /**
-     * Appends a system hint when site search tools return empty, nudging LLM toward Bangumi tools.
-     * Avoids hard-coded keyword routing — the hint is only injected into Observation text.
+     * 在 Observation 末尾追加系统提示，引导 LLM 下一步决策（不硬编码路由，仅注入文本）。
      */
     private String augmentObservation(String toolName, String observation) {
-        if (!isEmptySiteResult(observation) || !isSiteTool(toolName)) {
-            return observation;
-        }
-        return observation + """
+        String result = observation == null ? "" : observation;
+        if (isEmptySiteResult(result) && isSiteTool(toolName)) {
+            result = result + """
 
-                [系统提示] 站内无相关帖子。若用户问的是条目元数据（评分、季数、角色、作者作品等），请改用 bangumi_search、bangumi_characters 或 bangumi_person_works；勿重复 fulltext_search / article_rag。""";
+                    [系统提示] 站内无相关帖子。若用户问的是条目元数据（评分、季数、角色、作者作品等），请改用 bangumi_search、bangumi_characters 或 bangumi_person_works；勿重复 fulltext_search / article_rag。""";
+        }
+        if (isToolTimeout(result) && isBangumiTool(toolName)) {
+            result = result + """
+
+                    [系统提示] Bangumi 工具调用超时。请用相同或更简短的 keyword 再试一次；若仍超时再 action=final 并如实说明，勿编造数据。""";
+        }
+        return result;
     }
 
     private String buildSystemPrompt(Iterable<AgentTool> tools) {
@@ -402,7 +415,8 @@ public class ChthollyAgent {
                 6. 统计季数时以 Observation 中「共找到 N 部相关动画条目」为准，勿只凭单条推断。
                 7. 用户用简称、别名、日文名或中文译名提问时，请自行选择最可能匹配的 keyword 传入工具。
                 8. 有对话历史时，短追问（如「他们是谁」「还有谁」）需结合上文确定 keyword 再调工具。
-                9. Observation 已足够回答时再 action=final；回答只基于 Observation 与对话历史，不得臆测。""");
+                9. Observation 已足够回答时再 action=final；回答只基于 Observation 与对话历史，不得臆测。
+                10. Bangumi 工具超时后，同一问题最多再试一次；两次均失败则 final 并说明无法查询，勿凭训练数据猜测。""");
         return sb.toString();
     }
 

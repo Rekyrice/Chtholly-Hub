@@ -35,7 +35,7 @@ public class BangumiConfig {
 
         HttpClient httpClient = clientBuilder.build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
-        factory.setReadTimeout(Duration.ofSeconds(15));
+        factory.setReadTimeout(Duration.ofSeconds(25));
         return new RestTemplate(factory);
     }
 }
