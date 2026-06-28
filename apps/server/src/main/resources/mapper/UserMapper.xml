@@ -101,6 +101,14 @@
         LIMIT 1
     </select>
 
+    <select id="existsByHandle" parameterType="string" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM users
+            WHERE handle = #{handle}
+        )
+    </select>
+
     <update id="updatePassword">
         UPDATE users
         SET password_hash = #{passwordHash},

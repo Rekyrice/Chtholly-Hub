@@ -13,6 +13,7 @@
             ip,
             user_agent,
             status,
+            failure_reason,
             created_at
         ) VALUES (
             #{userId},
@@ -21,6 +22,7 @@
             #{ip},
             #{userAgent},
             #{status},
+            #{failureReason},
             #{createdAt}
         )
     </insert>

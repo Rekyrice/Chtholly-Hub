@@ -6,6 +6,7 @@ import type {
   SendCodeResponse,
   VerificationScene,
 } from "@/lib/types/auth";
+import { isValidPhone, resolvePasswordLoginType } from "@/lib/validation/auth";
 import { apiFetch } from "./apiClient";
 
 const AUTH_PREFIX = "/api/v1/auth";
@@ -61,6 +62,21 @@ export const authService = {
     return mapAuthResponse(res);
   },
 
+  loginWithPassword: async (identifier: string, password: string) => {
+    const trimmed = identifier.trim();
+    const identifierType = resolvePasswordLoginType(trimmed);
+    const res = await apiFetch<AuthResponse>(`${AUTH_PREFIX}/login`, {
+      method: "POST",
+      body: {
+        identifierType,
+        identifier: identifierType === "PHONE" ? trimmed : trimmed,
+        password,
+      },
+      accessToken: null,
+    });
+    return mapAuthResponse(res);
+  },
+
   register: async (phone: string, code: string) => {
     const res = await apiFetch<AuthResponse>(`${AUTH_PREFIX}/register`, {
       method: "POST",
@@ -68,6 +84,25 @@ export const authService = {
         identifierType: "PHONE",
         identifier: phone,
         code,
+        agreeTerms: true,
+      },
+      accessToken: null,
+    });
+    return mapAuthResponse(res);
+  },
+
+  registerWithHandle: async (params: {
+    handle: string;
+    password: string;
+    nickname?: string;
+  }) => {
+    const res = await apiFetch<AuthResponse>(`${AUTH_PREFIX}/register`, {
+      method: "POST",
+      body: {
+        identifierType: "HANDLE",
+        handle: params.handle.trim(),
+        password: params.password,
+        nickname: params.nickname?.trim() || undefined,
         agreeTerms: true,
       },
       accessToken: null,
@@ -95,3 +130,5 @@ export const authService = {
     }
   },
 };
+
+export { isValidPhone };

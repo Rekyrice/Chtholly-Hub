@@ -12,11 +12,15 @@ public interface UserService {
 
     Optional<User> findByEmail(String email);
 
+    Optional<User> findByHandle(String handle);
+
     Optional<User> findById(long id);
 
     boolean existsByPhone(String phone);
 
     boolean existsByEmail(String email);
+
+    boolean existsByHandle(String handle);
 
     User createUser(User user);
 

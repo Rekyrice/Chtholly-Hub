@@ -1,4 +1,4 @@
-export type IdentifierType = "PHONE" | "EMAIL";
+export type IdentifierType = "PHONE" | "EMAIL" | "HANDLE";
 export type VerificationScene = "REGISTER" | "LOGIN" | "RESET_PASSWORD";
 
 export type AuthUser = {
@@ -34,4 +34,11 @@ export type SendCodeResponse = {
 
 export type StoredAuth = TokenPair & {
   user?: AuthUser;
+};
+
+export type RegisterHandleBody = {
+  handle: string;
+  password: string;
+  nickname?: string;
+  agreeTerms: boolean;
 };

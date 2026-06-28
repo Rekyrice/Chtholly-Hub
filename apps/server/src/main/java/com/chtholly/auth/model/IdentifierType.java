@@ -2,7 +2,8 @@ package com.chtholly.auth.model;
 
 public enum IdentifierType {
     PHONE,
-    EMAIL;
+    EMAIL,
+    HANDLE;
 
     public static IdentifierType fromString(String value) {
         if (value == null) {
@@ -11,6 +12,7 @@ public enum IdentifierType {
         return switch (value.toLowerCase()) {
             case "phone", "mobile" -> PHONE;
             case "email" -> EMAIL;
+            case "handle", "username" -> HANDLE;
             default -> throw new IllegalArgumentException("Unsupported identifier type: " + value);
         };
     }

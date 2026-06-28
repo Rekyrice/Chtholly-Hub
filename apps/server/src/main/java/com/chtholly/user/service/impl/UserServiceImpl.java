@@ -42,12 +42,11 @@ public class UserServiceImpl implements UserService {
         return Optional.ofNullable(userMapper.findByEmail(email));
     }
 
-    /**
-     * Finds a user by primary key.
-     *
-     * @param id user ID
-     * @return matching user, or empty if not found
-     */
+    @Transactional(readOnly = true)
+    public Optional<User> findByHandle(String handle) {
+        return Optional.ofNullable(userMapper.findByHandle(handle));
+    }
+
     @Transactional(readOnly = true)
     public Optional<User> findById(long id) {
         return Optional.ofNullable(userMapper.findById(id));
@@ -73,6 +72,11 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public boolean existsByEmail(String email) {
         return userMapper.existsByEmail(email);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean existsByHandle(String handle) {
+        return userMapper.existsByHandle(handle);
     }
 
     /**

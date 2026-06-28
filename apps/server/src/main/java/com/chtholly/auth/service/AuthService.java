@@ -11,6 +11,7 @@ import com.chtholly.auth.api.dto.SendCodeRequest;
 import com.chtholly.auth.api.dto.SendCodeResponse;
 import com.chtholly.auth.api.dto.TokenRefreshRequest;
 import com.chtholly.auth.api.dto.TokenResponse;
+import com.chtholly.auth.audit.LoginFailureReason;
 import com.chtholly.auth.audit.LoginLogService;
 import com.chtholly.auth.security.LoginFailureGuard;
 import com.chtholly.auth.config.AuthProperties;
@@ -106,6 +107,50 @@ public class AuthService {
         if (!request.agreeTerms()) {
             throw new BusinessException(ErrorCode.TERMS_NOT_ACCEPTED);
         }
+        if (request.identifierType() == IdentifierType.HANDLE) {
+            return registerWithHandle(request, clientInfo);
+        }
+        return registerWithVerification(request, clientInfo);
+    }
+
+    private AuthResponse registerWithHandle(RegisterRequest request, ClientInfo clientInfo) {
+        String handle = normalizeHandle(request.handle());
+        validateHandle(handle);
+        if (userService.existsByHandle(handle)) {
+            throw new BusinessException(ErrorCode.HANDLE_EXISTS);
+        }
+        if (!StringUtils.hasText(request.password())) {
+            throw new BusinessException(ErrorCode.PASSWORD_POLICY_VIOLATION, "密码不能为空");
+        }
+        validatePassword(request.password());
+
+        String nickname = StringUtils.hasText(request.nickname())
+                ? request.nickname().trim()
+                : generateNickname();
+
+        User user = User.builder()
+                .handle(handle)
+                .nickname(nickname)
+                .avatar(null)
+                .bio(null)
+                .tagsJson("[]")
+                .passwordHash(passwordEncoder.encode(request.password().trim()))
+                .build();
+
+        userService.createUser(user);
+        TokenPair tokenPair = jwtService.issueTokenPair(user);
+        storeRefreshToken(user.getId(), tokenPair);
+        loginLogService.recordSuccess(user.getId(), handle, "REGISTER", clientInfo.ip(), clientInfo.userAgent());
+        return new AuthResponse(mapUser(user), mapToken(tokenPair));
+    }
+
+    private AuthResponse registerWithVerification(RegisterRequest request, ClientInfo clientInfo) {
+        if (!StringUtils.hasText(request.identifier())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "账号不能为空");
+        }
+        if (!StringUtils.hasText(request.code())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码不能为空");
+        }
         validateIdentifier(request.identifierType(), request.identifier());
         String identifier = normalizeIdentifier(request.identifierType(), request.identifier());
         if (identifierExists(request.identifierType(), identifier)) {
@@ -130,8 +175,7 @@ public class AuthService {
         userService.createUser(user);
         TokenPair tokenPair = jwtService.issueTokenPair(user);
         storeRefreshToken(user.getId(), tokenPair);
-        loginLogService.record(user.getId(), identifier, "REGISTER", clientInfo.ip(), clientInfo.userAgent(), "SUCCESS");
-
+        loginLogService.recordSuccess(user.getId(), identifier, "REGISTER", clientInfo.ip(), clientInfo.userAgent());
         return new AuthResponse(mapUser(user), mapToken(tokenPair));
     }
 
@@ -146,19 +190,32 @@ public class AuthService {
      * @throws BusinessException 当用户不存在、凭证错误或请求不合法时抛出。
      */
     public AuthResponse login(LoginRequest request, ClientInfo clientInfo) {
-        validateIdentifier(request.identifierType(), request.identifier());
-        String identifier = normalizeIdentifier(request.identifierType(), request.identifier());
-        loginFailureGuard.assertNotLocked(identifier, clientInfo.ip());
+        String identifier = resolveLoginIdentifier(request);
+        try {
+            loginFailureGuard.assertNotLocked(identifier, clientInfo.ip());
+        } catch (BusinessException ex) {
+            loginLogService.recordFailure(null, identifier, "PASSWORD", clientInfo.ip(), clientInfo.userAgent(),
+                    LoginFailureReason.ACCOUNT_LOCKED);
+            throw ex;
+        }
+
         Optional<User> userOptional = findUserByIdentifier(request.identifierType(), identifier);
         if (userOptional.isEmpty()) {
+            loginLogService.recordFailure(null, identifier, resolveLoginChannel(request), clientInfo.ip(),
+                    clientInfo.userAgent(), LoginFailureReason.ACCOUNT_NOT_FOUND);
+            if (StringUtils.hasText(request.password())) {
+                loginFailureGuard.onFailure(identifier, clientInfo.ip());
+            }
             throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND);
         }
         User user = userOptional.get();
         String channel;
         if (StringUtils.hasText(request.password())) {
             channel = "PASSWORD";
-            if (!StringUtils.hasText(user.getPasswordHash()) || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-                loginLogService.record(user.getId(), identifier, channel, clientInfo.ip(), clientInfo.userAgent(), "FAILED");
+            if (!StringUtils.hasText(user.getPasswordHash())
+                    || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+                loginLogService.recordFailure(user.getId(), identifier, channel, clientInfo.ip(),
+                        clientInfo.userAgent(), LoginFailureReason.WRONG_PASSWORD);
                 loginFailureGuard.onFailure(identifier, clientInfo.ip());
                 throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
             }
@@ -167,7 +224,8 @@ public class AuthService {
             try {
                 ensureVerificationSuccess(verificationService.verify(VerificationScene.LOGIN, identifier, request.code()));
             } catch (BusinessException ex) {
-                loginLogService.record(user.getId(), identifier, channel, clientInfo.ip(), clientInfo.userAgent(), "FAILED");
+                loginLogService.recordFailure(user.getId(), identifier, channel, clientInfo.ip(),
+                        clientInfo.userAgent(), null);
                 loginFailureGuard.onFailure(identifier, clientInfo.ip());
                 throw ex;
             }
@@ -178,8 +236,22 @@ public class AuthService {
         loginFailureGuard.onSuccess(identifier);
         TokenPair tokenPair = jwtService.issueTokenPair(user);
         storeRefreshToken(user.getId(), tokenPair);
-        loginLogService.record(user.getId(), identifier, channel, clientInfo.ip(), clientInfo.userAgent(), "SUCCESS");
+        loginLogService.recordSuccess(user.getId(), identifier, channel, clientInfo.ip(), clientInfo.userAgent());
         return new AuthResponse(mapUser(user), mapToken(tokenPair));
+    }
+
+    private String resolveLoginIdentifier(LoginRequest request) {
+        if (request.identifierType() == IdentifierType.HANDLE) {
+            String handle = normalizeHandle(request.identifier());
+            validateHandle(handle);
+            return handle;
+        }
+        validateIdentifier(request.identifierType(), request.identifier());
+        return normalizeIdentifier(request.identifierType(), request.identifier());
+    }
+
+    private String resolveLoginChannel(LoginRequest request) {
+        return StringUtils.hasText(request.password()) ? "PASSWORD" : "CODE";
     }
 
     /**
@@ -299,6 +371,23 @@ public class AuthService {
         if (type == IdentifierType.EMAIL && !IdentifierValidator.isValidEmail(identifier)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "邮箱格式错误");
         }
+        if (type == IdentifierType.HANDLE) {
+            validateHandle(identifier);
+        }
+    }
+
+    private void validateHandle(String handle) {
+        if (!IdentifierValidator.isValidHandle(handle)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "用户名需 3-32 字符，仅支持字母、数字、下划线，且不能以数字开头");
+        }
+    }
+
+    private String normalizeHandle(String handle) {
+        if (!StringUtils.hasText(handle)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "用户名不能为空");
+        }
+        return handle.trim();
     }
 
     /**
@@ -333,6 +422,7 @@ public class AuthService {
         return switch (type) {
             case PHONE -> userService.existsByPhone(identifier);
             case EMAIL -> userService.existsByEmail(identifier);
+            case HANDLE -> userService.existsByHandle(identifier);
         };
     }
 
@@ -347,6 +437,7 @@ public class AuthService {
         return switch (type) {
             case PHONE -> userService.findByPhone(identifier);
             case EMAIL -> userService.findByEmail(identifier);
+            case HANDLE -> userService.findByHandle(identifier);
         };
     }
 
@@ -371,6 +462,7 @@ public class AuthService {
         return switch (type) {
             case PHONE -> identifier.trim();
             case EMAIL -> identifier.trim().toLowerCase(Locale.ROOT);
+            case HANDLE -> normalizeHandle(identifier);
         };
     }
 

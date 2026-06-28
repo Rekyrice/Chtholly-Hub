@@ -18,14 +18,14 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class LoginFailureGuard {
 
-    private static final String FAIL_PREFIX = "login:fail:";
-    private static final String LOCK_PREFIX = "login:lock:";
-    private static final String IP_FAIL_PREFIX = "login:fail:ip:";
-    private static final String IP_LOCK_PREFIX = "login:lock:ip:";
+    private static final String FAIL_PREFIX = "auth:login:fail:";
+    private static final String LOCK_PREFIX = "auth:login:lock:";
+    private static final String IP_FAIL_PREFIX = "auth:login:fail:ip:";
+    private static final String IP_LOCK_PREFIX = "auth:login:lock:ip:";
 
     private static final int IDENTIFIER_MAX_FAILS = 5;
     private static final Duration IDENTIFIER_FAIL_TTL = Duration.ofMinutes(30);
-    private static final Duration IDENTIFIER_LOCK_TTL = Duration.ofSeconds(900);
+    private static final Duration IDENTIFIER_LOCK_TTL = Duration.ofMinutes(15);
     private static final int IP_MAX_FAILS = 20;
     private static final Duration IP_FAIL_TTL = Duration.ofMinutes(30);
     private static final Duration IP_LOCK_TTL = Duration.ofMinutes(30);
@@ -33,7 +33,7 @@ public class LoginFailureGuard {
     private final StringRedisTemplate redisTemplate;
 
     /**
-     * 若 identifier 或 IP 处于锁定期，抛出 423 ACCOUNT_LOCKED。
+     * 若 identifier 或 IP 处于锁定期，抛出 423 LOGIN_LOCKED。
      */
     public void assertNotLocked(String identifier, String ip) {
         if (ip != null && !ip.isBlank() && Boolean.TRUE.equals(redisTemplate.hasKey(IP_LOCK_PREFIX + ip))) {
@@ -78,8 +78,8 @@ public class LoginFailureGuard {
 
     private BusinessException lockedException() {
         return new BusinessException(
-                ErrorCode.ACCOUNT_LOCKED,
-                ErrorCode.ACCOUNT_LOCKED.getDefaultMessage(),
+                ErrorCode.LOGIN_LOCKED,
+                ErrorCode.LOGIN_LOCKED.getDefaultMessage(),
                 HttpStatus.LOCKED.value());
     }
 }

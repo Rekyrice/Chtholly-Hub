@@ -6,6 +6,8 @@ public final class IdentifierValidator {
 
     private static final Pattern PHONE_PATTERN = Pattern.compile("^1\\d{10}$");
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", Pattern.CASE_INSENSITIVE);
+    /** 3-32 字符，字母/数字/下划线，不能以数字开头 */
+    private static final Pattern HANDLE_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]{2,31}$");
 
     private IdentifierValidator() {
     }
@@ -28,5 +30,12 @@ public final class IdentifierValidator {
      */
     public static boolean isValidEmail(String email) {
         return email != null && EMAIL_PATTERN.matcher(email).matches();
+    }
+
+    /**
+     * 校验用户名（handle）格式：3-32 字符，字母/数字/下划线，不能以数字开头。
+     */
+    public static boolean isValidHandle(String handle) {
+        return handle != null && HANDLE_PATTERN.matcher(handle).matches();
     }
 }

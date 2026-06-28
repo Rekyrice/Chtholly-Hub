@@ -1,0 +1,7 @@
+-- 登录审计：记录失败原因
+ALTER TABLE login_logs
+    MODIFY status VARCHAR(16) NOT NULL COMMENT 'SUCCESS / FAILED';
+
+ALTER TABLE login_logs
+    ADD COLUMN failure_reason VARCHAR(64) NULL COMMENT '失败原因：WRONG_PASSWORD / ACCOUNT_LOCKED / ACCOUNT_NOT_FOUND'
+        AFTER status;

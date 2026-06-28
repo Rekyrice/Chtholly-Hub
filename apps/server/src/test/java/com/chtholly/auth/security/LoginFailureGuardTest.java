@@ -39,56 +39,56 @@ class LoginFailureGuardTest {
 
     @Test
     void throws423WhenIdentifierLocked() {
-        when(redisTemplate.hasKey("login:lock:ip:1.1.1.1")).thenReturn(false);
-        when(redisTemplate.hasKey("login:lock:13800000000")).thenReturn(true);
+        when(redisTemplate.hasKey("auth:login:lock:ip:1.1.1.1")).thenReturn(false);
+        when(redisTemplate.hasKey("auth:login:lock:alice")).thenReturn(true);
 
-        assertThatThrownBy(() -> guard.assertNotLocked("13800000000", "1.1.1.1"))
+        assertThatThrownBy(() -> guard.assertNotLocked("alice", "1.1.1.1"))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(ex -> {
                     BusinessException be = (BusinessException) ex;
                     assertThat(be.getHttpStatus()).isEqualTo(HttpStatus.LOCKED.value());
-                    assertThat(be.getErrorCode()).isEqualTo(ErrorCode.ACCOUNT_LOCKED);
+                    assertThat(be.getErrorCode()).isEqualTo(ErrorCode.LOGIN_LOCKED);
                 });
     }
 
     @Test
     void setsLockAfterFiveIdentifierFailures() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.increment("login:fail:13800000000")).thenReturn(5L);
-        when(valueOps.increment("login:fail:ip:1.1.1.1")).thenReturn(1L);
+        when(valueOps.increment("auth:login:fail:alice")).thenReturn(5L);
+        when(valueOps.increment("auth:login:fail:ip:1.1.1.1")).thenReturn(1L);
 
-        guard.onFailure("13800000000", "1.1.1.1");
+        guard.onFailure("alice", "1.1.1.1");
 
-        verify(valueOps).set("login:lock:13800000000", "1", Duration.ofSeconds(900));
+        verify(valueOps).set("auth:login:lock:alice", "1", Duration.ofMinutes(15));
     }
 
     @Test
     void clearsIdentifierCountersOnSuccess() {
-        guard.onSuccess("13800000000");
+        guard.onSuccess("alice");
 
-        verify(redisTemplate).delete("login:fail:13800000000");
-        verify(redisTemplate).delete("login:lock:13800000000");
+        verify(redisTemplate).delete("auth:login:fail:alice");
+        verify(redisTemplate).delete("auth:login:lock:alice");
     }
 
     @Test
     void setsIpLockAfterTwentyFailures() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.increment("login:fail:13800000000")).thenReturn(1L);
-        when(valueOps.increment("login:fail:ip:1.1.1.1")).thenReturn(20L);
+        when(valueOps.increment("auth:login:fail:alice")).thenReturn(1L);
+        when(valueOps.increment("auth:login:fail:ip:1.1.1.1")).thenReturn(20L);
 
-        guard.onFailure("13800000000", "1.1.1.1");
+        guard.onFailure("alice", "1.1.1.1");
 
-        verify(valueOps).set("login:lock:ip:1.1.1.1", "1", Duration.ofMinutes(30));
+        verify(valueOps).set("auth:login:lock:ip:1.1.1.1", "1", Duration.ofMinutes(30));
     }
 
     @Test
     void doesNotSetIdentifierLockBeforeThreshold() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.increment("login:fail:13800000000")).thenReturn(4L);
-        when(valueOps.increment("login:fail:ip:1.1.1.1")).thenReturn(1L);
+        when(valueOps.increment("auth:login:fail:alice")).thenReturn(4L);
+        when(valueOps.increment("auth:login:fail:ip:1.1.1.1")).thenReturn(1L);
 
-        guard.onFailure("13800000000", "1.1.1.1");
+        guard.onFailure("alice", "1.1.1.1");
 
-        verify(valueOps, never()).set(eq("login:lock:13800000000"), any(), any(Duration.class));
+        verify(valueOps, never()).set(eq("auth:login:lock:alice"), any(), any(Duration.class));
     }
 }

@@ -22,6 +22,8 @@ public interface UserMapper {
 
     User findByHandle(@Param("handle") String handle);
 
+    boolean existsByHandle(@Param("handle") String handle);
+
     void updatePassword(@Param("id") Long id, @Param("passwordHash") String passwordHash);
 
     void updateProfile(User user);

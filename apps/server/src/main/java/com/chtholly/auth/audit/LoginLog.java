@@ -20,6 +20,7 @@ public class LoginLog {
     private String ip;
     private String userAgent;
     private String status;
+    private String failureReason;
     private Instant createdAt;
 }
 
