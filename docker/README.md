@@ -70,14 +70,18 @@ Invoke-RestMethod -Uri "http://localhost:9200/_cluster/reroute?retry_failed=true
 
 ```bash
 cp .env.prod.example .env
-# 编辑 .env：MYSQL_PASSWORD、OSS 凭证等
+# 编辑 .env：MYSQL_ROOT_PASSWORD、MYSQL_PASSWORD、OSS 凭证等
 
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
+**MySQL 账号**：应用使用 `chtholly` 用户（仅 DML 权限）；`root` 仅用于初始化与 migration 脚本。首次建库后 `init-user.sh` 会自动收紧权限。
+
+**Kafka**：生产 Compose 默认启动 Kafka 且 `KAFKA_ENABLED=true`；本地开发可在 `.env` 中设为 `false` 降级为 Spring Event。
+
 | 服务 | 容器内 | 说明 |
 |------|--------|------|
-| **nginx** | `:80` | 对外入口；`/api` → server，其余 → web |
+| **nginx** | `:80` | 对外入口；`/health` → server；`/api` → server，其余 → web |
 | **web** | `:3000` | Next.js standalone |
 | **server** | `:8888` | Spring Boot |
 | mysql / redis / es / kafka | 内网 | 与本地开发同栈 |

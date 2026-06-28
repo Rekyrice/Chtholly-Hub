@@ -7,7 +7,8 @@ RUN mvn -q -DskipTests package
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-RUN addgroup -S chtholly && adduser -S chtholly -G chtholly
+RUN apk add --no-cache curl \
+    && addgroup -S chtholly && adduser -S chtholly -G chtholly
 USER chtholly
 COPY --from=build /app/target/chtholly-server-*.jar app.jar
 EXPOSE 8888

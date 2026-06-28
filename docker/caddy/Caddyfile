@@ -17,6 +17,10 @@ yourdomain.com, www.yourdomain.com {
 		Strict-Transport-Security "max-age=31536000"
 	}
 
+	handle /health {
+		reverse_proxy server:8888/actuator/health
+	}
+
 	handle_path /uploads/* {
 		root * /app/uploads
 		file_server
