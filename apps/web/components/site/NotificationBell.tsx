@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isLoggedIn } from "@/lib/auth/tokens";
+import { isLoggedIn, purgeExpiredAuth } from "@/lib/auth/tokens";
 import { notificationService } from "@/lib/services/notificationService";
 import type { NotificationItem } from "@/lib/types/notification";
 import { cn, formatDate } from "@/lib/utils";
@@ -20,6 +20,7 @@ function notificationHref(item: NotificationItem): string | null {
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -53,8 +54,16 @@ export default function NotificationBell() {
   }, []);
 
   useEffect(() => {
+    const syncAuth = () => {
+      purgeExpiredAuth();
+      setLoggedIn(isLoggedIn());
+    };
+    syncAuth();
+    const onAuth = () => {
+      syncAuth();
+      void refreshUnread();
+    };
     void refreshUnread();
-    const onAuth = () => void refreshUnread();
     window.addEventListener("chtholly-auth-change", onAuth);
     return () => window.removeEventListener("chtholly-auth-change", onAuth);
   }, [refreshUnread]);
@@ -109,7 +118,7 @@ export default function NotificationBell() {
     }
   };
 
-  if (!isLoggedIn()) {
+  if (!loggedIn) {
     return null;
   }
 

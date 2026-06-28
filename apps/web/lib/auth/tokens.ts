@@ -33,13 +33,23 @@ export function isAccessTokenValid(auth: StoredAuth | null): boolean {
   return Date.now() < expiresAt - 30_000;
 }
 
+/** 读取访问令牌（无副作用，可在任意时机调用） */
 export function getAccessToken(): string | null {
   const auth = getStoredAuth();
   if (!auth || !isAccessTokenValid(auth)) {
-    if (auth?.accessToken) clearAuth();
     return null;
   }
   return auth.accessToken;
+}
+
+/** 清除已过期的本地登录态（仅应在 effect / 事件处理器中调用） */
+export function purgeExpiredAuth(): boolean {
+  const auth = getStoredAuth();
+  if (auth?.accessToken && !isAccessTokenValid(auth)) {
+    clearAuth();
+    return true;
+  }
+  return false;
 }
 
 export function isLoggedIn(): boolean {

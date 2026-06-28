@@ -20,7 +20,7 @@ import {
   type AgentSessionRecord,
 } from "@/lib/agent/sessions";
 import { getAgentWsUrl } from "@/lib/agent/wsUrl";
-import { isLoggedIn } from "@/lib/auth/tokens";
+import { isLoggedIn, purgeExpiredAuth } from "@/lib/auth/tokens";
 import type { AgentEventType, AgentWsEnvelope, ChatMessage } from "@/lib/types/agent";
 
 type AgentChatContextValue = {
@@ -80,6 +80,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   sessionsRef.current = sessions;
 
   const syncAuth = useCallback(() => {
+    purgeExpiredAuth();
     setLoggedIn(isLoggedIn());
   }, []);
 

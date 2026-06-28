@@ -550,13 +550,20 @@
 
   .agent-workspace {
     display: grid;
-    grid-template-columns: 2fr 3fr;
+    grid-template-columns: minmax(280px, 2fr) minmax(0, 3fr);
+    width: 100%;
     min-height: calc(100vh - 52px);
+    overflow: hidden;
     background: var(--color-cloud);
+    isolation: isolate;
   }
 
   .agent-workspace-stage {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
     min-height: calc(100vh - 52px);
+    overflow: hidden;
     border-right: 1px solid var(--color-border);
   }
 
@@ -598,7 +605,10 @@
   }
 
   .agent-workspace-main {
+    position: relative;
+    z-index: 2;
     display: flex;
+    min-width: 0;
     min-height: calc(100vh - 52px);
     background: var(--color-surface);
   }

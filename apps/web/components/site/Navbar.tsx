@@ -6,7 +6,7 @@ import { Menu, Search, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import NotificationBell from "@/components/site/NotificationBell";
 import { authService } from "@/lib/services/authService";
-import { getAccessToken, getStoredAuth } from "@/lib/auth/tokens";
+import { getStoredAuth, purgeExpiredAuth } from "@/lib/auth/tokens";
 import { siteConfig } from "@/lib/site.config";
 import { cn } from "@/lib/utils";
 import type { AuthUser } from "@/lib/types/auth";
@@ -23,7 +23,7 @@ export default function Navbar() {
   const brandAccent = siteConfig.name.endsWith(" Hub") ? "Hub" : "";
 
   const syncUser = useCallback(() => {
-    getAccessToken();
+    purgeExpiredAuth();
     setUser(getStoredAuth()?.user ?? null);
   }, []);
 
