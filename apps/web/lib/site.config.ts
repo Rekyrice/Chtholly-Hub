@@ -12,8 +12,10 @@ export const siteConfig = {
     avatar: "/avatar-default.png",
   },
   theme: {
-    primary: "#009688",
-    bodyBg: "#eceff1",
+    primary: "#4ab0d9",
+    secondary: "#8B5CF6",
+    accent: "#E87461",
+    bodyBg: "#F0F7FF",
   },
   /** Rekyrice 用户 ID，Feed 只展示该作者的公开帖子 */
   ownerUserId: Number(process.env.NEXT_PUBLIC_OWNER_USER_ID ?? "1"),
