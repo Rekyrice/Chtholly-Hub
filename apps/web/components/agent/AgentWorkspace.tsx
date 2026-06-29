@@ -79,15 +79,14 @@ export default function AgentWorkspace() {
       )}
       data-testid="agent-workspace"
     >
-      <div className="agent-workspace-stage">
-        <div className="agent-workspace-stage-body">
+      <section className="agent-workspace-main" aria-label="珂朵莉对话舞台">
+        <div className="agent-workspace-main-live2d">
           <AgentLive2DStage />
         </div>
-      </div>
-
-      <div className="agent-workspace-chat-shell">
-        <AgentChatPanel variant="workspace" />
-      </div>
+        <div className="agent-workspace-main-chat">
+          <AgentChatPanel variant="workspace" />
+        </div>
+      </section>
 
       <AgentSessionSidebar
         collapsed={sessionsCollapsedEffective}

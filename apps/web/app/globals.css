@@ -579,23 +579,23 @@
     align-items: flex-end;
     min-width: 0;
     max-width: 100%;
-    padding-left: 48px;
+    padding-left: 36px;
+  }
+
+  .agent-bubble-tail {
+    position: absolute;
+    left: -4px;
+    bottom: 12px;
+    width: 44px;
+    height: 52px;
+    pointer-events: none;
+    transform-origin: 92% 18%;
+    z-index: 0;
   }
 
   .agent-bubble-wrap--speaking {
     --bubble-fill: var(--color-surface);
     --bubble-stroke: var(--color-border);
-  }
-
-  .agent-bubble-tail {
-    position: absolute;
-    left: 0;
-    bottom: 10px;
-    width: 56px;
-    height: 68px;
-    pointer-events: none;
-    transform-origin: 88% 14%;
-    z-index: 0;
   }
 
   .agent-bubble-wrap--speaking .agent-bubble-tail {
@@ -614,7 +614,7 @@
     display: flex;
     justify-content: flex-start;
     align-items: flex-end;
-    max-width: 82%;
+    max-width: min(92%, 36rem);
     padding-left: 0;
   }
 
@@ -641,8 +641,11 @@
 
   .agent-messages-manga {
     scroll-snap-type: y proximity;
-    padding-left: 1.25rem;
-    padding-right: 1.25rem;
+    padding-right: 1rem;
+  }
+
+  .agent-workspace-main .agent-messages-manga {
+    padding-left: calc(var(--agent-character-zone) - 36px);
   }
 
   .agent-suggestion-chip {
@@ -695,11 +698,11 @@
   }
 
   .agent-workspace {
-    --agent-stage-col: minmax(220px, 1.15fr);
-    --agent-chat-col: minmax(0, 2fr);
+    --agent-main-col: minmax(0, 1fr);
     --agent-sessions-col: minmax(180px, 0.85fr);
+    --agent-character-zone: 32%;
     display: grid;
-    grid-template-columns: var(--agent-stage-col) var(--agent-chat-col) var(--agent-sessions-col);
+    grid-template-columns: var(--agent-main-col) var(--agent-sessions-col);
     grid-template-rows: minmax(0, 1fr);
     width: 100%;
     height: calc(100vh - 52px);
@@ -715,10 +718,60 @@
     --agent-sessions-col: 44px;
   }
 
+  /* Live2D + 对话同一舞台：角色区绝对定位在左，台词叠在同一容器内 */
+  .agent-workspace-main {
+    position: relative;
+    grid-column: 1;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--color-cloud);
+    border-right: 1px solid var(--color-border);
+  }
+
+  .agent-workspace-main-live2d {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: var(--agent-character-zone);
+    min-width: 200px;
+    max-width: 420px;
+    overflow: hidden;
+    pointer-events: auto;
+  }
+
+  .agent-workspace-main-live2d .agent-live2d-stage,
+  .agent-workspace-main-live2d .agent-workspace-stage-body {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .agent-workspace-main-chat {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .agent-workspace-main-chat .floating-agent-panel-inner,
+  .agent-workspace-main-chat .floating-agent-header,
+  .agent-workspace-main-chat .agent-input-shell,
+  .agent-workspace-main-chat .floating-agent-input,
+  .agent-workspace-main-chat .floating-agent-messages,
+  .agent-workspace-main-chat .agent-suggestion-chip {
+    pointer-events: auto;
+  }
+
   .agent-workspace-stage {
     position: relative;
     z-index: 1;
-    grid-column: 1;
     min-width: 0;
     min-height: 0;
     height: 100%;
@@ -867,23 +920,9 @@
     box-shadow: 0 12px 40px var(--agent-panel-shadow);
   }
 
-  .agent-workspace-chat-shell {
-    position: relative;
-    z-index: 2;
-    grid-column: 2;
-    min-width: 0;
-    min-height: 0;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background: var(--color-cloud);
-    border-right: 1px solid var(--color-border);
-  }
-
   .agent-session-sidebar {
     position: relative;
-    grid-column: 3;
+    grid-column: 2;
     width: auto;
     flex-shrink: 0;
     min-height: 0;
@@ -1339,7 +1378,7 @@
     );
   }
 
-  .agent-workspace--dark .agent-workspace-chat-shell {
+  .agent-workspace--dark .agent-workspace-main {
     background: #0f172a;
     border-color: #334155;
     color: #e2e8f0;
@@ -1555,7 +1594,7 @@
   @media (max-width: 991px) {
     .agent-workspace {
       grid-template-columns: 1fr;
-      grid-template-rows: minmax(160px, 24vh) minmax(0, 1fr) auto;
+      grid-template-rows: minmax(0, 1fr) auto;
       height: calc(100vh - 52px);
       max-height: calc(100vh - 52px);
       min-height: 0;
@@ -1563,7 +1602,6 @@
     }
 
     .agent-workspace--sessions-collapsed {
-      --agent-stage-col: 1fr;
       --agent-sessions-col: 1fr;
     }
 
@@ -1585,31 +1623,37 @@
       display: flex;
     }
 
-    .agent-workspace-stage {
+    .agent-workspace-main {
       grid-column: 1;
       grid-row: 1;
+      display: flex;
+      flex-direction: column;
       min-height: 0;
-      height: auto;
       border-right: none;
-      border-bottom: none;
     }
 
-    .agent-live2d-stage {
-      min-height: 0;
-      height: 100%;
+    .agent-workspace-main-live2d {
+      position: relative;
+      width: 100%;
+      max-width: none;
+      min-width: 0;
+      height: 24vh;
+      flex-shrink: 0;
+      z-index: 1;
     }
 
-    .agent-workspace-chat-shell {
-      grid-column: 1;
-      grid-row: 2;
+    .agent-workspace-main-chat {
+      flex: 1;
       min-height: 0;
-      height: auto;
-      border-right: none;
+    }
+
+    .agent-workspace-main .agent-messages-manga {
+      padding-left: 1rem;
     }
 
     .agent-session-sidebar {
       grid-column: 1;
-      grid-row: 3;
+      grid-row: 2;
       min-height: 0;
       height: auto;
       max-height: 140px;
