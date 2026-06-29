@@ -513,7 +513,7 @@
   @keyframes agent-tail-pop {
     from {
       opacity: 0;
-      transform: scale(0.6) rotate(-4deg);
+      transform: scale(0.35) rotate(-8deg);
     }
 
     to {
@@ -550,22 +550,37 @@
     border-radius: 4px 16px 16px 16px;
     padding: 10px 14px 10px 18px;
     position: relative;
-    margin-left: 24px;
     overflow: visible;
+  }
+
+  .agent-bubble-assistant--speaking {
+    border-color: color-mix(in srgb, var(--color-sky) 40%, var(--bubble-stroke));
+    box-shadow: 0 2px 14px color-mix(in srgb, var(--color-sky) 10%, transparent);
+  }
+
+  /* 尾巴在行内留白区渲染，避免被 overflow-y 裁切 */
+  .agent-bubble-wrap {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    min-width: 0;
+    padding-left: 44px;
   }
 
   .agent-bubble-tail {
     position: absolute;
-    left: -32px;
-    bottom: 4px;
-    width: 40px;
-    height: 48px;
+    left: 0;
+    bottom: 6px;
+    width: 52px;
+    height: 60px;
     pointer-events: none;
-    transform-origin: 88% 18%;
+    transform-origin: 92% 16%;
+    z-index: 1;
+    filter: drop-shadow(-1px 2px 2px color-mix(in srgb, var(--color-text) 6%, transparent));
   }
 
-  .agent-bubble-assistant--speaking .agent-bubble-tail {
-    animation: agent-tail-pop 0.32s cubic-bezier(0.34, 1.45, 0.64, 1) both;
+  .agent-bubble-wrap--speaking .agent-bubble-tail {
+    animation: agent-tail-pop 0.36s cubic-bezier(0.34, 1.55, 0.64, 1) both;
   }
 
   .agent-bubble-tail-stroke {
@@ -576,12 +591,21 @@
     fill: var(--bubble-fill);
   }
 
+  .agent-bubble-wrap--speaking {
+    --bubble-fill: var(--color-surface);
+    --bubble-stroke: var(--color-border);
+  }
+
+  .agent-bubble-wrap--speaking .agent-bubble-assistant--speaking {
+    border-color: color-mix(in srgb, var(--color-sky) 40%, var(--bubble-stroke));
+  }
+
   .agent-message-row {
     display: flex;
     justify-content: flex-start;
     align-items: flex-end;
-    max-width: 75%;
-    padding-left: 8px;
+    max-width: 78%;
+    padding-left: 0;
   }
 
   .agent-message-row--assistant {
@@ -607,6 +631,8 @@
 
   .agent-messages-manga {
     scroll-snap-type: y proximity;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
   }
 
   .agent-suggestion-chip {
@@ -1335,6 +1361,16 @@
     --bubble-stroke: #334155;
     background: var(--bubble-fill);
     color: #e2e8f0;
+  }
+
+  .agent-workspace--dark .agent-bubble-wrap--speaking {
+    --bubble-fill: #1e293b;
+    --bubble-stroke: #334155;
+  }
+
+  .agent-workspace--dark .agent-bubble-assistant--speaking {
+    border-color: color-mix(in srgb, var(--color-sky) 35%, #334155);
+    box-shadow: 0 2px 14px color-mix(in srgb, var(--color-sky) 12%, transparent);
   }
 
   .agent-workspace--dark .agent-suggestion-chip {
@@ -2183,7 +2219,7 @@
 
     .agent-message-row--assistant-enter,
     .agent-message-row--user-enter,
-    .agent-bubble-assistant--speaking .agent-bubble-tail {
+    .agent-bubble-wrap--speaking .agent-bubble-tail {
       animation: none;
     }
   }

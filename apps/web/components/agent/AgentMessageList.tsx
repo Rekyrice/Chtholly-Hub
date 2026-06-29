@@ -70,20 +70,27 @@ function MessageBubble({
       )}
     >
       <div
-        ref={isSpeaking ? bubbleRef : undefined}
         className={cn(
-          "agent-bubble-assistant max-w-full text-sm leading-relaxed",
-          isSpeaking && "agent-bubble-assistant--speaking",
+          "agent-bubble-wrap",
+          isSpeaking && "agent-bubble-wrap--speaking",
         )}
       >
         {isSpeaking && <AgentBubbleTail />}
-        {rich && !msg.streaming ? (
-          <AgentRichMessage content={msg.content} />
-        ) : (
-          <span className="whitespace-pre-wrap">{msg.content}</span>
-        )}
-        {msg.streaming && <span className="agent-stream-cursor" aria-hidden="true" />}
-        {showSteps && msg.steps && msg.steps.length > 0 && <AgentSteps steps={msg.steps} />}
+        <div
+          ref={isSpeaking ? bubbleRef : undefined}
+          className={cn(
+            "agent-bubble-assistant max-w-full text-sm leading-relaxed",
+            isSpeaking && "agent-bubble-assistant--speaking",
+          )}
+        >
+          {rich && !msg.streaming ? (
+            <AgentRichMessage content={msg.content} />
+          ) : (
+            <span className="whitespace-pre-wrap">{msg.content}</span>
+          )}
+          {msg.streaming && <span className="agent-stream-cursor" aria-hidden="true" />}
+          {showSteps && msg.steps && msg.steps.length > 0 && <AgentSteps steps={msg.steps} />}
+        </div>
       </div>
     </div>
   );
