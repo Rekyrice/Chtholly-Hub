@@ -6,6 +6,7 @@ import { ExternalLink, Minus, Send, Settings } from "lucide-react";
 import AgentMessageList from "@/components/agent/AgentMessageList";
 import AgentWorkspaceSettings from "@/components/agent/AgentWorkspaceSettings";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
+import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import { cn } from "@/lib/utils";
 
 type AgentChatPanelProps = {
@@ -38,6 +39,8 @@ export default function AgentChatPanel({
   } = useAgentChatContext();
 
   const isWorkspace = variant === "workspace";
+  const isDesktopLayout = useMinWidth(992);
+  const showAssistantAvatar = !isWorkspace || !isDesktopLayout;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   return (
@@ -51,9 +54,11 @@ export default function AgentChatPanel({
     >
       <header className="floating-agent-header shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="agent-avatar-md shrink-0" aria-hidden="true">
-            C
-          </span>
+          {showAssistantAvatar && (
+            <span className="agent-avatar-md shrink-0" aria-hidden="true">
+              C
+            </span>
+          )}
           <div className="min-w-0">
             <p className="text-sm font-medium text-text truncate">珂朵莉</p>
             <p className="flex items-center gap-1.5 text-xs text-text-secondary">
@@ -126,6 +131,7 @@ export default function AgentChatPanel({
           liveSteps={liveSteps}
           rich={isWorkspace && richMarkdown}
           mangaLayout={isWorkspace}
+          showAssistantAvatar={showAssistantAvatar}
           scrollContainerRef={scrollContainerRef}
           onSuggestion={fillAndSend}
         />

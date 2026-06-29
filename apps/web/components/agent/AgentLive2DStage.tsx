@@ -6,7 +6,6 @@ import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import { CHTHOLLY_EXPRESSION, CHTHOLLY_TEXTURE_FALLBACK } from "@/lib/live2d/constants";
 import { parseLiveStepEvent } from "@/lib/live2d/liveStepEvent";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
-import { cn } from "@/lib/utils";
 import type { Live2DHandle } from "@/lib/types/live2d";
 
 const ChthollyLive2D = dynamic(() => import("@/components/agent/ChthollyLive2D"), {
@@ -23,7 +22,7 @@ const SPEAK_DEBOUNCE_MS = 300;
 
 /** Live2D 展示区：监听 liveSteps / 流式状态驱动珂朵莉表情与动作 */
 export default function AgentLive2DStage() {
-  const { liveSteps, streaming, lastError, busy, live2dBackground } = useAgentChatContext();
+  const { liveSteps, streaming, lastError, busy } = useAgentChatContext();
   const isDesktop = useMinWidth(992);
   const live2dRef = useRef<Live2DHandle>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,10 +129,7 @@ export default function AgentLive2DStage() {
   if (!isDesktop) {
     return (
       <div
-        className={cn(
-          "agent-live2d-stage agent-live2d-stage--mobile",
-          `agent-live2d-stage--bg-${live2dBackground}`,
-        )}
+        className="agent-live2d-stage agent-live2d-stage--mobile"
         data-testid="agent-live2d-stage"
       >
         <img
@@ -146,10 +142,7 @@ export default function AgentLive2DStage() {
   }
 
   return (
-    <div
-      className={cn("agent-live2d-stage", `agent-live2d-stage--bg-${live2dBackground}`)}
-      data-testid="agent-live2d-stage"
-    >
+    <div className="agent-live2d-stage" data-testid="agent-live2d-stage">
       <ChthollyLive2D ref={live2dRef} className="agent-live2d-canvas-wrap" layoutPreset="agent" />
     </div>
   );

@@ -19,6 +19,7 @@ type AgentMessageListProps = {
   liveSteps: string[];
   rich?: boolean;
   mangaLayout?: boolean;
+  showAssistantAvatar?: boolean;
   scrollContainerRef?: RefObject<HTMLElement | null>;
   onSuggestion?: (text: string) => void;
 };
@@ -30,6 +31,7 @@ function MessageBubble({
   isSpeaking,
   isNew,
   bubbleRef,
+  showAssistantAvatar,
 }: {
   msg: ChatMessage;
   showSteps: boolean;
@@ -37,6 +39,7 @@ function MessageBubble({
   isSpeaking?: boolean;
   isNew?: boolean;
   bubbleRef?: RefObject<HTMLDivElement | null>;
+  showAssistantAvatar?: boolean;
 }) {
   if (msg.role === "user") {
     return (
@@ -65,9 +68,15 @@ function MessageBubble({
     <div
       className={cn(
         "agent-message-row agent-message-row--assistant",
+        showAssistantAvatar && "agent-message-row--with-avatar",
         isNew && "agent-message-row--assistant-enter",
       )}
     >
+      {showAssistantAvatar && (
+        <div className="agent-msg-avatar flex-none" aria-hidden="true">
+          <span className="agent-avatar-sm">C</span>
+        </div>
+      )}
       <div
         ref={isSpeaking ? bubbleRef : undefined}
         className={cn(
@@ -94,6 +103,7 @@ export default function AgentMessageList({
   liveSteps,
   rich = false,
   mangaLayout = false,
+  showAssistantAvatar = true,
   scrollContainerRef,
   onSuggestion,
 }: AgentMessageListProps) {
@@ -170,25 +180,50 @@ export default function AgentMessageList({
             isSpeaking={isSpeaking}
             isNew={isNew}
             bubbleRef={speakingBubbleRef}
+            showAssistantAvatar={showAssistantAvatar}
           />
         );
       })}
 
       {busy && showSteps && liveSteps.length > 0 && (
-        <div className="agent-live-steps px-3 py-2 text-xs rounded-xl border border-border bg-cloud">
-          <p className="font-medium mb-1 text-text">推理中…</p>
-          <ul className="space-y-1">
-            {liveSteps.map((line, i) => (
-              <li key={i} className={cn("whitespace-pre-wrap leading-relaxed", stepTone(line))}>
-                {line}
-              </li>
-            ))}
-          </ul>
+        <div
+          className={cn(
+            "agent-message-row agent-message-row--assistant",
+            showAssistantAvatar && "agent-message-row--with-avatar",
+          )}
+        >
+          {showAssistantAvatar && (
+            <div className="agent-steps-avatar flex-none" aria-hidden="true">
+              <span className="agent-avatar-sm">C</span>
+            </div>
+          )}
+          <div className="agent-live-steps flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-border bg-cloud">
+            <p className="font-medium mb-1 text-text">推理中…</p>
+            <ul className="space-y-1">
+              {liveSteps.map((line, i) => (
+                <li key={i} className={cn("whitespace-pre-wrap leading-relaxed", stepTone(line))}>
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
 
       {busy && liveSteps.length === 0 && !messages.some((m) => m.streaming) && (
-        <p className="text-xs text-text-secondary px-2">珂朵莉思考中…</p>
+        <div
+          className={cn(
+            "agent-message-row agent-message-row--assistant",
+            showAssistantAvatar && "agent-message-row--with-avatar",
+          )}
+        >
+          {showAssistantAvatar && (
+            <div className="agent-msg-avatar flex-none" aria-hidden="true">
+              <span className="agent-avatar-sm">C</span>
+            </div>
+          )}
+          <p className="text-xs text-text-secondary px-2">珂朵莉思考中…</p>
+        </div>
       )}
       <div ref={bottomRef} />
     </>

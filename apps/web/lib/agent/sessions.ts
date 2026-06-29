@@ -16,7 +16,6 @@ const SHOW_STEPS_KEY = "chtholly-agent-show-steps";
 const WORKSPACE_DARK_KEY = "chtholly-agent-workspace-dark";
 const RICH_MARKDOWN_KEY = "chtholly-agent-rich-markdown";
 const SESSIONS_COLLAPSED_KEY = "chtholly-agent-sessions-collapsed";
-const LIVE2D_BG_KEY = "chtholly-agent-live2d-bg";
 
 export function createSessionId() {
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -132,28 +131,6 @@ export function saveSessionsCollapsedPreference(collapsed: boolean) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(SESSIONS_COLLAPSED_KEY, String(collapsed));
-  } catch {
-    // 存储失败时忽略
-  }
-}
-
-export function loadLive2DBackgroundPreference(): import("@/lib/live2d/layout").Live2DBackgroundTheme {
-  if (typeof window === "undefined") return "dusk";
-  try {
-    const raw = localStorage.getItem(LIVE2D_BG_KEY);
-    if (raw === "aurora" || raw === "twilight" || raw === "soft" || raw === "dusk") {
-      return raw;
-    }
-    return "dusk";
-  } catch {
-    return "dusk";
-  }
-}
-
-export function saveLive2DBackgroundPreference(theme: import("@/lib/live2d/layout").Live2DBackgroundTheme) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(LIVE2D_BG_KEY, theme);
   } catch {
     // 存储失败时忽略
   }
