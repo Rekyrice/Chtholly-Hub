@@ -1,9 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import { CHTHOLLY_EXPRESSION, CHTHOLLY_TEXTURE_FALLBACK } from "@/lib/live2d/constants";
+import { parseLiveStepEvent } from "@/lib/live2d/liveStepEvent";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import { cn } from "@/lib/utils";
 import type { Live2DHandle } from "@/lib/types/live2d";
@@ -17,61 +18,86 @@ const ChthollyLive2D = dynamic(() => import("@/components/agent/ChthollyLive2D")
   ),
 });
 
-/** Live2D 展示区：桌面端渲染模型，移动端静态图 */
+const IDLE_DELAY_MS = 5000;
+const SPEAK_DEBOUNCE_MS = 300;
+
+/** Live2D 展示区：监听 liveSteps / 流式状态驱动珂朵莉表情与动作 */
 export default function AgentLive2DStage() {
-  const { livePhase, busy, live2dBackground } = useAgentChatContext();
+  const { liveSteps, streaming, lastError, busy, live2dBackground } = useAgentChatContext();
   const isDesktop = useMinWidth(992);
   const live2dRef = useRef<Live2DHandle>(null);
-  const prevPhaseRef = useRef(livePhase);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevStreamingRef = useRef(false);
+  const prevLiveStepsLenRef = useRef(0);
+  const busyRef = useRef(busy);
+  const streamingRef = useRef(streaming);
 
-  useEffect(() => {
-    if (prevPhaseRef.current === livePhase) return;
-    prevPhaseRef.current = livePhase;
+  busyRef.current = busy;
+  streamingRef.current = streaming;
 
-    const handle = live2dRef.current;
-    if (!handle) return;
-
-    switch (livePhase) {
-      case "think":
-        handle.setExpression(CHTHOLLY_EXPRESSION.neutral);
-        break;
-      case "act":
-        handle.startMotion("tap");
-        break;
-      case "done":
-        handle.setExpression(CHTHOLLY_EXPRESSION.smile);
-        handle.setSpeaking(false);
-        break;
-      case "error":
-        handle.setExpression(CHTHOLLY_EXPRESSION.sad);
-        handle.setSpeaking(false);
-        break;
-      case "idle":
-        handle.setSpeaking(false);
-        break;
-      default:
-        break;
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
     }
-  }, [livePhase]);
+    idleTimerRef.current = setTimeout(() => {
+      if (!busyRef.current && !streamingRef.current) {
+        live2dRef.current?.startMotion("idle");
+      }
+    }, IDLE_DELAY_MS);
+  }, []);
 
+  // liveSteps 变化：think / act 驱动表情与动作（observe 仅重置空闲计时）
   useEffect(() => {
+    if (liveSteps.length === 0) {
+      prevLiveStepsLenRef.current = 0;
+      resetIdleTimer();
+      return;
+    }
+
+    if (liveSteps.length === prevLiveStepsLenRef.current) {
+      resetIdleTimer();
+      return;
+    }
+    prevLiveStepsLenRef.current = liveSteps.length;
+
+    const last = liveSteps[liveSteps.length - 1];
+    const kind = parseLiveStepEvent(last);
+    const handle = live2dRef.current;
+
+    if (handle) {
+      if (kind === "think") {
+        handle.setExpression(CHTHOLLY_EXPRESSION.neutral);
+      } else if (kind === "act") {
+        handle.startMotion("tap");
+      }
+    }
+
+    resetIdleTimer();
+  }, [liveSteps, resetIdleTimer]);
+
+  // 流式输出：防抖后开启嘴型；结束时微笑并闭嘴
+  useEffect(() => {
+    resetIdleTimer();
+
     if (speakTimerRef.current) {
       clearTimeout(speakTimerRef.current);
       speakTimerRef.current = null;
     }
 
-    if (livePhase !== "speaking") {
-      if (livePhase === "done" || livePhase === "error" || livePhase === "idle") {
-        live2dRef.current?.setSpeaking(false);
+    if (streaming) {
+      speakTimerRef.current = setTimeout(() => {
+        live2dRef.current?.setSpeaking(true);
+      }, SPEAK_DEBOUNCE_MS);
+    } else {
+      live2dRef.current?.setSpeaking(false);
+      if (prevStreamingRef.current && !lastError) {
+        live2dRef.current?.setExpression(CHTHOLLY_EXPRESSION.smile);
       }
-      return;
     }
 
-    speakTimerRef.current = setTimeout(() => {
-      live2dRef.current?.setSpeaking(true);
-    }, 300);
+    prevStreamingRef.current = streaming;
 
     return () => {
       if (speakTimerRef.current) {
@@ -79,27 +105,27 @@ export default function AgentLive2DStage() {
         speakTimerRef.current = null;
       }
     };
-  }, [livePhase]);
+  }, [streaming, lastError, resetIdleTimer]);
+
+  // 错误：难过表情
+  useEffect(() => {
+    if (!lastError) return;
+    live2dRef.current?.setExpression(CHTHOLLY_EXPRESSION.sad);
+    live2dRef.current?.setSpeaking(false);
+    resetIdleTimer();
+  }, [lastError, resetIdleTimer]);
+
+  // busy 结束且无流式时重新计时 idle
+  useEffect(() => {
+    resetIdleTimer();
+  }, [busy, resetIdleTimer]);
 
   useEffect(() => {
-    if (idleTimerRef.current) {
-      clearTimeout(idleTimerRef.current);
-      idleTimerRef.current = null;
-    }
-
-    if (busy || livePhase !== "idle") return;
-
-    idleTimerRef.current = setTimeout(() => {
-      live2dRef.current?.startMotion("idle");
-    }, 5000);
-
     return () => {
-      if (idleTimerRef.current) {
-        clearTimeout(idleTimerRef.current);
-        idleTimerRef.current = null;
-      }
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (speakTimerRef.current) clearTimeout(speakTimerRef.current);
     };
-  }, [busy, livePhase]);
+  }, []);
 
   if (!isDesktop) {
     return (

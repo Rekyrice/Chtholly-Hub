@@ -52,6 +52,10 @@ type AgentChatContextValue = {
   setLive2dBackground: (value: Live2DBackgroundTheme) => void;
   liveSteps: string[];
   livePhase: AgentLivePhase;
+  /** 是否存在流式输出中的助手消息 */
+  streaming: boolean;
+  /** 最近一次 Agent 错误文案，无则为 null */
+  lastError: string | null;
   sendMessage: (text: string) => Promise<void>;
   clearConversation: () => void;
   switchSession: (sessionId: string) => void;
@@ -89,6 +93,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const [live2dBackground, setLive2dBackgroundState] = useState<Live2DBackgroundTheme>("dusk");
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const [livePhase, setLivePhase] = useState<AgentLivePhase>("idle");
+  const [lastError, setLastError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -265,6 +270,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       }
       if (type === "final") {
         setLivePhase("done");
+        setLastError(null);
         const content = String(data.content ?? "");
         const streamId = streamingIdRef.current;
         const steps = [...stepsRef.current];
@@ -294,6 +300,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
           reason === "RATE_LIMITED"
             ? "发送过于频繁，请稍后再试。"
             : String(data.message ?? "出错了");
+        setLastError(msg);
         const streamId = streamingIdRef.current;
         const steps = [...stepsRef.current];
         if (streamId) {
@@ -307,11 +314,15 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
         stepsRef.current = [];
         setLiveSteps([]);
         setBusy(false);
-        window.setTimeout(() => setLivePhase("idle"), 3000);
+        window.setTimeout(() => {
+          setLivePhase("idle");
+          setLastError(null);
+        }, 3000);
         return;
       }
       if (type === "cleared") {
         setLivePhase("idle");
+        setLastError(null);
         if (backendClearIntentRef.current === "user") {
           setMessages([]);
         }
@@ -453,6 +464,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
 
       setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", content: trimmed }]);
       setInput("");
+      setLastError(null);
       setBusy(true);
       stepsRef.current = [];
       setLiveSteps([]);
@@ -577,6 +589,11 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     [clearBackendMemory, persistActiveSession],
   );
 
+  const streaming = useMemo(
+    () => messages.some((m) => m.streaming),
+    [messages],
+  );
+
   const value = useMemo<AgentChatContextValue>(
     () => ({
       loggedIn,
@@ -597,6 +614,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       setLive2dBackground,
       liveSteps,
       livePhase,
+      streaming,
+      lastError,
       sendMessage,
       clearConversation,
       switchSession,
@@ -619,6 +638,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       live2dBackground,
       liveSteps,
       livePhase,
+      streaming,
+      lastError,
       sendMessage,
       clearConversation,
       switchSession,
