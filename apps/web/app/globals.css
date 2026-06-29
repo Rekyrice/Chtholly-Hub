@@ -635,6 +635,48 @@
     animation: agent-pulse 1s step-end infinite;
   }
 
+  /* Agent 页全页背景：插画 + 蒙版，工作台 UI 叠在上方 */
+  .agent-page-background {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .agent-page-background__image {
+    position: absolute;
+    inset: 0;
+    background-image: url("/images/agent/page-bg.png");
+    background-size: cover;
+    background-position: 62% 44%;
+    background-repeat: no-repeat;
+  }
+
+  .agent-page-background__scrim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.62) 0%,
+      rgba(255, 255, 255, 0.56) 50%,
+      rgba(255, 255, 255, 0.5) 100%
+    );
+    backdrop-filter: blur(8px) saturate(1.06);
+    -webkit-backdrop-filter: blur(8px) saturate(1.06);
+  }
+
+  .relative:has(.agent-workspace--dark) .agent-page-background__scrim {
+    background: linear-gradient(
+      to right,
+      rgba(8, 12, 24, 0.58) 0%,
+      rgba(8, 12, 24, 0.5) 50%,
+      rgba(8, 12, 24, 0.42) 100%
+    );
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+
   .agent-workspace {
     --agent-main-col: minmax(0, 1fr);
     --agent-sessions-col: clamp(200px, 16vw, 240px);
@@ -647,13 +689,78 @@
     max-height: calc(100vh - 52px);
     min-height: 0;
     overflow: hidden;
-    background: var(--color-cloud);
+    background: transparent;
     isolation: isolate;
     transition: grid-template-columns 0.28s ease;
   }
 
   .agent-workspace--sessions-collapsed {
     --agent-sessions-col: 44px;
+  }
+
+  /* 浅色工作台：雾感背景下提高文字与边框对比度 */
+  .agent-workspace:not(.agent-workspace--dark) {
+    --color-text: #0f172a;
+    --color-text-secondary: #475569;
+    --color-border: #94a3b8;
+    color: var(--color-text);
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-session-sidebar > .flex span:first-child {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-workspace-chat .floating-agent-header .text-xs {
+    color: #334155;
+    font-weight: 500;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-sidebar-collapsed-label {
+    color: #475569;
+    font-weight: 600;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .floating-agent-icon-btn {
+    color: #475569;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-session-item .truncate {
+    font-weight: 500;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-session-item .text-xs {
+    color: #64748b;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-suggestion-chip {
+    background: rgb(255 255 255 / 78%);
+    border-color: #94a3b8;
+    color: #0f172a;
+    font-weight: 500;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-live2d-loading {
+    color: #475569;
+    font-weight: 500;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-bubble-assistant {
+    color: #0f172a;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-workspace-chat .floating-agent-input-field::placeholder {
+    color: #64748b;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-workspace-chat .floating-agent-header .text-sm {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-settings-toggle-desc,
+  .agent-workspace:not(.agent-workspace--dark) .agent-step-observe {
+    color: #64748b;
   }
 
   /* 主舞台：左列珂朵莉 + 右列对话（占满角色右侧至历史栏左侧） */
@@ -664,8 +771,8 @@
     min-height: 0;
     height: 100%;
     overflow: hidden;
-    background: var(--color-cloud);
-    border-right: 1px solid var(--color-border);
+    background: transparent;
+    border-right: none;
     display: grid;
     grid-template-columns: var(--agent-character-zone) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
@@ -700,7 +807,23 @@
     min-height: 0;
     height: 100%;
     overflow: hidden;
-    background: var(--color-cloud);
+    background: transparent;
+  }
+
+  .agent-workspace-chat .floating-agent-header {
+    background: transparent;
+    border-bottom-color: color-mix(in srgb, var(--color-border) 55%, transparent);
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-bubble-assistant {
+    --bubble-fill: rgb(255 255 255 / 88%);
+    --bubble-stroke: rgb(226 232 240 / 80%);
+    backdrop-filter: blur(8px);
+  }
+
+  .agent-workspace:not(.agent-workspace--dark) .agent-workspace-chat .floating-agent-input-field {
+    background: rgb(255 255 255 / 82%);
+    backdrop-filter: blur(8px);
   }
 
   .agent-workspace-main-chat .floating-agent-panel-inner,
@@ -872,9 +995,9 @@
     flex-shrink: 0;
     min-height: 0;
     height: 100%;
-    border-left: none;
+    border-left: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
     border-right: none;
-    background: var(--color-surface);
+    background: transparent;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1309,9 +1432,48 @@
     cursor: not-allowed;
   }
 
-  /* 工作台暗色模式：Live2D 与对话区共享 workspace 底色 */
+  /* 工作台暗色模式：覆盖 token，与全页背景统一 */
   .agent-workspace--dark {
-    background: #0f172a;
+    --color-cloud: transparent;
+    --color-surface: rgb(30 41 59 / 88%);
+    --color-text: #f1f5f9;
+    --color-text-secondary: #cbd5e1;
+    --color-border: rgb(100 116 139 / 72%);
+    --color-assistant-bubble: rgb(30 41 59 / 90%);
+    color: var(--color-text);
+    background: transparent;
+  }
+
+  .agent-workspace--dark .agent-session-sidebar > .flex span:first-child {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .agent-workspace--dark .agent-workspace-chat .floating-agent-header .text-xs {
+    color: var(--color-text-secondary);
+    font-weight: 500;
+  }
+
+  .agent-workspace--dark .agent-sidebar-collapsed-label {
+    color: var(--color-text-secondary);
+    font-weight: 600;
+  }
+
+  .agent-workspace--dark .floating-agent-icon-btn {
+    color: var(--color-text-secondary);
+  }
+
+  .agent-workspace--dark .agent-session-item .truncate {
+    font-weight: 500;
+  }
+
+  .agent-workspace--dark .agent-session-item .text-xs {
+    color: #94a3b8;
+  }
+
+  .agent-workspace--dark .agent-workspace-chat .floating-agent-header .text-sm {
+    color: var(--color-text);
+    font-weight: 600;
   }
 
   .agent-workspace--dark .agent-live2d-canvas-wrap::after,
@@ -1324,14 +1486,19 @@
   }
 
   .agent-workspace--dark .agent-workspace-main {
-    background: #0f172a;
-    border-color: #334155;
-    color: #e2e8f0;
+    background: transparent;
+    border: none;
+    color: inherit;
+  }
+
+  .agent-workspace--dark .agent-workspace-main-chat {
+    background: transparent;
   }
 
   .agent-workspace--dark .agent-session-sidebar {
-    background: #1e293b;
-    color: #e2e8f0;
+    background: transparent;
+    border-left-color: rgb(71 85 105 / 45%);
+    color: inherit;
   }
 
   .agent-workspace--dark .agent-workspace-chat .floating-agent-header {
@@ -1344,30 +1511,28 @@
   }
 
   .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field {
-    background: #1e293b;
-    border-color: #475569;
-    color: #e2e8f0;
+    background: rgb(30 41 59 / 88%);
+    border-color: var(--color-border);
+    color: var(--color-text);
+    backdrop-filter: blur(8px);
   }
 
   .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field::placeholder {
-    color: #64748b;
-  }
-
-  .agent-workspace--dark .agent-workspace-chat .floating-agent-icon-btn {
     color: #94a3b8;
   }
 
   .agent-workspace--dark .agent-workspace-chat .floating-agent-icon-btn:hover,
   .agent-workspace--dark .agent-settings-trigger--open {
-    background: #1e293b;
+    background: var(--color-surface);
     color: var(--color-sky);
   }
 
   .agent-workspace--dark .agent-bubble-assistant {
-    --bubble-fill: #1e293b;
-    --bubble-stroke: #334155;
+    --bubble-fill: rgb(30 41 59 / 90%);
+    --bubble-stroke: rgb(51 65 85 / 75%);
     background: var(--bubble-fill);
-    color: #e2e8f0;
+    color: var(--color-text);
+    backdrop-filter: blur(8px);
   }
 
   .agent-workspace--dark .agent-bubble-assistant--speaking {
@@ -1376,9 +1541,10 @@
   }
 
   .agent-workspace--dark .agent-suggestion-chip {
-    background: #1e293b;
-    border-color: #475569;
-    color: #cbd5e1;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-text);
+    backdrop-filter: blur(6px);
   }
 
   .agent-workspace--dark .agent-suggestion-chip:hover:not(:disabled) {
@@ -1387,8 +1553,9 @@
   }
 
   .agent-workspace--dark .agent-live-steps {
-    background: #1e293b;
-    border-color: #475569;
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    backdrop-filter: blur(6px);
   }
 
   .agent-workspace--dark .agent-rich-markdown code {
@@ -1406,7 +1573,7 @@
   }
 
   .agent-workspace--dark .agent-session-item {
-    color: #e2e8f0;
+    color: var(--color-text);
   }
 
   .agent-workspace--dark .agent-session-row--active .agent-session-item {
@@ -1473,10 +1640,6 @@
     background: #334155;
     color: var(--color-sky);
     border-color: color-mix(in srgb, var(--color-sky) 45%, #475569);
-  }
-
-  .agent-workspace--dark .agent-sidebar-collapsed-label {
-    color: #94a3b8;
   }
 
   .agent-rich-markdown p {

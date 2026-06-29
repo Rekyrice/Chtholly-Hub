@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import Footer from "@/components/site/Footer";
 import Navbar from "@/components/site/Navbar";
 import SiteHeader from "@/components/site/SiteHeader";
+import AgentPageBackground from "@/components/agent/AgentPageBackground";
 import FloatingAgent from "@/components/agent/FloatingAgent";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
       <div className="h-[52px]" />
       {!isAgentWorkspace && <SiteHeader />}
       <div className={cn("relative", isAgentWorkspace ? "h-[calc(100vh-52px)] min-h-0 overflow-hidden" : "flex-1")}>
+        {isAgentWorkspace && <AgentPageBackground />}
         <main
           className={cn(
             "relative z-10",
