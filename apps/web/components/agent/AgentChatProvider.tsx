@@ -28,6 +28,7 @@ import {
 import { getAgentWsUrl } from "@/lib/agent/wsUrl";
 import { isLoggedIn, purgeExpiredAuth } from "@/lib/auth/tokens";
 import type { AgentEventType, AgentWsEnvelope, ChatMessage } from "@/lib/types/agent";
+import type { AgentLivePhase } from "@/lib/types/live2d";
 
 type AgentChatContextValue = {
   loggedIn: boolean;
@@ -45,6 +46,7 @@ type AgentChatContextValue = {
   richMarkdown: boolean;
   setRichMarkdown: (value: boolean | ((prev: boolean) => boolean)) => void;
   liveSteps: string[];
+  livePhase: AgentLivePhase;
   sendMessage: (text: string) => Promise<void>;
   clearConversation: () => void;
   switchSession: (sessionId: string) => void;
@@ -80,6 +82,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const [workspaceDark, setWorkspaceDarkState] = useState(false);
   const [richMarkdown, setRichMarkdownState] = useState(true);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
+  const [livePhase, setLivePhase] = useState<AgentLivePhase>("idle");
   const [hydrated, setHydrated] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -205,10 +208,12 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       const data = env.data ?? {};
 
       if (type === "think") {
+        setLivePhase("think");
         pushStep(`💭 ${String(data.content ?? "")}`);
         return;
       }
       if (type === "act") {
+        setLivePhase("act");
         const tool = String(data.tool ?? "");
         const inputStr = formatActInput(data.input);
         pushStep(inputStr ? `🔧 ${tool}(${inputStr})` : `🔧 ${tool}`);
@@ -222,6 +227,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (type === "delta") {
+        setLivePhase("speaking");
         const chunk = String(data.content ?? "");
         if (!chunk) return;
         const streamId = streamingIdRef.current;
@@ -246,6 +252,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (type === "final") {
+        setLivePhase("done");
         const content = String(data.content ?? "");
         const streamId = streamingIdRef.current;
         const steps = [...stepsRef.current];
@@ -265,9 +272,11 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
         stepsRef.current = [];
         setLiveSteps([]);
         setBusy(false);
+        window.setTimeout(() => setLivePhase("idle"), 2500);
         return;
       }
       if (type === "error") {
+        setLivePhase("error");
         const reason = String(data.reason ?? "");
         const msg =
           reason === "RATE_LIMITED"
@@ -286,9 +295,11 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
         stepsRef.current = [];
         setLiveSteps([]);
         setBusy(false);
+        window.setTimeout(() => setLivePhase("idle"), 3000);
         return;
       }
       if (type === "cleared") {
+        setLivePhase("idle");
         if (backendClearIntentRef.current === "user") {
           setMessages([]);
         }
@@ -568,6 +579,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       richMarkdown,
       setRichMarkdown,
       liveSteps,
+      livePhase,
       sendMessage,
       clearConversation,
       switchSession,
@@ -588,6 +600,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       workspaceDark,
       richMarkdown,
       liveSteps,
+      livePhase,
       sendMessage,
       clearConversation,
       switchSession,
