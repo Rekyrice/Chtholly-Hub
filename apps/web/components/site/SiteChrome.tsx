@@ -16,14 +16,20 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
       <Navbar />
       <div className="h-[52px]" />
       {!isAgentWorkspace && <SiteHeader />}
-      <div className="relative flex-1">
+      <div className={cn("relative", isAgentWorkspace ? "h-[calc(100vh-52px)] min-h-0 overflow-hidden" : "flex-1")}>
         <main
           className={cn(
-            "relative z-10 flex-1",
-            isAgentWorkspace ? "py-0 px-0" : "py-8",
+            "relative z-10",
+            isAgentWorkspace
+              ? "flex h-full min-h-0 flex-col overflow-hidden py-0 px-0"
+              : "flex-1 py-8",
           )}
         >
-          <div className={cn(isAgentWorkspace ? "w-full" : "max-w-6xl mx-auto px-4")}>
+          <div
+            className={cn(
+              isAgentWorkspace ? "flex h-full min-h-0 w-full flex-col" : "max-w-6xl mx-auto px-4",
+            )}
+          >
             {children}
           </div>
         </main>

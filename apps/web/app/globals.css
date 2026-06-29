@@ -546,37 +546,56 @@
     --bubble-stroke: var(--color-border);
     background: var(--bubble-fill);
     color: var(--color-text);
-    border: 1px solid var(--bubble-stroke);
-    border-radius: 4px 16px 16px 16px;
-    padding: 10px 14px 10px 18px;
+    border: 1.5px solid var(--bubble-stroke);
+    border-radius: 6px 18px 18px 18px;
+    padding: 10px 14px 10px 16px;
     position: relative;
+    z-index: 1;
     overflow: visible;
   }
 
   .agent-bubble-assistant--speaking {
-    border-color: color-mix(in srgb, var(--color-sky) 40%, var(--bubble-stroke));
-    box-shadow: 0 2px 14px color-mix(in srgb, var(--color-sky) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-sky) 45%, var(--bubble-stroke));
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 3px 16px color-mix(in srgb, var(--color-sky) 12%, transparent);
   }
 
-  /* 尾巴在行内留白区渲染，避免被 overflow-y 裁切 */
+  /* 遮盖尾巴与气泡接缝 */
+  .agent-bubble-assistant--speaking::after {
+    content: "";
+    position: absolute;
+    left: -1px;
+    bottom: 16px;
+    width: 8px;
+    height: 24px;
+    background: var(--bubble-fill);
+    z-index: 2;
+    pointer-events: none;
+  }
+
   .agent-bubble-wrap {
     position: relative;
     display: flex;
     align-items: flex-end;
     min-width: 0;
-    padding-left: 44px;
+    max-width: 100%;
+    padding-left: 48px;
+  }
+
+  .agent-bubble-wrap--speaking {
+    --bubble-fill: var(--color-surface);
+    --bubble-stroke: var(--color-border);
   }
 
   .agent-bubble-tail {
     position: absolute;
     left: 0;
-    bottom: 6px;
-    width: 52px;
-    height: 60px;
+    bottom: 10px;
+    width: 56px;
+    height: 68px;
     pointer-events: none;
-    transform-origin: 92% 16%;
-    z-index: 1;
-    filter: drop-shadow(-1px 2px 2px color-mix(in srgb, var(--color-text) 6%, transparent));
+    transform-origin: 88% 14%;
+    z-index: 0;
   }
 
   .agent-bubble-wrap--speaking .agent-bubble-tail {
@@ -591,20 +610,11 @@
     fill: var(--bubble-fill);
   }
 
-  .agent-bubble-wrap--speaking {
-    --bubble-fill: var(--color-surface);
-    --bubble-stroke: var(--color-border);
-  }
-
-  .agent-bubble-wrap--speaking .agent-bubble-assistant--speaking {
-    border-color: color-mix(in srgb, var(--color-sky) 40%, var(--bubble-stroke));
-  }
-
   .agent-message-row {
     display: flex;
     justify-content: flex-start;
     align-items: flex-end;
-    max-width: 78%;
+    max-width: 82%;
     padding-left: 0;
   }
 
@@ -690,8 +700,11 @@
     --agent-sessions-col: minmax(180px, 0.85fr);
     display: grid;
     grid-template-columns: var(--agent-stage-col) var(--agent-chat-col) var(--agent-sessions-col);
+    grid-template-rows: minmax(0, 1fr);
     width: 100%;
-    min-height: calc(100vh - 52px);
+    height: calc(100vh - 52px);
+    max-height: calc(100vh - 52px);
+    min-height: 0;
     overflow: hidden;
     background: var(--color-cloud);
     isolation: isolate;
@@ -707,8 +720,9 @@
     z-index: 1;
     grid-column: 1;
     min-width: 0;
-    min-height: calc(100vh - 52px);
-    overflow: visible;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
     border-right: none;
   }
 
@@ -722,7 +736,7 @@
   .agent-live2d-stage {
     position: relative;
     height: 100%;
-    min-height: calc(100vh - 52px);
+    min-height: 0;
     background: transparent;
     display: flex;
     align-items: stretch;
@@ -757,7 +771,7 @@
     z-index: 1;
     width: 100%;
     height: 100%;
-    min-height: calc(100vh - 52px);
+    min-height: 0;
   }
 
   .agent-live2d-canvas-wrap::after {
@@ -790,7 +804,7 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    min-height: calc(100vh - 52px);
+    min-height: 0;
     color: var(--color-text-secondary);
     font-size: 0.875rem;
     opacity: 0.85;
@@ -858,9 +872,11 @@
     z-index: 2;
     grid-column: 2;
     min-width: 0;
+    min-height: 0;
+    height: 100%;
     display: flex;
     flex-direction: column;
-    min-height: calc(100vh - 52px);
+    overflow: hidden;
     background: var(--color-cloud);
     border-right: 1px solid var(--color-border);
   }
@@ -870,13 +886,14 @@
     grid-column: 3;
     width: auto;
     flex-shrink: 0;
+    min-height: 0;
+    height: 100%;
     border-left: none;
     border-right: none;
     background: var(--color-surface);
     display: flex;
     flex-direction: column;
-    min-height: calc(100vh - 52px);
-    overflow: visible;
+    overflow: hidden;
   }
 
   .agent-session-sidebar--collapsed {
@@ -1096,11 +1113,20 @@
 
   .agent-workspace-chat {
     height: 100%;
+    min-height: 0;
     border-radius: 0;
+    overflow: hidden;
+  }
+
+  .agent-workspace-chat .floating-agent-panel-inner {
+    min-height: 0;
   }
 
   .agent-workspace-chat .floating-agent-messages {
-    flex: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   /* 工作台设置面板 */
@@ -1368,6 +1394,10 @@
     --bubble-stroke: #334155;
   }
 
+  .agent-workspace--dark .agent-bubble-assistant--speaking::after {
+    background: var(--bubble-fill);
+  }
+
   .agent-workspace--dark .agent-bubble-assistant--speaking {
     border-color: color-mix(in srgb, var(--color-sky) 35%, #334155);
     box-shadow: 0 2px 14px color-mix(in srgb, var(--color-sky) 12%, transparent);
@@ -1525,7 +1555,10 @@
   @media (max-width: 991px) {
     .agent-workspace {
       grid-template-columns: 1fr;
-      min-height: auto;
+      grid-template-rows: minmax(160px, 24vh) minmax(0, 1fr) auto;
+      height: calc(100vh - 52px);
+      max-height: calc(100vh - 52px);
+      min-height: 0;
       transition: none;
     }
 
@@ -1554,24 +1587,31 @@
 
     .agent-workspace-stage {
       grid-column: 1;
-      min-height: 200px;
+      grid-row: 1;
+      min-height: 0;
+      height: auto;
       border-right: none;
       border-bottom: none;
     }
 
     .agent-live2d-stage {
-      min-height: 200px;
+      min-height: 0;
+      height: 100%;
     }
 
     .agent-workspace-chat-shell {
       grid-column: 1;
-      min-height: calc(100vh - 52px - 200px - 140px);
+      grid-row: 2;
+      min-height: 0;
+      height: auto;
       border-right: none;
     }
 
     .agent-session-sidebar {
       grid-column: 1;
-      min-height: auto;
+      grid-row: 3;
+      min-height: 0;
+      height: auto;
       max-height: 140px;
       border-top: 1px solid var(--color-border);
     }

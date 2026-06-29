@@ -42,13 +42,19 @@ export function useMangaMessageScroll({
     if (!enabled || !speakingMessageId) return;
 
     const container = scrollContainerRef.current;
-    const bubble = speakingBubbleRef.current;
-    if (!container || !bubble) return;
+    if (!container) return;
 
     const isNewSpeech = speakingMessageId !== prevSpeakingIdRef.current;
     prevSpeakingIdRef.current = speakingMessageId;
 
-    scrollToFocusBubble(bubble, container, isNewSpeech);
+    const runScroll = () => {
+      const bubble = speakingBubbleRef.current;
+      if (!bubble) return;
+      scrollToFocusBubble(bubble, container, isNewSpeech);
+    };
+
+    runScroll();
+    requestAnimationFrame(runScroll);
   }, [enabled, speakingMessageId, scrollContainerRef, speakingBubbleRef]);
 
   useEffect(() => {

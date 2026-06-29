@@ -132,6 +132,14 @@ export default function AgentMessageList({
   });
 
   useEffect(() => {
+    if (!mangaLayout || !scrollContainerRef?.current) return;
+    const last = messages[messages.length - 1];
+    if (last?.role !== "user") return;
+    const container = scrollContainerRef.current;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, [messages, mangaLayout, scrollContainerRef]);
+
+  useEffect(() => {
     if (mangaLayout) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy, liveSteps, mangaLayout]);

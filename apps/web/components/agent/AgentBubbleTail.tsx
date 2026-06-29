@@ -6,38 +6,39 @@ type AgentBubbleTailProps = {
   className?: string;
 };
 
-/**
- * 漫画式对话框尾巴（向左下指向珂朵莉）
- * 双层 path：外层描边 + 内层填充，颜色继承气泡 --bubble-fill / --bubble-stroke
- */
+/** 漫画式对话框尾巴：粗颈 + 左下指向，与气泡左下角衔接 */
 export default function AgentBubbleTail({ className }: AgentBubbleTailProps) {
   return (
     <svg
       className={cn("agent-bubble-tail", className)}
-      viewBox="0 0 52 60"
-      width="52"
-      height="60"
+      viewBox="0 0 56 68"
+      width="56"
+      height="68"
       aria-hidden="true"
       focusable="false"
     >
       <path
         className="agent-bubble-tail-stroke"
-        d="M46 2
-           L46 14
-           C38 16, 30 20, 24 28
-           C16 38, 10 48, 2 58
-           C12 46, 20 34, 30 24
-           C36 16, 42 8, 46 2
+        d="M50 2
+           L50 22
+           L36 22
+           C26 24, 18 32, 10 46
+           C6 54, 2 62, 2 66
+           C8 56, 16 42, 24 32
+           C30 24, 38 20, 48 20
+           L50 20
            Z"
       />
       <path
         className="agent-bubble-tail-fill"
-        d="M45 3
-           L45 13
-           C38 15, 30 19, 24 27
-           C17 36, 12 46, 4 56
-           C13 44, 21 33, 29 23
-           C35 16, 41 9, 45 3
+        d="M49 3
+           L49 21
+           L36 21
+           C27 23, 19 31, 12 44
+           C8 51, 4 58, 4 63
+           C10 53, 17 41, 24 31
+           C29 24, 37 21, 48 21
+           L49 21
            Z"
       />
     </svg>

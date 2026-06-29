@@ -43,7 +43,7 @@ export default function AgentChatPanel({
   return (
     <div
       className={cn(
-        "floating-agent-panel-inner flex flex-col h-full",
+        "floating-agent-panel-inner flex flex-col h-full min-h-0",
         isWorkspace && "agent-workspace-chat",
         className,
       )}
