@@ -15,7 +15,6 @@ const ACTIVE_KEY = "chtholly-agent-active-session";
 const SHOW_STEPS_KEY = "chtholly-agent-show-steps";
 const WORKSPACE_DARK_KEY = "chtholly-agent-workspace-dark";
 const RICH_MARKDOWN_KEY = "chtholly-agent-rich-markdown";
-const STAGE_COLLAPSED_KEY = "chtholly-agent-stage-collapsed";
 const SESSIONS_COLLAPSED_KEY = "chtholly-agent-sessions-collapsed";
 const LIVE2D_BG_KEY = "chtholly-agent-live2d-bg";
 
@@ -115,24 +114,6 @@ export function saveRichMarkdownPreference(rich: boolean) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(RICH_MARKDOWN_KEY, String(rich));
-  } catch {
-    // 存储失败时忽略
-  }
-}
-
-export function loadStageCollapsedPreference(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return localStorage.getItem(STAGE_COLLAPSED_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-export function saveStageCollapsedPreference(collapsed: boolean) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(STAGE_COLLAPSED_KEY, String(collapsed));
   } catch {
     // 存储失败时忽略
   }

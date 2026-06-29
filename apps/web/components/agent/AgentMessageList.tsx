@@ -24,15 +24,17 @@ function MessageBubble({
   msg,
   showSteps,
   rich,
+  leadAssistant,
 }: {
   msg: ChatMessage;
   showSteps: boolean;
   rich?: boolean;
+  leadAssistant?: boolean;
 }) {
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="agent-bubble-user max-w-[85%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
+        <div className="agent-bubble-user max-w-[85%] text-sm leading-relaxed whitespace-pre-wrap">
           {msg.content}
         </div>
       </div>
@@ -48,11 +50,16 @@ function MessageBubble({
   }
 
   return (
-    <div className="flex justify-start gap-2 items-end">
+    <div className="agent-message-row-assistant flex justify-start gap-2 items-end">
       <span className="agent-avatar-sm shrink-0" aria-hidden="true">
         C
       </span>
-      <div className="agent-bubble-assistant max-w-[85%] px-4 py-2.5 text-sm leading-relaxed">
+      <div
+        className={cn(
+          "agent-bubble-assistant max-w-[85%] text-sm leading-relaxed",
+          leadAssistant && "agent-bubble-assistant--lead",
+        )}
+      >
         {rich && !msg.streaming ? (
           <AgentRichMessage content={msg.content} />
         ) : (
@@ -101,9 +108,21 @@ export default function AgentMessageList({
         </div>
       )}
 
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} msg={msg} showSteps={showSteps} rich={rich} />
-      ))}
+      {messages.map((msg, index) => {
+        const prev = messages[index - 1];
+        const leadAssistant =
+          msg.role === "assistant" && (!prev || prev.role !== "assistant");
+
+        return (
+          <MessageBubble
+            key={msg.id}
+            msg={msg}
+            showSteps={showSteps}
+            rich={rich}
+            leadAssistant={leadAssistant}
+          />
+        );
+      })}
 
       {busy && showSteps && liveSteps.length > 0 && (
         <div className="agent-live-steps px-3 py-2 text-xs rounded-xl border border-border bg-cloud">
