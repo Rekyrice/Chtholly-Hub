@@ -24,6 +24,8 @@ type MotionDef = {
 
 type ChthollyLive2DProps = {
   className?: string;
+  /** 页面布局预设，控制人物占展示区比例 */
+  layoutPreset?: import("@/lib/live2d/layout").Live2DLayoutPreset;
 };
 
 const MOUTH_PARAM = "PARAM_MOUTH_OPEN_Y";
@@ -72,8 +74,10 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
 
     let disposed = false;
     let app: import("pixi.js").Application | null = null;
+    let canvasEl: HTMLCanvasElement | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let tickerHook: (() => void) | null = null;
+    let pointerCleanup: (() => void) | null = null;
 
     const layoutModel = (model: Live2DModelInstance, mountEl: HTMLDivElement) => {
       const { clientWidth, clientHeight } = mountEl;
@@ -89,11 +93,14 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         await loadScript(LIVE2D_CORE_SCRIPT);
         if (disposed) return;
 
-        const [{ Application }, { Live2DModel }] = await Promise.all([
+        const [{ Application, Ticker }, { Live2DModel }] = await Promise.all([
           import("pixi.js"),
           import("pixi-live2d-display/cubism2"),
         ]);
         if (disposed) return;
+
+        // pixi-live2d-display 依赖静态 Ticker 引用；Pixi 7 无 window.PIXI
+        Live2DModel.registerTicker(Ticker as never);
 
         app = new Application({
           backgroundAlpha: 0,
@@ -104,9 +111,17 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
           autoDensity: true,
         });
 
-        mount.appendChild(app.view as HTMLCanvasElement);
+        canvasEl = app.view as HTMLCanvasElement;
+        mount.appendChild(canvasEl);
 
-        const model = await Live2DModel.from(CHTHOLLY_MODEL_URL);
+        // Pixi 7 事件系统会调用 isInteractive()，与 pixi-live2d-display（Pixi 6）不兼容
+        app.stage.eventMode = "none";
+        app.stage.interactiveChildren = false;
+
+        const model = await Live2DModel.from(CHTHOLLY_MODEL_URL, {
+          autoUpdate: false,
+          autoInteract: false,
+        });
         if (disposed) {
           model.destroy();
           app.destroy(true, { children: true });
@@ -116,12 +131,12 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         modelRef.current = model;
         model.scale.set(MODEL_SCALE);
         model.anchor.set(0.5, 1);
-        model.eventMode = "static";
-        model.cursor = "pointer";
+        // 每帧 _render 会尝试绑定 Pixi 6 interaction 插件，Pixi 7 无 manager.on
+        model.registerInteraction = () => {};
+        detachFromPixiEvents(model as unknown as PixiEventDetachTarget);
         layoutModel(model, mount);
 
         app.stage.addChild(model as unknown as import("pixi.js").DisplayObject);
-        model.autoUpdate = false;
 
         tickerHook = () => {
           model.update(app!.ticker.deltaMS);
@@ -133,7 +148,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         };
         app.ticker.add(tickerHook);
 
-        bindPointer(model);
+        pointerCleanup = bindCanvasPointer(canvasEl, app, model);
         await model.motion("idle");
 
         resizeObserver = new ResizeObserver(() => {
@@ -155,6 +170,8 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
 
     return () => {
       disposed = true;
+      pointerCleanup?.();
+      pointerCleanup = null;
       resizeObserver?.disconnect();
       if (tickerHook && app) {
         app.ticker.remove(tickerHook);
@@ -216,12 +233,40 @@ async function startMotionWithSound(
   }
 }
 
-function bindPointer(model: Live2DModelInstance) {
-  model.on("pointerdown", (e) => {
-    model.tap(e.global.x, e.global.y);
-    const hits = model.hitTest(e.global.x, e.global.y);
-    if (hits.length > 0 || model.containsPoint(e.global)) {
+/** 将 Live2D 子树从 Pixi 7 命中检测中排除，避免 isInteractive 报错 */
+type PixiEventDetachTarget = {
+  eventMode?: string;
+  interactiveChildren?: boolean;
+  children?: PixiEventDetachTarget[];
+};
+
+function detachFromPixiEvents(displayObject: PixiEventDetachTarget) {
+  displayObject.eventMode = "none";
+  displayObject.interactiveChildren = false;
+  for (const child of displayObject.children ?? []) {
+    detachFromPixiEvents(child);
+  }
+}
+
+function bindCanvasPointer(
+  canvas: HTMLCanvasElement,
+  app: import("pixi.js").Application,
+  model: Live2DModelInstance,
+) {
+  canvas.style.cursor = "pointer";
+
+  const onPointerDown = (e: PointerEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * app.renderer.width;
+    const y = ((e.clientY - rect.top) / rect.height) * app.renderer.height;
+
+    model.tap(x, y);
+    const hits = model.hitTest(x, y);
+    if (hits.length > 0) {
       void startMotionWithSound(model, "tap");
     }
-  });
+  };
+
+  canvas.addEventListener("pointerdown", onPointerDown);
+  return () => canvas.removeEventListener("pointerdown", onPointerDown);
 }
