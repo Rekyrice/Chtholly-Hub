@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, type RefObject } from "react";
-import AgentBubbleTail from "@/components/agent/AgentBubbleTail";
 import { AgentRichMessage, AgentSteps, stepTone } from "@/components/agent/AgentRichMessage";
 import { useMangaMessageScroll } from "@/lib/hooks/useMangaMessageScroll";
 import { cn } from "@/lib/utils";
@@ -75,7 +74,6 @@ function MessageBubble({
           isSpeaking && "agent-bubble-wrap--speaking",
         )}
       >
-        {isSpeaking && <AgentBubbleTail />}
         <div
           ref={isSpeaking ? bubbleRef : undefined}
           className={cn(
