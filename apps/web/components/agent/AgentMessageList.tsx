@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
+import AgentBubbleTail from "@/components/agent/AgentBubbleTail";
 import { AgentRichMessage, AgentSteps, stepTone } from "@/components/agent/AgentRichMessage";
+import { useMangaMessageScroll } from "@/lib/hooks/useMangaMessageScroll";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/lib/types/agent";
 
@@ -17,6 +19,8 @@ type AgentMessageListProps = {
   showSteps: boolean;
   liveSteps: string[];
   rich?: boolean;
+  mangaLayout?: boolean;
+  scrollContainerRef?: RefObject<HTMLElement | null>;
   onSuggestion?: (text: string) => void;
 };
 
@@ -24,16 +28,25 @@ function MessageBubble({
   msg,
   showSteps,
   rich,
-  leadAssistant,
+  isSpeaking,
+  isNew,
+  bubbleRef,
 }: {
   msg: ChatMessage;
   showSteps: boolean;
   rich?: boolean;
-  leadAssistant?: boolean;
+  isSpeaking?: boolean;
+  isNew?: boolean;
+  bubbleRef?: RefObject<HTMLDivElement | null>;
 }) {
   if (msg.role === "user") {
     return (
-      <div className="agent-message-row agent-message-row--user">
+      <div
+        className={cn(
+          "agent-message-row agent-message-row--user",
+          isNew && "agent-message-row--user-enter",
+        )}
+      >
         <div className="agent-bubble-user max-w-full text-sm leading-relaxed whitespace-pre-wrap">
           {msg.content}
         </div>
@@ -50,13 +63,20 @@ function MessageBubble({
   }
 
   return (
-    <div className="agent-message-row">
+    <div
+      className={cn(
+        "agent-message-row agent-message-row--assistant",
+        isNew && "agent-message-row--assistant-enter",
+      )}
+    >
       <div
+        ref={isSpeaking ? bubbleRef : undefined}
         className={cn(
           "agent-bubble-assistant max-w-full text-sm leading-relaxed",
-          leadAssistant && "agent-bubble-assistant--lead",
+          isSpeaking && "agent-bubble-assistant--speaking",
         )}
       >
+        {isSpeaking && <AgentBubbleTail />}
         {rich && !msg.streaming ? (
           <AgentRichMessage content={msg.content} />
         ) : (
@@ -75,14 +95,39 @@ export default function AgentMessageList({
   showSteps,
   liveSteps,
   rich = false,
+  mangaLayout = false,
+  scrollContainerRef,
   onSuggestion,
 }: AgentMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const speakingBubbleRef = useRef<HTMLDivElement>(null);
+  const seenIdsRef = useRef(new Set<string>());
   const empty = messages.length === 0 && !busy;
 
+  const lastAssistantIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "assistant") return i;
+    }
+    return -1;
+  }, [messages]);
+
+  const speakingMessageId =
+    lastAssistantIndex >= 0 ? messages[lastAssistantIndex].id : null;
+
+  const streaming = messages.some((m) => m.streaming);
+
+  useMangaMessageScroll({
+    enabled: mangaLayout && !!scrollContainerRef,
+    scrollContainerRef: scrollContainerRef ?? { current: null },
+    speakingBubbleRef,
+    speakingMessageId,
+    streaming,
+  });
+
   useEffect(() => {
+    if (mangaLayout) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy, liveSteps]);
+  }, [messages, busy, liveSteps, mangaLayout]);
 
   return (
     <>
@@ -106,9 +151,9 @@ export default function AgentMessageList({
       )}
 
       {messages.map((msg, index) => {
-        const prev = messages[index - 1];
-        const leadAssistant =
-          msg.role === "assistant" && (!prev || prev.role !== "assistant");
+        const isSpeaking = index === lastAssistantIndex;
+        const isNew = !seenIdsRef.current.has(msg.id);
+        if (isNew) seenIdsRef.current.add(msg.id);
 
         return (
           <MessageBubble
@@ -116,7 +161,9 @@ export default function AgentMessageList({
             msg={msg}
             showSteps={showSteps}
             rich={rich}
-            leadAssistant={leadAssistant}
+            isSpeaking={isSpeaking}
+            isNew={isNew}
+            bubbleRef={speakingBubbleRef}
           />
         );
       })}

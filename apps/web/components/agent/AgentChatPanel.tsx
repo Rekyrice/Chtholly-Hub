@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import Link from "next/link";
 import { ExternalLink, Minus, Send, Settings } from "lucide-react";
 import AgentMessageList from "@/components/agent/AgentMessageList";
@@ -37,6 +38,7 @@ export default function AgentChatPanel({
   } = useAgentChatContext();
 
   const isWorkspace = variant === "workspace";
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   return (
     <div
@@ -110,13 +112,21 @@ export default function AgentChatPanel({
         />
       )}
 
-      <div className="floating-agent-messages flex-1 overflow-y-auto px-4 py-3 space-y-3">
+      <div
+        ref={scrollContainerRef}
+        className={cn(
+          "floating-agent-messages flex-1 overflow-y-auto px-4 py-3 space-y-3",
+          isWorkspace && "agent-messages-manga",
+        )}
+      >
         <AgentMessageList
           messages={messages}
           busy={busy}
           showSteps={showSteps}
           liveSteps={liveSteps}
           rich={isWorkspace && richMarkdown}
+          mangaLayout={isWorkspace}
+          scrollContainerRef={scrollContainerRef}
           onSuggestion={fillAndSend}
         />
       </div>

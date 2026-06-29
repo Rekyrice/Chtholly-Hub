@@ -486,6 +486,42 @@
     animation: agent-pulse 1.5s ease-in-out infinite;
   }
 
+  @keyframes agent-bubble-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.94);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes agent-bubble-user-enter {
+    from {
+      opacity: 0;
+      transform: translateX(12px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes agent-tail-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.6) rotate(-4deg);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+  }
+
   @keyframes agent-pulse {
     0%,
     100% {
@@ -506,52 +542,71 @@
   }
 
   .agent-bubble-assistant {
-    background: var(--color-surface);
+    --bubble-fill: var(--color-surface);
+    --bubble-stroke: var(--color-border);
+    background: var(--bubble-fill);
     color: var(--color-text);
-    border: 1px solid var(--color-border);
-    border-radius: 2px 14px 14px 14px;
+    border: 1px solid var(--bubble-stroke);
+    border-radius: 4px 16px 16px 16px;
     padding: 10px 14px 10px 18px;
     position: relative;
-    margin-left: 12px;
+    margin-left: 24px;
+    overflow: visible;
   }
 
-  .agent-bubble-assistant--lead::before {
-    content: "";
+  .agent-bubble-tail {
     position: absolute;
-    left: -10px;
-    top: 14px;
-    width: 0;
-    height: 0;
-    border-top: 6px solid transparent;
-    border-bottom: 6px solid transparent;
-    border-right: 10px solid var(--color-border);
+    left: -32px;
+    bottom: 4px;
+    width: 40px;
+    height: 48px;
+    pointer-events: none;
+    transform-origin: 88% 18%;
   }
 
-  .agent-bubble-assistant--lead::after {
-    content: "";
-    position: absolute;
-    left: -8px;
-    top: 15px;
-    width: 0;
-    height: 0;
-    border-top: 5px solid transparent;
-    border-bottom: 5px solid transparent;
-    border-right: 9px solid var(--color-surface);
+  .agent-bubble-assistant--speaking .agent-bubble-tail {
+    animation: agent-tail-pop 0.32s cubic-bezier(0.34, 1.45, 0.64, 1) both;
+  }
+
+  .agent-bubble-tail-stroke {
+    fill: var(--bubble-stroke);
+  }
+
+  .agent-bubble-tail-fill {
+    fill: var(--bubble-fill);
   }
 
   .agent-message-row {
     display: flex;
     justify-content: flex-start;
     align-items: flex-end;
-    max-width: 92%;
-    padding-left: 4px;
+    max-width: 75%;
+    padding-left: 8px;
+  }
+
+  .agent-message-row--assistant {
+    scroll-snap-align: start;
+    scroll-margin-top: 34vh;
+  }
+
+  .agent-message-row--assistant-enter {
+    animation: agent-bubble-enter 0.3s cubic-bezier(0.34, 1.45, 0.64, 1) both;
+    transform-origin: left bottom;
   }
 
   .agent-message-row--user {
     justify-content: flex-end;
-    max-width: 85%;
+    max-width: 80%;
     margin-left: auto;
     padding-left: 0;
+  }
+
+  .agent-message-row--user-enter {
+    animation: agent-bubble-user-enter 0.24s ease-out both;
+  }
+
+  .agent-messages-manga {
+    scroll-snap-type: y proximity;
   }
 
   .agent-suggestion-chip {
@@ -1276,16 +1331,10 @@
   }
 
   .agent-workspace--dark .agent-bubble-assistant {
-    background: #1e293b;
+    --bubble-fill: #1e293b;
+    --bubble-stroke: #334155;
+    background: var(--bubble-fill);
     color: #e2e8f0;
-  }
-
-  .agent-workspace--dark .agent-bubble-assistant--lead::before {
-    border-right-color: #334155;
-  }
-
-  .agent-workspace--dark .agent-bubble-assistant--lead::after {
-    border-right-color: #1e293b;
   }
 
   .agent-workspace--dark .agent-suggestion-chip {
@@ -2129,6 +2178,12 @@
     }
 
     .skeleton {
+      animation: none;
+    }
+
+    .agent-message-row--assistant-enter,
+    .agent-message-row--user-enter,
+    .agent-bubble-assistant--speaking .agent-bubble-tail {
       animation: none;
     }
   }
