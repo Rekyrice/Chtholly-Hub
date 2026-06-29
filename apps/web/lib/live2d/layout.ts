@@ -4,19 +4,19 @@ export type Live2DLayoutPreset = "agent" | "hero" | "compact";
 export type Live2DLayoutConfig = {
   /** 目标占容器高度比例，建议 ≥ 0.6 */
   fillRatio: number;
-  /** 锚点纵向位置（0–1），1 为贴底 */
-  anchorY: number;
+  /** 人物视觉中心纵向目标（0–1），0.5 正中，略大则偏下 */
+  visualCenterY: number;
   /** 左右留白比例（单侧） */
   paddingX: number;
 };
 
 export const LIVE2D_LAYOUT_PRESETS: Record<Live2DLayoutPreset, Live2DLayoutConfig> = {
-  /** Agent 工作台左侧栏：人物占展示区高度约 68% */
-  agent: { fillRatio: 0.68, anchorY: 0.96, paddingX: 0.04 },
-  /** 首页 Hero 等大区域：更大占比 */
-  hero: { fillRatio: 0.78, anchorY: 0.98, paddingX: 0.06 },
+  /** Agent 工作台：约 76% 高度，视觉中心略低于正中 */
+  agent: { fillRatio: 0.76, visualCenterY: 0.56, paddingX: 0.02 },
+  /** 首页 Hero 等大区域 */
+  hero: { fillRatio: 0.86, visualCenterY: 0.58, paddingX: 0.04 },
   /** 侧栏较窄或嵌入卡片 */
-  compact: { fillRatio: 0.62, anchorY: 0.94, paddingX: 0.08 },
+  compact: { fillRatio: 0.70, visualCenterY: 0.54, paddingX: 0.06 },
 };
 
 /** Live2D 舞台背景主题（通过 CSS 类名切换） */
@@ -56,9 +56,11 @@ export function fitLive2DModel(
   const availW = mount.clientWidth * (1 - config.paddingX * 2);
   const targetH = mount.clientHeight * config.fillRatio;
   const scale = Math.min(availW / modelW, targetH / modelH);
+  const scaledH = modelH * scale;
 
   model.scale.set(scale);
   model.anchor.set(0.5, 1);
   model.x = mount.clientWidth / 2;
-  model.y = mount.clientHeight * config.anchorY;
+  // 锚点在脚底，按视觉中心定位（略低于 0.5 即居中偏下）
+  model.y = mount.clientHeight * config.visualCenterY + scaledH / 2;
 }

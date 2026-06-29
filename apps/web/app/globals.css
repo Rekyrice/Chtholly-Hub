@@ -615,7 +615,7 @@
     position: absolute;
     inset: 0;
     background: radial-gradient(
-      ellipse 72% 58% at 50% 88%,
+      ellipse 72% 58% at 50% 56%,
       rgba(255, 255, 255, 0.14),
       transparent 68%
     );
@@ -662,7 +662,7 @@
 
   .agent-live2d-stage--bg-soft::before {
     background: radial-gradient(
-      ellipse 70% 55% at 50% 88%,
+      ellipse 70% 55% at 50% 56%,
       rgba(255, 255, 255, 0.55),
       transparent 70%
     );
@@ -700,14 +700,15 @@
 
   .agent-live2d-stage--mobile {
     align-items: center;
-    padding: 1rem;
+    justify-content: center;
+    padding: 1rem 1rem 2rem;
   }
 
   .agent-live2d-mobile-fallback {
     position: relative;
     z-index: 1;
-    max-width: min(340px, 92%);
-    max-height: 68%;
+    max-width: min(380px, 94%);
+    max-height: 76%;
     object-fit: contain;
     border-radius: 12px;
     box-shadow: 0 12px 40px var(--agent-panel-shadow);
