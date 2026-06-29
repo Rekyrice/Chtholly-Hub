@@ -73,7 +73,7 @@ class AgentWebSocketHandlerTest {
 
         handler.afterConnectionEstablished(rawSession);
 
-        when(memoryStore.getOrCreateMemory(99L)).thenReturn(memory);
+        when(memoryStore.getOrCreateMemory(99L, "sess-chat-a")).thenReturn(memory);
         doNothing().when(agent).run(any(), anyLong(), any(), any(), any());
 
         List<String> payloads = new ArrayList<>();
@@ -84,7 +84,8 @@ class AgentWebSocketHandlerTest {
         }).when(rawSession).sendMessage(any());
 
         for (int i = 0; i < 15; i++) {
-            handler.handleTextMessage(rawSession, new TextMessage("{\"type\":\"chat\",\"message\":\"hi\"}"));
+            handler.handleTextMessage(rawSession,
+                    new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-a\",\"message\":\"hi\"}"));
         }
 
         TimeUnit.MILLISECONDS.sleep(300);
@@ -104,15 +105,17 @@ class AgentWebSocketHandlerTest {
 
         handler.afterConnectionEstablished(rawSession);
 
-        when(memoryStore.getOrCreateMemory(1L)).thenReturn(memory);
+        when(memoryStore.getOrCreateMemory(1L, "sess-chat-b")).thenReturn(memory);
         doNothing().when(agent).run(any(), anyLong(), any(), any(), any());
 
         doNothing().when(rawSession).sendMessage(any());
 
         for (int i = 0; i < 10; i++) {
-            handler.handleTextMessage(rawSession, new TextMessage("{\"type\":\"clear\"}"));
+            handler.handleTextMessage(rawSession,
+                    new TextMessage("{\"type\":\"clear\",\"sessionId\":\"sess-chat-b\"}"));
         }
-        handler.handleTextMessage(rawSession, new TextMessage("{\"type\":\"chat\",\"message\":\"ok\"}"));
+        handler.handleTextMessage(rawSession,
+                new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-b\",\"message\":\"ok\"}"));
 
         TimeUnit.MILLISECONDS.sleep(200);
         verify(agent).run(any(), anyLong(), any(), any(), any());

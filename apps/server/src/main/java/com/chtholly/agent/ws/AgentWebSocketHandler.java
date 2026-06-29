@@ -114,7 +114,12 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             String type = root.path("type").asText("");
 
             if ("clear".equals(type)) {
-                memoryStore.clearMemory(userId);
+                String chatSessionId = root.path("sessionId").asText("").trim();
+                if (!AgentChatSessionSupport.isValid(chatSessionId)) {
+                    sendJson(safe, "error", objectMapper.createObjectNode().put("message", "缺少或无效的 sessionId"));
+                    return;
+                }
+                memoryStore.clearMemory(userId, chatSessionId);
                 sendJson(safe, "cleared", objectMapper.createObjectNode().put("message", "对话记忆已清空"));
                 return;
             }
@@ -135,7 +140,13 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
 
-            AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId);
+            String chatSessionId = root.path("sessionId").asText("").trim();
+            if (!AgentChatSessionSupport.isValid(chatSessionId)) {
+                sendJson(safe, "error", objectMapper.createObjectNode().put("message", "缺少或无效的 sessionId"));
+                return;
+            }
+
+            AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId, chatSessionId);
             agent.run(text, userId, memory, session.getId(), event -> {
                 try {
                     if (safe.isOpen()) {

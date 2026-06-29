@@ -22,6 +22,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AgentMemoryStoreTest {
 
+    private static final String CHAT_SESSION = "sess-test-abc";
+
     @Mock
     private StringRedisTemplate redis;
     @Mock
@@ -44,44 +46,44 @@ class AgentMemoryStoreTest {
         when(redis.opsForList()).thenReturn(listOps);
         AgentTurn turn = AgentTurn.user("hello");
 
-        store.addTurn(42L, turn);
+        store.addTurn(42L, CHAT_SESSION, turn);
 
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-        verify(listOps).rightPush(eq("agent:memory:42"), jsonCaptor.capture());
+        verify(listOps).rightPush(eq("agent:memory:42:" + CHAT_SESSION), jsonCaptor.capture());
         assertThat(jsonCaptor.getValue()).contains("\"role\":\"USER\"");
 
-        verify(listOps).trim("agent:memory:42", -20, -1);
-        verify(redis).expire("agent:memory:42", Duration.ofMinutes(120));
+        verify(listOps).trim("agent:memory:42:" + CHAT_SESSION, -20, -1);
+        verify(redis).expire("agent:memory:42:" + CHAT_SESSION, Duration.ofMinutes(120));
     }
 
     @Test
     void clearMemoryDeletesRedisKey() {
-        store.clearMemory(7L);
-        verify(redis).delete("agent:memory:7");
+        store.clearMemory(7L, CHAT_SESSION);
+        verify(redis).delete("agent:memory:7:" + CHAT_SESSION);
     }
 
     @Test
     void getOrCreateMemoryLoadsFromRedisList() throws Exception {
         when(redis.opsForList()).thenReturn(listOps);
         String json = objectMapper.writeValueAsString(AgentTurn.assistant("hi"));
-        when(listOps.range("agent:memory:3", 0, -1)).thenReturn(List.of(json));
+        when(listOps.range("agent:memory:3:" + CHAT_SESSION, 0, -1)).thenReturn(List.of(json));
 
-        AgentConversationMemory memory = store.getOrCreateMemory(3L);
+        AgentConversationMemory memory = store.getOrCreateMemory(3L, CHAT_SESSION);
 
         assertThat(memory.isEmpty()).isFalse();
         assertThat(memory.formatForPrompt()).contains("Assistant: hi");
-        verify(redis).expire("agent:memory:3", Duration.ofMinutes(120));
+        verify(redis).expire("agent:memory:3:" + CHAT_SESSION, Duration.ofMinutes(120));
     }
 
     @Test
     void getStatsReflectsCachedSessions() throws Exception {
         when(redis.opsForList()).thenReturn(listOps);
         String json = objectMapper.writeValueAsString(AgentTurn.assistant("hi"));
-        when(listOps.range("agent:memory:1", 0, -1)).thenReturn(List.of(json));
-        when(listOps.range("agent:memory:2", 0, -1)).thenReturn(List.of(json, json));
+        when(listOps.range("agent:memory:1:sess-a", 0, -1)).thenReturn(List.of(json));
+        when(listOps.range("agent:memory:2:sess-b", 0, -1)).thenReturn(List.of(json, json));
 
-        store.getOrCreateMemory(1L);
-        store.getOrCreateMemory(2L);
+        store.getOrCreateMemory(1L, "sess-a");
+        store.getOrCreateMemory(2L, "sess-b");
 
         AgentMemoryStats stats = store.getStats();
         assertThat(stats.activeSessions()).isEqualTo(2);
