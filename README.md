@@ -1,5 +1,7 @@
 # Chtholly Hub
 
+[![CI](https://github.com/Rekyrice/Chtholly-Hub/actions/workflows/ci.yml/badge.svg)](https://github.com/Rekyrice/Chtholly-Hub/actions/workflows/ci.yml)
+
 Rekyrice 的动漫博客向社区演进的全栈平台。中文名「依米花」为虚构花名，寓意见站内 About 页。
 
 - **GitHub**: https://github.com/Rekyrice/Chtholly-Hub

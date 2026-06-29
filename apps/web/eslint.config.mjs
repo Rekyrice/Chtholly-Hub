@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Live2D 第三方运行时与模型静态资源，不参与 lint
+    "public/live2d/**",
   ]),
 ]);
 

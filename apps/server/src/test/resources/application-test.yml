@@ -1,0 +1,31 @@
+# CI / 单元测试：不依赖 MySQL、Kafka、ES、OSS；Redis 由 GitHub Actions service 或 mock 提供
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+llm:
+  enabled: false
+
+rag:
+  enabled: false
+
+kafka:
+  enabled: false
+
+canal:
+  enabled: false
+
+bangumi:
+  enabled: false
+  sync:
+    enabled: false
+
+storage:
+  type: local
+
+management:
+  health:
+    elasticsearch:
+      enabled: false
