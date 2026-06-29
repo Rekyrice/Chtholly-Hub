@@ -11,8 +11,8 @@ export type Live2DLayoutConfig = {
 };
 
 export const LIVE2D_LAYOUT_PRESETS: Record<Live2DLayoutPreset, Live2DLayoutConfig> = {
-  /** Agent 工作台：角色占满左侧大半，尽量放大 */
-  agent: { fillRatio: 0.92, visualCenterY: 0.54, paddingX: 0.01 },
+  /** Agent 工作台：尽量占满角色列高度 */
+  agent: { fillRatio: 0.98, visualCenterY: 0.52, paddingX: 0 },
   /** 首页 Hero 等大区域 */
   hero: { fillRatio: 0.86, visualCenterY: 0.58, paddingX: 0.04 },
   /** 侧栏较窄或嵌入卡片 */

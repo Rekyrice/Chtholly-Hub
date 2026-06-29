@@ -405,17 +405,13 @@
     border-top: 1px solid var(--color-border);
   }
 
-  .agent-input-shell {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 14px;
-    background: var(--color-surface);
-    border-top: 1px solid var(--color-border);
+  /* 工作台：无底栏白块，仅保留椭圆输入框 */
+  .agent-workspace-chat .floating-agent-input {
+    border-top: none;
+    background: transparent;
   }
 
-  .floating-agent-input-field,
-  .agent-input-box {
+  .floating-agent-input-field {
     padding: 10px 16px;
     border: 1px solid var(--color-border);
     border-radius: 9999px;
@@ -425,8 +421,7 @@
     transition: border-color 0.15s ease;
   }
 
-  .floating-agent-input-field:focus,
-  .agent-input-box:focus {
+  .floating-agent-input-field:focus {
     border-color: var(--color-sky);
   }
 
@@ -633,7 +628,7 @@
   .agent-workspace {
     --agent-main-col: minmax(0, 1fr);
     --agent-sessions-col: clamp(200px, 16vw, 240px);
-    --agent-character-zone: clamp(240px, 38%, 440px);
+    --agent-character-zone: clamp(280px, 44%, 520px);
     display: grid;
     grid-template-columns: var(--agent-main-col) var(--agent-sessions-col);
     grid-template-rows: minmax(0, 1fr);
@@ -700,7 +695,6 @@
 
   .agent-workspace-main-chat .floating-agent-panel-inner,
   .agent-workspace-main-chat .floating-agent-header,
-  .agent-workspace-main-chat .agent-input-shell,
   .agent-workspace-main-chat .floating-agent-input,
   .agent-workspace-main-chat .floating-agent-messages,
   .agent-workspace-main-chat .agent-suggestion-chip {
@@ -1331,21 +1325,18 @@
     border-color: #334155;
   }
 
-  .agent-workspace--dark .agent-workspace-chat .floating-agent-input,
-  .agent-workspace--dark .agent-workspace-chat .agent-input-shell {
-    border-color: #334155;
-    background: #1e293b;
+  .agent-workspace--dark .agent-workspace-chat .floating-agent-input {
+    border-top: none;
+    background: transparent;
   }
 
-  .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field,
-  .agent-workspace--dark .agent-workspace-chat .agent-input-box {
+  .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field {
     background: #1e293b;
     border-color: #475569;
     color: #e2e8f0;
   }
 
-  .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field::placeholder,
-  .agent-workspace--dark .agent-workspace-chat .agent-input-box::placeholder {
+  .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field::placeholder {
     color: #64748b;
   }
 
@@ -1522,7 +1513,7 @@
 
   @media (max-width: 1200px) {
     .agent-workspace {
-      --agent-character-zone: clamp(200px, 34vw, 360px);
+      --agent-character-zone: clamp(220px, 38vw, 400px);
       --agent-sessions-col: clamp(180px, 14vw, 220px);
     }
   }

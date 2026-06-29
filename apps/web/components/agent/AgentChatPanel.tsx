@@ -132,10 +132,7 @@ export default function AgentChatPanel({
       </div>
 
       <form
-        className={cn(
-          "shrink-0",
-          isWorkspace ? "agent-input-shell" : "floating-agent-input",
-        )}
+        className="floating-agent-input shrink-0"
         onSubmit={(e) => {
           e.preventDefault();
           void sendMessage(input);
@@ -146,10 +143,7 @@ export default function AgentChatPanel({
           onChange={(e) => setInput(e.target.value)}
           placeholder="输入问题…"
           disabled={busy}
-          className={cn(
-            "flex-1 text-sm disabled:opacity-50",
-            isWorkspace ? "agent-input-box" : "floating-agent-input-field",
-          )}
+          className="floating-agent-input-field flex-1 text-sm disabled:opacity-50"
           data-testid="agent-input"
         />
         <button
