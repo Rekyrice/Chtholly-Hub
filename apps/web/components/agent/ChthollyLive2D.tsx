@@ -13,6 +13,11 @@ import {
   LIVE2D_CORE_SCRIPT,
 } from "@/lib/live2d/constants";
 import { loadScript } from "@/lib/live2d/loadScript";
+import {
+  fitLive2DModel,
+  LIVE2D_LAYOUT_PRESETS,
+  type Live2DLayoutPreset,
+} from "@/lib/live2d/layout";
 import type { Live2DHandle } from "@/lib/types/live2d";
 
 type Live2DModelInstance = import("pixi-live2d-display/cubism2").Live2DModel;
@@ -25,11 +30,10 @@ type MotionDef = {
 type ChthollyLive2DProps = {
   className?: string;
   /** 页面布局预设，控制人物占展示区比例 */
-  layoutPreset?: import("@/lib/live2d/layout").Live2DLayoutPreset;
+  layoutPreset?: Live2DLayoutPreset;
 };
 
 const MOUTH_PARAM = "PARAM_MOUTH_OPEN_Y";
-const MODEL_SCALE = 0.15;
 
 function playSound(relativePath: string, volume = 0.6) {
   const audio = new Audio(`${CHTHOLLY_MODEL_BASE}${relativePath}`);
@@ -40,7 +44,7 @@ function playSound(relativePath: string, volume = 0.6) {
 }
 
 const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function ChthollyLive2D(
-  { className },
+  { className, layoutPreset = "agent" },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -79,10 +83,10 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
     let tickerHook: (() => void) | null = null;
     let pointerCleanup: (() => void) | null = null;
 
+    const layoutConfig = LIVE2D_LAYOUT_PRESETS[layoutPreset];
+
     const layoutModel = (model: Live2DModelInstance, mountEl: HTMLDivElement) => {
-      const { clientWidth, clientHeight } = mountEl;
-      model.x = clientWidth / 2;
-      model.y = clientHeight * 0.92;
+      fitLive2DModel(model, mountEl, layoutConfig);
     };
 
     async function init() {
@@ -129,8 +133,6 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         }
 
         modelRef.current = model;
-        model.scale.set(MODEL_SCALE);
-        model.anchor.set(0.5, 1);
         // 每帧 _render 会尝试绑定 Pixi 6 interaction 插件，Pixi 7 无 manager.on
         model.registerInteraction = () => {};
         detachFromPixiEvents(model as unknown as PixiEventDetachTarget);
@@ -182,7 +184,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
       app = null;
       container.replaceChildren();
     };
-  }, []);
+  }, [layoutPreset]);
 
   return (
     <div

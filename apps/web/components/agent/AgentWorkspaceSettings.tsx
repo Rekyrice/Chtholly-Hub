@@ -3,6 +3,7 @@
 import { Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
+import { LIVE2D_BACKGROUND_THEMES } from "@/lib/live2d/layout";
 import { cn } from "@/lib/utils";
 
 function SettingToggle({
@@ -43,6 +44,8 @@ export default function AgentWorkspaceSettings() {
     setWorkspaceDark,
     richMarkdown,
     setRichMarkdown,
+    live2dBackground,
+    setLive2dBackground,
     messages,
     busy,
     clearConversation,
@@ -96,6 +99,29 @@ export default function AgentWorkspaceSettings() {
               checked={richMarkdown}
               onChange={setRichMarkdown}
             />
+          </div>
+
+          <div className="agent-settings-section">
+            <p className="agent-settings-field-label">Live2D 背景</p>
+            <div className="agent-settings-bg-grid" role="radiogroup" aria-label="Live2D 背景主题">
+              {LIVE2D_BACKGROUND_THEMES.map((theme) => (
+                <button
+                  key={theme.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={live2dBackground === theme.id}
+                  className={cn(
+                    "agent-settings-bg-option",
+                    `agent-settings-bg-option--${theme.id}`,
+                    live2dBackground === theme.id && "agent-settings-bg-option--active",
+                  )}
+                  title={theme.description}
+                  onClick={() => setLive2dBackground(theme.id)}
+                >
+                  <span className="agent-settings-bg-option-label">{theme.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="agent-settings-divider" />

@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import { CHTHOLLY_EXPRESSION, CHTHOLLY_TEXTURE_FALLBACK } from "@/lib/live2d/constants";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
+import { cn } from "@/lib/utils";
 import type { Live2DHandle } from "@/lib/types/live2d";
 
 const ChthollyLive2D = dynamic(() => import("@/components/agent/ChthollyLive2D"), {
@@ -18,7 +19,7 @@ const ChthollyLive2D = dynamic(() => import("@/components/agent/ChthollyLive2D")
 
 /** Live2D 展示区：桌面端渲染模型，移动端静态图 */
 export default function AgentLive2DStage() {
-  const { livePhase, busy } = useAgentChatContext();
+  const { livePhase, busy, live2dBackground } = useAgentChatContext();
   const isDesktop = useMinWidth(992);
   const live2dRef = useRef<Live2DHandle>(null);
   const prevPhaseRef = useRef(livePhase);
@@ -102,7 +103,13 @@ export default function AgentLive2DStage() {
 
   if (!isDesktop) {
     return (
-      <div className="agent-live2d-stage agent-live2d-stage--mobile" data-testid="agent-live2d-stage">
+      <div
+        className={cn(
+          "agent-live2d-stage agent-live2d-stage--mobile",
+          `agent-live2d-stage--bg-${live2dBackground}`,
+        )}
+        data-testid="agent-live2d-stage"
+      >
         <img
           src={CHTHOLLY_TEXTURE_FALLBACK}
           alt="珂朵莉"
@@ -113,8 +120,11 @@ export default function AgentLive2DStage() {
   }
 
   return (
-    <div className="agent-live2d-stage" data-testid="agent-live2d-stage">
-      <ChthollyLive2D ref={live2dRef} className="agent-live2d-canvas-wrap" />
+    <div
+      className={cn("agent-live2d-stage", `agent-live2d-stage--bg-${live2dBackground}`)}
+      data-testid="agent-live2d-stage"
+    >
+      <ChthollyLive2D ref={live2dRef} className="agent-live2d-canvas-wrap" layoutPreset="agent" />
     </div>
   );
 }

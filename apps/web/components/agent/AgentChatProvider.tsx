@@ -13,11 +13,13 @@ import {
 import {
   createSessionId,
   loadActiveSessionId,
+  loadLive2DBackgroundPreference,
   loadRichMarkdownPreference,
   loadShowStepsPreference,
   loadStoredSessions,
   loadWorkspaceDarkPreference,
   saveActiveSessionId,
+  saveLive2DBackgroundPreference,
   saveRichMarkdownPreference,
   saveShowStepsPreference,
   saveStoredSessions,
@@ -29,6 +31,7 @@ import { getAgentWsUrl } from "@/lib/agent/wsUrl";
 import { isLoggedIn, purgeExpiredAuth } from "@/lib/auth/tokens";
 import type { AgentEventType, AgentWsEnvelope, ChatMessage } from "@/lib/types/agent";
 import type { AgentLivePhase } from "@/lib/types/live2d";
+import type { Live2DBackgroundTheme } from "@/lib/live2d/layout";
 
 type AgentChatContextValue = {
   loggedIn: boolean;
@@ -45,6 +48,8 @@ type AgentChatContextValue = {
   setWorkspaceDark: (value: boolean | ((prev: boolean) => boolean)) => void;
   richMarkdown: boolean;
   setRichMarkdown: (value: boolean | ((prev: boolean) => boolean)) => void;
+  live2dBackground: Live2DBackgroundTheme;
+  setLive2dBackground: (value: Live2DBackgroundTheme) => void;
   liveSteps: string[];
   livePhase: AgentLivePhase;
   sendMessage: (text: string) => Promise<void>;
@@ -81,6 +86,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const [showSteps, setShowStepsState] = useState(false);
   const [workspaceDark, setWorkspaceDarkState] = useState(false);
   const [richMarkdown, setRichMarkdownState] = useState(true);
+  const [live2dBackground, setLive2dBackgroundState] = useState<Live2DBackgroundTheme>("dusk");
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const [livePhase, setLivePhase] = useState<AgentLivePhase>("idle");
   const [hydrated, setHydrated] = useState(false);
@@ -127,6 +133,11 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const setLive2dBackground = useCallback((value: Live2DBackgroundTheme) => {
+    setLive2dBackgroundState(value);
+    saveLive2DBackgroundPreference(value);
+  }, []);
+
   useEffect(() => {
     syncAuth();
     window.addEventListener("chtholly-auth-change", syncAuth);
@@ -158,6 +169,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     setShowStepsState(loadShowStepsPreference());
     setWorkspaceDarkState(loadWorkspaceDarkPreference());
     setRichMarkdownState(loadRichMarkdownPreference());
+    setLive2dBackgroundState(loadLive2DBackgroundPreference());
     saveActiveSessionId(activeId);
     setHydrated(true);
   }, []);
@@ -578,6 +590,8 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       setWorkspaceDark,
       richMarkdown,
       setRichMarkdown,
+      live2dBackground,
+      setLive2dBackground,
       liveSteps,
       livePhase,
       sendMessage,
@@ -599,6 +613,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       showSteps,
       workspaceDark,
       richMarkdown,
+      live2dBackground,
       liveSteps,
       livePhase,
       sendMessage,
