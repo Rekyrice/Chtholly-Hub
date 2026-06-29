@@ -31,9 +31,50 @@ type ChthollyLive2DProps = {
   className?: string;
   /** 页面布局预设，控制人物占展示区比例 */
   layoutPreset?: Live2DLayoutPreset;
+  /** 模型加载完成 */
+  onLoad?: () => void;
 };
 
 const MOUTH_PARAM = "PARAM_MOUTH_OPEN_Y";
+
+/** 鼠标跟随时的额外身体倾斜（叠加在 focus 之上；X 由 focus 驱动，这里只管 Y/Z） */
+type BodyLean = { x: number; y: number; z: number };
+
+const BODY_LEAN_IDLE: BodyLean = { x: 0, y: 0, z: 0 };
+
+/** 对身体 Y/Z 做帧间平滑，避免 pointermove 跳变导致闪动 */
+class BodyLeanSmoother {
+  private target = { ...BODY_LEAN_IDLE };
+  private current = { ...BODY_LEAN_IDLE };
+
+  setTarget(y: number, z: number) {
+    this.target.y = y;
+    this.target.z = z;
+  }
+
+  resetTarget() {
+    this.target = { ...BODY_LEAN_IDLE };
+  }
+
+  update(dt: number) {
+    // 时间常数约 380ms，与 focusController 手感接近
+    const t = 1 - Math.exp(-0.007 * Math.max(dt, 0));
+    this.current.y += (this.target.y - this.current.y) * t;
+    this.current.z += (this.target.z - this.current.z) * t;
+  }
+
+  read(): BodyLean {
+    const { y, z } = this.current;
+    if (Math.abs(y) < 0.02 && Math.abs(z) < 0.02) {
+      return BODY_LEAN_IDLE;
+    }
+    return { x: 0, y, z };
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 function playSound(relativePath: string, volume = 0.6) {
   const audio = new Audio(`${CHTHOLLY_MODEL_BASE}${relativePath}`);
@@ -44,14 +85,17 @@ function playSound(relativePath: string, volume = 0.6) {
 }
 
 const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function ChthollyLive2D(
-  { className, layoutPreset = "agent" },
+  { className, layoutPreset = "agent", onLoad },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<Live2DModelInstance | null>(null);
   const speakingRef = useRef(false);
   const mouthTickRef = useRef(0);
+  const onLoadRef = useRef(onLoad);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  onLoadRef.current = onLoad;
 
   useImperativeHandle(ref, () => ({
     setExpression(name: string) {
@@ -70,6 +114,9 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         setMouthOpen(modelRef.current, 0);
       }
     },
+    setParam(id: string, value: number) {
+      setLive2DParam(modelRef.current, id, value);
+    },
   }));
 
   useEffect(() => {
@@ -82,6 +129,9 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
     let resizeObserver: ResizeObserver | null = null;
     let tickerHook: (() => void) | null = null;
     let pointerCleanup: (() => void) | null = null;
+    let onBeforeModelUpdate: (() => void) | null = null;
+    const bodyLeanSmoother = new BodyLeanSmoother();
+    const bodyLeanRef: { current: BodyLean } = { current: BODY_LEAN_IDLE };
 
     const layoutConfig = LIVE2D_LAYOUT_PRESETS[layoutPreset];
 
@@ -103,7 +153,6 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         ]);
         if (disposed) return;
 
-        // pixi-live2d-display 依赖静态 Ticker 引用；Pixi 7 无 window.PIXI
         Live2DModel.registerTicker(Ticker as never);
 
         app = new Application({
@@ -118,7 +167,6 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         canvasEl = app.view as HTMLCanvasElement;
         mount.appendChild(canvasEl);
 
-        // Pixi 7 事件系统会调用 isInteractive()，与 pixi-live2d-display（Pixi 6）不兼容
         app.stage.eventMode = "none";
         app.stage.interactiveChildren = false;
 
@@ -133,15 +181,22 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         }
 
         modelRef.current = model;
-        // 每帧 _render 会尝试绑定 Pixi 6 interaction 插件，Pixi 7 无 manager.on
         model.registerInteraction = () => {};
         detachFromPixiEvents(model as unknown as PixiEventDetachTarget);
         layoutModel(model, mount);
 
         app.stage.addChild(model as unknown as import("pixi.js").DisplayObject);
 
+        onBeforeModelUpdate = () => {
+          applyBodyLean(model, bodyLeanRef.current);
+        };
+        model.internalModel.on("beforeModelUpdate", onBeforeModelUpdate);
+
         tickerHook = () => {
-          model.update(app!.ticker.deltaMS);
+          const dt = app!.ticker.deltaMS;
+          model.update(dt);
+          bodyLeanSmoother.update(dt);
+          bodyLeanRef.current = bodyLeanSmoother.read();
           if (speakingRef.current) {
             mouthTickRef.current += 0.22;
             const v = (Math.sin(mouthTickRef.current) + 1) * 0.22 + 0.08;
@@ -150,7 +205,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         };
         app.ticker.add(tickerHook);
 
-        pointerCleanup = bindCanvasPointer(canvasEl, app, model);
+        pointerCleanup = bindCanvasPointer(canvasEl, app, model, bodyLeanSmoother);
         await model.motion("idle");
 
         resizeObserver = new ResizeObserver(() => {
@@ -162,6 +217,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         resizeObserver.observe(mount);
 
         setStatus("ready");
+        onLoadRef.current?.();
       } catch (err) {
         console.error("[ChthollyLive2D] 初始化失败", err);
         if (!disposed) setStatus("error");
@@ -172,6 +228,9 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
 
     return () => {
       disposed = true;
+      if (modelRef.current && onBeforeModelUpdate) {
+        modelRef.current.internalModel.off("beforeModelUpdate", onBeforeModelUpdate);
+      }
       pointerCleanup?.();
       pointerCleanup = null;
       resizeObserver?.disconnect();
@@ -201,15 +260,38 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
 export default ChthollyLive2D;
 
 function setMouthOpen(model: Live2DModelInstance | null, value: number) {
+  setLive2DParam(model, MOUTH_PARAM, value);
+}
+
+function setLive2DParam(model: Live2DModelInstance | null, id: string, value: number) {
   const core = model?.internalModel?.coreModel as
     | { setParamFloat?: (id: string, value: number, weight?: number) => void }
     | undefined;
   if (!core?.setParamFloat) return;
   try {
-    core.setParamFloat(MOUTH_PARAM, value, 1);
+    core.setParamFloat(id, value, 1);
   } catch {
     // 部分模型参数名可能不同，忽略
   }
+}
+
+function addLive2DParam(model: Live2DModelInstance | null, id: string, value: number) {
+  const core = model?.internalModel?.coreModel as
+    | { addToParamFloat?: (id: string, value: number, weight?: number) => void }
+    | undefined;
+  if (!core?.addToParamFloat) return;
+  try {
+    core.addToParamFloat(id, value, 1);
+  } catch {
+    // 忽略
+  }
+}
+
+/** 在 focus 之后叠加身体 Y/Z 倾斜（X 已由 focusController 平滑驱动） */
+function applyBodyLean(model: Live2DModelInstance, lean: BodyLean) {
+  if (lean.y === 0 && lean.z === 0) return;
+  addLive2DParam(model, "PARAM_BODY_ANGLE_Y", lean.y);
+  addLive2DParam(model, "PARAM_BODY_ANGLE_Z", lean.z);
 }
 
 async function startMotionWithSound(
@@ -221,6 +303,8 @@ async function startMotionWithSound(
     | { motions?: Record<string, MotionDef[]> }
     | undefined;
   const motions = settings?.motions?.[group] ?? [];
+  if (motions.length === 0) return;
+
   const pick =
     index !== undefined && index >= 0 && index < motions.length
       ? index
@@ -250,25 +334,77 @@ function detachFromPixiEvents(displayObject: PixiEventDetachTarget) {
   }
 }
 
+/** 屏幕坐标 → 渲染器坐标，供 focus / tap 使用 */
+function pointerToRenderer(
+  e: PointerEvent,
+  canvas: HTMLCanvasElement,
+  app: import("pixi.js").Application,
+) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((e.clientX - rect.left) / rect.width) * app.renderer.width,
+    y: ((e.clientY - rect.top) / rect.height) * app.renderer.height,
+  };
+}
+
+/** 归一化指针方向：中心为 (0,0)，范围约 ±1 */
+function pointerDirection(
+  e: PointerEvent,
+  canvas: HTMLCanvasElement,
+): { dirX: number; dirY: number } {
+  const rect = canvas.getBoundingClientRect();
+  const dirX = ((rect.left + rect.width / 2 - e.clientX) / rect.width) * 2;
+  const dirY = ((rect.top + rect.height / 2 - e.clientY) / rect.height) * 2;
+  return { dirX, dirY };
+}
+
 function bindCanvasPointer(
   canvas: HTMLCanvasElement,
   app: import("pixi.js").Application,
   model: Live2DModelInstance,
+  bodyLeanSmoother: BodyLeanSmoother,
 ) {
   canvas.style.cursor = "pointer";
 
-  const onPointerDown = (e: PointerEvent) => {
-    const rect = canvas.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * app.renderer.width;
-    const y = ((e.clientY - rect.top) / rect.height) * app.renderer.height;
+  const syncPointer = (e: PointerEvent) => {
+    const { x, y } = pointerToRenderer(e, canvas, app);
+    const { dirX, dirY } = pointerDirection(e, canvas);
 
-    model.tap(x, y);
-    const hits = model.hitTest(x, y);
-    if (hits.length > 0) {
-      void startMotionWithSound(model, "tap");
-    }
+    model.focus(x, y);
+    // 仅设置目标值，由 ticker 逐帧平滑；Z 用较小系数减少中心附近符号翻转
+    bodyLeanSmoother.setTarget(
+      clamp(dirY * 5.5, -5.5, 5.5),
+      clamp(dirX * dirY * -2, -2.5, 2.5),
+    );
   };
 
+  const resetPointer = () => {
+    bodyLeanSmoother.resetTarget();
+    model.focus(app.renderer.width / 2, app.renderer.height * 0.38);
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    syncPointer(e);
+  };
+
+  const onPointerDown = (e: PointerEvent) => {
+    syncPointer(e);
+    const { x, y } = pointerToRenderer(e, canvas, app);
+    model.tap(x, y);
+    // hit_areas 可能仍匹配失败，点击画布时始终触发 tap 动作
+    void startMotionWithSound(model, "tap");
+  };
+
+  canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerdown", onPointerDown);
-  return () => canvas.removeEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointerleave", resetPointer);
+
+  resetPointer();
+
+  return () => {
+    canvas.removeEventListener("pointermove", onPointerMove);
+    canvas.removeEventListener("pointerdown", onPointerDown);
+    canvas.removeEventListener("pointerleave", resetPointer);
+    bodyLeanSmoother.resetTarget();
+  };
 }

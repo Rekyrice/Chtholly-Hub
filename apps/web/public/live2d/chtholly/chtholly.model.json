@@ -9,6 +9,10 @@
     "center_y": 0.0,
     "width": 2.0
   },
+  "hit_areas": [
+    { "name": "head", "id": "B_FACE_01" },
+    { "name": "body", "id": "B_CORE_01" }
+  ],
   "motions": {
     "tap": [
       {

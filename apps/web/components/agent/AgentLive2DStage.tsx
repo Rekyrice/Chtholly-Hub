@@ -3,7 +3,12 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef } from "react";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
-import { CHTHOLLY_EXPRESSION, CHTHOLLY_TEXTURE_FALLBACK } from "@/lib/live2d/constants";
+import {
+  CHTHOLLY_CHEEK_THINK,
+  CHTHOLLY_EXPRESSION,
+  CHTHOLLY_PARAM,
+  CHTHOLLY_TEXTURE_FALLBACK,
+} from "@/lib/live2d/constants";
 import { parseLiveStepEvent } from "@/lib/live2d/liveStepEvent";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import type { Live2DHandle } from "@/lib/types/live2d";
@@ -34,6 +39,10 @@ export default function AgentLive2DStage() {
 
   busyRef.current = busy;
   streamingRef.current = streaming;
+
+  const clearCheek = useCallback(() => {
+    live2dRef.current?.setParam(CHTHOLLY_PARAM.cheek, 0);
+  }, []);
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) {
@@ -68,13 +77,17 @@ export default function AgentLive2DStage() {
     if (handle) {
       if (kind === "think") {
         handle.setExpression(CHTHOLLY_EXPRESSION.neutral);
+        handle.setParam(CHTHOLLY_PARAM.cheek, CHTHOLLY_CHEEK_THINK);
       } else if (kind === "act") {
+        clearCheek();
         handle.startMotion("tap");
+      } else if (kind === "observe") {
+        clearCheek();
       }
     }
 
     resetIdleTimer();
-  }, [liveSteps, resetIdleTimer]);
+  }, [liveSteps, resetIdleTimer, clearCheek]);
 
   // 流式输出：防抖后开启嘴型；结束时微笑并闭嘴
   useEffect(() => {
@@ -86,6 +99,7 @@ export default function AgentLive2DStage() {
     }
 
     if (streaming) {
+      clearCheek();
       speakTimerRef.current = setTimeout(() => {
         live2dRef.current?.setSpeaking(true);
       }, SPEAK_DEBOUNCE_MS);
@@ -93,6 +107,7 @@ export default function AgentLive2DStage() {
       live2dRef.current?.setSpeaking(false);
       if (prevStreamingRef.current && !lastError) {
         live2dRef.current?.setExpression(CHTHOLLY_EXPRESSION.smile);
+        clearCheek();
       }
     }
 
@@ -104,15 +119,16 @@ export default function AgentLive2DStage() {
         speakTimerRef.current = null;
       }
     };
-  }, [streaming, lastError, resetIdleTimer]);
+  }, [streaming, lastError, resetIdleTimer, clearCheek]);
 
   // 错误：难过表情
   useEffect(() => {
     if (!lastError) return;
     live2dRef.current?.setExpression(CHTHOLLY_EXPRESSION.sad);
     live2dRef.current?.setSpeaking(false);
+    clearCheek();
     resetIdleTimer();
-  }, [lastError, resetIdleTimer]);
+  }, [lastError, resetIdleTimer, clearCheek]);
 
   // busy 结束且无流式时重新计时 idle
   useEffect(() => {
@@ -143,7 +159,9 @@ export default function AgentLive2DStage() {
 
   return (
     <div className="agent-live2d-stage" data-testid="agent-live2d-stage">
-      <ChthollyLive2D ref={live2dRef} className="agent-live2d-canvas-wrap" layoutPreset="agent" />
+      <div className="agent-live2d-stage-inner">
+        <ChthollyLive2D ref={live2dRef} className="agent-live2d-canvas-wrap" layoutPreset="agent" />
+      </div>
     </div>
   );
 }

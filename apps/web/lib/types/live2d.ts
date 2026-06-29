@@ -5,4 +5,6 @@ export type Live2DHandle = {
   setExpression: (name: string) => void;
   startMotion: (group: string, index?: number) => void;
   setSpeaking: (speaking: boolean) => void;
+  /** 设置 Live2D 模型参数（如 PARAM_CHEEK） */
+  setParam: (id: string, value: number) => void;
 };
