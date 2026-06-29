@@ -405,7 +405,17 @@
     border-top: 1px solid var(--color-border);
   }
 
-  .floating-agent-input-field {
+  .agent-input-shell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .floating-agent-input-field,
+  .agent-input-box {
     padding: 10px 16px;
     border: 1px solid var(--color-border);
     border-radius: 9999px;
@@ -415,7 +425,8 @@
     transition: border-color 0.15s ease;
   }
 
-  .floating-agent-input-field:focus {
+  .floating-agent-input-field:focus,
+  .agent-input-box:focus {
     border-color: var(--color-sky);
   }
 
@@ -528,8 +539,19 @@
     border-right: 9px solid var(--color-surface);
   }
 
-  .agent-message-row-assistant {
+  .agent-message-row {
+    display: flex;
+    justify-content: flex-start;
+    align-items: flex-end;
+    max-width: 92%;
     padding-left: 4px;
+  }
+
+  .agent-message-row--user {
+    justify-content: flex-end;
+    max-width: 85%;
+    margin-left: auto;
+    padding-left: 0;
   }
 
   .agent-suggestion-chip {
@@ -758,7 +780,7 @@
     display: flex;
     flex-direction: column;
     min-height: calc(100vh - 52px);
-    background: var(--color-surface);
+    background: var(--color-cloud);
     border-right: 1px solid var(--color-border);
   }
 
@@ -769,7 +791,7 @@
     flex-shrink: 0;
     border-left: none;
     border-right: none;
-    background: var(--color-cloud);
+    background: var(--color-surface);
     display: flex;
     flex-direction: column;
     min-height: calc(100vh - 52px);
@@ -1217,7 +1239,7 @@
   }
 
   .agent-workspace--dark .agent-session-sidebar {
-    background: #0f172a;
+    background: #1e293b;
     color: #e2e8f0;
   }
 
@@ -1225,17 +1247,21 @@
     border-color: #334155;
   }
 
-  .agent-workspace--dark .agent-workspace-chat .floating-agent-input {
+  .agent-workspace--dark .agent-workspace-chat .floating-agent-input,
+  .agent-workspace--dark .agent-workspace-chat .agent-input-shell {
     border-color: #334155;
+    background: #1e293b;
   }
 
-  .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field {
+  .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field,
+  .agent-workspace--dark .agent-workspace-chat .agent-input-box {
     background: #1e293b;
     border-color: #475569;
     color: #e2e8f0;
   }
 
-  .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field::placeholder {
+  .agent-workspace--dark .agent-workspace-chat .floating-agent-input-field::placeholder,
+  .agent-workspace--dark .agent-workspace-chat .agent-input-box::placeholder {
     color: #64748b;
   }
 
@@ -1247,11 +1273,6 @@
   .agent-workspace--dark .agent-settings-trigger--open {
     background: #1e293b;
     color: var(--color-sky);
-  }
-
-  .agent-workspace--dark .agent-bubble-user {
-    background: color-mix(in srgb, var(--color-sky) 22%, #1e293b);
-    color: #e2e8f0;
   }
 
   .agent-workspace--dark .agent-bubble-assistant {

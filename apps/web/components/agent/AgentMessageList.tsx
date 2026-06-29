@@ -33,8 +33,8 @@ function MessageBubble({
 }) {
   if (msg.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="agent-bubble-user max-w-[85%] text-sm leading-relaxed whitespace-pre-wrap">
+      <div className="agent-message-row agent-message-row--user">
+        <div className="agent-bubble-user max-w-full text-sm leading-relaxed whitespace-pre-wrap">
           {msg.content}
         </div>
       </div>
@@ -50,13 +50,10 @@ function MessageBubble({
   }
 
   return (
-    <div className="agent-message-row-assistant flex justify-start gap-2 items-end">
-      <span className="agent-avatar-sm shrink-0" aria-hidden="true">
-        C
-      </span>
+    <div className="agent-message-row">
       <div
         className={cn(
-          "agent-bubble-assistant max-w-[85%] text-sm leading-relaxed",
+          "agent-bubble-assistant max-w-full text-sm leading-relaxed",
           leadAssistant && "agent-bubble-assistant--lead",
         )}
       >
