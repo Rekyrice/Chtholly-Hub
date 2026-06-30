@@ -90,6 +90,25 @@ function pickRandomTapLine(): ChthollyTapLine {
   return CHTHOLLY_TAP_LINES[Math.floor(Math.random() * CHTHOLLY_TAP_LINES.length)]!;
 }
 
+/** 忽略卸载过程中 motion / expression 被中断的 rejection */
+function ignoreLive2DAbort<T>(promise: Promise<T> | void) {
+  void Promise.resolve(promise).catch(() => {});
+}
+
+function safeDestroyLive2DModel(model: Live2DModelInstance | null) {
+  if (!model) return;
+  try {
+    stopLive2DMotions(model);
+  } catch {
+    // 卸载竞态下 motionManager 可能已不可用
+  }
+  try {
+    model.destroy();
+  } catch {
+    // pixi-live2d-display 在 Aborted 后 destroy 可能抛错，忽略即可
+  }
+}
+
 const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function ChthollyLive2D(
   { className, layoutPreset = "agent", onLoad, onTapLineStart, onTapLineEnd, onCanvasPointerDown },
   ref,
@@ -135,9 +154,9 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
       onTapLineStartRef.current?.(line);
       speakingRef.current = true;
 
-      void model.expression(CHTHOLLY_EXPRESSION[line.expression]);
+      ignoreLive2DAbort(model.expression(CHTHOLLY_EXPRESSION[line.expression]));
       stopLive2DMotions(model);
-      void model.motion("tap", line.motionIndex);
+      ignoreLive2DAbort(model.motion("tap", line.motionIndex));
 
       const audio = playTapAudio(line.sound);
       tapAudioRef.current = audio;
@@ -165,7 +184,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
     setExpression(name: string) {
       const model = modelRef.current;
       if (!model) return;
-      void model.expression(name);
+      ignoreLive2DAbort(model.expression(name));
     },
     startMotion(group: string, index?: number) {
       const model = modelRef.current;
@@ -178,7 +197,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         void playTapLineOnModel(model, line);
         return;
       }
-      void model.motion(group, index);
+      ignoreLive2DAbort(model.motion(group, index));
     },
     playTapLine(index?: number) {
       const model = modelRef.current;
@@ -213,6 +232,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
     let onBeforeModelUpdate: (() => void) | null = null;
     const bodyLeanSmoother = new BodyLeanSmoother();
     const bodyLeanRef: { current: BodyLean } = { current: BODY_LEAN_IDLE };
+    const aliveRef = { current: true };
 
     const layoutConfig = LIVE2D_LAYOUT_PRESETS[layoutPreset];
 
@@ -258,8 +278,12 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
           autoInteract: false,
         });
         if (disposed) {
-          model.destroy();
-          app.destroy(true, { children: true });
+          safeDestroyLive2DModel(model);
+          try {
+            app.destroy(true, { children: true });
+          } catch {
+            // ignore
+          }
           return;
         }
 
@@ -276,6 +300,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         model.internalModel.on("beforeModelUpdate", onBeforeModelUpdate);
 
         tickerHook = () => {
+          if (!aliveRef.current || disposed) return;
           const dt = app!.ticker.deltaMS;
           model.update(dt);
           bodyLeanSmoother.update(dt);
@@ -288,12 +313,22 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         };
         app.ticker.add(tickerHook);
 
-        pointerCleanup = bindCanvasPointer(mount, canvasEl, app, model, bodyLeanSmoother, (m) => {
-          void playTapLineOnModelRef.current(m, pickRandomTapLine());
-        }, onCanvasPointerDownRef);
-        await model.motion("idle");
+        pointerCleanup = bindCanvasPointer(
+          mount,
+          canvasEl,
+          app,
+          model,
+          bodyLeanSmoother,
+          aliveRef,
+          (m) => {
+            void playTapLineOnModelRef.current(m, pickRandomTapLine());
+          },
+          onCanvasPointerDownRef,
+        );
+        ignoreLive2DAbort(model.motion("idle"));
 
         resizeObserver = new ResizeObserver(() => {
+          if (!aliveRef.current || disposed) return;
           const w = mount.clientWidth || 320;
           const h = mount.clientHeight || 480;
           app?.renderer.resize(w, h);
@@ -313,20 +348,47 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
 
     return () => {
       disposed = true;
+      aliveRef.current = false;
       clearTapPlayback(modelRef.current, false);
-      if (modelRef.current && onBeforeModelUpdate) {
-        modelRef.current.internalModel.off("beforeModelUpdate", onBeforeModelUpdate);
-      }
       pointerCleanup?.();
       pointerCleanup = null;
       resizeObserver?.disconnect();
-      if (tickerHook && app) {
-        app.ticker.remove(tickerHook);
+      resizeObserver = null;
+
+      const model = modelRef.current;
+      const currentApp = app;
+
+      if (currentApp && tickerHook) {
+        currentApp.ticker.remove(tickerHook);
+        tickerHook = null;
       }
-      modelRef.current?.destroy();
-      modelRef.current = null;
-      app?.destroy(true, { children: true });
+
+      if (model && onBeforeModelUpdate) {
+        try {
+          model.internalModel.off("beforeModelUpdate", onBeforeModelUpdate);
+        } catch {
+          // ignore
+        }
+        onBeforeModelUpdate = null;
+      }
+
+      if (model) {
+        try {
+          currentApp?.stage.removeChild(model as unknown as import("pixi.js").DisplayObject);
+        } catch {
+          // ignore
+        }
+        safeDestroyLive2DModel(model);
+        modelRef.current = null;
+      }
+
+      try {
+        currentApp?.destroy(true, { children: true });
+      } catch {
+        // ignore
+      }
       app = null;
+      canvasEl = null;
       container.replaceChildren();
     };
   }, [layoutPreset, clearTapPlayback]);
@@ -433,6 +495,7 @@ function bindCanvasPointer(
   app: import("pixi.js").Application,
   model: Live2DModelInstance,
   bodyLeanSmoother: BodyLeanSmoother,
+  aliveRef: { current: boolean },
   onTap: (model: Live2DModelInstance) => void,
   onCanvasPointerDownRef: {
     current: ((detail: { clientX: number; clientY: number }) => void) | undefined;
@@ -442,6 +505,7 @@ function bindCanvasPointer(
   hitTarget.style.pointerEvents = "auto";
 
   const syncPointer = (e: PointerEvent) => {
+    if (!aliveRef.current) return;
     const { x, y } = pointerToRenderer(e, canvas, app);
     const { dirX, dirY } = pointerDirection(e, canvas);
 
@@ -454,6 +518,7 @@ function bindCanvasPointer(
   };
 
   const resetPointer = () => {
+    if (!aliveRef.current) return;
     bodyLeanSmoother.resetTarget();
     model.focus(app.renderer.width / 2, app.renderer.height * 0.38);
   };
@@ -463,6 +528,7 @@ function bindCanvasPointer(
   };
 
   const onPointerDown = (e: PointerEvent) => {
+    if (!aliveRef.current) return;
     onCanvasPointerDownRef.current?.({ clientX: e.clientX, clientY: e.clientY });
     syncPointer(e);
     const { x, y } = pointerToRenderer(e, canvas, app);
