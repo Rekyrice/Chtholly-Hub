@@ -185,7 +185,6 @@ export default function AgentLive2DStage() {
   return (
     <div className="agent-live2d-stage" data-testid="agent-live2d-stage">
       <div className="agent-live2d-stage-inner">
-        <AgentLive2DSubtitle lines={tapSubtitleLines} visible={tapSubtitleVisible} />
         <ChthollyLive2D
           ref={live2dRef}
           className="agent-live2d-canvas-wrap"
@@ -193,6 +192,7 @@ export default function AgentLive2DStage() {
           onTapLineStart={onTapLineStart}
           onTapLineEnd={onTapLineEnd}
         />
+        <AgentLive2DSubtitle lines={tapSubtitleLines} visible={tapSubtitleVisible} />
       </div>
     </div>
   );

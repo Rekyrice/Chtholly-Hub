@@ -101,6 +101,9 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
   const onTapLineEndRef = useRef(onTapLineEnd);
   const tapAudioRef = useRef<HTMLAudioElement | null>(null);
   const tapEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playTapLineOnModelRef = useRef<
+    (model: Live2DModelInstance, line: ChthollyTapLine) => Promise<void>
+  >(() => Promise.resolve());
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
   onLoadRef.current = onLoad;
@@ -125,12 +128,12 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
     async (model: Live2DModelInstance, line: ChthollyTapLine) => {
       clearTapPlayback(model, false);
 
-      void model.expression(CHTHOLLY_EXPRESSION[line.expression]);
-      const started = await model.motion("tap", line.motionIndex);
-      if (!started) return;
-
       onTapLineStartRef.current?.(line);
       speakingRef.current = true;
+
+      void model.expression(CHTHOLLY_EXPRESSION[line.expression]);
+      stopLive2DMotions(model);
+      void model.motion("tap", line.motionIndex);
 
       const audio = playTapAudio(line.sound);
       tapAudioRef.current = audio;
@@ -151,6 +154,8 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
     },
     [clearTapPlayback],
   );
+
+  playTapLineOnModelRef.current = playTapLineOnModel;
 
   useImperativeHandle(ref, () => ({
     setExpression(name: string) {
@@ -237,6 +242,8 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         });
 
         canvasEl = app.view as HTMLCanvasElement;
+        canvasEl.style.pointerEvents = "auto";
+        canvasEl.style.touchAction = "manipulation";
         mount.appendChild(canvasEl);
 
         app.stage.eventMode = "none";
@@ -277,8 +284,8 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         };
         app.ticker.add(tickerHook);
 
-        pointerCleanup = bindCanvasPointer(canvasEl, app, model, bodyLeanSmoother, (m) => {
-          void playTapLineOnModel(m, pickRandomTapLine());
+        pointerCleanup = bindCanvasPointer(mount, canvasEl, app, model, bodyLeanSmoother, (m) => {
+          void playTapLineOnModelRef.current(m, pickRandomTapLine());
         });
         await model.motion("idle");
 
@@ -318,7 +325,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
       app = null;
       container.replaceChildren();
     };
-  }, [layoutPreset, clearTapPlayback, playTapLineOnModel]);
+  }, [layoutPreset, clearTapPlayback]);
 
   return (
     <div
@@ -408,14 +415,24 @@ function pointerDirection(
   return { dirX, dirY };
 }
 
+function stopLive2DMotions(model: Live2DModelInstance) {
+  const motionManager = model.internalModel?.motionManager as
+    | { stopAllMotions?: () => void; stopAllMotion?: () => void }
+    | undefined;
+  motionManager?.stopAllMotions?.();
+  motionManager?.stopAllMotion?.();
+}
+
 function bindCanvasPointer(
+  hitTarget: HTMLElement,
   canvas: HTMLCanvasElement,
   app: import("pixi.js").Application,
   model: Live2DModelInstance,
   bodyLeanSmoother: BodyLeanSmoother,
   onTap: (model: Live2DModelInstance) => void,
 ) {
-  canvas.style.cursor = "pointer";
+  hitTarget.style.cursor = "pointer";
+  hitTarget.style.pointerEvents = "auto";
 
   const syncPointer = (e: PointerEvent) => {
     const { x, y } = pointerToRenderer(e, canvas, app);
@@ -445,16 +462,16 @@ function bindCanvasPointer(
     onTap(model);
   };
 
-  canvas.addEventListener("pointermove", onPointerMove);
-  canvas.addEventListener("pointerdown", onPointerDown);
-  canvas.addEventListener("pointerleave", resetPointer);
+  hitTarget.addEventListener("pointermove", onPointerMove);
+  hitTarget.addEventListener("pointerdown", onPointerDown);
+  hitTarget.addEventListener("pointerleave", resetPointer);
 
   resetPointer();
 
   return () => {
-    canvas.removeEventListener("pointermove", onPointerMove);
-    canvas.removeEventListener("pointerdown", onPointerDown);
-    canvas.removeEventListener("pointerleave", resetPointer);
+    hitTarget.removeEventListener("pointermove", onPointerMove);
+    hitTarget.removeEventListener("pointerdown", onPointerDown);
+    hitTarget.removeEventListener("pointerleave", resetPointer);
     bodyLeanSmoother.resetTarget();
   };
 }
