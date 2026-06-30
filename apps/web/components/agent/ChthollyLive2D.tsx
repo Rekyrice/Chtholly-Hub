@@ -35,6 +35,8 @@ type ChthollyLive2DProps = {
   onTapLineStart?: (line: ChthollyTapLine) => void;
   /** 点击台词播放结束 */
   onTapLineEnd?: () => void;
+  /** canvas 点击（舞台涟漪等视觉反馈） */
+  onCanvasPointerDown?: (detail: { clientX: number; clientY: number }) => void;
 };
 
 const MOUTH_PARAM = "PARAM_MOUTH_OPEN_Y";
@@ -89,7 +91,7 @@ function pickRandomTapLine(): ChthollyTapLine {
 }
 
 const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function ChthollyLive2D(
-  { className, layoutPreset = "agent", onLoad, onTapLineStart, onTapLineEnd },
+  { className, layoutPreset = "agent", onLoad, onTapLineStart, onTapLineEnd, onCanvasPointerDown },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -99,6 +101,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
   const onLoadRef = useRef(onLoad);
   const onTapLineStartRef = useRef(onTapLineStart);
   const onTapLineEndRef = useRef(onTapLineEnd);
+  const onCanvasPointerDownRef = useRef(onCanvasPointerDown);
   const tapAudioRef = useRef<HTMLAudioElement | null>(null);
   const tapEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playTapLineOnModelRef = useRef<
@@ -109,6 +112,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
   onLoadRef.current = onLoad;
   onTapLineStartRef.current = onTapLineStart;
   onTapLineEndRef.current = onTapLineEnd;
+  onCanvasPointerDownRef.current = onCanvasPointerDown;
 
   const clearTapPlayback = useCallback((model: Live2DModelInstance | null, notify = true) => {
     if (tapEndTimerRef.current) {
@@ -286,7 +290,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
 
         pointerCleanup = bindCanvasPointer(mount, canvasEl, app, model, bodyLeanSmoother, (m) => {
           void playTapLineOnModelRef.current(m, pickRandomTapLine());
-        });
+        }, onCanvasPointerDownRef);
         await model.motion("idle");
 
         resizeObserver = new ResizeObserver(() => {
@@ -430,6 +434,9 @@ function bindCanvasPointer(
   model: Live2DModelInstance,
   bodyLeanSmoother: BodyLeanSmoother,
   onTap: (model: Live2DModelInstance) => void,
+  onCanvasPointerDownRef: {
+    current: ((detail: { clientX: number; clientY: number }) => void) | undefined;
+  },
 ) {
   hitTarget.style.cursor = "pointer";
   hitTarget.style.pointerEvents = "auto";
@@ -456,6 +463,7 @@ function bindCanvasPointer(
   };
 
   const onPointerDown = (e: PointerEvent) => {
+    onCanvasPointerDownRef.current?.({ clientX: e.clientX, clientY: e.clientY });
     syncPointer(e);
     const { x, y } = pointerToRenderer(e, canvas, app);
     model.tap(x, y);

@@ -273,15 +273,6 @@ export const CHTHOLLY_TAP_LINES: ChthollyTapLine[] = [
     "durationSec": 6.37
   },
   {
-    "id": "line-29",
-    "sound": "motions/tap/tap-chtholly-line-29.wav",
-    "motionIndex": 1,
-    "expression": "smile",
-    "textJa": "ねえ　キミのお名前は / エルクかあ / ジェイイーボ　見つかるといいね / 私も一緒に探すよ",
-    "textZh": "呐，你叫什么名字？艾尔可啊。希望你能找到杰伊伊波，我也一起帮你找吧。",
-    "durationSec": 7.51
-  },
-  {
     "id": "line-30",
     "sound": "motions/tap/tap-chtholly-line-30.wav",
     "motionIndex": 2,
@@ -316,15 +307,6 @@ export const CHTHOLLY_TAP_LINES: ChthollyTapLine[] = [
     "textJa": "甘くていい匂い / おいしそう / これ　本当に食べてもいいやつだよね",
     "textZh": "好甜的香味。看起来很好吃。这个，真的是可以吃的东西吧？",
     "durationSec": 6.43
-  },
-  {
-    "id": "line-34",
-    "sound": "motions/tap/tap-chtholly-line-34.wav",
-    "motionIndex": 0,
-    "expression": "smile",
-    "textJa": "赤い髪　変かな / もう平気だから / 大丈夫　炊事とか洗濯とか",
-    "textZh": "红色头发很奇怪吗？我已经没事了。做饭、洗衣服什么的也没问题。",
-    "durationSec": 6.81
   },
   {
     "id": "line-35",

@@ -12,8 +12,8 @@ EXPR = {
     11: "neutral", 12: "sad", 13: "smile", 14: "smile", 15: "neutral",
     16: "neutral", 17: "sad", 18: "smile", 19: "smile", 20: "neutral",
     21: "neutral", 22: "neutral", 23: "sad", 24: "smile", 25: "neutral",
-    26: "smile", 27: "sad", 28: "sad", 29: "smile", 30: "sad",
-    31: "smile", 32: "neutral", 33: "smile", 34: "smile", 35: "smile",
+    26: "smile", 27: "sad", 28: "sad", 30: "sad",
+    31: "smile", 32: "neutral", 33: "smile", 35: "smile",
     36: "smile", 37: "smile", 38: "neutral", 39: "smile", 40: "smile",
 }
 

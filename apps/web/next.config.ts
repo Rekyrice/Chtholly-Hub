@@ -4,6 +4,7 @@ const apiOrigin = process.env.API_SERVER_URL ?? "http://localhost:8888";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  devIndicators: false,
   serverExternalPackages: ["pixi.js", "pixi-live2d-display"],
   images: {
     remotePatterns: [

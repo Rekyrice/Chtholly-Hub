@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import AgentLive2DSubtitle from "@/components/agent/AgentLive2DSubtitle";
+import AgentLive2DTypewriter from "@/components/agent/AgentLive2DTypewriter";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import {
   CHTHOLLY_CHEEK_THINK,
@@ -26,42 +26,63 @@ const ChthollyLive2D = dynamic(() => import("@/components/agent/ChthollyLive2D")
 
 const IDLE_DELAY_MS = 5000;
 const SPEAK_DEBOUNCE_MS = 300;
+const RIPPLE_DURATION_MS = 800;
+
+type TapLineSession = {
+  key: number;
+  segments: string[];
+  durationSec: number;
+  erasing: boolean;
+};
 
 /** Live2D 展示区：监听 liveSteps / 流式状态驱动珂朵莉表情与动作 */
 export default function AgentLive2DStage() {
   const { liveSteps, streaming, lastError, busy } = useAgentChatContext();
   const isDesktop = useMinWidth(992);
   const live2dRef = useRef<Live2DHandle>(null);
+  const stageInnerRef = useRef<HTMLDivElement>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevStreamingRef = useRef(false);
   const prevLiveStepsLenRef = useRef(0);
   const busyRef = useRef(busy);
   const streamingRef = useRef(streaming);
-  const [tapSubtitleLines, setTapSubtitleLines] = useState<string[]>([]);
-  const [tapSubtitleVisible, setTapSubtitleVisible] = useState(false);
-  const tapSubtitleHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [tapLineSession, setTapLineSession] = useState<TapLineSession | null>(null);
+  const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
 
   busyRef.current = busy;
   streamingRef.current = streaming;
 
   const onTapLineStart = useCallback((line: ChthollyTapLine) => {
-    if (tapSubtitleHideTimerRef.current) {
-      clearTimeout(tapSubtitleHideTimerRef.current);
-      tapSubtitleHideTimerRef.current = null;
-    }
-    setTapSubtitleLines(formatTapLineJa(line.textJa));
-    setTapSubtitleVisible(true);
+    setTapLineSession({
+      key: Date.now(),
+      segments: formatTapLineJa(line.textJa),
+      durationSec: line.durationSec,
+      erasing: false,
+    });
   }, []);
 
   const onTapLineEnd = useCallback(() => {
-    if (tapSubtitleHideTimerRef.current) {
-      clearTimeout(tapSubtitleHideTimerRef.current);
-    }
-    tapSubtitleHideTimerRef.current = setTimeout(() => {
-      setTapSubtitleVisible(false);
-      tapSubtitleHideTimerRef.current = null;
-    }, 320);
+    setTapLineSession((prev) => (prev ? { ...prev, erasing: true } : null));
+  }, []);
+
+  const onTapLineTypewriterFinished = useCallback(() => {
+    setTapLineSession(null);
+  }, []);
+
+  const handleCanvasPointerDown = useCallback((detail: { clientX: number; clientY: number }) => {
+    const inner = stageInnerRef.current;
+    if (!inner) return;
+
+    const rect = inner.getBoundingClientRect();
+    const x = detail.clientX - rect.left;
+    const y = detail.clientY - rect.top;
+    const id = Date.now() + Math.random();
+
+    setRipples((prev) => [...prev, { id, x, y }]);
+    window.setTimeout(() => {
+      setRipples((prev) => prev.filter((ripple) => ripple.id !== id));
+    }, RIPPLE_DURATION_MS);
   }, []);
 
   const clearCheek = useCallback(() => {
@@ -163,7 +184,6 @@ export default function AgentLive2DStage() {
     return () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (speakTimerRef.current) clearTimeout(speakTimerRef.current);
-      if (tapSubtitleHideTimerRef.current) clearTimeout(tapSubtitleHideTimerRef.current);
     };
   }, []);
 
@@ -184,15 +204,34 @@ export default function AgentLive2DStage() {
 
   return (
     <div className="agent-live2d-stage" data-testid="agent-live2d-stage">
-      <div className="agent-live2d-stage-inner">
+      <div ref={stageInnerRef} className="agent-live2d-stage-inner">
+        {ripples.map((ripple) => (
+          <div
+            key={ripple.id}
+            className="agent-ripple"
+            style={{ left: ripple.x - 30, top: ripple.y - 30 }}
+            aria-hidden="true"
+          />
+        ))}
         <ChthollyLive2D
           ref={live2dRef}
           className="agent-live2d-canvas-wrap"
           layoutPreset="agent"
           onTapLineStart={onTapLineStart}
           onTapLineEnd={onTapLineEnd}
+          onCanvasPointerDown={handleCanvasPointerDown}
         />
-        <AgentLive2DSubtitle lines={tapSubtitleLines} visible={tapSubtitleVisible} />
+        {tapLineSession && (
+          <div className="agent-live2d-caption-layer" aria-hidden={false}>
+            <AgentLive2DTypewriter
+              segments={tapLineSession.segments}
+              durationSec={tapLineSession.durationSec}
+              sessionKey={tapLineSession.key}
+              erasing={tapLineSession.erasing}
+              onFinished={onTapLineTypewriterFinished}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
