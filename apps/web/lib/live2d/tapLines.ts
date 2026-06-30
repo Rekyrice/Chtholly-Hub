@@ -219,15 +219,6 @@ export const CHTHOLLY_TAP_LINES: ChthollyTapLine[] = [
     "durationSec": 5.59
   },
   {
-    "id": "line-23",
-    "sound": "motions/tap/tap-chtholly-line-23.wav",
-    "motionIndex": 1,
-    "expression": "sad",
-    "textJa": "約束したのよ　「絶対生きて帰る」って / ちゃんと「ただいまを言って、バターケーキを食べるんだ」って",
-    "textZh": "我已经约好了，说“绝对要活着回去”，还要好好说“我回来了”，然后吃黄油蛋糕。",
-    "durationSec": 7.11
-  },
-  {
     "id": "line-24",
     "sound": "motions/tap/tap-chtholly-line-24.wav",
     "motionIndex": 2,
