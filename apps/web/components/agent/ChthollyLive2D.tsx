@@ -2,12 +2,14 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from "react";
 import {
+  CHTHOLLY_EXPRESSION,
   CHTHOLLY_MODEL_BASE,
   CHTHOLLY_MODEL_URL,
   LIVE2D_CORE_SCRIPT,
@@ -18,14 +20,10 @@ import {
   LIVE2D_LAYOUT_PRESETS,
   type Live2DLayoutPreset,
 } from "@/lib/live2d/layout";
+import { CHTHOLLY_TAP_LINES, type ChthollyTapLine } from "@/lib/live2d/tapLines";
 import type { Live2DHandle } from "@/lib/types/live2d";
 
 type Live2DModelInstance = import("pixi-live2d-display/cubism2").Live2DModel;
-
-type MotionDef = {
-  file: string;
-  sound?: string;
-};
 
 type ChthollyLive2DProps = {
   className?: string;
@@ -33,6 +31,10 @@ type ChthollyLive2DProps = {
   layoutPreset?: Live2DLayoutPreset;
   /** 模型加载完成 */
   onLoad?: () => void;
+  /** 开始播放点击台词 */
+  onTapLineStart?: (line: ChthollyTapLine) => void;
+  /** 点击台词播放结束 */
+  onTapLineEnd?: () => void;
 };
 
 const MOUTH_PARAM = "PARAM_MOUTH_OPEN_Y";
@@ -76,16 +78,18 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function playSound(relativePath: string, volume = 0.6) {
+function playTapAudio(relativePath: string, volume = 0.65): HTMLAudioElement {
   const audio = new Audio(`${CHTHOLLY_MODEL_BASE}${relativePath}`);
   audio.volume = volume;
-  void audio.play().catch(() => {
-    // 浏览器自动播放策略可能拦截
-  });
+  return audio;
+}
+
+function pickRandomTapLine(): ChthollyTapLine {
+  return CHTHOLLY_TAP_LINES[Math.floor(Math.random() * CHTHOLLY_TAP_LINES.length)]!;
 }
 
 const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function ChthollyLive2D(
-  { className, layoutPreset = "agent", onLoad },
+  { className, layoutPreset = "agent", onLoad, onTapLineStart, onTapLineEnd },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,9 +97,60 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
   const speakingRef = useRef(false);
   const mouthTickRef = useRef(0);
   const onLoadRef = useRef(onLoad);
+  const onTapLineStartRef = useRef(onTapLineStart);
+  const onTapLineEndRef = useRef(onTapLineEnd);
+  const tapAudioRef = useRef<HTMLAudioElement | null>(null);
+  const tapEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
   onLoadRef.current = onLoad;
+  onTapLineStartRef.current = onTapLineStart;
+  onTapLineEndRef.current = onTapLineEnd;
+
+  const clearTapPlayback = useCallback((model: Live2DModelInstance | null, notify = true) => {
+    if (tapEndTimerRef.current) {
+      clearTimeout(tapEndTimerRef.current);
+      tapEndTimerRef.current = null;
+    }
+    if (tapAudioRef.current) {
+      tapAudioRef.current.pause();
+      tapAudioRef.current = null;
+    }
+    speakingRef.current = false;
+    setMouthOpen(model, 0);
+    if (notify) onTapLineEndRef.current?.();
+  }, []);
+
+  const playTapLineOnModel = useCallback(
+    async (model: Live2DModelInstance, line: ChthollyTapLine) => {
+      clearTapPlayback(model, false);
+
+      void model.expression(CHTHOLLY_EXPRESSION[line.expression]);
+      const started = await model.motion("tap", line.motionIndex);
+      if (!started) return;
+
+      onTapLineStartRef.current?.(line);
+      speakingRef.current = true;
+
+      const audio = playTapAudio(line.sound);
+      tapAudioRef.current = audio;
+
+      const finish = () => {
+        if (tapAudioRef.current !== audio) return;
+        clearTapPlayback(model, true);
+      };
+
+      audio.addEventListener("ended", finish, { once: true });
+      audio.addEventListener("error", finish, { once: true });
+
+      try {
+        await audio.play();
+      } catch {
+        tapEndTimerRef.current = setTimeout(finish, line.durationSec * 1000);
+      }
+    },
+    [clearTapPlayback],
+  );
 
   useImperativeHandle(ref, () => ({
     setExpression(name: string) {
@@ -106,7 +161,24 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
     startMotion(group: string, index?: number) {
       const model = modelRef.current;
       if (!model) return;
-      void startMotionWithSound(model, group, index);
+      if (group === "tap") {
+        const line =
+          index !== undefined && index >= 0 && index < CHTHOLLY_TAP_LINES.length
+            ? CHTHOLLY_TAP_LINES[index]
+            : pickRandomTapLine();
+        void playTapLineOnModel(model, line);
+        return;
+      }
+      void model.motion(group, index);
+    },
+    playTapLine(index?: number) {
+      const model = modelRef.current;
+      if (!model) return;
+      const line =
+        index !== undefined && index >= 0 && index < CHTHOLLY_TAP_LINES.length
+          ? CHTHOLLY_TAP_LINES[index]
+          : pickRandomTapLine();
+      void playTapLineOnModel(model, line);
     },
     setSpeaking(speaking: boolean) {
       speakingRef.current = speaking;
@@ -205,7 +277,9 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         };
         app.ticker.add(tickerHook);
 
-        pointerCleanup = bindCanvasPointer(canvasEl, app, model, bodyLeanSmoother);
+        pointerCleanup = bindCanvasPointer(canvasEl, app, model, bodyLeanSmoother, (m) => {
+          void playTapLineOnModel(m, pickRandomTapLine());
+        });
         await model.motion("idle");
 
         resizeObserver = new ResizeObserver(() => {
@@ -228,6 +302,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
 
     return () => {
       disposed = true;
+      clearTapPlayback(modelRef.current, false);
       if (modelRef.current && onBeforeModelUpdate) {
         modelRef.current.internalModel.off("beforeModelUpdate", onBeforeModelUpdate);
       }
@@ -243,7 +318,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
       app = null;
       container.replaceChildren();
     };
-  }, [layoutPreset]);
+  }, [layoutPreset, clearTapPlayback, playTapLineOnModel]);
 
   return (
     <div
@@ -294,31 +369,6 @@ function applyBodyLean(model: Live2DModelInstance, lean: BodyLean) {
   addLive2DParam(model, "PARAM_BODY_ANGLE_Z", lean.z);
 }
 
-async function startMotionWithSound(
-  model: Live2DModelInstance,
-  group: string,
-  index?: number,
-) {
-  const settings = model.internalModel?.settings as
-    | { motions?: Record<string, MotionDef[]> }
-    | undefined;
-  const motions = settings?.motions?.[group] ?? [];
-  if (motions.length === 0) return;
-
-  const pick =
-    index !== undefined && index >= 0 && index < motions.length
-      ? index
-      : Math.floor(Math.random() * motions.length);
-
-  const started = await model.motion(group, pick >= 0 ? pick : undefined);
-  if (!started) return;
-
-  const sound = motions[pick]?.sound;
-  if (sound) {
-    playSound(sound, 0.6);
-  }
-}
-
 /** 将 Live2D 子树从 Pixi 7 命中检测中排除，避免 isInteractive 报错 */
 type PixiEventDetachTarget = {
   eventMode?: string;
@@ -363,6 +413,7 @@ function bindCanvasPointer(
   app: import("pixi.js").Application,
   model: Live2DModelInstance,
   bodyLeanSmoother: BodyLeanSmoother,
+  onTap: (model: Live2DModelInstance) => void,
 ) {
   canvas.style.cursor = "pointer";
 
@@ -391,8 +442,7 @@ function bindCanvasPointer(
     syncPointer(e);
     const { x, y } = pointerToRenderer(e, canvas, app);
     model.tap(x, y);
-    // hit_areas 可能仍匹配失败，点击画布时始终触发 tap 动作
-    void startMotionWithSound(model, "tap");
+    onTap(model);
   };
 
   canvas.addEventListener("pointermove", onPointerMove);

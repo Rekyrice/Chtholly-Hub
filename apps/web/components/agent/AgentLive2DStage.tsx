@@ -1,7 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import AgentLive2DSubtitle from "@/components/agent/AgentLive2DSubtitle";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import {
   CHTHOLLY_CHEEK_THINK,
@@ -10,6 +11,7 @@ import {
   CHTHOLLY_TEXTURE_FALLBACK,
 } from "@/lib/live2d/constants";
 import { parseLiveStepEvent } from "@/lib/live2d/liveStepEvent";
+import { formatTapLineJa, type ChthollyTapLine } from "@/lib/live2d/tapLines";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import type { Live2DHandle } from "@/lib/types/live2d";
 
@@ -36,9 +38,31 @@ export default function AgentLive2DStage() {
   const prevLiveStepsLenRef = useRef(0);
   const busyRef = useRef(busy);
   const streamingRef = useRef(streaming);
+  const [tapSubtitleLines, setTapSubtitleLines] = useState<string[]>([]);
+  const [tapSubtitleVisible, setTapSubtitleVisible] = useState(false);
+  const tapSubtitleHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   busyRef.current = busy;
   streamingRef.current = streaming;
+
+  const onTapLineStart = useCallback((line: ChthollyTapLine) => {
+    if (tapSubtitleHideTimerRef.current) {
+      clearTimeout(tapSubtitleHideTimerRef.current);
+      tapSubtitleHideTimerRef.current = null;
+    }
+    setTapSubtitleLines(formatTapLineJa(line.textJa));
+    setTapSubtitleVisible(true);
+  }, []);
+
+  const onTapLineEnd = useCallback(() => {
+    if (tapSubtitleHideTimerRef.current) {
+      clearTimeout(tapSubtitleHideTimerRef.current);
+    }
+    tapSubtitleHideTimerRef.current = setTimeout(() => {
+      setTapSubtitleVisible(false);
+      tapSubtitleHideTimerRef.current = null;
+    }, 320);
+  }, []);
 
   const clearCheek = useCallback(() => {
     live2dRef.current?.setParam(CHTHOLLY_PARAM.cheek, 0);
@@ -80,7 +104,7 @@ export default function AgentLive2DStage() {
         handle.setParam(CHTHOLLY_PARAM.cheek, CHTHOLLY_CHEEK_THINK);
       } else if (kind === "act") {
         clearCheek();
-        handle.startMotion("tap");
+        handle.playTapLine();
       } else if (kind === "observe") {
         clearCheek();
       }
@@ -139,6 +163,7 @@ export default function AgentLive2DStage() {
     return () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (speakTimerRef.current) clearTimeout(speakTimerRef.current);
+      if (tapSubtitleHideTimerRef.current) clearTimeout(tapSubtitleHideTimerRef.current);
     };
   }, []);
 
@@ -160,7 +185,14 @@ export default function AgentLive2DStage() {
   return (
     <div className="agent-live2d-stage" data-testid="agent-live2d-stage">
       <div className="agent-live2d-stage-inner">
-        <ChthollyLive2D ref={live2dRef} className="agent-live2d-canvas-wrap" layoutPreset="agent" />
+        <AgentLive2DSubtitle lines={tapSubtitleLines} visible={tapSubtitleVisible} />
+        <ChthollyLive2D
+          ref={live2dRef}
+          className="agent-live2d-canvas-wrap"
+          layoutPreset="agent"
+          onTapLineStart={onTapLineStart}
+          onTapLineEnd={onTapLineEnd}
+        />
       </div>
     </div>
   );
