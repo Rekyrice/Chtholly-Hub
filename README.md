@@ -69,6 +69,7 @@ copy .env.example .env
 | 任务 | 说明 |
 |------|------|
 | **Chtholly · 启动全栈（后端 + 前端）** | 开两个专用终端 |
+| **Chtholly · 后端（验证码日志）** | 启动后端 + 打开 `logs/dev-verification.log`（推荐） |
 | **Chtholly · 启动后端（验证码看此终端）** | 登录验证码在 `LoggingCodeSender code=` |
 | **Chtholly · 启动前端** | http://localhost:3000 |
 

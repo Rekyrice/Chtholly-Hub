@@ -1,0 +1,105 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Chtholly · 启动后端（验证码看此终端）",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoExit",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/scripts/dev/start-backend.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chtholly · 后端（验证码日志）",
+      "dependsOn": [
+        "Chtholly · 启动后端（验证码看此终端）",
+        "Chtholly · 打开验证码日志"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      "label": "Chtholly · 启动前端",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoExit",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/scripts/dev/start-frontend.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chtholly · 停止后端",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/scripts/dev/stop-backend.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chtholly · 打开验证码日志",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-Command",
+        "$f='${workspaceFolder}/logs/dev-verification.log'; if (-not (Test-Path $f)) { New-Item -ItemType File -Path $f -Force | Out-Null }; if (Get-Command cursor -ErrorAction SilentlyContinue) { cursor $f } elseif (Get-Command code -ErrorAction SilentlyContinue) { code -r $f } else { ii $f }"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "never",
+        "panel": "shared",
+        "focus": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Chtholly · 启动全栈（后端 + 前端）",
+      "dependsOn": [
+        "Chtholly · 后端（验证码日志）",
+        "Chtholly · 启动前端"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}
