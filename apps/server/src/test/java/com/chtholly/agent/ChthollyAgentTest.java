@@ -33,6 +33,7 @@ class ChthollyAgentTest {
     private AgentProperties properties;
     private ObjectMapper objectMapper;
     private AgentJsonExtractor jsonExtractor;
+    private CharacterSoulService characterSoulService;
     private ChthollyAgent agent;
     private List<AgentEvent> events;
 
@@ -45,7 +46,13 @@ class ChthollyAgentTest {
         properties.setLlmTimeoutSeconds(5);
         properties.setStreamCharDelayMs(0);
         properties.setToolTimeoutSeconds(5);
-        agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(mockTool()), jsonExtractor, agentMetrics);
+        characterSoulService = new CharacterSoulService("""
+                # 珂朵莉
+
+                认真到笨拙，但不会编造答案。
+                """);
+        agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(mockTool()), jsonExtractor,
+                agentMetrics, characterSoulService);
         events = new ArrayList<>();
     }
 
@@ -81,6 +88,29 @@ class ChthollyAgentTest {
     }
 
     @Test
+    void given_agentRuns_when_buildingPrompt_then_usesSoulAndLayeredPrompt() {
+        stubLlmCall("{\"action\":\"final\",\"answer\":\"占位\"}");
+        stubStream("嗯，还行吧");
+
+        agent.run("你很厉害", 1L, null, events::add);
+
+        org.mockito.Mockito.verify(chatClient.prompt()).system(org.mockito.ArgumentMatchers.<String>argThat(prompt ->
+                prompt.contains("## 你的身份")
+                        && prompt.contains("# 珂朵莉")
+                        && prompt.contains("认真到笨拙，但不会编造答案。")
+                        && prompt.contains("## 可用工具")
+                        && prompt.contains("### test_tool")
+                        && prompt.contains("## 工具使用准则")
+                        && prompt.contains("1. 优先用工具获取事实，不确定时查一下再回答")
+                        && prompt.contains("## 对话历史")
+                        && prompt.contains("## 用户的问题")
+                        && prompt.contains("你很厉害")
+                        && !prompt.contains("[系统提示]")
+                        && !prompt.contains("工具选择与意图判断")
+        ));
+    }
+
+    @Test
     void given_toolThrows_when_run_then_errorBecomesObservation() {
         AgentTool failingTool = new AgentTool() {
             @Override
@@ -98,7 +128,8 @@ class ChthollyAgentTest {
                 throw new RuntimeException("boom");
             }
         };
-        agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(failingTool), jsonExtractor, agentMetrics);
+        agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(failingTool), jsonExtractor,
+                agentMetrics, characterSoulService);
 
         AtomicInteger llmCalls = new AtomicInteger();
         when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())

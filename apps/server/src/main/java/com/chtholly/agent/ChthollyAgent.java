@@ -54,6 +54,7 @@ public class ChthollyAgent {
     private final List<AgentTool> tools;
     private final AgentJsonExtractor jsonExtractor;
     private final AgentMetrics agentMetrics;
+    private final CharacterSoulService characterSoulService;
 
     /**
      * Runs one agent turn, emitting think/act/observe/delta/final/error events via sink.
@@ -89,9 +90,9 @@ public class ChthollyAgent {
                 toolMap.put(tool.name(), tool);
             }
 
-            String system = buildSystemPrompt(toolMap.values());
-            List<String> transcript = new ArrayList<>();
             String historyBlock = memory == null ? "" : memory.formatForPrompt();
+            String system = buildSystemPrompt(toolMap.values(), historyBlock, question.trim());
+            List<String> transcript = new ArrayList<>();
             if (!historyBlock.isBlank()) {
                 transcript.add(historyBlock);
             }
@@ -191,11 +192,16 @@ public class ChthollyAgent {
             AgentExecutionTrace trace) {
         String context = String.join("\n\n", transcript);
         String system = """
-                你是 Chtholly Hub 的动漫知识助手「珂朵莉」。
+                ## 你的身份
+
+                %s
+
+                ## 回答准则
+
                 根据对话历史、当前问题与工具 Observation 用简洁中文直接回答用户。
                 用户可能在追问上文（如「他们是谁」「宿舍伙伴有哪些」），请结合历史理解指代。
                 只陈述 Observation 中有依据的事实；若工具未返回数据请如实说明。
-                不要输出 JSON 或 markdown 代码块。""";
+                不要输出 JSON 或 markdown 代码块。""".formatted(characterSoulService.getSoulContent());
         String userPrompt = context + "\n\n请回答用户的当前问题。";
 
         int timeoutSec = Math.max(1, properties.getLlmTimeoutSeconds());
@@ -373,50 +379,53 @@ public class ChthollyAgent {
         return observation != null && observation.contains("Tool execution timed out");
     }
 
-    /**
-     * 在 Observation 末尾追加系统提示，引导 LLM 下一步决策（不硬编码路由，仅注入文本）。
-     */
+    /** Adds gentle follow-up guidance to Observation for the next ReAct step. */
     private String augmentObservation(String toolName, String observation) {
         String result = observation == null ? "" : observation;
         if (isEmptySiteResult(result) && isSiteTool(toolName)) {
             result = result + """
 
-                    [系统提示] 站内无相关帖子。若用户问的是条目元数据（评分、季数、角色、作者作品等），请改用 bangumi_search、bangumi_characters 或 bangumi_person_works；勿重复 fulltext_search / article_rag。""";
+                    站内没有找到相关帖子呢。如果用户问的是动漫条目事实（评分、季数、角色、作者作品等），下一步请试着用 bangumi_search、bangumi_characters 或 bangumi_person_works，不要重复同样的站内检索。""";
         }
         if (isToolTimeout(result) && isBangumiTool(toolName)) {
             result = result + """
 
-                    [系统提示] Bangumi 工具调用超时。请用相同或更简短的 keyword 再试一次；若仍超时再 action=final 并如实说明，勿编造数据。""";
+                    Bangumi 查询刚才有点慢。请用相同或更简短的 keyword 再试一次；如果还是超时，就如实告诉用户暂时查不到，不要编造数据。""";
         }
         return result;
     }
 
-    private String buildSystemPrompt(Iterable<AgentTool> tools) {
+    private String buildSystemPrompt(Iterable<AgentTool> tools, String conversationHistory, String userQuestion) {
         StringBuilder sb = new StringBuilder();
-        sb.append("你是 Chtholly Hub 的动漫知识助手「珂朵莉」。");
-        sb.append("你可以调用工具获取信息后再回答用户。");
-        sb.append("每次回复必须是单个 JSON 对象，不要输出 markdown 代码块或其他多余文字。\n");
-        sb.append("调用工具：{\"action\":\"工具名\",\"input\":{...}}\n");
-        sb.append("工具完成后：{\"action\":\"final\",\"answer\":\"占位，实际由系统流式生成\"}\n\n");
-        sb.append("可用工具：\n");
-        for (AgentTool tool : tools) {
-            sb.append("- ").append(tool.name()).append(": ").append(tool.description());
-            appendParameterSchema(sb, tool.parameterSchema());
-            sb.append('\n');
-        }
-        sb.append("""
+        sb.append("## 你的身份\n\n");
+        sb.append(characterSoulService.getSoulContent());
+        sb.append("\n\n");
 
-                工具选择与意图判断（由你理解用户语义，勿凭记忆编造）：
-                1. fulltext_search / article_rag：仅当用户明确要搜本站博客帖子、文章片段时使用。
-                2. bangumi_search：查 Bangumi 条目（动画/漫画/游戏等）的评分、季数、集数、放送日、排名；统计季数时用系列简称作 keyword，工具会宽召回同系列条目。
-                3. bangumi_characters：查某条目的登场角色；keyword 为条目名（追问时可从对话历史推断作品名）。
-                4. bangumi_person_works：查作者/漫画家/插画及其参与作品；可传 keyword（人名）与 work_title（作品名）。
-                5. 涉及 Bangumi 可查证的事实（评分、季数、角色、作者作品列表等）时，必须先调用 2/3/4 获取 Observation，禁止未调工具就 action=final。
-                6. 统计季数时以 Observation 中「共找到 N 部相关动画条目」为准，勿只凭单条推断。
-                7. 用户用简称、别名、日文名或中文译名提问时，请自行选择最可能匹配的 keyword 传入工具。
-                8. 有对话历史时，短追问（如「他们是谁」「还有谁」）需结合上文确定 keyword 再调工具。
-                9. Observation 已足够回答时再 action=final；回答只基于 Observation 与对话历史，不得臆测。
-                10. Bangumi 工具超时后，同一问题最多再试一次；两次均失败则 final 并说明无法查询，勿凭训练数据猜测。""");
+        sb.append("## 可用工具\n\n");
+        for (AgentTool tool : tools) {
+            sb.append("### ").append(tool.name()).append('\n');
+            sb.append(tool.description());
+            appendParameterSchema(sb, tool.parameterSchema());
+            sb.append("\n\n");
+        }
+
+        sb.append("## 工具使用准则\n\n");
+        sb.append("1. 优先用工具获取事实，不确定时查一下再回答\n");
+        sb.append("2. 每次只调用一个工具，等结果返回后再决定下一步\n");
+        sb.append("3. 如果站内搜索无结果，尝试 Bangumi 工具搜索动漫相关内容\n");
+        sb.append("4. 不要编造工具返回的数据，如实告诉用户查询结果\n\n");
+        sb.append("输出格式：只输出单个 JSON 对象；调用工具用 {\"action\":\"工具名\",\"input\":{...}}，可以回答时用 {\"action\":\"final\",\"answer\":\"占位\"}\n\n");
+
+        sb.append("## 对话历史\n\n");
+        if (conversationHistory == null || conversationHistory.isBlank()) {
+            sb.append("（暂无）");
+        } else {
+            sb.append(conversationHistory.trim());
+        }
+        sb.append("\n\n");
+
+        sb.append("## 用户的问题\n\n");
+        sb.append(userQuestion == null ? "" : userQuestion.trim());
         return sb.toString();
     }
 
