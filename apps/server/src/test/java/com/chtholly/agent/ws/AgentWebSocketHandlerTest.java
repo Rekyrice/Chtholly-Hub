@@ -4,6 +4,7 @@ import com.chtholly.agent.ChthollyAgent;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.agent.observability.AgentMetrics;
+import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.timeout;
 
 @ExtendWith(MockitoExtension.class)
 class AgentWebSocketHandlerTest {
@@ -42,6 +44,8 @@ class AgentWebSocketHandlerTest {
     private WebSocketSession rawSession;
     @Mock
     private AgentMetrics agentMetrics;
+    @Mock
+    private CharacterStateService characterStateService;
 
     private AgentSessionRateLimiter rateLimiter;
     private AgentWebSocketHeartbeat heartbeat;
@@ -53,7 +57,8 @@ class AgentWebSocketHandlerTest {
         objectMapper = new ObjectMapper();
         rateLimiter = new AgentSessionRateLimiter();
         heartbeat = new AgentWebSocketHeartbeat();
-        handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat, agentMetrics);
+        handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
+                agentMetrics, characterStateService);
     }
 
     @Test
@@ -119,5 +124,22 @@ class AgentWebSocketHandlerTest {
 
         TimeUnit.MILLISECONDS.sleep(200);
         verify(agent).run(any(), anyLong(), any(), any(), any());
+    }
+
+    @Test
+    void recordsCharacterInteractionAfterChatCompletes() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-state");
+        when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=t3"));
+        when(ticketStore.consume("t3")).thenReturn(66L);
+
+        handler.afterConnectionEstablished(rawSession);
+
+        when(memoryStore.getOrCreateMemory(66L, "sess-chat-c")).thenReturn(memory);
+        doNothing().when(agent).run(any(), anyLong(), any(), any(), any());
+
+        handler.handleTextMessage(rawSession,
+                new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-c\",\"message\":\"hi\"}"));
+
+        verify(characterStateService, timeout(500)).recordInteraction(66L);
     }
 }

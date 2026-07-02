@@ -2,6 +2,13 @@ package com.chtholly.agent;
 
 import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.observability.AgentMetrics;
+import com.chtholly.agent.state.BehaviorProb;
+import com.chtholly.agent.state.CharacterState;
+import com.chtholly.agent.state.CharacterStateService;
+import com.chtholly.agent.state.Mood;
+import com.chtholly.agent.state.Needs;
+import com.chtholly.agent.state.Personality;
+import com.chtholly.agent.state.Relationship;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,10 +22,12 @@ import reactor.core.publisher.Flux;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +43,8 @@ class ChthollyAgentTest {
     private ObjectMapper objectMapper;
     private AgentJsonExtractor jsonExtractor;
     private CharacterSoulService characterSoulService;
+    @Mock
+    private CharacterStateService characterStateService;
     private ChthollyAgent agent;
     private List<AgentEvent> events;
 
@@ -51,8 +62,9 @@ class ChthollyAgentTest {
 
                 认真到笨拙，但不会编造答案。
                 """);
+        when(characterStateService.load(anyLong())).thenReturn(defaultState());
         agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(mockTool()), jsonExtractor,
-                agentMetrics, characterSoulService);
+                agentMetrics, characterSoulService, characterStateService);
         events = new ArrayList<>();
     }
 
@@ -111,6 +123,27 @@ class ChthollyAgentTest {
     }
 
     @Test
+    void given_characterState_when_buildingPrompt_then_injectsCurrentState() {
+        when(characterStateService.load(1L)).thenReturn(new CharacterState(
+                new Personality(0.7, 0.8, 0.5),
+                new Mood(-0.4, 0.5, 0.0),
+                new Relationship(0.42, 8, Instant.parse("2026-07-03T00:00:00Z")),
+                new Needs(0.0, 0.0, 0.0),
+                new BehaviorProb(0.5, 0.3, 0.3)
+        ));
+        stubLlmCall("{\"action\":\"final\",\"answer\":\"占位\"}");
+        stubStream("今天有点安静呢");
+
+        agent.run("你今天怎么样", 1L, null, events::add);
+
+        org.mockito.Mockito.verify(chatClient.prompt()).system(org.mockito.ArgumentMatchers.<String>argThat(prompt ->
+                prompt.contains("## 当前状态")
+                        && prompt.contains("你和这位用户的亲密度：熟悉")
+                        && prompt.contains("你当前的心境：有点低落")
+        ));
+    }
+
+    @Test
     void given_toolThrows_when_run_then_errorBecomesObservation() {
         AgentTool failingTool = new AgentTool() {
             @Override
@@ -129,7 +162,7 @@ class ChthollyAgentTest {
             }
         };
         agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(failingTool), jsonExtractor,
-                agentMetrics, characterSoulService);
+                agentMetrics, characterSoulService, characterStateService);
 
         AtomicInteger llmCalls = new AtomicInteger();
         when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
@@ -194,6 +227,16 @@ class ChthollyAgentTest {
                 return "mock observation";
             }
         };
+    }
+
+    private CharacterState defaultState() {
+        return new CharacterState(
+                new Personality(0.7, 0.8, 0.5),
+                new Mood(0.0, 0.5, 0.0),
+                new Relationship(0.0, 0, Instant.parse("2026-07-03T00:00:00Z")),
+                new Needs(0.0, 0.0, 0.0),
+                new BehaviorProb(0.5, 0.3, 0.3)
+        );
     }
 
     private void stubLlmCall(String json) {

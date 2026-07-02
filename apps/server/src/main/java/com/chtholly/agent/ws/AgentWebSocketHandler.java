@@ -6,6 +6,7 @@ import com.chtholly.agent.ChthollyAgent;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.agent.observability.AgentMetrics;
+import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -45,6 +46,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final AgentSessionRateLimiter rateLimiter;
     private final AgentWebSocketHeartbeat heartbeat;
     private final AgentMetrics agentMetrics;
+    private final CharacterStateService characterStateService;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     /** 原始 sessionId -> 线程安全装饰 session（并发 send 串行化）。 */
@@ -147,15 +149,19 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             }
 
             AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId, chatSessionId);
-            agent.run(text, userId, memory, session.getId(), event -> {
-                try {
-                    if (safe.isOpen()) {
-                        sendJson(safe, event.type(), event.data());
+            try {
+                agent.run(text, userId, memory, session.getId(), event -> {
+                    try {
+                        if (safe.isOpen()) {
+                            sendJson(safe, event.type(), event.data());
+                        }
+                    } catch (Exception e) {
+                        log.warn("WebSocket 发送失败: {}", e.getMessage());
                     }
-                } catch (Exception e) {
-                    log.warn("WebSocket 发送失败: {}", e.getMessage());
-                }
-            });
+                });
+            } finally {
+                characterStateService.recordInteraction(userId);
+            }
         } catch (Exception e) {
             log.warn("Agent WS 处理失败: {}", e.getMessage());
             try {

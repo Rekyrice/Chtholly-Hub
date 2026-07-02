@@ -5,6 +5,8 @@ import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentMetrics;
+import com.chtholly.agent.state.CharacterState;
+import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -55,6 +57,7 @@ public class ChthollyAgent {
     private final AgentJsonExtractor jsonExtractor;
     private final AgentMetrics agentMetrics;
     private final CharacterSoulService characterSoulService;
+    private final CharacterStateService characterStateService;
 
     /**
      * Runs one agent turn, emitting think/act/observe/delta/final/error events via sink.
@@ -91,7 +94,8 @@ public class ChthollyAgent {
             }
 
             String historyBlock = memory == null ? "" : memory.formatForPrompt();
-            String system = buildSystemPrompt(toolMap.values(), historyBlock, question.trim());
+            CharacterState characterState = characterStateService.load(userId);
+            String system = buildSystemPrompt(toolMap.values(), historyBlock, question.trim(), characterState);
             List<String> transcript = new ArrayList<>();
             if (!historyBlock.isBlank()) {
                 transcript.add(historyBlock);
@@ -395,7 +399,8 @@ public class ChthollyAgent {
         return result;
     }
 
-    private String buildSystemPrompt(Iterable<AgentTool> tools, String conversationHistory, String userQuestion) {
+    private String buildSystemPrompt(Iterable<AgentTool> tools, String conversationHistory, String userQuestion,
+                                     CharacterState characterState) {
         StringBuilder sb = new StringBuilder();
         sb.append("## 你的身份\n\n");
         sb.append(characterSoulService.getSoulContent());
@@ -416,6 +421,10 @@ public class ChthollyAgent {
         sb.append("4. 不要编造工具返回的数据，如实告诉用户查询结果\n\n");
         sb.append("输出格式：只输出单个 JSON 对象；调用工具用 {\"action\":\"工具名\",\"input\":{...}}，可以回答时用 {\"action\":\"final\",\"answer\":\"占位\"}\n\n");
 
+        sb.append("## 当前状态\n\n");
+        sb.append("你和这位用户的亲密度：").append(formatIntimacy(characterState.relationship().intimacy())).append('\n');
+        sb.append("你当前的心境：").append(formatMood(characterState.mood().valence())).append("\n\n");
+
         sb.append("## 对话历史\n\n");
         if (conversationHistory == null || conversationHistory.isBlank()) {
             sb.append("（暂无）");
@@ -427,6 +436,32 @@ public class ChthollyAgent {
         sb.append("## 用户的问题\n\n");
         sb.append(userQuestion == null ? "" : userQuestion.trim());
         return sb.toString();
+    }
+
+    private static String formatIntimacy(double intimacy) {
+        if (intimacy >= 0.7) {
+            return "亲近";
+        }
+        if (intimacy >= 0.3) {
+            return "熟悉";
+        }
+        if (intimacy > 0.0) {
+            return "刚开始熟悉";
+        }
+        return "初识";
+    }
+
+    private static String formatMood(double valence) {
+        if (valence >= 0.4) {
+            return "轻快";
+        }
+        if (valence > -0.2) {
+            return "平静";
+        }
+        if (valence > -0.6) {
+            return "有点低落";
+        }
+        return "低落";
     }
 
     private void appendParameterSchema(StringBuilder sb, Map<String, ParamDef> schema) {
