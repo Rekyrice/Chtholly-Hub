@@ -959,6 +959,14 @@
     overflow: hidden;
   }
 
+  .agent-live2d-stage-inner--entering {
+    animation: chtholly-enter 0.6s ease-out forwards;
+  }
+
+  .agent-live2d-stage-inner--breathing {
+    animation: chtholly-breathe 4s ease-in-out infinite;
+  }
+
   /* 台词浮层：与右侧对话头部分割线齐平，落在人物头顶上方 */
   .agent-live2d-caption-layer {
     --agent-caption-top: clamp(3.125rem, 9.5%, 4.25rem);
@@ -1048,6 +1056,29 @@
     100% {
       transform: scale(2.5);
       opacity: 0;
+    }
+  }
+
+  @keyframes chtholly-breathe {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+
+    50% {
+      transform: translateY(-6px);
+    }
+  }
+
+  @keyframes chtholly-enter {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scale(0.95);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
     }
   }
 

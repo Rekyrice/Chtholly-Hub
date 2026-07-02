@@ -14,6 +14,7 @@ import { parseLiveStepEvent } from "@/lib/live2d/liveStepEvent";
 import { formatTapLineJa, type ChthollyTapLine } from "@/lib/live2d/tapLines";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import type { Live2DHandle } from "@/lib/types/live2d";
+import { cn } from "@/lib/utils";
 
 const ChthollyLive2D = dynamic(() => import("@/components/agent/ChthollyLive2D"), {
   ssr: false,
@@ -27,6 +28,7 @@ const ChthollyLive2D = dynamic(() => import("@/components/agent/ChthollyLive2D")
 const IDLE_DELAY_MS = 5000;
 const SPEAK_DEBOUNCE_MS = 300;
 const RIPPLE_DURATION_MS = 800;
+const ENTER_DURATION_MS = 600;
 
 type TapLineSession = {
   key: number;
@@ -43,12 +45,14 @@ export default function AgentLive2DStage() {
   const stageInnerRef = useRef<HTMLDivElement>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevStreamingRef = useRef(false);
   const prevLiveStepsLenRef = useRef(0);
   const busyRef = useRef(busy);
   const streamingRef = useRef(streaming);
   const [tapLineSession, setTapLineSession] = useState<TapLineSession | null>(null);
   const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
+  const [phase, setPhase] = useState<"loading" | "entering" | "breathing">("loading");
 
   busyRef.current = busy;
   streamingRef.current = streaming;
@@ -83,6 +87,19 @@ export default function AgentLive2DStage() {
     window.setTimeout(() => {
       setRipples((prev) => prev.filter((ripple) => ripple.id !== id));
     }, RIPPLE_DURATION_MS);
+  }, []);
+
+  const handleLoad = useCallback(() => {
+    if (enterTimerRef.current) {
+      clearTimeout(enterTimerRef.current);
+      enterTimerRef.current = null;
+    }
+
+    setPhase("entering");
+    enterTimerRef.current = setTimeout(() => {
+      setPhase("breathing");
+      enterTimerRef.current = null;
+    }, ENTER_DURATION_MS);
   }, []);
 
   const clearCheek = useCallback(() => {
@@ -184,6 +201,7 @@ export default function AgentLive2DStage() {
     return () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (speakTimerRef.current) clearTimeout(speakTimerRef.current);
+      if (enterTimerRef.current) clearTimeout(enterTimerRef.current);
     };
   }, []);
 
@@ -204,7 +222,14 @@ export default function AgentLive2DStage() {
 
   return (
     <div className="agent-live2d-stage" data-testid="agent-live2d-stage">
-      <div ref={stageInnerRef} className="agent-live2d-stage-inner">
+      <div
+        ref={stageInnerRef}
+        className={cn(
+          "agent-live2d-stage-inner",
+          phase === "entering" && "agent-live2d-stage-inner--entering",
+          phase === "breathing" && "agent-live2d-stage-inner--breathing",
+        )}
+      >
         {ripples.map((ripple) => (
           <div
             key={ripple.id}
@@ -217,6 +242,7 @@ export default function AgentLive2DStage() {
           ref={live2dRef}
           className="agent-live2d-canvas-wrap"
           layoutPreset="agent"
+          onLoad={handleLoad}
           onTapLineStart={onTapLineStart}
           onTapLineEnd={onTapLineEnd}
           onCanvasPointerDown={handleCanvasPointerDown}
