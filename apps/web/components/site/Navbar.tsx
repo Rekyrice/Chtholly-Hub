@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, Search, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import NotificationBell from "@/components/site/NotificationBell";
 import { authService } from "@/lib/services/authService";
@@ -13,6 +13,11 @@ import type { AuthUser } from "@/lib/types/auth";
 
 const SCROLL_THRESHOLD = 100;
 
+const drawerExtraLinks = [
+  { href: "/settings", label: "Settings" },
+  { href: "/about", label: "About" },
+] as const;
+
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -21,6 +26,7 @@ export default function Navbar() {
   const router = useRouter();
   const brandMain = siteConfig.name.replace(/ Hub$/, "");
   const brandAccent = siteConfig.name.endsWith(" Hub") ? "Hub" : "";
+  const drawerLinks = [...siteConfig.nav, ...drawerExtraLinks];
 
   const syncUser = useCallback(() => {
     purgeExpiredAuth();
@@ -47,26 +53,25 @@ export default function Navbar() {
     await authService.logout();
     setUser(null);
     window.dispatchEvent(new Event("chtholly-auth-change"));
+    setOpen(false);
     router.push("/");
     router.refresh();
   };
 
-  const navLink = (href: string, label: string) => {
-    const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
-    return (
-      <Link
-        href={href}
-        className={cn("sakuga-nav-link flex items-center", active && "active")}
-        onClick={() => setOpen(false)}
-      >
-        {label}
-      </Link>
-    );
-  };
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
+  const navLink = (href: string, label: string, className?: string) => (
+    <Link
+      href={href}
+      className={cn("sakuga-nav-link flex items-center", isActive(href) && "active", className)}
+      onClick={() => setOpen(false)}
+    >
+      {label}
+    </Link>
+  );
 
   const authLinks = user ? (
     <>
-      <li className="flex items-stretch">{navLink("/write", "Write")}</li>
       <li className="flex items-center">
         <NotificationBell />
       </li>
@@ -79,7 +84,7 @@ export default function Navbar() {
           onClick={handleLogout}
           className="sakuga-nav-link bg-transparent border-0 cursor-pointer transition-colors duration-150"
         >
-          退出
+          Logout
         </button>
       </li>
     </>
@@ -94,6 +99,16 @@ export default function Navbar() {
       data-scrolled={isScrolled}
     >
       <div className="sakuga-container w-full flex items-center justify-between">
+        <button
+          type="button"
+          className="md:hidden p-2 -ml-2 text-text transition-colors duration-150"
+          onClick={() => setOpen(true)}
+          aria-label="Open navigation menu"
+          aria-expanded={open}
+        >
+          <Menu size={22} />
+        </button>
+
         <Link href="/" className="flex items-center gap-2.5 py-2 shrink-0">
           <span className="navbar-brand-icon" aria-hidden="true">
             C
@@ -110,25 +125,6 @@ export default function Navbar() {
             isScrolled ? "h-[44px]" : "h-[52px]",
           )}
         >
-          <li className="flex items-center px-2">
-            <form action="/search" method="get" className="flex items-center">
-              <input
-                type="search"
-                name="q"
-                placeholder="搜索"
-                aria-label="搜索帖子"
-                data-testid="navbar-search"
-                className="w-36 px-2 py-1 text-sm border border-border text-text bg-surface outline-none transition-colors duration-150 focus:border-sky rounded-md"
-              />
-              <button
-                type="submit"
-                className="ml-1 p-1.5 rounded-md text-text-secondary hover:bg-cloud transition-colors duration-150"
-                aria-label="提交搜索"
-              >
-                <Search size={18} />
-              </button>
-            </form>
-          </li>
           {siteConfig.nav.map((item) => (
             <li key={item.href} className="flex items-stretch">
               {navLink(item.href, item.label)}
@@ -137,69 +133,63 @@ export default function Navbar() {
           {authLinks}
         </ul>
 
-        <button
-          type="button"
-          className="md:hidden p-2 text-text transition-colors duration-150"
-          onClick={() => setOpen(!open)}
-          aria-label="菜单"
-        >
-          {open ? <X size={22} /> : <Menu size={22} />}
-        </button>
+        <span className="md:hidden w-[38px]" aria-hidden="true" />
       </div>
 
       {open && (
-        <div className="md:hidden absolute top-full left-0 right-0 z-50 mobile-nav-panel">
-          {siteConfig.nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="mobile-nav-link"
-              onClick={() => setOpen(false)}
-            >
-              {item.label}
-            </Link>
-          ))}
-          <form
-            action="/search"
-            method="get"
-            className="flex items-center gap-2 px-4 py-3 border-b border-border"
-            onSubmit={() => setOpen(false)}
-          >
-            <input
-              type="search"
-              name="q"
-              placeholder="搜索帖子"
-              className="field-input flex-1 text-sm py-1.5"
-            />
-            <button type="submit" className="text-sky transition-colors duration-150">
-              <Search size={18} />
-            </button>
-          </form>
-          {user ? (
-            <>
-              <Link href="/write" className="mobile-nav-link" onClick={() => setOpen(false)}>
-                Write
-              </Link>
+        <div className="md:hidden fixed inset-0 z-[1200]">
+          <button
+            type="button"
+            className="mobile-nav-backdrop"
+            aria-label="Close navigation menu"
+            onClick={() => setOpen(false)}
+          />
+          <aside className="mobile-nav-drawer" aria-label="Mobile navigation">
+            <div className="mobile-nav-drawer__header">
+              <span className="font-semibold text-text">Chtholly Hub</span>
               <button
                 type="button"
-                className="mobile-nav-link w-full text-left text-sky border-b-0"
-                onClick={() => {
-                  setOpen(false);
-                  void handleLogout();
-                }}
+                className="mobile-nav-drawer__close"
+                onClick={() => setOpen(false)}
+                aria-label="Close navigation menu"
               >
-                退出 ({user.nickname || user.phone})
+                <X size={20} />
               </button>
-            </>
-          ) : (
-            <Link
-              href="/login"
-              className="mobile-nav-link border-b-0 text-sky"
-              onClick={() => setOpen(false)}
-            >
-              Login
-            </Link>
-          )}
+            </div>
+
+            <div className="mobile-nav-drawer__body">
+              {drawerLinks.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn("mobile-nav-link", isActive(item.href) && "mobile-nav-link--active")}
+                  onClick={() => setOpen(false)}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+
+            <div className="mobile-nav-drawer__footer">
+              {user ? (
+                <button
+                  type="button"
+                  className="mobile-nav-link mobile-nav-link--account"
+                  onClick={() => void handleLogout()}
+                >
+                  Logout {user.nickname || user.phone}
+                </button>
+              ) : (
+                <Link
+                  href="/login"
+                  className="mobile-nav-link mobile-nav-link--account"
+                  onClick={() => setOpen(false)}
+                >
+                  Login
+                </Link>
+              )}
+            </div>
+          </aside>
         </div>
       )}
     </nav>

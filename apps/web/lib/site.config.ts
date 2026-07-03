@@ -29,10 +29,9 @@ export const siteConfig = {
   ownerHandle,
   nav: [
     { href: "/hub", label: "Hub" },
-    { href: "/archive", label: "Archive" },
-    { href: "/agent", label: "Agent" },
-    { href: `/user/${ownerHandle}`, label: "Profile" },
-    { href: "/about", label: "About" },
+    { href: "/chtholly", label: "Chtholly" },
+    { href: "/search", label: "Search" },
+    { href: "/write", label: "Write" },
   ],
 } as const;
 
