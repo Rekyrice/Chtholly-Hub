@@ -18,6 +18,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -113,6 +114,31 @@ class InsightServiceTest {
         List<Insight> updated = valueCaptor.getAllValues().stream()
                 .map(this::readInsight)
                 .toList();
+        assertThat(updated).anyMatch(insight -> insight.state() == InsightState.STALE);
+    }
+
+    @Test
+    void curatorSavesMergedInsightWhenGeneratorReturnsConsolidatedRules() throws Exception {
+        List<Insight> existing = new ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            existing.add(insight("id" + i, "相似规则 " + i, i, 0.7, InsightState.ACTIVE));
+        }
+        AtomicInteger calls = new AtomicInteger();
+        InsightService service = service(prompt ->
+                calls.getAndIncrement() == 0
+                        ? List.of("新的整理触发规则")
+                        : List.of("合并后的角色回答规则"));
+        when(hashOps.entries("agent:insights:42")).thenReturn(toEntries(existing));
+
+        service.reflectOnConversation(42L, longConversation());
+
+        ArgumentCaptor<String> valueCaptor = ArgumentCaptor.forClass(String.class);
+        verify(hashOps, org.mockito.Mockito.atLeastOnce()).put(eq("agent:insights:42"), anyString(), valueCaptor.capture());
+        List<Insight> updated = valueCaptor.getAllValues().stream()
+                .map(this::readInsight)
+                .toList();
+        assertThat(updated).anyMatch(insight ->
+                insight.text().equals("合并后的角色回答规则") && insight.state() == InsightState.ACTIVE);
         assertThat(updated).anyMatch(insight -> insight.state() == InsightState.STALE);
     }
 

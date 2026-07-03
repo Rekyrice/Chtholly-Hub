@@ -178,9 +178,36 @@ public class InsightService {
             return;
         }
 
+        List<String> consolidated = insightGenerator.apply(buildCuratorPrompt(active));
+        if (consolidated != null && !consolidated.isEmpty()) {
+            for (Insight insight : active) {
+                saveInsight(userId, withState(insight, InsightState.STALE));
+            }
+            for (String text : consolidated.stream().filter(StringUtils::hasText).limit(MAX_ACTIVE_PER_USER).toList()) {
+                saveInsight(userId, createInsight(text.trim()));
+            }
+            return;
+        }
+
         for (Insight insight : active.subList(MAX_ACTIVE_PER_USER, active.size())) {
             saveInsight(userId, withState(insight, InsightState.STALE));
         }
+    }
+
+    private String buildCuratorPrompt(List<Insight> activeInsights) {
+        StringBuilder sb = new StringBuilder();
+        for (Insight insight : activeInsights) {
+            sb.append("- ").append(insight.text()).append('\n');
+        }
+        return """
+                合并下面这些 Agent 行为规则，去掉重复和语义相近的项，保留最多 15 条。
+                每条都应该是可执行的行为规则，不要写用户偏好。
+
+                输出格式：JSON 数组，每项一句话。如果无法合并，返回空数组 []。
+
+                当前 insight：
+                %s
+                """.formatted(sb.toString().trim());
     }
 
     private String buildReflectPrompt(List<AgentTurn> conversation, String existingInsights) {
