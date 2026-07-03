@@ -28,7 +28,7 @@ export const siteConfig = {
   /** 站长 handle，个人主页 /user/[handle] */
   ownerHandle,
   nav: [
-    { href: "/", label: "Home" },
+    { href: "/hub", label: "Hub" },
     { href: "/archive", label: "Archive" },
     { href: "/agent", label: "Agent" },
     { href: `/user/${ownerHandle}`, label: "Profile" },

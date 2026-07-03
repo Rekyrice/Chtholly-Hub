@@ -10,7 +10,12 @@ import { cn } from "@/lib/utils";
 
 export default function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isLandingPage = pathname === "/";
   const isAgentWorkspace = pathname.startsWith("/agent");
+
+  if (isLandingPage) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen flex flex-col">

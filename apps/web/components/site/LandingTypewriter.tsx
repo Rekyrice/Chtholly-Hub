@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
-const LINES = [
+type LandingLine = {
+  text: string;
+  translation?: string;
+};
+
+const LINES: readonly LandingLine[] = [
   {
     text: "私は世界で一番幸せな女の子",
     translation: "我是世界上最幸福的女孩",
