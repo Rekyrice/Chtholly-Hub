@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -25,6 +27,7 @@ public class CharacterStateService {
     private final StringRedisTemplate redis;
     @SuppressWarnings("unused")
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     /**
      * Creates a Redis-backed character state service.
@@ -33,8 +36,13 @@ public class CharacterStateService {
      * @param objectMapper Shared mapper reserved for future nested state serialization.
      */
     public CharacterStateService(StringRedisTemplate redis, ObjectMapper objectMapper) {
+        this(redis, objectMapper, Clock.systemDefaultZone());
+    }
+
+    CharacterStateService(StringRedisTemplate redis, ObjectMapper objectMapper, Clock clock) {
         this.redis = redis;
         this.objectMapper = objectMapper;
+        this.clock = clock;
     }
 
     /**
@@ -87,6 +95,31 @@ public class CharacterStateService {
                 state.needs(),
                 state.behaviorProb());
         save(userId, updated);
+    }
+
+    /**
+     * Get mood baseline based on time of day.
+     *
+     * @return Mood baseline for current local time.
+     */
+    public double getMoodBaseline() {
+        int hour = LocalTime.now(clock).getHour();
+        if (hour >= 6 && hour < 9) {
+            return 0.2;
+        }
+        if (hour >= 9 && hour < 12) {
+            return 0.1;
+        }
+        if (hour >= 12 && hour < 18) {
+            return 0.0;
+        }
+        if (hour >= 18 && hour < 21) {
+            return 0.1;
+        }
+        if (hour >= 21 || hour < 1) {
+            return -0.1;
+        }
+        return -0.3;
     }
 
     private CharacterState createDefault(long userId) {

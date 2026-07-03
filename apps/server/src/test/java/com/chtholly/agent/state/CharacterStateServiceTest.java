@@ -4,14 +4,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,12 +36,12 @@ class CharacterStateServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(redis.opsForHash()).thenReturn(hashOps);
         service = new CharacterStateService(redis, new ObjectMapper());
     }
 
     @Test
     void loadCreatesDefaultHashWithSlidingTtlForNewUser() {
+        stubHashOps();
         when(hashOps.entries("agent:character-state:42")).thenReturn(Map.of());
 
         CharacterState state = service.load(42L);
@@ -61,6 +65,7 @@ class CharacterStateServiceTest {
 
     @Test
     void loadDeserializesExistingHashAndRefreshesTtl() {
+        stubHashOps();
         when(hashOps.entries("agent:character-state:7")).thenReturn(Map.ofEntries(
                 entry("personality.warmth", "0.6"),
                 entry("personality.curiosity", "0.9"),
@@ -90,6 +95,7 @@ class CharacterStateServiceTest {
 
     @Test
     void recordInteractionIncrementsCountAndGrowsIntimacyLogarithmically() {
+        stubHashOps();
         when(hashOps.entries("agent:character-state:9")).thenReturn(Map.ofEntries(
                 entry("personality.warmth", "0.7"),
                 entry("personality.curiosity", "0.8"),
@@ -117,5 +123,34 @@ class CharacterStateServiceTest {
         assertThat(Double.parseDouble(entriesCaptor.getValue().get("relationship.intimacy")))
                 .isEqualTo(0.1 * Math.log(3));
         verify(redis).expire("agent:character-state:9", Duration.ofDays(30));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "6,0.2",
+            "10,0.1",
+            "15,0.0",
+            "19,0.1",
+            "22,-0.1",
+            "0,-0.1",
+            "2,-0.3"
+    })
+    void getMoodBaselineReturnsTimeAwareBaseline(int hour, double expectedBaseline) {
+        CharacterStateService clockedService = new CharacterStateService(
+                redis,
+                new ObjectMapper(),
+                fixedClockAtHour(hour));
+
+        assertThat(clockedService.getMoodBaseline()).isEqualTo(expectedBaseline);
+    }
+
+    private static Clock fixedClockAtHour(int hour) {
+        return Clock.fixed(
+                Instant.parse("2026-07-03T%02d:00:00Z".formatted(hour)),
+                ZoneOffset.UTC);
+    }
+
+    private void stubHashOps() {
+        when(redis.opsForHash()).thenReturn(hashOps);
     }
 }
