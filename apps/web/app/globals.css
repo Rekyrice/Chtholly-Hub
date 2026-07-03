@@ -2182,7 +2182,7 @@
     right: 0;
     bottom: 0;
     z-index: 1080;
-    display: grid;
+    display: none;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     height: calc(56px + env(safe-area-inset-bottom));
     padding: 4px 8px calc(4px + env(safe-area-inset-bottom));
@@ -2222,6 +2222,12 @@
   .mobile-bottom-nav__item--active {
     color: var(--color-sky);
     background: color-mix(in srgb, var(--color-sky) 12%, transparent);
+  }
+
+  @media (max-width: 767px) {
+    .mobile-bottom-nav {
+      display: grid;
+    }
   }
 
   .avatar-ring {
