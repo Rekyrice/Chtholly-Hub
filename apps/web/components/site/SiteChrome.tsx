@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Footer from "@/components/site/Footer";
+import MobileBottomNav from "@/components/site/MobileBottomNav";
 import Navbar from "@/components/site/Navbar";
 import SiteHeader from "@/components/site/SiteHeader";
 import AgentPageBackground from "@/components/agent/AgentPageBackground";
@@ -18,7 +19,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="site-shell min-h-screen flex flex-col">
       <Navbar />
       <div className="h-[52px]" />
       {!isAgentWorkspace && <SiteHeader />}
@@ -46,6 +47,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
           </div>
         )}
       </div>
+      <MobileBottomNav />
       {!isAgentWorkspace && <FloatingAgent />}
     </div>
   );
