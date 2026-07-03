@@ -2032,9 +2032,7 @@
     }
 
     .floating-agent-root {
-      right: 16px;
-      bottom: 16px;
-      left: 16px;
+      display: none;
     }
 
     .floating-agent-panel {
