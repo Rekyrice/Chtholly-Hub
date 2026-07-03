@@ -1,5 +1,6 @@
 package com.chtholly.llm.rag;
 
+import com.chtholly.agent.search.SearchResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
@@ -28,6 +29,31 @@ public class RagQueryService {
     private final ChatClient chatClient;
     // 索引服务：确保帖子在问答前已建立/更新索引
     private final RagIndexService indexService;
+
+    /**
+     * Searches indexed post chunks and returns unified agent search results.
+     *
+     * @param query Query text.
+     * @param topK  Maximum result count.
+     * @return Semantic post chunk results.
+     */
+    public List<SearchResult> search(String query, int topK) {
+        if (query == null || query.isBlank() || topK <= 0) {
+            return List.of();
+        }
+        List<Document> docs = vectorStore.similaritySearch(
+                SearchRequest.builder().query(query.trim()).topK(topK).build()
+        );
+        List<SearchResult> results = new ArrayList<>(docs.size());
+        for (Document doc : docs) {
+            Object postId = doc.getMetadata().get("postId");
+            String id = postId == null ? "semantic:" + results.size() : "post:" + postId;
+            String title = stringValue(doc.getMetadata().get("title"), "帖子片段");
+            String snippet = truncate(doc.getText(), 240);
+            results.add(new SearchResult(id, title, snippet, "semantic", 0.0));
+        }
+        return List.copyOf(results);
+    }
 
     /**
      * 使用 WebFlux 返回回答内容的流。
@@ -81,5 +107,20 @@ public class RagQueryService {
             }
         }
         return out;
+    }
+
+    private static String stringValue(Object value, String fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? fallback : text;
+    }
+
+    private static String truncate(String text, int maxChars) {
+        if (text == null || text.length() <= maxChars) {
+            return text;
+        }
+        return text.substring(0, maxChars) + "...";
     }
 }
