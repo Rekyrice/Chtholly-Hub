@@ -23,6 +23,8 @@ import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorato
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -149,8 +151,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             }
 
             AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId, chatSessionId);
+            String pageContext = formatPageContext(root.path("context"));
             try {
-                agent.run(text, userId, memory, session.getId(), event -> {
+                agent.run(text, userId, memory, session.getId(), pageContext, event -> {
                     try {
                         if (safe.isOpen()) {
                             sendJson(safe, event.type(), event.data());
@@ -169,6 +172,37 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             } catch (Exception sendEx) {
                 log.warn("Failed to send WS error response: {}", sendEx.getMessage());
             }
+        }
+    }
+
+    private String formatPageContext(JsonNode context) {
+        if (context == null || context.isMissingNode() || context.isNull() || !context.isObject()) {
+            return "";
+        }
+
+        List<String> lines = new ArrayList<>();
+        appendTextContext(lines, "页面", context.path("page").asText(""));
+        appendTextContext(lines, "标题", context.path("title").asText(""));
+        JsonNode tags = context.path("tags");
+        if (tags.isArray()) {
+            List<String> tagNames = new ArrayList<>();
+            for (JsonNode tag : tags) {
+                String value = tag.asText("").trim();
+                if (!value.isEmpty()) {
+                    tagNames.add(value);
+                }
+            }
+            if (!tagNames.isEmpty()) {
+                lines.add("标签：" + String.join("、", tagNames));
+            }
+        }
+        return String.join("\n", lines);
+    }
+
+    private void appendTextContext(List<String> lines, String label, String value) {
+        String trimmed = value == null ? "" : value.trim();
+        if (!trimmed.isEmpty()) {
+            lines.add(label + "：" + trimmed);
         }
     }
 

@@ -6,6 +6,7 @@ import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
@@ -79,7 +81,7 @@ class AgentWebSocketHandlerTest {
         handler.afterConnectionEstablished(rawSession);
 
         when(memoryStore.getOrCreateMemory(99L, "sess-chat-a")).thenReturn(memory);
-        doNothing().when(agent).run(any(), anyLong(), any(), any(), any());
+        doNothing().when(agent).run(any(), anyLong(), any(), any(), any(), any());
 
         List<String> payloads = new ArrayList<>();
         doAnswer(inv -> {
@@ -99,7 +101,7 @@ class AgentWebSocketHandlerTest {
                 .filter(p -> p.contains("RATE_LIMITED"))
                 .count();
         assertThat(rateLimited).isGreaterThanOrEqualTo(5);
-        verify(agent, atLeast(10)).run(any(), anyLong(), any(), any(), any());
+        verify(agent, atLeast(10)).run(any(), anyLong(), any(), any(), any(), any());
     }
 
     @Test
@@ -111,7 +113,7 @@ class AgentWebSocketHandlerTest {
         handler.afterConnectionEstablished(rawSession);
 
         when(memoryStore.getOrCreateMemory(1L, "sess-chat-b")).thenReturn(memory);
-        doNothing().when(agent).run(any(), anyLong(), any(), any(), any());
+        doNothing().when(agent).run(any(), anyLong(), any(), any(), any(), any());
 
         doNothing().when(rawSession).sendMessage(any());
 
@@ -123,7 +125,7 @@ class AgentWebSocketHandlerTest {
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-b\",\"message\":\"ok\"}"));
 
         TimeUnit.MILLISECONDS.sleep(200);
-        verify(agent).run(any(), anyLong(), any(), any(), any());
+        verify(agent).run(any(), anyLong(), any(), any(), any(), any());
     }
 
     @Test
@@ -135,11 +137,49 @@ class AgentWebSocketHandlerTest {
         handler.afterConnectionEstablished(rawSession);
 
         when(memoryStore.getOrCreateMemory(66L, "sess-chat-c")).thenReturn(memory);
-        doNothing().when(agent).run(any(), anyLong(), any(), any(), any());
+        doNothing().when(agent).run(any(), anyLong(), any(), any(), any(), any());
 
         handler.handleTextMessage(rawSession,
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-c\",\"message\":\"hi\"}"));
 
         verify(characterStateService, timeout(500)).recordInteraction(66L);
+    }
+
+    @Test
+    void passesPageContextFromChatPayloadToAgent() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-context");
+        when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=t4"));
+        when(ticketStore.consume("t4")).thenReturn(88L);
+
+        handler.afterConnectionEstablished(rawSession);
+
+        when(memoryStore.getOrCreateMemory(88L, "sess-chat-d")).thenReturn(memory);
+        doNothing().when(agent).run(any(), anyLong(), any(), any(), any(), any());
+
+        handler.handleTextMessage(rawSession, new TextMessage("""
+                {
+                  "type": "chat",
+                  "sessionId": "sess-chat-d",
+                  "message": "hi",
+                  "context": {
+                    "page": "/post/frieren-review",
+                    "title": "《芙莉莲》观后感：时间的重量",
+                    "tags": ["芙莉莲", "治愈", "日常系"]
+                  }
+                }
+                """));
+
+        ArgumentCaptor<String> contextCaptor = ArgumentCaptor.forClass(String.class);
+        verify(agent, timeout(500)).run(
+                eq("hi"),
+                eq(88L),
+                eq(memory),
+                eq("sess-context"),
+                contextCaptor.capture(),
+                any());
+        assertThat(contextCaptor.getValue())
+                .contains("页面：/post/frieren-review")
+                .contains("标题：《芙莉莲》观后感：时间的重量")
+                .contains("标签：芙莉莲、治愈、日常系");
     }
 }
