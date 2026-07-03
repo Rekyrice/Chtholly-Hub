@@ -5,6 +5,8 @@ import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.memory.AgentTurn;
+import com.chtholly.agent.search.HybridSearchService;
+import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.state.BehaviorProb;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
@@ -23,6 +25,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -85,6 +88,45 @@ class ContextEngineTest {
         assertThat(prompt)
                 .contains("## 对话历史")
                 .contains("User: anchor history");
+    }
+
+    @Test
+    void injectsHybridSearchResultsForQueryIntent() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        ContextEngine engine = new ContextEngine(anchorManager, stateService, hybridSearchService);
+        when(hybridSearchService.hybridSearch("帮我查一下芙莉莲的时间主题", 5)).thenReturn(List.of(
+                new SearchResult("post:9", "时间的重量", "芙莉莲文章片段", "hybrid", 0.2)
+        ));
+
+        String prompt = engine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "",
+                List.of(),
+                "",
+                "帮我查一下芙莉莲的时间主题");
+
+        assertThat(prompt)
+                .contains("## 相关知识")
+                .contains("- 站内有一篇关于芙莉莲时间主题的文章")
+                .contains("- 时间的重量：芙莉莲文章片段");
+        verify(hybridSearchService).hybridSearch("帮我查一下芙莉莲的时间主题", 5);
+    }
+
+    @Test
+    void skipsHybridSearchWhenQuestionHasNoQueryIntent() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        ContextEngine engine = new ContextEngine(anchorManager, stateService, hybridSearchService);
+
+        engine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "",
+                List.of(),
+                "",
+                "嗯，继续说");
+
+        verify(hybridSearchService, never()).hybridSearch(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyInt());
     }
 
     @ParameterizedTest

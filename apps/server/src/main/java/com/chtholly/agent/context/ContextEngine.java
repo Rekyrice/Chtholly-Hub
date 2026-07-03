@@ -5,11 +5,16 @@ import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.memory.AgentTurn;
+import com.chtholly.agent.search.HybridSearchService;
+import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -26,15 +31,28 @@ import java.util.Map;
  * 7. Conversation history.
  * 8. Current question.
  */
+@Slf4j
 @Service
 public class ContextEngine {
 
     private final AnchorManager anchorManager;
     private final CharacterStateService stateService;
+    private final HybridSearchService hybridSearchService;
 
-    public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService) {
+    public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
+                         ObjectProvider<HybridSearchService> hybridSearchServiceProvider) {
+        this(anchorManager, stateService, hybridSearchServiceProvider.getIfAvailable());
+    }
+
+    ContextEngine(AnchorManager anchorManager, CharacterStateService stateService) {
+        this(anchorManager, stateService, (HybridSearchService) null);
+    }
+
+    ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
+                  HybridSearchService hybridSearchService) {
         this.anchorManager = anchorManager;
         this.stateService = stateService;
+        this.hybridSearchService = hybridSearchService;
     }
 
     /**
@@ -71,7 +89,7 @@ public class ContextEngine {
         appendSoul(sb, anchors.soul());
         appendCharacterState(sb, anchors.relational());
         appendPageContext(sb, pageContext);
-        appendSemanticKnowledge(sb, anchors.semantic());
+        appendRelevantKnowledge(sb, anchors.semantic(), userQuestion);
         appendProceduralRules(sb, anchors.procedural());
         appendTools(sb, tools);
         appendConversationHistory(sb, conversationHistory, anchors.episodic());
@@ -127,6 +145,34 @@ public class ContextEngine {
         sb.append('\n');
     }
 
+    private void appendRelevantKnowledge(StringBuilder sb, List<String> semantic, String userQuestion) {
+        List<String> knowledgeLines = new ArrayList<>();
+        if (semantic != null) {
+            for (String item : semantic) {
+                if (hasText(item)) {
+                    knowledgeLines.add(item.trim());
+                }
+            }
+        }
+
+        if (isQueryIntent(userQuestion) && hybridSearchService != null) {
+            try {
+                for (SearchResult result : hybridSearchService.hybridSearch(userQuestion, 5)) {
+                    String line = formatSearchResult(result);
+                    if (hasText(line)) {
+                        knowledgeLines.add(line);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Hybrid search context failed: {}", e.getMessage(), e);
+            }
+        }
+
+        if (!knowledgeLines.isEmpty()) {
+            appendSemanticKnowledge(sb, knowledgeLines);
+        }
+    }
+
     private void appendProceduralRules(StringBuilder sb, List<String> procedural) {
         if (procedural == null || procedural.isEmpty()) {
             return;
@@ -174,6 +220,48 @@ public class ContextEngine {
     private void appendCurrentQuestion(StringBuilder sb, String userQuestion) {
         sb.append("## 用户的问题\n\n");
         sb.append(userQuestion == null ? "" : userQuestion.trim());
+    }
+
+    private static String formatSearchResult(SearchResult result) {
+        if (result == null) {
+            return "";
+        }
+        String title = hasText(result.getTitle()) ? result.getTitle().trim() : "Result";
+        String snippet = hasText(result.getSnippet()) ? result.getSnippet().trim() : "";
+        return snippet.isEmpty() ? title : title + "：" + snippet;
+    }
+
+    static boolean isQueryIntent(String question) {
+        if (!hasText(question)) {
+            return false;
+        }
+        String text = question.trim().toLowerCase();
+        return text.contains("查")
+                || text.contains("搜")
+                || text.contains("找")
+                || text.contains("推荐")
+                || text.contains("介绍")
+                || text.contains("是什么")
+                || text.contains("是谁")
+                || text.contains("哪里")
+                || text.contains("什么时候")
+                || text.contains("多少")
+                || text.contains("评分")
+                || text.contains("角色")
+                || text.contains("作品")
+                || text.contains("资料")
+                || text.contains("信息")
+                || text.contains("search")
+                || text.contains("find")
+                || text.contains("what")
+                || text.contains("who")
+                || text.contains("when")
+                || text.contains("where")
+                || text.contains("recommend");
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private static String formatEpisodicTurns(List<AgentTurn> turns) {
