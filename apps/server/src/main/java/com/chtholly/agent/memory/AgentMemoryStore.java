@@ -82,6 +82,22 @@ public class AgentMemoryStore {
         localCache.invalidate(cacheKey(userId, chatSessionId));
     }
 
+    /**
+     * Returns a snapshot of turns for a frontend chat session.
+     *
+     * @param userId        Authenticated user ID.
+     * @param chatSessionId Frontend chat session ID.
+     * @return Immutable turn snapshot.
+     */
+    public List<AgentTurn> getTurns(long userId, String chatSessionId) {
+        String cacheKey = cacheKey(userId, chatSessionId);
+        List<AgentTurn> turns = localCache.get(cacheKey, k -> loadTurnsFromRedis(userId, chatSessionId));
+        if (turns == null || turns.isEmpty()) {
+            return List.of();
+        }
+        return List.copyOf(turns);
+    }
+
     /** 当前本地缓存中的活跃 session 数与总记忆轮数（近似值，不含仅存在于 Redis 的冷数据）。 */
     public AgentMemoryStats getStats() {
         long activeSessions = localCache.estimatedSize();

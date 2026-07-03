@@ -3,8 +3,10 @@ package com.chtholly.agent.ws;
 import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.ChthollyAgent;
+import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
+import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -49,12 +51,14 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final AgentWebSocketHeartbeat heartbeat;
     private final AgentMetrics agentMetrics;
     private final CharacterStateService characterStateService;
+    private final InsightService insightService;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     /** 原始 sessionId -> 线程安全装饰 session（并发 send 串行化）。 */
     private final Map<String, WebSocketSession> safeSessions = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionUsers = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionConnectedAt = new ConcurrentHashMap<>();
+    private final Map<String, String> sessionChatSessionIds = new ConcurrentHashMap<>();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -100,6 +104,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         Long userId = sessionUsers.remove(session.getId());
         Long connectedAt = sessionConnectedAt.remove(session.getId());
+        String chatSessionId = sessionChatSessionIds.remove(session.getId());
+        reflectOnConversation(userId, chatSessionId);
         safeSessions.remove(session.getId());
         rateLimiter.removeSession(session.getId());
         heartbeat.stop(session.getId());
@@ -149,6 +155,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                 sendJson(safe, "error", objectMapper.createObjectNode().put("message", "缺少或无效的 sessionId"));
                 return;
             }
+            sessionChatSessionIds.put(session.getId(), chatSessionId);
 
             AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId, chatSessionId);
             String pageContext = formatPageContext(root.path("context"));
@@ -197,6 +204,19 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             }
         }
         return String.join("\n", lines);
+    }
+
+    private void reflectOnConversation(Long userId, String chatSessionId) {
+        if (userId == null || !AgentChatSessionSupport.isValid(chatSessionId)) {
+            return;
+        }
+        try {
+            List<AgentTurn> conversation = memoryStore.getTurns(userId, chatSessionId);
+            insightService.reflectOnConversation(userId, conversation);
+        } catch (Exception e) {
+            log.warn("Agent insight reflection scheduling failed userId={}, sessionId={}: {}",
+                    userId, chatSessionId, e.getMessage());
+        }
     }
 
     private void appendTextContext(List<String> lines, String label, String value) {

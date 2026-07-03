@@ -1,8 +1,10 @@
 package com.chtholly.agent.ws;
 
 import com.chtholly.agent.ChthollyAgent;
+import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
+import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,6 +50,8 @@ class AgentWebSocketHandlerTest {
     private AgentMetrics agentMetrics;
     @Mock
     private CharacterStateService characterStateService;
+    @Mock
+    private InsightService insightService;
 
     private AgentSessionRateLimiter rateLimiter;
     private AgentWebSocketHeartbeat heartbeat;
@@ -60,7 +64,7 @@ class AgentWebSocketHandlerTest {
         rateLimiter = new AgentSessionRateLimiter();
         heartbeat = new AgentWebSocketHeartbeat();
         handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
-                agentMetrics, characterStateService);
+                agentMetrics, characterStateService, insightService);
     }
 
     @Test
@@ -181,5 +185,34 @@ class AgentWebSocketHandlerTest {
                 .contains("页面：/post/frieren-review")
                 .contains("标题：《芙莉莲》观后感：时间的重量")
                 .contains("标签：芙莉莲、治愈、日常系");
+    }
+
+    @Test
+    void reflectsOnConversationAfterConnectionClosed() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-reflect");
+        when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=t5"));
+        when(ticketStore.consume("t5")).thenReturn(101L);
+
+        handler.afterConnectionEstablished(rawSession);
+
+        when(memoryStore.getOrCreateMemory(101L, "sess-chat-e")).thenReturn(memory);
+        doNothing().when(agent).run(any(), anyLong(), any(), any(), any(), any());
+        handler.handleTextMessage(rawSession,
+                new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-e\",\"message\":\"hi\"}"));
+        verify(agent, timeout(500)).run(any(), anyLong(), any(), any(), any(), any());
+
+        List<AgentTurn> turns = List.of(
+                AgentTurn.user("角色有哪些？"),
+                AgentTurn.assistant("先列主要角色。"),
+                AgentTurn.user("声优呢？"),
+                AgentTurn.assistant("补充声优。"),
+                AgentTurn.user("评分呢？"),
+                AgentTurn.assistant("补充评分。")
+        );
+        when(memoryStore.getTurns(101L, "sess-chat-e")).thenReturn(turns);
+
+        handler.afterConnectionClosed(rawSession, org.springframework.web.socket.CloseStatus.NORMAL);
+
+        verify(insightService).reflectOnConversation(101L, turns);
     }
 }
