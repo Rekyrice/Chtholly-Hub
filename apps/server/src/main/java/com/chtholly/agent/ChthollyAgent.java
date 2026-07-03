@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -95,7 +96,8 @@ public class ChthollyAgent {
 
             String historyBlock = memory == null ? "" : memory.formatForPrompt();
             CharacterState characterState = characterStateService.load(userId);
-            String system = buildSystemPrompt(toolMap.values(), historyBlock, question.trim(), characterState);
+            double moodBaseline = characterStateService.getMoodBaseline();
+            String system = buildSystemPrompt(toolMap.values(), historyBlock, question.trim(), characterState, moodBaseline);
             List<String> transcript = new ArrayList<>();
             if (!historyBlock.isBlank()) {
                 transcript.add(historyBlock);
@@ -400,7 +402,7 @@ public class ChthollyAgent {
     }
 
     private String buildSystemPrompt(Iterable<AgentTool> tools, String conversationHistory, String userQuestion,
-                                     CharacterState characterState) {
+                                     CharacterState characterState, double moodBaseline) {
         StringBuilder sb = new StringBuilder();
         sb.append("## 你的身份\n\n");
         sb.append(characterSoulService.getSoulContent());
@@ -422,8 +424,18 @@ public class ChthollyAgent {
         sb.append("输出格式：只输出单个 JSON 对象；调用工具用 {\"action\":\"工具名\",\"input\":{...}}，可以回答时用 {\"action\":\"final\",\"answer\":\"占位\"}\n\n");
 
         sb.append("## 当前状态\n\n");
-        sb.append("你和这位用户的亲密度：").append(formatIntimacy(characterState.relationship().intimacy())).append('\n');
-        sb.append("你当前的心境：").append(formatMood(characterState.mood().valence())).append("\n\n");
+        double intimacy = characterState.relationship().intimacy();
+        sb.append("你和这位用户的亲密度：")
+                .append(formatIntimacy(intimacy))
+                .append("（")
+                .append(intimacyLabel(intimacy))
+                .append("）\n");
+        sb.append("你当前的心境：").append(formatMood(characterState.mood().valence())).append('\n');
+        sb.append("当前时间段：")
+                .append(timePeriodLabel())
+                .append("（心境基线：")
+                .append(moodBaseline)
+                .append("）\n\n");
 
         sb.append("## 对话历史\n\n");
         if (conversationHistory == null || conversationHistory.isBlank()) {
@@ -436,6 +448,45 @@ public class ChthollyAgent {
         sb.append("## 用户的问题\n\n");
         sb.append(userQuestion == null ? "" : userQuestion.trim());
         return sb.toString();
+    }
+
+    private static String timePeriodLabel() {
+        return timePeriodLabel(LocalTime.now().getHour());
+    }
+
+    static String timePeriodLabel(int hour) {
+        if (hour >= 6 && hour < 9) {
+            return "早晨";
+        }
+        if (hour >= 9 && hour < 12) {
+            return "上午";
+        }
+        if (hour >= 12 && hour < 18) {
+            return "下午";
+        }
+        if (hour >= 18 && hour < 21) {
+            return "傍晚";
+        }
+        if (hour >= 21 || hour < 1) {
+            return "深夜";
+        }
+        return "凌晨";
+    }
+
+    static String intimacyLabel(double intimacy) {
+        if (intimacy < 0.1) {
+            return "陌生人";
+        }
+        if (intimacy < 0.3) {
+            return "刚认识";
+        }
+        if (intimacy < 0.6) {
+            return "熟悉的人";
+        }
+        if (intimacy < 0.9) {
+            return "朋友";
+        }
+        return "很亲近的人";
     }
 
     private static String formatIntimacy(double intimacy) {

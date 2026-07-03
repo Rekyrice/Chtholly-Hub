@@ -131,6 +131,7 @@ class ChthollyAgentTest {
                 new Needs(0.0, 0.0, 0.0),
                 new BehaviorProb(0.5, 0.3, 0.3)
         ));
+        when(characterStateService.getMoodBaseline()).thenReturn(-0.1);
         stubLlmCall("{\"action\":\"final\",\"answer\":\"占位\"}");
         stubStream("今天有点安静呢");
 
@@ -141,6 +142,31 @@ class ChthollyAgentTest {
                         && prompt.contains("你和这位用户的亲密度：熟悉")
                         && prompt.contains("你当前的心境：有点低落")
         ));
+    }
+
+    @Test
+    void given_timeBaseline_when_buildingPrompt_then_injectsTimeAwareState() {
+        when(characterStateService.load(1L)).thenReturn(new CharacterState(
+                new Personality(0.7, 0.8, 0.5),
+                new Mood(0.0, 0.5, 0.0),
+                new Relationship(0.42, 8, Instant.parse("2026-07-03T00:00:00Z")),
+                new Needs(0.0, 0.0, 0.0),
+                new BehaviorProb(0.5, 0.3, 0.3)
+        ));
+        when(characterStateService.getMoodBaseline()).thenReturn(-0.1);
+        stubLlmCall("{\"action\":\"final\",\"answer\":\"placeholder\"}");
+        stubStream("answer");
+
+        agent.run("hello", 1L, null, events::add);
+
+        org.mockito.ArgumentCaptor<String> systemCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(chatClient.prompt(), org.mockito.Mockito.atLeastOnce()).system(systemCaptor.capture());
+        assertThat(systemCaptor.getAllValues())
+                .anySatisfy(prompt -> assertThat(prompt)
+                        .contains("## 当前状态")
+                        .contains("（熟悉的人）")
+                        .contains("当前时间段：")
+                        .contains("心境基线：-0.1"));
     }
 
     @Test
