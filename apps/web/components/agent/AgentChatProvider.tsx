@@ -457,7 +457,11 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       stepsRef.current = [];
       setLiveSteps([]);
       streamingIdRef.current = null;
-      ws.send(JSON.stringify({ type: "chat", sessionId, message: trimmed }));
+      const context = {
+        page: window.location.pathname,
+        title: document.title,
+      };
+      ws.send(JSON.stringify({ type: "chat", sessionId, message: trimmed, context }));
     },
     [attachWsHandlers, busy, connect, loggedIn],
   );
