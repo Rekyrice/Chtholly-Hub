@@ -1,10 +1,10 @@
 package com.chtholly.agent.context;
 
 import com.chtholly.agent.AgentTool;
-import com.chtholly.agent.CharacterSoulService;
 import com.chtholly.agent.ParamDef;
-import com.chtholly.agent.learning.InsightService;
-import com.chtholly.agent.memory.AgentMemoryStore;
+import com.chtholly.agent.anchor.AnchorContext;
+import com.chtholly.agent.anchor.AnchorManager;
+import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
 import org.springframework.stereotype.Service;
@@ -14,41 +14,32 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Dynamically assembles the system prompt based on multiple context layers.
+ * Dynamically assembles the system prompt from identity anchors and runtime context.
  *
- * <p>Priority order (highest to lowest):
- * 1. Character Soul (identity)
- * 2. Character State (mood, relationship)
- * 3. Page context (what the user is viewing)
- * 4. User profile (who the user is)
- * 5. Long-term memory (relevant past interactions)
- * 6. Active insights (learned behavior rules)
- * 7. Tools (available actions)
- * 8. Conversation history (recent turns)
- * 9. Current question
+ * <p>Priority order:
+ * 1. Identity anchor.
+ * 2. Relational state.
+ * 3. Page context.
+ * 4. Semantic knowledge.
+ * 5. Procedural rules.
+ * 6. Tools.
+ * 7. Conversation history.
+ * 8. Current question.
  */
 @Service
 public class ContextEngine {
 
-    private final CharacterSoulService soulService;
+    private final AnchorManager anchorManager;
     private final CharacterStateService stateService;
-    @SuppressWarnings("unused")
-    private final AgentMemoryStore memoryStore;
-    private final InsightService insightService;
 
-    public ContextEngine(CharacterSoulService soulService,
-                         CharacterStateService stateService,
-                         AgentMemoryStore memoryStore,
-                         InsightService insightService) {
-        this.soulService = soulService;
+    public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService) {
+        this.anchorManager = anchorManager;
         this.stateService = stateService;
-        this.memoryStore = memoryStore;
-        this.insightService = insightService;
     }
 
     /**
      * Builds the complete system prompt with identity, state, page context,
-     * insights, and the current question.
+     * anchor-derived rules, and the current question.
      *
      * @param userId       Authenticated user ID.
      * @param sessionId    Conversation session ID.
@@ -74,29 +65,31 @@ public class ContextEngine {
     public String buildSystemPrompt(long userId, String sessionId, String pageContext,
                                     Iterable<AgentTool> tools, String conversationHistory,
                                     String userQuestion) {
+        AnchorContext anchors = anchorManager.buildContext(userId, sessionId);
         StringBuilder sb = new StringBuilder();
 
-        appendSoul(sb);
-        appendCharacterState(sb, userId);
+        appendSoul(sb, anchors.soul());
+        appendCharacterState(sb, anchors.relational());
         appendPageContext(sb, pageContext);
-        appendInsights(sb, userId);
+        appendSemanticKnowledge(sb, anchors.semantic());
+        appendProceduralRules(sb, anchors.procedural());
         appendTools(sb, tools);
-        appendConversationHistory(sb, conversationHistory);
+        appendConversationHistory(sb, conversationHistory, anchors.episodic());
         appendCurrentQuestion(sb, userQuestion);
 
         return sb.toString();
     }
 
-    private void appendSoul(StringBuilder sb) {
+    private void appendSoul(StringBuilder sb, String soul) {
         sb.append("## 你的身份\n\n");
-        sb.append(soulService.getSoulContent());
+        sb.append(soul == null ? "" : soul.trim());
         sb.append("\n\n");
     }
 
-    private void appendCharacterState(StringBuilder sb, long userId) {
-        CharacterState state = stateService.load(userId);
+    private void appendCharacterState(StringBuilder sb, CharacterState state) {
+        CharacterState safeState = state == null ? CharacterState.defaultState() : state;
         double moodBaseline = stateService.getMoodBaseline();
-        double intimacy = state.relationship().intimacy();
+        double intimacy = safeState.relationship().intimacy();
 
         sb.append("## 当前状态\n\n");
         sb.append("你和这位用户的亲密度：")
@@ -104,13 +97,13 @@ public class ContextEngine {
                 .append("（")
                 .append(intimacyLabel(intimacy))
                 .append("）\n");
-        sb.append("你当前的心境：").append(formatMood(state.mood().valence())).append('\n');
+        sb.append("你当前的心境：").append(formatMood(safeState.mood().valence())).append('\n');
         sb.append("当前时间段：")
                 .append(timePeriodLabel())
                 .append("（心境基线：")
                 .append(moodBaseline)
                 .append("）\n");
-        sb.append("互动次数：").append(state.relationship().interactionCount()).append("\n\n");
+        sb.append("互动次数：").append(safeState.relationship().interactionCount()).append("\n\n");
     }
 
     private void appendPageContext(StringBuilder sb, String pageContext) {
@@ -121,15 +114,27 @@ public class ContextEngine {
         sb.append(pageContext.trim()).append("\n\n");
     }
 
-    private void appendInsights(StringBuilder sb, long userId) {
-        List<String> insights = insightService.getActiveInsights(userId, 5);
-        if (insights == null || insights.isEmpty()) {
+    private void appendSemanticKnowledge(StringBuilder sb, List<String> semantic) {
+        if (semantic == null || semantic.isEmpty()) {
+            return;
+        }
+        sb.append("## 相关知识\n\n");
+        for (String item : semantic) {
+            if (item != null && !item.isBlank()) {
+                sb.append("- ").append(item.trim()).append('\n');
+            }
+        }
+        sb.append('\n');
+    }
+
+    private void appendProceduralRules(StringBuilder sb, List<String> procedural) {
+        if (procedural == null || procedural.isEmpty()) {
             return;
         }
         sb.append("## 你学到的行为规则\n\n");
-        for (String insight : insights) {
-            if (insight != null && !insight.isBlank()) {
-                sb.append("- ").append(insight.trim()).append('\n');
+        for (String rule : procedural) {
+            if (rule != null && !rule.isBlank()) {
+                sb.append("- ").append(rule.trim()).append('\n');
             }
         }
         sb.append('\n');
@@ -137,11 +142,13 @@ public class ContextEngine {
 
     private void appendTools(StringBuilder sb, Iterable<AgentTool> tools) {
         sb.append("## 可用工具\n\n");
-        for (AgentTool tool : tools) {
-            sb.append("### ").append(tool.name()).append('\n');
-            sb.append(tool.description());
-            appendParameterSchema(sb, tool.parameterSchema());
-            sb.append("\n\n");
+        if (tools != null) {
+            for (AgentTool tool : tools) {
+                sb.append("### ").append(tool.name()).append('\n');
+                sb.append(tool.description());
+                appendParameterSchema(sb, tool.parameterSchema());
+                sb.append("\n\n");
+            }
         }
 
         sb.append("## 工具使用准则\n\n");
@@ -152,12 +159,14 @@ public class ContextEngine {
         sb.append("输出格式：只输出单个 JSON 对象；调用工具用 {\"action\":\"工具名\",\"input\":{...}}，可以回答时用 {\"action\":\"final\",\"answer\":\"占位\"}\n\n");
     }
 
-    private void appendConversationHistory(StringBuilder sb, String conversationHistory) {
+    private void appendConversationHistory(StringBuilder sb, String conversationHistory, List<AgentTurn> episodic) {
         sb.append("## 对话历史\n\n");
-        if (conversationHistory == null || conversationHistory.isBlank()) {
-            sb.append("（暂无）");
-        } else {
+        if (conversationHistory != null && !conversationHistory.isBlank()) {
             sb.append(conversationHistory.trim());
+        } else if (episodic != null && !episodic.isEmpty()) {
+            sb.append(formatEpisodicTurns(episodic));
+        } else {
+            sb.append("（暂无）");
         }
         sb.append("\n\n");
     }
@@ -165,6 +174,19 @@ public class ContextEngine {
     private void appendCurrentQuestion(StringBuilder sb, String userQuestion) {
         sb.append("## 用户的问题\n\n");
         sb.append(userQuestion == null ? "" : userQuestion.trim());
+    }
+
+    private static String formatEpisodicTurns(List<AgentTurn> turns) {
+        StringBuilder sb = new StringBuilder();
+        for (AgentTurn turn : turns) {
+            if (turn == null || turn.content() == null || turn.content().isBlank()) {
+                continue;
+            }
+            sb.append(turn.role() == AgentTurn.Role.USER ? "User: " : "Assistant: ")
+                    .append(turn.content().trim())
+                    .append('\n');
+        }
+        return sb.toString().trim();
     }
 
     private static String timePeriodLabel() {

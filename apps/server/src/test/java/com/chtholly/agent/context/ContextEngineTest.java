@@ -1,9 +1,10 @@
 package com.chtholly.agent.context;
 
 import com.chtholly.agent.AgentTool;
-import com.chtholly.agent.CharacterSoulService;
-import com.chtholly.agent.learning.InsightService;
-import com.chtholly.agent.memory.AgentMemoryStore;
+import com.chtholly.agent.ParamDef;
+import com.chtholly.agent.anchor.AnchorContext;
+import com.chtholly.agent.anchor.AnchorManager;
+import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.state.BehaviorProb;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
@@ -15,42 +16,38 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.springframework.core.io.ByteArrayResource;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ContextEngineTest {
 
+    private AnchorManager anchorManager;
     private CharacterStateService stateService;
-    private InsightService insightService;
     private ContextEngine contextEngine;
 
     @BeforeEach
-    void setUp() throws IOException {
-        CharacterSoulService soulService = new CharacterSoulService(new ByteArrayResource("""
-                # 珂朵莉
-
-                认真到笨拙，但不会编造答案。
-                """.getBytes(StandardCharsets.UTF_8)));
+    void setUp() {
+        anchorManager = mock(AnchorManager.class);
         stateService = mock(CharacterStateService.class);
-        insightService = mock(InsightService.class);
-        when(stateService.load(anyLong())).thenReturn(defaultState());
         when(stateService.getMoodBaseline()).thenReturn(-0.1);
-        when(insightService.getActiveInsights(7L, 5)).thenReturn(List.of("用户喜欢简洁回答"));
-        contextEngine = new ContextEngine(soulService, stateService, mock(AgentMemoryStore.class), insightService);
+        when(anchorManager.buildContext(7L, "ws-1")).thenReturn(new AnchorContext(
+                "# 珂朵莉\n认真到笨拙，但不会编造答案。",
+                List.of(AgentTurn.user("anchor history")),
+                List.of("站内有一篇关于芙莉莲时间主题的文章"),
+                List.of("用户喜欢简洁回答"),
+                defaultState()));
+        contextEngine = new ContextEngine(anchorManager, stateService);
     }
 
     @Test
-    void buildsLayeredPromptWithStatePageInsightsToolsHistoryAndQuestion() {
+    void buildsLayeredPromptFromAnchorsWithToolsHistoryAndQuestion() {
         String prompt = contextEngine.buildSystemPrompt(
                 7L,
                 "ws-1",
@@ -61,9 +58,10 @@ class ContextEngineTest {
 
         assertThat(prompt)
                 .contains("## 你的身份", "# 珂朵莉")
-                .contains("## 当前状态", "你和这位用户的亲密度：熟悉（熟悉的人）", "互动次数：8")
+                .contains("## 当前状态", "亲密度：熟悉", "熟悉的人", "互动次数：8")
                 .contains("当前时间段：", "心境基线：-0.1")
                 .contains("## 用户当前在看", "页面：/post/frieren-review", "标题：《芙莉莲》观后感")
+                .contains("## 相关知识", "- 站内有一篇关于芙莉莲时间主题的文章")
                 .contains("## 你学到的行为规则", "- 用户喜欢简洁回答")
                 .contains("## 可用工具", "### test_tool", "测试工具")
                 .contains("## 工具使用准则", "每次只调用一个工具")
@@ -71,6 +69,22 @@ class ContextEngineTest {
                 .contains("## 用户的问题", "你怎么看这篇文章？");
         assertThat(prompt).doesNotContain("[系统提示]");
         assertThat(prompt.length()).isLessThan(8_000);
+        verify(anchorManager).buildContext(7L, "ws-1");
+    }
+
+    @Test
+    void usesEpisodicAnchorWhenFormattedHistoryIsBlank() {
+        String prompt = contextEngine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "",
+                List.of(),
+                "",
+                "继续说");
+
+        assertThat(prompt)
+                .contains("## 对话历史")
+                .contains("User: anchor history");
     }
 
     @ParameterizedTest
@@ -109,6 +123,11 @@ class ContextEngineTest {
             @Override
             public String description() {
                 return "测试工具";
+            }
+
+            @Override
+            public Map<String, ParamDef> parameterSchema() {
+                return Map.of("keyword", new ParamDef("关键词", String.class, true));
             }
 
             @Override
