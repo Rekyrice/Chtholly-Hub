@@ -1,12 +1,11 @@
 package com.chtholly.agent;
 
 import com.chtholly.agent.config.AgentProperties;
+import com.chtholly.agent.context.ContextEngine;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentMetrics;
-import com.chtholly.agent.state.CharacterState;
-import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -19,7 +18,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,7 +56,7 @@ public class ChthollyAgent {
     private final AgentJsonExtractor jsonExtractor;
     private final AgentMetrics agentMetrics;
     private final CharacterSoulService characterSoulService;
-    private final CharacterStateService characterStateService;
+    private final ContextEngine contextEngine;
 
     /**
      * Runs one agent turn, emitting think/act/observe/delta/final/error events via sink.
@@ -69,7 +67,7 @@ public class ChthollyAgent {
      * @param sink     Event consumer (typically WebSocket handler).
      */
     public void run(String question, long userId, AgentConversationMemory memory, Consumer<AgentEvent> sink) {
-        run(question, userId, memory, null, sink);
+        run(question, userId, memory, null, null, sink);
     }
 
     /**
@@ -79,6 +77,17 @@ public class ChthollyAgent {
      */
     public void run(String question, long userId, AgentConversationMemory memory, String sessionId,
                     Consumer<AgentEvent> sink) {
+        run(question, userId, memory, sessionId, null, sink);
+    }
+
+    /**
+     * Runs one agent turn with session ID and page context for prompt assembly.
+     *
+     * @param sessionId   WebSocket session identifier (may be null).
+     * @param pageContext Current page context sent by the client (may be null).
+     */
+    public void run(String question, long userId, AgentConversationMemory memory, String sessionId,
+                    String pageContext, Consumer<AgentEvent> sink) {
         int maxSteps = Math.max(1, properties.getMaxSteps());
         AgentExecutionTrace trace = new AgentExecutionTrace(userId, sessionId, maxSteps);
         try {
@@ -95,9 +104,13 @@ public class ChthollyAgent {
             }
 
             String historyBlock = memory == null ? "" : memory.formatForPrompt();
-            CharacterState characterState = characterStateService.load(userId);
-            double moodBaseline = characterStateService.getMoodBaseline();
-            String system = buildSystemPrompt(toolMap.values(), historyBlock, question.trim(), characterState, moodBaseline);
+            String system = contextEngine.buildSystemPrompt(
+                    userId,
+                    sessionId,
+                    pageContext,
+                    toolMap.values(),
+                    historyBlock,
+                    question.trim());
             List<String> transcript = new ArrayList<>();
             if (!historyBlock.isBlank()) {
                 transcript.add(historyBlock);
@@ -399,148 +412,6 @@ public class ChthollyAgent {
                     Bangumi 查询刚才有点慢。请用相同或更简短的 keyword 再试一次；如果还是超时，就如实告诉用户暂时查不到，不要编造数据。""";
         }
         return result;
-    }
-
-    private String buildSystemPrompt(Iterable<AgentTool> tools, String conversationHistory, String userQuestion,
-                                     CharacterState characterState, double moodBaseline) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("## 你的身份\n\n");
-        sb.append(characterSoulService.getSoulContent());
-        sb.append("\n\n");
-
-        sb.append("## 可用工具\n\n");
-        for (AgentTool tool : tools) {
-            sb.append("### ").append(tool.name()).append('\n');
-            sb.append(tool.description());
-            appendParameterSchema(sb, tool.parameterSchema());
-            sb.append("\n\n");
-        }
-
-        sb.append("## 工具使用准则\n\n");
-        sb.append("1. 优先用工具获取事实，不确定时查一下再回答\n");
-        sb.append("2. 每次只调用一个工具，等结果返回后再决定下一步\n");
-        sb.append("3. 如果站内搜索无结果，尝试 Bangumi 工具搜索动漫相关内容\n");
-        sb.append("4. 不要编造工具返回的数据，如实告诉用户查询结果\n\n");
-        sb.append("输出格式：只输出单个 JSON 对象；调用工具用 {\"action\":\"工具名\",\"input\":{...}}，可以回答时用 {\"action\":\"final\",\"answer\":\"占位\"}\n\n");
-
-        sb.append("## 当前状态\n\n");
-        double intimacy = characterState.relationship().intimacy();
-        sb.append("你和这位用户的亲密度：")
-                .append(formatIntimacy(intimacy))
-                .append("（")
-                .append(intimacyLabel(intimacy))
-                .append("）\n");
-        sb.append("你当前的心境：").append(formatMood(characterState.mood().valence())).append('\n');
-        sb.append("当前时间段：")
-                .append(timePeriodLabel())
-                .append("（心境基线：")
-                .append(moodBaseline)
-                .append("）\n\n");
-
-        sb.append("## 对话历史\n\n");
-        if (conversationHistory == null || conversationHistory.isBlank()) {
-            sb.append("（暂无）");
-        } else {
-            sb.append(conversationHistory.trim());
-        }
-        sb.append("\n\n");
-
-        sb.append("## 用户的问题\n\n");
-        sb.append(userQuestion == null ? "" : userQuestion.trim());
-        return sb.toString();
-    }
-
-    private static String timePeriodLabel() {
-        return timePeriodLabel(LocalTime.now().getHour());
-    }
-
-    static String timePeriodLabel(int hour) {
-        if (hour >= 6 && hour < 9) {
-            return "早晨";
-        }
-        if (hour >= 9 && hour < 12) {
-            return "上午";
-        }
-        if (hour >= 12 && hour < 18) {
-            return "下午";
-        }
-        if (hour >= 18 && hour < 21) {
-            return "傍晚";
-        }
-        if (hour >= 21 || hour < 1) {
-            return "深夜";
-        }
-        return "凌晨";
-    }
-
-    static String intimacyLabel(double intimacy) {
-        if (intimacy < 0.1) {
-            return "陌生人";
-        }
-        if (intimacy < 0.3) {
-            return "刚认识";
-        }
-        if (intimacy < 0.6) {
-            return "熟悉的人";
-        }
-        if (intimacy < 0.9) {
-            return "朋友";
-        }
-        return "很亲近的人";
-    }
-
-    private static String formatIntimacy(double intimacy) {
-        if (intimacy >= 0.7) {
-            return "亲近";
-        }
-        if (intimacy >= 0.3) {
-            return "熟悉";
-        }
-        if (intimacy > 0.0) {
-            return "刚开始熟悉";
-        }
-        return "初识";
-    }
-
-    private static String formatMood(double valence) {
-        if (valence >= 0.4) {
-            return "轻快";
-        }
-        if (valence > -0.2) {
-            return "平静";
-        }
-        if (valence > -0.6) {
-            return "有点低落";
-        }
-        return "低落";
-    }
-
-    private void appendParameterSchema(StringBuilder sb, Map<String, ParamDef> schema) {
-        if (schema == null || schema.isEmpty()) {
-            return;
-        }
-        sb.append("\n  参数：");
-        for (Map.Entry<String, ParamDef> entry : schema.entrySet()) {
-            ParamDef def = entry.getValue();
-            sb.append("\n    - ").append(entry.getKey())
-                    .append(" (").append(schemaTypeLabel(def.type()))
-                    .append(def.required() ? ", 必填" : ", 可选")
-                    .append("): ")
-                    .append(def.description());
-        }
-    }
-
-    private static String schemaTypeLabel(Class<?> type) {
-        if (type == String.class) {
-            return "string";
-        }
-        if (type == Integer.class || type == int.class) {
-            return "integer";
-        }
-        if (type == Boolean.class || type == boolean.class) {
-            return "boolean";
-        }
-        return type.getSimpleName();
     }
 
     private AgentAction parseAction(String llmOut) throws Exception {
