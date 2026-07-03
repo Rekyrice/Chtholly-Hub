@@ -2,6 +2,7 @@ package com.chtholly.agent.anchor;
 
 import com.chtholly.agent.CharacterSoulService;
 import com.chtholly.agent.memory.AgentMemoryStore;
+import com.chtholly.agent.memory.ProceduralMemoryService;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
 import lombok.extern.slf4j.Slf4j;
