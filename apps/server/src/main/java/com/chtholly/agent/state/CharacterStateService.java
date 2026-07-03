@@ -123,12 +123,7 @@ public class CharacterStateService {
     }
 
     private CharacterState createDefault(long userId) {
-        CharacterState state = new CharacterState(
-                new Personality(0.7, 0.8, 0.5),
-                new Mood(0.0, 0.5, 0.0),
-                new Relationship(0.0, 0, Instant.now()),
-                new Needs(0.0, 0.0, 0.0),
-                new BehaviorProb(0.5, 0.3, 0.3));
+        CharacterState state = CharacterState.defaultState(Instant.now());
         save(userId, state);
         return state;
     }
