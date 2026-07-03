@@ -2,7 +2,7 @@ package com.chtholly.agent.context;
 
 import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.CharacterSoulService;
-import com.chtholly.agent.insight.InsightService;
+import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.agent.state.BehaviorProb;
 import com.chtholly.agent.state.CharacterState;
