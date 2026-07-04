@@ -1,5 +1,6 @@
 package com.chtholly.agent.cognitive;
 
+import com.chtholly.agent.comment.CommentGenerationService;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.service.PostService;
@@ -35,17 +36,20 @@ public class CognitiveEngine {
     private final InsightService insightService;
     private final ExperienceService experienceService;
     private final ObservationGenerator observationGenerator;
+    private final ObjectProvider<CommentGenerationService> commentGenerationServiceProvider;
     private final Clock clock;
     private volatile Instant lastTriggeredAt = Instant.EPOCH;
 
     public CognitiveEngine(PostService postService,
                            InsightService insightService,
                            ExperienceService experienceService,
+                           ObjectProvider<CommentGenerationService> commentGenerationServiceProvider,
                            ObjectProvider<ChatClient> chatClientProvider,
                            ObjectMapper objectMapper) {
         this(postService,
                 insightService,
                 experienceService,
+                commentGenerationServiceProvider,
                 input -> generateWithChatClient(chatClientProvider.getIfAvailable(), objectMapper, input),
                 Clock.systemUTC());
     }
@@ -53,11 +57,13 @@ public class CognitiveEngine {
     CognitiveEngine(PostService postService,
                     InsightService insightService,
                     ExperienceService experienceService,
+                    ObjectProvider<CommentGenerationService> commentGenerationServiceProvider,
                     ObservationGenerator observationGenerator,
                     Clock clock) {
         this.postService = postService;
         this.insightService = insightService;
         this.experienceService = experienceService;
+        this.commentGenerationServiceProvider = commentGenerationServiceProvider;
         this.observationGenerator = observationGenerator;
         this.clock = clock;
     }
@@ -86,6 +92,19 @@ public class CognitiveEngine {
         List<Observation> valuable = applyValueGate(thoughts);
         if (!valuable.isEmpty()) {
             experienceService.storeExperiences(valuable);
+        }
+        triggerCommentGeneration();
+    }
+
+    private void triggerCommentGeneration() {
+        CommentGenerationService commentGenerationService = commentGenerationServiceProvider.getIfAvailable();
+        if (commentGenerationService == null) {
+            return;
+        }
+        try {
+            commentGenerationService.generateComments();
+        } catch (Exception e) {
+            log.warn("Cognitive comment generation failed: {}", e.getMessage(), e);
         }
     }
 

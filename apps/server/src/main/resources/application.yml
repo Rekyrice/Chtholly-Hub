@@ -104,6 +104,7 @@ canal:
 
 site:
   owner-user-id: ${SITE_OWNER_USER_ID:1}
+  chtholly-user-id: ${CHTHOLLY_USER_ID:2}
   owner-bootstrap-password: ${OWNER_BOOTSTRAP_PASSWORD:}
   owner-handle: ${OWNER_HANDLE:Rekyrice}
   owner-nickname: ${OWNER_NICKNAME:Rekyrice}

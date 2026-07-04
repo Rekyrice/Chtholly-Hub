@@ -1,5 +1,6 @@
 package com.chtholly.agent.cognitive;
 
+import com.chtholly.agent.comment.CommentGenerationService;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.service.PostService;
@@ -82,6 +83,7 @@ class CognitiveEngineTest {
                 postService,
                 insightService,
                 experienceService,
+                unusedCommentProvider(),
                 input -> List.of(),
                 clock);
         when(postService.getRecentPosts(Duration.ofHours(6))).thenReturn(List.of());
@@ -92,13 +94,59 @@ class CognitiveEngineTest {
         assertThat(engine.triggerIfDue()).isTrue();
     }
 
+    @Test
+    void cognitiveCycleTriggersCommentGenerationWhenAvailable() {
+        when(postService.getRecentPosts(Duration.ofHours(6))).thenReturn(List.of());
+        CommentGenerationService commentGenerationService = mock(CommentGenerationService.class);
+        org.springframework.beans.factory.ObjectProvider<CommentGenerationService> provider =
+                mock(org.springframework.beans.factory.ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(commentGenerationService);
+
+        CognitiveEngine engine = new CognitiveEngine(
+                postService,
+                insightService,
+                experienceService,
+                provider,
+                input -> List.of(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        engine.cognitiveCycle();
+
+        verify(commentGenerationService).generateComments();
+    }
+
     private CognitiveEngine engine(CognitiveEngine.ObservationGenerator generator) {
         return new CognitiveEngine(
                 postService,
                 insightService,
                 experienceService,
+                unusedCommentProvider(),
                 generator,
                 Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private static org.springframework.beans.factory.ObjectProvider<CommentGenerationService> unusedCommentProvider() {
+        return new org.springframework.beans.factory.ObjectProvider<>() {
+            @Override
+            public CommentGenerationService getObject() {
+                return null;
+            }
+
+            @Override
+            public CommentGenerationService getObject(Object... args) {
+                return null;
+            }
+
+            @Override
+            public CommentGenerationService getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public CommentGenerationService getIfUnique() {
+                return null;
+            }
+        };
     }
 
     private static final class MutableClock extends Clock {

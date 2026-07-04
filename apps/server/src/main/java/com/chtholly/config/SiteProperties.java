@@ -8,11 +8,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "site")
 public record SiteProperties(
         long ownerUserId,
+        long chthollyUserId,
         String ownerBootstrapPassword,
         String ownerHandle,
         String ownerNickname
 ) {
     public SiteProperties {
+        if (chthollyUserId <= 0) {
+            chthollyUserId = 2L;
+        }
         if (ownerBootstrapPassword == null) {
             ownerBootstrapPassword = "";
         }
