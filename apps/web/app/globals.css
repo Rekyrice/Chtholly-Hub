@@ -1274,7 +1274,7 @@
     --agent-character-zone: clamp(280px, 44%, 520px);
     display: grid;
     grid-template-columns: var(--agent-main-col) var(--agent-sessions-col);
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     width: 100%;
     height: calc(100vh - 52px);
     max-height: calc(100vh - 52px);
@@ -1359,9 +1359,83 @@
   }
 
   /* 主舞台：左列珂朵莉 + 右列对话（占满角色右侧至历史栏左侧） */
+  .agent-thoughts {
+    position: relative;
+    z-index: 4;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+    padding: 10px 18px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 45%, transparent);
+    background: rgb(255 255 255 / 46%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .agent-thoughts__header {
+    flex: 0 0 auto;
+  }
+
+  .agent-thoughts__header h3 {
+    margin: 0;
+    color: var(--color-text);
+    font-size: 0.86rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .agent-thoughts__list {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 10px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .agent-thought-item {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border: 1px solid color-mix(in srgb, var(--color-sky) 16%, transparent);
+    border-radius: 8px;
+    background: rgb(255 255 255 / 58%);
+    color: var(--color-text);
+  }
+
+  .agent-thought-item p {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .thought-time {
+    flex: 0 0 auto;
+    color: var(--color-text-secondary);
+    font-size: 0.72rem;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .agent-thought-empty {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 0.82rem;
+  }
+
   .agent-workspace-main {
     position: relative;
     grid-column: 1;
+    grid-row: 2;
     min-width: 0;
     min-height: 0;
     height: 100%;
@@ -1702,6 +1776,7 @@
   .agent-session-sidebar {
     position: relative;
     grid-column: 2;
+    grid-row: 2;
     width: auto;
     flex-shrink: 0;
     min-height: 0;
@@ -2155,6 +2230,20 @@
     background: transparent;
   }
 
+  .agent-workspace--dark .agent-thoughts {
+    background: rgb(15 23 42 / 46%);
+    border-bottom-color: rgb(71 85 105 / 45%);
+  }
+
+  .agent-workspace--dark .agent-thought-item {
+    background: rgb(30 41 59 / 64%);
+    border-color: color-mix(in srgb, var(--color-sky) 22%, #334155);
+  }
+
+  .agent-workspace--dark .agent-thought-empty {
+    color: var(--color-text-secondary);
+  }
+
   .agent-workspace--dark .agent-session-sidebar > .flex span:first-child {
     color: var(--color-text);
     font-weight: 600;
@@ -2402,6 +2491,85 @@
     color: var(--color-text-secondary);
   }
 
+  @keyframes proactive-slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .proactive-notification {
+    position: fixed;
+    right: 24px;
+    bottom: 80px;
+    z-index: 80;
+    display: flex;
+    width: min(360px, calc(100vw - 32px));
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+    box-shadow: 0 4px 24px rgb(15 23 42 / 14%);
+    color: var(--color-text);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    animation: proactive-slide-up 0.3s ease-out;
+  }
+
+  .proactive-notification__avatar {
+    flex: 0 0 auto;
+    margin-top: -10px;
+  }
+
+  .proactive-notification__content {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-top: 3px;
+  }
+
+  .proactive-notification__content p {
+    margin: 0;
+    color: var(--color-text);
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+
+  .proactive-notification__close {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition:
+      background 0.2s ease,
+      color 0.2s ease;
+  }
+
+  .proactive-notification__close:hover {
+    background: color-mix(in srgb, var(--color-sky) 12%, transparent);
+    color: var(--color-sky);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .proactive-notification {
+      background: rgb(15 23 42 / 88%);
+      border-color: rgb(71 85 105 / 72%);
+      box-shadow: 0 12px 34px rgb(0 0 0 / 32%);
+    }
+  }
+
   @media (max-width: 1200px) {
     .agent-workspace {
       --agent-character-zone: clamp(220px, 38vw, 400px);
@@ -2412,11 +2580,28 @@
   @media (max-width: 991px) {
     .agent-workspace {
       grid-template-columns: 1fr;
-      grid-template-rows: minmax(0, 1fr) auto;
+      grid-template-rows: auto minmax(0, 1fr) auto;
       height: calc(100vh - 52px);
       max-height: calc(100vh - 52px);
       min-height: 0;
       transition: none;
+    }
+
+    .agent-thoughts {
+      grid-column: 1;
+      grid-row: 1;
+      align-items: flex-start;
+      padding: 9px 12px;
+    }
+
+    .agent-thoughts__list {
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 1px;
+    }
+
+    .agent-thought-item {
+      flex: 0 0 min(280px, 78vw);
     }
 
     .agent-workspace--sessions-collapsed {
@@ -2443,7 +2628,7 @@
 
     .agent-workspace-main {
       grid-column: 1;
-      grid-row: 1;
+      grid-row: 2;
       grid-template-columns: 1fr;
       grid-template-rows: minmax(140px, 26vh) minmax(0, 1fr);
       min-height: 0;
@@ -2466,7 +2651,7 @@
 
     .agent-session-sidebar {
       grid-column: 1;
-      grid-row: 2;
+      grid-row: 3;
       min-height: 0;
       height: auto;
       max-height: 140px;
@@ -2489,6 +2674,14 @@
   @media (max-width: 767px) {
     .site-shell {
       padding-bottom: calc(56px + env(safe-area-inset-bottom));
+    }
+
+    .proactive-notification {
+      right: 16px;
+      bottom: calc(72px + env(safe-area-inset-bottom));
+      left: 16px;
+      width: auto;
+      max-width: none;
     }
 
     .floating-agent-root {
@@ -3502,6 +3695,10 @@
 
     .agent-message-row--assistant-enter,
     .agent-message-row--user-enter {
+      animation: none;
+    }
+
+    .proactive-notification {
       animation: none;
     }
   }

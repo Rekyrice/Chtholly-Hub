@@ -27,7 +27,12 @@ import {
 } from "@/lib/agent/sessions";
 import { getAgentWsUrl } from "@/lib/agent/wsUrl";
 import { isLoggedIn, purgeExpiredAuth } from "@/lib/auth/tokens";
-import type { AgentEventType, AgentWsEnvelope, ChatMessage } from "@/lib/types/agent";
+import type {
+  AgentEventType,
+  AgentWsEnvelope,
+  ChatMessage,
+  ProactiveNotificationItem,
+} from "@/lib/types/agent";
 import type { AgentLivePhase } from "@/lib/types/live2d";
 
 type AgentChatContextValue = {
@@ -51,6 +56,9 @@ type AgentChatContextValue = {
   streaming: boolean;
   /** 最近一次 Agent 错误文案，无则为 null */
   lastError: string | null;
+  proactiveNotifications: ProactiveNotificationItem[];
+  visibleProactiveNotification: ProactiveNotificationItem | null;
+  dismissProactiveNotification: () => void;
   sendMessage: (text: string) => Promise<void>;
   clearConversation: () => void;
   switchSession: (sessionId: string) => void;
@@ -88,6 +96,11 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const [livePhase, setLivePhase] = useState<AgentLivePhase>("idle");
   const [lastError, setLastError] = useState<string | null>(null);
+  const [proactiveNotifications, setProactiveNotifications] = useState<ProactiveNotificationItem[]>(
+    [],
+  );
+  const [visibleProactiveNotification, setVisibleProactiveNotification] =
+    useState<ProactiveNotificationItem | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -207,10 +220,34 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const dismissProactiveNotification = useCallback(() => {
+    setVisibleProactiveNotification(null);
+  }, []);
+
+  const pushProactiveNotification = useCallback((data: Record<string, unknown>) => {
+    const message = String(data.message ?? "");
+    if (!message) return;
+
+    const notification: ProactiveNotificationItem = {
+      type: String(data.type ?? "thought"),
+      message,
+      timestamp: String(data.timestamp ?? new Date().toISOString()),
+      channel: data.channel ? String(data.channel) : undefined,
+    };
+
+    setProactiveNotifications((prev) => [...prev, notification].slice(-20));
+    setVisibleProactiveNotification(notification);
+  }, []);
+
   const handleEnvelope = useCallback(
     (env: AgentWsEnvelope) => {
       const type = env.type as AgentEventType;
       const data = env.data ?? {};
+
+      if (type === "proactive") {
+        pushProactiveNotification(data);
+        return;
+      }
 
       if (type === "think") {
         setLivePhase("think");
@@ -321,7 +358,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
         setBusy(false);
       }
     },
-    [pushStep],
+    [pushProactiveNotification, pushStep],
   );
 
   const attachWsHandlers = useCallback(
@@ -612,6 +649,9 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       livePhase,
       streaming,
       lastError,
+      proactiveNotifications,
+      visibleProactiveNotification,
+      dismissProactiveNotification,
       sendMessage,
       clearConversation,
       switchSession,
@@ -635,6 +675,9 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       livePhase,
       streaming,
       lastError,
+      proactiveNotifications,
+      visibleProactiveNotification,
+      dismissProactiveNotification,
       sendMessage,
       clearConversation,
       switchSession,

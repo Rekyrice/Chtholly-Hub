@@ -1,4 +1,5 @@
 import { AgentChatProvider } from "@/components/agent/AgentChatProvider";
+import { ProactiveNotification } from "@/components/ProactiveNotification";
 import SiteChrome from "@/components/site/SiteChrome";
 
 export default function SiteLayout({
@@ -9,6 +10,7 @@ export default function SiteLayout({
   return (
     <AgentChatProvider>
       <SiteChrome>{children}</SiteChrome>
+      <ProactiveNotification />
     </AgentChatProvider>
   );
 }

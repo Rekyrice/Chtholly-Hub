@@ -1,4 +1,12 @@
-export type AgentEventType = "think" | "act" | "observe" | "delta" | "final" | "error" | "cleared";
+export type AgentEventType =
+  | "think"
+  | "act"
+  | "observe"
+  | "delta"
+  | "final"
+  | "error"
+  | "cleared"
+  | "proactive";
 
 export interface AgentWsEnvelope {
   type: AgentEventType;
@@ -14,6 +22,13 @@ export interface ChatMessage {
   /** 是否正在流式输出 */
   streaming?: boolean;
 }
+
+export type ProactiveNotificationItem = {
+  type: "missing-you" | "new-posts" | "thought" | string;
+  message: string;
+  timestamp: string;
+  channel?: "FLOATING" | "AGENT_PAGE" | string;
+};
 
 export type AgentExperience = {
   text: string;

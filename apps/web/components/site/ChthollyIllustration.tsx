@@ -14,7 +14,8 @@ export type IllustrationState =
   | "away"
   | "serious"
   | "thinking"
-  | "calm";
+  | "calm"
+  | "speaking";
 
 export type ChthollyIllustrationProps = {
   size?: "xs" | "sm" | "md" | "lg";
@@ -37,6 +38,7 @@ export const ILLUSTRATION_MAP: Record<IllustrationState, string> = {
   serious: "/images/illustrations/reading.png",
   thinking: "/images/illustrations/curious.png",
   calm: "/images/illustrations/default.png",
+  speaking: "/images/illustrations/greeting.png",
 };
 
 const IMAGE_SIZE = {
