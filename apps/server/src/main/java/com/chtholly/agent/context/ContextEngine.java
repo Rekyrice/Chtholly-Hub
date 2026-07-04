@@ -4,6 +4,7 @@ import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
+import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
@@ -38,21 +39,32 @@ public class ContextEngine {
     private final AnchorManager anchorManager;
     private final CharacterStateService stateService;
     private final HybridSearchService hybridSearchService;
+    private final KnowledgeService knowledgeService;
 
     public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
-                         ObjectProvider<HybridSearchService> hybridSearchServiceProvider) {
-        this(anchorManager, stateService, hybridSearchServiceProvider.getIfAvailable());
+                         ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
+                         ObjectProvider<KnowledgeService> knowledgeServiceProvider) {
+        this(anchorManager,
+                stateService,
+                hybridSearchServiceProvider.getIfAvailable(),
+                knowledgeServiceProvider.getIfAvailable());
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService) {
-        this(anchorManager, stateService, (HybridSearchService) null);
+        this(anchorManager, stateService, (HybridSearchService) null, (KnowledgeService) null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService) {
+        this(anchorManager, stateService, hybridSearchService, null);
+    }
+
+    ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
+                  HybridSearchService hybridSearchService, KnowledgeService knowledgeService) {
         this.anchorManager = anchorManager;
         this.stateService = stateService;
         this.hybridSearchService = hybridSearchService;
+        this.knowledgeService = knowledgeService;
     }
 
     /**
@@ -89,6 +101,7 @@ public class ContextEngine {
         appendSoul(sb, anchors.soul());
         appendCharacterState(sb, anchors.relational());
         appendPageContext(sb, pageContext);
+        appendKnownFacts(sb, userQuestion);
         appendRelevantKnowledge(sb, anchors.semantic(), userQuestion);
         appendProceduralRules(sb, anchors.procedural());
         appendTools(sb, tools);
@@ -143,6 +156,27 @@ public class ContextEngine {
             }
         }
         sb.append('\n');
+    }
+
+    private void appendKnownFacts(StringBuilder sb, String userQuestion) {
+        if (!isAnimeKnowledgeIntent(userQuestion) || knowledgeService == null) {
+            return;
+        }
+        try {
+            List<String> knowledge = knowledgeService.searchRelevantKnowledge(userQuestion, 3);
+            if (knowledge == null || knowledge.isEmpty()) {
+                return;
+            }
+            sb.append("## 你知道的事\n\n");
+            for (String item : knowledge) {
+                if (hasText(item)) {
+                    sb.append("- ").append(item.trim()).append('\n');
+                }
+            }
+            sb.append('\n');
+        } catch (Exception e) {
+            log.warn("Knowledge base context failed: {}", e.getMessage(), e);
+        }
     }
 
     private void appendRelevantKnowledge(StringBuilder sb, List<String> semantic, String userQuestion) {
@@ -258,6 +292,33 @@ public class ContextEngine {
                 || text.contains("when")
                 || text.contains("where")
                 || text.contains("recommend");
+    }
+
+    static boolean isAnimeKnowledgeIntent(String question) {
+        if (!hasText(question)) {
+            return false;
+        }
+        String text = question.trim().toLowerCase();
+        return text.contains("动漫")
+                || text.contains("动画")
+                || text.contains("番剧")
+                || text.contains("角色")
+                || text.contains("故事")
+                || text.contains("作品")
+                || text.contains("主题")
+                || text.contains("观后感")
+                || text.contains("治愈")
+                || text.contains("珂朵莉")
+                || text.contains("芙莉莲")
+                || text.contains("夏目")
+                || text.contains("轻音")
+                || text.contains("虫师")
+                || text.contains("紫罗兰")
+                || text.contains("clannad")
+                || text.contains("air")
+                || text.contains("aria")
+                || text.contains("anime")
+                || text.contains("manga");
     }
 
     private static boolean hasText(String value) {

@@ -4,6 +4,7 @@ import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
+import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
@@ -127,6 +128,28 @@ class ContextEngineTest {
                 "嗯，继续说");
 
         verify(hybridSearchService, never()).hybridSearch(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void injectsKnowledgeBaseForAnimeQuestion() {
+        KnowledgeService knowledgeService = mock(KnowledgeService.class);
+        ContextEngine engine = new ContextEngine(anchorManager, stateService, null, knowledgeService);
+        when(knowledgeService.searchRelevantKnowledge("聊聊芙莉莲关于时间的主题", 3)).thenReturn(List.of(
+                "《葬送的芙莉莲》让我想到时间、记忆和迟来的理解。"
+        ));
+
+        String prompt = engine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "",
+                List.of(),
+                "",
+                "聊聊芙莉莲关于时间的主题");
+
+        assertThat(prompt)
+                .contains("## 你知道的事")
+                .contains("- 《葬送的芙莉莲》让我想到时间、记忆和迟来的理解。");
+        verify(knowledgeService).searchRelevantKnowledge("聊聊芙莉莲关于时间的主题", 3);
     }
 
     @ParameterizedTest
