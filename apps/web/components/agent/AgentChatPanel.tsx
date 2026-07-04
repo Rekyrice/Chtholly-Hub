@@ -6,6 +6,7 @@ import { ExternalLink, Minus, Send, Settings } from "lucide-react";
 import AgentMessageList from "@/components/agent/AgentMessageList";
 import AgentWorkspaceSettings from "@/components/agent/AgentWorkspaceSettings";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
+import { useAgentPlaceholder } from "@/lib/hooks/useAgentPlaceholder";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,7 @@ export default function AgentChatPanel({
 
   const isWorkspace = variant === "workspace";
   const isDesktopLayout = useMinWidth(992);
+  const workspacePlaceholder = useAgentPlaceholder();
   const showAssistantAvatar = !isWorkspace || !isDesktopLayout;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -147,9 +149,12 @@ export default function AgentChatPanel({
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="输入问题…"
+          placeholder={isWorkspace ? workspacePlaceholder : "输入问题…"}
           disabled={busy}
-          className="floating-agent-input-field flex-1 text-sm disabled:opacity-50"
+          className={cn(
+            "floating-agent-input-field agent-input flex-1 text-sm disabled:opacity-50",
+            isWorkspace && "agent-input--workspace",
+          )}
           data-testid="agent-input"
         />
         <button
