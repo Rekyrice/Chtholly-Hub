@@ -1,7 +1,9 @@
 import Sidebar from "@/components/site/Sidebar";
+import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import PostCard from "@/components/site/PostCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { searchService } from "@/lib/services/searchService";
+import type { ChthollyIllustrationProps } from "@/components/site/ChthollyIllustration";
 
 interface Props {
   searchParams: Promise<{ q?: string }>;
@@ -18,6 +20,7 @@ export async function generateMetadata({ searchParams }: Props) {
 export default async function SearchPage({ searchParams }: Props) {
   const { q } = await searchParams;
   const keyword = q?.trim() ?? "";
+  const currentTimePeriod = getCurrentTimePeriod();
 
   let items: Awaited<ReturnType<typeof searchService.search>>["items"] = [];
   let degraded = false;
@@ -33,7 +36,7 @@ export default async function SearchPage({ searchParams }: Props) {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 lg:items-start">
+    <div className="search-page-layout">
       <div>
         <div className="post-card mb-6 p-5">
           <form action="/search" method="get" className="flex gap-2">
@@ -68,11 +71,11 @@ export default async function SearchPage({ searchParams }: Props) {
                 <PostCard key={post.id} post={post} highlightDescription />
               ))
             ) : (
-              <EmptyState
-                className="post-card"
-                title="未找到相关帖子"
-                description="换个关键词试试"
-              />
+              <div className="search-empty post-card">
+                <ChthollyIllustration size="md" state="curious" />
+                <p>没找到呢……换个关键词试试？</p>
+                <p className="text-text-secondary">珂朵莉歪着头看着你</p>
+              </div>
             )}
           </>
         ) : (
@@ -83,7 +86,25 @@ export default async function SearchPage({ searchParams }: Props) {
           />
         )}
       </div>
-      <Sidebar />
+      <div className="search-sidebar">
+        <div className="widget search-chtholly-widget">
+          <ChthollyIllustration size="sm" mood={0} timeOfDay={currentTimePeriod} />
+          <div>
+            <h2>Chtholly</h2>
+            <p>我会在旁边看着结果。要是没找到，我们就换个词再试试。</p>
+          </div>
+        </div>
+        <Sidebar />
+      </div>
     </div>
   );
+}
+
+function getCurrentTimePeriod(): NonNullable<ChthollyIllustrationProps["timeOfDay"]> {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 18) return "afternoon";
+  if (hour >= 18 && hour < 21) return "evening";
+  if (hour >= 21 || hour < 1) return "night";
+  return "late-night";
 }
