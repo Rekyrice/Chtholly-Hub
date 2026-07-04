@@ -6,6 +6,9 @@ import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.agent.memory.AgentTurn;
+import com.chtholly.agent.content.ContentAnalysis;
+import com.chtholly.agent.content.ContentUnderstandingService;
+import com.chtholly.agent.content.Entity;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.state.BehaviorProb;
@@ -150,6 +153,34 @@ class ContextEngineTest {
                 .contains("## 你知道的事")
                 .contains("- 《葬送的芙莉莲》让我想到时间、记忆和迟来的理解。");
         verify(knowledgeService).searchRelevantKnowledge("聊聊芙莉莲关于时间的主题", 3);
+    }
+
+    @Test
+    void injectsCurrentPostAnalysisWhenPageContextContainsPostId() {
+        ContentUnderstandingService contentService = mock(ContentUnderstandingService.class);
+        ContextEngine engine = new ContextEngine(anchorManager, stateService, null, null, contentService);
+        when(contentService.getAnalysis(42L)).thenReturn(new ContentAnalysis(
+                List.of(
+                        new Entity("芙莉莲", "动漫作品名", 0.9),
+                        new Entity("时间", "其他专有名词", 0.8)
+                ),
+                "原来是在说时间留下来的重量呢。",
+                List.of(99L),
+                Instant.parse("2026-07-04T08:00:00Z")));
+
+        String prompt = engine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "页面：/post/frieren-review\npostId：42\n标题：时间的重量",
+                List.of(),
+                "",
+                "你怎么看这篇文章？");
+
+        assertThat(prompt)
+                .contains("## 当前文章")
+                .contains("摘要：原来是在说时间留下来的重量呢。")
+                .contains("涉及：芙莉莲、时间");
+        verify(contentService).getAnalysis(42L);
     }
 
     @ParameterizedTest

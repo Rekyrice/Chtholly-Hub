@@ -1,5 +1,7 @@
 package com.chtholly.post.api;
 
+import com.chtholly.agent.content.ContentUnderstandingService;
+import com.chtholly.agent.content.RelatedPostDto;
 import com.chtholly.common.web.HttpCacheHelper;
 import com.chtholly.common.ratelimit.RateLimit;
 import com.chtholly.common.ratelimit.RateLimitDimension;
@@ -26,6 +28,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * REST API for post lifecycle: drafts, metadata, publishing, feeds, and detail views.
  */
@@ -39,6 +43,7 @@ public class PostController {
     private final PostService service;
     private final PostFeedService feedService;
     private final JwtService jwtService;
+    private final ContentUnderstandingService contentUnderstandingService;
 
     /**
      * Creates an empty draft owned by the authenticated user.
@@ -257,5 +262,17 @@ public class PostController {
         }
         PostDetailResponse body = service.getDetailBySlug(slug, userId);
         return HttpCacheHelper.okPublic(body, etag);
+    }
+
+    /**
+     * Returns posts related to the source post by shared content entities.
+     *
+     * @param id post snowflake ID
+     * @return related posts with shared entity names
+     */
+    @Operation(summary = "相关文章")
+    @GetMapping("/{id}/related")
+    public List<RelatedPostDto> related(@PathVariable("id") long id) {
+        return contentUnderstandingService.getRelatedPosts(id);
     }
 }

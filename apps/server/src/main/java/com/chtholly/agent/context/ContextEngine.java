@@ -5,6 +5,9 @@ import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.anchor.KnowledgeService;
+import com.chtholly.agent.content.ContentAnalysis;
+import com.chtholly.agent.content.ContentUnderstandingService;
+import com.chtholly.agent.content.Entity;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
@@ -40,31 +43,41 @@ public class ContextEngine {
     private final CharacterStateService stateService;
     private final HybridSearchService hybridSearchService;
     private final KnowledgeService knowledgeService;
+    private final ContentUnderstandingService contentUnderstandingService;
 
     public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                          ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
-                         ObjectProvider<KnowledgeService> knowledgeServiceProvider) {
+                         ObjectProvider<KnowledgeService> knowledgeServiceProvider,
+                         ObjectProvider<ContentUnderstandingService> contentUnderstandingServiceProvider) {
         this(anchorManager,
                 stateService,
                 hybridSearchServiceProvider.getIfAvailable(),
-                knowledgeServiceProvider.getIfAvailable());
+                knowledgeServiceProvider.getIfAvailable(),
+                contentUnderstandingServiceProvider.getIfAvailable());
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService) {
-        this(anchorManager, stateService, (HybridSearchService) null, (KnowledgeService) null);
+        this(anchorManager, stateService, (HybridSearchService) null, (KnowledgeService) null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService) {
-        this(anchorManager, stateService, hybridSearchService, null);
+        this(anchorManager, stateService, hybridSearchService, null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService, KnowledgeService knowledgeService) {
+        this(anchorManager, stateService, hybridSearchService, knowledgeService, null);
+    }
+
+    ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
+                  HybridSearchService hybridSearchService, KnowledgeService knowledgeService,
+                  ContentUnderstandingService contentUnderstandingService) {
         this.anchorManager = anchorManager;
         this.stateService = stateService;
         this.hybridSearchService = hybridSearchService;
         this.knowledgeService = knowledgeService;
+        this.contentUnderstandingService = contentUnderstandingService;
     }
 
     /**
@@ -101,6 +114,7 @@ public class ContextEngine {
         appendSoul(sb, anchors.soul());
         appendCharacterState(sb, anchors.relational());
         appendPageContext(sb, pageContext);
+        appendCurrentPostAnalysis(sb, pageContext);
         appendKnownFacts(sb, userQuestion);
         appendRelevantKnowledge(sb, anchors.semantic(), userQuestion);
         appendProceduralRules(sb, anchors.procedural());
@@ -143,6 +157,30 @@ public class ContextEngine {
         }
         sb.append("## 用户当前在看\n\n");
         sb.append(pageContext.trim()).append("\n\n");
+    }
+
+    private void appendCurrentPostAnalysis(StringBuilder sb, String pageContext) {
+        Long postId = extractCurrentPostId(pageContext);
+        if (postId == null || contentUnderstandingService == null) {
+            return;
+        }
+        try {
+            ContentAnalysis analysis = contentUnderstandingService.getAnalysis(postId);
+            if (analysis == null) {
+                return;
+            }
+            sb.append("## 当前文章\n\n");
+            if (hasText(analysis.summary())) {
+                sb.append("摘要：").append(analysis.summary().trim()).append('\n');
+            }
+            String entities = formatEntities(analysis.entities());
+            if (hasText(entities)) {
+                sb.append("涉及：").append(entities).append('\n');
+            }
+            sb.append('\n');
+        } catch (Exception e) {
+            log.warn("Current post analysis context failed: {}", e.getMessage(), e);
+        }
     }
 
     private void appendSemanticKnowledge(StringBuilder sb, List<String> semantic) {
@@ -323,6 +361,40 @@ public class ContextEngine {
 
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static Long extractCurrentPostId(String pageContext) {
+        if (!hasText(pageContext)) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = currentPostIdMatcher(pageContext, "(?i)postId\\s*[:：=]\\s*(\\d+)");
+        if (matcher == null) {
+            matcher = currentPostIdMatcher(pageContext, "(?i)post_id\\s*[:：=]\\s*(\\d+)");
+        }
+        if (matcher == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static java.util.regex.Matcher currentPostIdMatcher(String pageContext, String pattern) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(pageContext);
+        return matcher.find() ? matcher : null;
+    }
+
+    private static String formatEntities(List<Entity> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return "";
+        }
+        return entities.stream()
+                .filter(entity -> entity != null && hasText(entity.name()))
+                .map(entity -> entity.name().trim())
+                .distinct()
+                .collect(java.util.stream.Collectors.joining("、"));
     }
 
     private static String formatEpisodicTurns(List<AgentTurn> turns) {
