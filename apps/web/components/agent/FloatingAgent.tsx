@@ -4,11 +4,13 @@ import { MessageCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import AgentChatPanel from "@/components/agent/AgentChatPanel";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
+import { useMediaQuery } from "@/lib/hooks/useMediaQuery";
 import { cn } from "@/lib/utils";
 
 export default function FloatingAgent() {
   const { loggedIn } = useAgentChatContext();
   const [open, setOpen] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 767px)");
 
   useEffect(() => {
     if (!open) return;
@@ -19,6 +21,7 @@ export default function FloatingAgent() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  if (isMobile) return null;
   if (!loggedIn) return null;
 
   return (

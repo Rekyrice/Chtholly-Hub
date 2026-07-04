@@ -3,12 +3,12 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import AgentLive2DTypewriter from "@/components/agent/AgentLive2DTypewriter";
+import { ChthollyIllustration, type IllustrationState } from "@/components/site/ChthollyIllustration";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import {
   CHTHOLLY_CHEEK_THINK,
   CHTHOLLY_EXPRESSION,
   CHTHOLLY_PARAM,
-  CHTHOLLY_TEXTURE_FALLBACK,
 } from "@/lib/live2d/constants";
 import { parseLiveStepEvent } from "@/lib/live2d/liveStepEvent";
 import { formatTapLineJa, type ChthollyTapLine } from "@/lib/live2d/tapLines";
@@ -40,7 +40,7 @@ type TapLineSession = {
 /** Live2D 展示区：监听 liveSteps / 流式状态驱动珂朵莉表情与动作 */
 export default function AgentLive2DStage() {
   const { liveSteps, streaming, lastError, busy } = useAgentChatContext();
-  const isDesktop = useMinWidth(992);
+  const isDesktop = useMinWidth(768);
   const live2dRef = useRef<Live2DHandle>(null);
   const stageInnerRef = useRef<HTMLDivElement>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -206,15 +206,23 @@ export default function AgentLive2DStage() {
   }, []);
 
   if (!isDesktop) {
+    const mobileState: IllustrationState = lastError
+      ? "serious"
+      : streaming
+        ? "speaking"
+        : busy
+          ? "thinking"
+          : "calm";
+
     return (
       <div
         className="agent-live2d-stage agent-live2d-stage--mobile"
         data-testid="agent-live2d-stage"
       >
-        <img
-          src={CHTHOLLY_TEXTURE_FALLBACK}
-          alt="珂朵莉"
-          className="agent-live2d-mobile-fallback"
+        <ChthollyIllustration
+          size="sm"
+          state={mobileState}
+          className="agent-live2d-mobile-illustration"
         />
       </div>
     );
