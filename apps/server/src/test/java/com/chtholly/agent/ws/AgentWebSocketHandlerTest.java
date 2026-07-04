@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -31,7 +32,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.timeout;
@@ -70,8 +70,28 @@ class AgentWebSocketHandlerTest {
         objectMapper = new ObjectMapper();
         rateLimiter = new AgentSessionRateLimiter();
         heartbeat = new AgentWebSocketHeartbeat();
-        ObjectProvider<CognitiveEngine> cognitiveProvider = org.mockito.Mockito.mock(ObjectProvider.class);
-        lenient().when(cognitiveProvider.getIfAvailable()).thenReturn(cognitiveEngine);
+        // 不用 mock ObjectProvider：CI 上 mock stub 可能不生效
+        ObjectProvider<CognitiveEngine> cognitiveProvider = new ObjectProvider<>() {
+            @Override
+            public CognitiveEngine getObject() throws BeansException {
+                return cognitiveEngine;
+            }
+
+            @Override
+            public CognitiveEngine getObject(Object... args) throws BeansException {
+                return cognitiveEngine;
+            }
+
+            @Override
+            public CognitiveEngine getIfAvailable() throws BeansException {
+                return cognitiveEngine;
+            }
+
+            @Override
+            public CognitiveEngine getIfUnique() throws BeansException {
+                return cognitiveEngine;
+            }
+        };
         handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
                 agentMetrics, characterStateService, insightService, cognitiveProvider);
     }
