@@ -76,6 +76,7 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/detail/*").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/detail/by-slug/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/*/qa/stream").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/agent/experiences").permitAll()
                         .requestMatchers("/api/v1/agent/ws").permitAll()
                         .requestMatchers(
                                 "/api/v1/auth/send-code",
