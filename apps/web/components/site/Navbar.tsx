@@ -109,7 +109,7 @@ export default function Navbar() {
           <Menu size={22} />
         </button>
 
-        <Link href="/" className="flex items-center gap-2.5 py-2 shrink-0">
+        <Link href="/hub" className="flex items-center gap-2.5 py-2 shrink-0">
           <span className="navbar-brand-icon" aria-hidden="true">
             C
           </span>
