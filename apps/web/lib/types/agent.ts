@@ -14,3 +14,10 @@ export interface ChatMessage {
   /** 是否正在流式输出 */
   streaming?: boolean;
 }
+
+export type AgentExperience = {
+  text: string;
+  valueScore: number;
+  createdAt: string;
+  source: string;
+};

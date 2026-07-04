@@ -13,6 +13,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const isLandingPage = pathname === "/";
   const isAgentWorkspace = pathname.startsWith("/agent");
+  const isChthollyRoom = pathname === "/chtholly";
 
   if (isLandingPage) {
     return <>{children}</>;
@@ -22,7 +23,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
     <div className="site-shell min-h-screen flex flex-col">
       <Navbar />
       <div className="h-[52px]" />
-      {!isAgentWorkspace && <SiteHeader />}
+      {!isAgentWorkspace && !isChthollyRoom && <SiteHeader />}
       <div className={cn("relative", isAgentWorkspace ? "h-[calc(100vh-52px)] min-h-0 overflow-hidden" : "flex-1")}>
         {isAgentWorkspace && <AgentPageBackground />}
         <main
