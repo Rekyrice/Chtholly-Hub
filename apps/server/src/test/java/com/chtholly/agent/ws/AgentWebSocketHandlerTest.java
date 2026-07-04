@@ -6,6 +6,9 @@ import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.agent.memory.AgentTurn;
+import com.chtholly.agent.notification.Notification;
+import com.chtholly.agent.notification.NotificationChannel;
+import com.chtholly.agent.notification.NotificationService;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -59,6 +62,8 @@ class AgentWebSocketHandlerTest {
     private InsightService insightService;
     @Mock
     private CognitiveEngine cognitiveEngine;
+    @Mock
+    private NotificationService notificationService;
 
     private AgentSessionRateLimiter rateLimiter;
     private AgentWebSocketHeartbeat heartbeat;
@@ -93,7 +98,7 @@ class AgentWebSocketHandlerTest {
             }
         };
         handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
-                agentMetrics, characterStateService, insightService, cognitiveProvider);
+                agentMetrics, characterStateService, insightService, cognitiveProvider, notificationService);
     }
 
     @Test
@@ -176,6 +181,35 @@ class AgentWebSocketHandlerTest {
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-c\",\"message\":\"hi\"}"));
 
         verify(characterStateService, timeout(ASYNC_VERIFY_TIMEOUT_MS)).recordInteraction(66L);
+    }
+
+    @Test
+    void pushesPendingProactiveNotificationsAfterConnectionEstablished() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-proactive");
+        when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=t-pro"));
+        when(rawSession.isOpen()).thenReturn(true);
+        when(ticketStore.consume("t-pro")).thenReturn(77L);
+        when(notificationService.getPendingNotifications(77L)).thenReturn(List.of(
+                new Notification(
+                        "missing-you",
+                        "I kept your seat by the window.",
+                        java.time.Instant.parse("2026-07-04T12:00:00Z"),
+                        NotificationChannel.FLOATING)
+        ));
+        List<String> payloads = new ArrayList<>();
+        doAnswer(inv -> {
+            TextMessage msg = inv.getArgument(0);
+            payloads.add(msg.getPayload());
+            return null;
+        }).when(rawSession).sendMessage(any());
+
+        handler.afterConnectionEstablished(rawSession);
+
+        assertThat(payloads)
+                .anySatisfy(payload -> assertThat(payload)
+                        .contains("\"type\":\"proactive\"")
+                        .contains("I kept your seat by the window."));
+        verify(notificationService).registerSession(eq(77L), eq("sess-proactive"), any());
     }
 
     @Test

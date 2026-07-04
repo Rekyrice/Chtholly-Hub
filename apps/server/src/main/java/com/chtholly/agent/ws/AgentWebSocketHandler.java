@@ -8,6 +8,8 @@ import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.agent.memory.AgentTurn;
+import com.chtholly.agent.notification.Notification;
+import com.chtholly.agent.notification.NotificationService;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -55,6 +57,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final CharacterStateService characterStateService;
     private final InsightService insightService;
     private final ObjectProvider<CognitiveEngine> cognitiveEngineProvider;
+    private final NotificationService proactiveNotificationService;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     /** 原始 sessionId -> 线程安全装饰 session（并发 send 串行化）。 */
@@ -78,6 +81,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         safeSessions.put(session.getId(), safe);
         sessionUsers.put(session.getId(), userId);
         sessionConnectedAt.put(session.getId(), System.currentTimeMillis());
+        proactiveNotificationService.registerSession(userId, session.getId(), notification -> sendProactiveNotification(safe, notification));
+        sendPendingProactiveNotifications(userId, safe);
         heartbeat.start(safe);
         agentMetrics.wsConnected();
         log.info("[{}] [AgentWS] Connected: userId={}, sessionId={}", correlationId, userId, session.getId());
@@ -110,6 +115,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         String chatSessionId = sessionChatSessionIds.remove(session.getId());
         reflectOnConversation(userId, chatSessionId);
         triggerCognitiveCycleIfDue();
+        proactiveNotificationService.unregisterSession(userId, session.getId());
         safeSessions.remove(session.getId());
         rateLimiter.removeSession(session.getId());
         heartbeat.stop(session.getId());
@@ -244,6 +250,31 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         String trimmed = value == null ? "" : value.trim();
         if (!trimmed.isEmpty()) {
             lines.add(label + "：" + trimmed);
+        }
+    }
+
+    private void sendPendingProactiveNotifications(Long userId, WebSocketSession session) {
+        for (Notification notification : proactiveNotificationService.getPendingNotifications(userId)) {
+            sendProactiveNotification(session, notification);
+        }
+    }
+
+    private void sendProactiveNotification(WebSocketSession session, Notification notification) {
+        try {
+            if (session.isOpen()) {
+                ObjectNode data = objectMapper.createObjectNode();
+                data.put("type", notification.type());
+                data.put("message", notification.message());
+                if (notification.timestamp() != null) {
+                    data.put("timestamp", notification.timestamp().toString());
+                }
+                if (notification.channel() != null) {
+                    data.put("channel", notification.channel().name());
+                }
+                sendJson(session, "proactive", data);
+            }
+        } catch (Exception e) {
+            log.warn("Send proactive notification failed: {}", e.getMessage(), e);
         }
     }
 
