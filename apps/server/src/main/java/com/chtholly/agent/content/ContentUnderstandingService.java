@@ -104,6 +104,19 @@ public class ContentUnderstandingService {
     }
 
     /**
+     * Returns stored content analysis for a public post slug.
+     *
+     * @param slug post URL slug
+     * @return analysis or null
+     */
+    public ContentAnalysis getAnalysisBySlug(String slug) {
+        if (slug == null || slug.isBlank()) {
+            return null;
+        }
+        return postService.getContentAnalysisBySlug(slug.trim());
+    }
+
+    /**
      * Returns related posts based on shared entities.
      *
      * @param postId source post ID

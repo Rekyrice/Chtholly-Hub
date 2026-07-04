@@ -210,13 +210,33 @@ public class PostServiceImpl implements PostService {
             return null;
         }
         String json = mapper.findContentAnalysisById(postId);
+        return parseContentAnalysisJson(postId, json);
+    }
+
+    /**
+     * Loads stored Agent content understanding for a public post slug.
+     *
+     * @param slug post URL slug.
+     * @return content analysis, or null when absent.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public ContentAnalysis getContentAnalysisBySlug(String slug) {
+        if (slug == null || slug.isBlank()) {
+            return null;
+        }
+        String json = mapper.findContentAnalysisBySlug(slug.trim());
+        return parseContentAnalysisJson(slug, json);
+    }
+
+    private ContentAnalysis parseContentAnalysisJson(Object source, String json) {
         if (json == null || json.isBlank()) {
             return null;
         }
         try {
             return objectMapper.readValue(json, ContentAnalysis.class);
         } catch (Exception e) {
-            log.warn("Post content analysis deserialize failed, postId={}: {}", postId, e.getMessage());
+            log.warn("Post content analysis deserialize failed, source={}: {}", source, e.getMessage());
             return null;
         }
     }

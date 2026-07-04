@@ -22,6 +22,7 @@ export default function AgentWorkspace() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const sessionParam = searchParams.get("session");
+  const contextParam = searchParams.get("context");
   const appliedUrlSessionRef = useRef(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const [panelsHydrated, setPanelsHydrated] = useState(false);
@@ -51,10 +52,15 @@ export default function AgentWorkspace() {
 
   useEffect(() => {
     if (!activeSessionId || sessionParam === activeSessionId) return;
-    router.replace(`/agent?session=${encodeURIComponent(activeSessionId)}`, {
+    const nextParams = new URLSearchParams();
+    nextParams.set("session", activeSessionId);
+    if (contextParam) {
+      nextParams.set("context", contextParam);
+    }
+    router.replace(`/agent?${nextParams.toString()}`, {
       scroll: false,
     });
-  }, [sessionParam, activeSessionId, router]);
+  }, [sessionParam, contextParam, activeSessionId, router]);
 
   if (!loggedIn) {
     return (

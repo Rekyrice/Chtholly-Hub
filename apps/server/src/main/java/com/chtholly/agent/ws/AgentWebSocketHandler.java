@@ -194,6 +194,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         List<String> lines = new ArrayList<>();
         appendTextContext(lines, "页面", context.path("page").asText(""));
         appendTextContext(lines, "标题", context.path("title").asText(""));
+        appendTextContext(lines, "来源", context.path("source").asText(""));
+        appendTextContext(lines, "postSlug", context.path("postSlug").asText(""));
+        appendTextContext(lines, "postId", context.path("postId").asText(""));
         JsonNode tags = context.path("tags");
         if (tags.isArray()) {
             List<String> tagNames = new ArrayList<>();

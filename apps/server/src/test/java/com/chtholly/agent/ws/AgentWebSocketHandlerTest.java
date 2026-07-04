@@ -194,12 +194,14 @@ class AgentWebSocketHandlerTest {
                   "type": "chat",
                   "sessionId": "sess-chat-d",
                   "message": "hi",
-                  "context": {
-                    "page": "/post/frieren-review",
-                    "title": "《芙莉莲》观后感：时间的重量",
-                    "tags": ["芙莉莲", "治愈", "日常系"]
+                    "context": {
+                      "page": "/post/frieren-review",
+                      "title": "《芙莉莲》观后感：时间的重量",
+                      "source": "post:frieren-review",
+                      "postSlug": "frieren-review",
+                      "tags": ["芙莉莲", "治愈", "日常系"]
+                    }
                   }
-                }
                 """));
 
         ArgumentCaptor<String> contextCaptor = ArgumentCaptor.forClass(String.class);
@@ -213,6 +215,8 @@ class AgentWebSocketHandlerTest {
         assertThat(contextCaptor.getValue())
                 .contains("页面：/post/frieren-review")
                 .contains("标题：《芙莉莲》观后感：时间的重量")
+                .contains("来源：post:frieren-review")
+                .contains("postSlug：frieren-review")
                 .contains("标签：芙莉莲、治愈、日常系");
     }
 

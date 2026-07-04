@@ -45,6 +45,8 @@ public interface PostService {
 
     ContentAnalysis getContentAnalysis(Long postId);
 
+    ContentAnalysis getContentAnalysisBySlug(String slug);
+
     /** 详情 ETag：hash(status + layoutVersion + updateTime)。 */
     String computeDetailEtag(long id);
 

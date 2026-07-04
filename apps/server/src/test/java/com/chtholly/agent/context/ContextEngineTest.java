@@ -183,6 +183,30 @@ class ContextEngineTest {
         verify(contentService).getAnalysis(42L);
     }
 
+    @Test
+    void injectsCurrentPostAnalysisWhenPageContextContainsPostSlug() {
+        ContentUnderstandingService contentService = mock(ContentUnderstandingService.class);
+        ContextEngine engine = new ContextEngine(anchorManager, stateService, null, null, contentService);
+        when(contentService.getAnalysisBySlug("frieren-review")).thenReturn(new ContentAnalysis(
+                List.of(new Entity("Frieren", "work", 0.9)),
+                "post slug summary",
+                List.of(),
+                Instant.parse("2026-07-04T08:00:00Z")));
+
+        String prompt = engine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "page: /agent\nsource: post:frieren-review\npostSlug: frieren-review",
+                List.of(),
+                "",
+                "What do you think about this post?");
+
+        assertThat(prompt)
+                .contains("post slug summary")
+                .contains("Frieren");
+        verify(contentService).getAnalysisBySlug("frieren-review");
+    }
+
     @ParameterizedTest
     @CsvSource({
             "0,深夜",

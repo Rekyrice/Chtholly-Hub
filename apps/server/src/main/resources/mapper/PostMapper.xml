@@ -220,6 +220,15 @@
         WHERE id = #{id}
     </select>
 
+    <select id="findContentAnalysisBySlug" resultType="string">
+        SELECT content_analysis
+        FROM posts
+        WHERE slug = #{slug}
+          AND status = 'published'
+          AND visible = 'public'
+        LIMIT 1
+    </select>
+
     <!-- 按创作者过滤的公开 Feed（Phase A 站长专属列表） -->
     <select id="listFeedPublicByCreator" resultType="com.chtholly.post.model.PostFeedRow">
         SELECT

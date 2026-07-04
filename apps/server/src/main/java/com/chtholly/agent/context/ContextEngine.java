@@ -160,12 +160,11 @@ public class ContextEngine {
     }
 
     private void appendCurrentPostAnalysis(StringBuilder sb, String pageContext) {
-        Long postId = extractCurrentPostId(pageContext);
-        if (postId == null || contentUnderstandingService == null) {
+        if (contentUnderstandingService == null) {
             return;
         }
         try {
-            ContentAnalysis analysis = contentUnderstandingService.getAnalysis(postId);
+            ContentAnalysis analysis = loadCurrentPostAnalysis(pageContext);
             if (analysis == null) {
                 return;
             }
@@ -181,6 +180,18 @@ public class ContextEngine {
         } catch (Exception e) {
             log.warn("Current post analysis context failed: {}", e.getMessage(), e);
         }
+    }
+
+    private ContentAnalysis loadCurrentPostAnalysis(String pageContext) {
+        Long postId = extractCurrentPostId(pageContext);
+        if (postId != null) {
+            return contentUnderstandingService.getAnalysis(postId);
+        }
+        String postSlug = extractCurrentPostSlug(pageContext);
+        if (hasText(postSlug)) {
+            return contentUnderstandingService.getAnalysisBySlug(postSlug);
+        }
+        return null;
     }
 
     private void appendSemanticKnowledge(StringBuilder sb, List<String> semantic) {
@@ -384,6 +395,33 @@ public class ContextEngine {
     private static java.util.regex.Matcher currentPostIdMatcher(String pageContext, String pattern) {
         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(pageContext);
         return matcher.find() ? matcher : null;
+    }
+
+    private static String extractCurrentPostSlug(String pageContext) {
+        if (!hasText(pageContext)) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = currentPostIdMatcher(pageContext, "(?i)postSlug\\s*[:：=]\\s*([^\\s\\n]+)");
+        if (matcher != null) {
+            return cleanContextSlug(matcher.group(1));
+        }
+        matcher = currentPostIdMatcher(pageContext, "(?i)source\\s*[:：=]\\s*post:([^\\s\\n]+)");
+        if (matcher != null) {
+            return cleanContextSlug(matcher.group(1));
+        }
+        return null;
+    }
+
+    private static String cleanContextSlug(String value) {
+        if (value == null) {
+            return null;
+        }
+        String cleaned = value.trim();
+        int queryIndex = cleaned.indexOf('?');
+        if (queryIndex >= 0) {
+            cleaned = cleaned.substring(0, queryIndex);
+        }
+        return cleaned.isBlank() ? null : cleaned;
     }
 
     private static String formatEntities(List<Entity> entities) {

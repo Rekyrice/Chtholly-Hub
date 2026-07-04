@@ -111,6 +111,18 @@ class ContentUnderstandingServiceTest {
         assertThat(related.getFirst().sharedEntities()).containsExactlyInAnyOrder("芙莉莲", "时间");
     }
 
+    @Test
+    void getAnalysisBySlugDelegatesToPostService() {
+        ContentAnalysis analysis = new ContentAnalysis(
+                List.of(new Entity("Frieren", "work", 0.9)),
+                "post slug summary",
+                List.of(),
+                Instant.parse("2026-07-04T08:00:00Z"));
+        when(postService.getContentAnalysisBySlug("frieren-review")).thenReturn(analysis);
+
+        assertThat(service.getAnalysisBySlug("frieren-review")).isSameAs(analysis);
+    }
+
     private void mockRelatedSearch(Hit<Map<String, Object>> hit) throws Exception {
         @SuppressWarnings("unchecked")
         SearchResponse<Map<String, Object>> response = mock(SearchResponse.class);

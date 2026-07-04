@@ -460,7 +460,13 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       const context = {
         page: window.location.pathname,
         title: document.title,
+        source: new URLSearchParams(window.location.search).get("context") ?? undefined,
       };
+      const source = context.source;
+      const postSlug = source?.startsWith("post:") ? source.slice("post:".length) : undefined;
+      if (postSlug) {
+        Object.assign(context, { postSlug });
+      }
       ws.send(JSON.stringify({ type: "chat", sessionId, message: trimmed, context }));
     },
     [attachWsHandlers, busy, connect, loggedIn],

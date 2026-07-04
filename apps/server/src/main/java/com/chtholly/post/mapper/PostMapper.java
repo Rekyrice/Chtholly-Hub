@@ -113,4 +113,7 @@ public interface PostMapper {
 
     /** Fetch stored Agent content understanding JSON for a post. */
     String findContentAnalysisById(@Param("id") Long id);
+
+    /** Fetch stored Agent content understanding JSON by public post slug. */
+    String findContentAnalysisBySlug(@Param("slug") String slug);
 }
