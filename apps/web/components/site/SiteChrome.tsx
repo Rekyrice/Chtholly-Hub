@@ -30,7 +30,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
         {isAgentWorkspace && <AgentPageBackground />}
         <main
           className={cn(
-            "relative z-10",
+            "main-content relative z-10",
             isAgentWorkspace
               ? "flex h-full min-h-0 flex-col overflow-hidden py-0 px-0"
               : isWritePage

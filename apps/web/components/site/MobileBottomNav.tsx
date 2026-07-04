@@ -15,6 +15,36 @@ const navItems = [
   { href: "/write", label: "Write", icon: Pen },
 ] as const;
 
+function NavUserAvatar({ user, size = 24 }: { user: AuthUser | null; size?: number }) {
+  if (user?.avatar) {
+    return (
+      <img
+        src={user.avatar}
+        alt=""
+        width={size}
+        height={size}
+        className="mobile-bottom-nav__avatar"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (user) {
+    const initial = (user.nickname?.[0] ?? user.phone?.slice(-1) ?? "?").toUpperCase();
+    return (
+      <span
+        className="mobile-bottom-nav__avatar mobile-bottom-nav__avatar--initial"
+        style={{ width: size, height: size, fontSize: size * 0.45 }}
+        aria-hidden="true"
+      >
+        {initial}
+      </span>
+    );
+  }
+
+  return <User size={size} strokeWidth={2} aria-hidden="true" />;
+}
+
 export default function MobileBottomNav() {
   const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -30,11 +60,10 @@ export default function MobileBottomNav() {
     return () => window.removeEventListener("chtholly-auth-change", syncUser);
   }, [syncUser]);
 
-  const profileHref = user?.handle ? `/user/${user.handle}` : "/login";
-  const profileActive = pathname.startsWith("/user") || pathname.startsWith("/login");
+  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
 
   return (
-    <nav className="mobile-bottom-nav md:hidden" aria-label="Mobile bottom navigation">
+    <nav className="mobile-bottom-nav md:hidden" aria-label="Mobile navigation">
       {navItems.map((item) => {
         const Icon = item.icon;
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -51,12 +80,12 @@ export default function MobileBottomNav() {
         );
       })}
       <Link
-        href={profileHref}
-        className={cn("mobile-bottom-nav__item", profileActive && "mobile-bottom-nav__item--active")}
-        aria-current={profileActive ? "page" : undefined}
+        href="/settings"
+        className={cn("mobile-bottom-nav__item", settingsActive && "mobile-bottom-nav__item--active")}
+        aria-label="Settings"
+        aria-current={settingsActive ? "page" : undefined}
       >
-        <User size={20} strokeWidth={2} aria-hidden="true" />
-        <span>Me</span>
+        <NavUserAvatar user={user} size={24} />
       </Link>
     </nav>
   );
