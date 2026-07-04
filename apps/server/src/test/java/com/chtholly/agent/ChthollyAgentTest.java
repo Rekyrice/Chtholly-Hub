@@ -3,6 +3,7 @@ package com.chtholly.agent;
 import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.context.ContextEngine;
 import com.chtholly.agent.observability.AgentMetrics;
+import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,8 @@ class ChthollyAgentTest {
     private CharacterSoulService characterSoulService;
     @Mock
     private ContextEngine contextEngine;
+    @Mock
+    private TracePersistenceService tracePersistenceService;
     private ChthollyAgent agent;
     private List<AgentEvent> events;
 
@@ -67,7 +70,7 @@ class ChthollyAgentTest {
                 anyString()
         )).thenReturn("## ContextEngine Prompt");
         agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(mockTool()), jsonExtractor,
-                agentMetrics, characterSoulService, contextEngine);
+                agentMetrics, characterSoulService, contextEngine, tracePersistenceService);
         events = new ArrayList<>();
     }
 
@@ -140,7 +143,7 @@ class ChthollyAgentTest {
             }
         };
         agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(failingTool), jsonExtractor,
-                agentMetrics, characterSoulService, contextEngine);
+                agentMetrics, characterSoulService, contextEngine, tracePersistenceService);
 
         AtomicInteger llmCalls = new AtomicInteger();
         when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
