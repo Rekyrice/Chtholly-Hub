@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import ChthollyIllustration from "@/components/site/ChthollyIllustration";
 import { Button } from "@/components/ui/Button";
 import { isLoggedIn } from "@/lib/auth/tokens";
 import { commentService } from "@/lib/services/commentService";
@@ -79,16 +80,27 @@ function CommentBubble({
   onReply?: () => void;
   canReply?: boolean;
 }) {
+  const isChtholly = comment.chtholly;
+
   return (
-    <div className={cn(isReply && "ml-8 mt-3 pt-3 border-t border-border")}>
-      <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="text-sm font-medium text-text">{comment.authorNickname}</span>
-        <span className="text-xs text-text-secondary">{formatDate(comment.createdAt)}</span>
+    <div
+      className={cn(
+        isReply && "ml-8 mt-3 pt-3 border-t border-border",
+        isChtholly && "comment-chtholly",
+      )}
+    >
+      <div className="comment-header flex items-center gap-2 flex-wrap">
+        {isChtholly && <ChthollyIllustration size="xs" state="calm" />}
+        <span className="comment-author text-sm font-medium text-text">
+          {isChtholly ? "珂朵莉" : comment.authorNickname}
+        </span>
+        {isChtholly && <span className="comment-badge">珂朵莉的想法</span>}
+        <span className="comment-time text-xs text-text-secondary">{formatDate(comment.createdAt)}</span>
       </div>
-      <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-text-secondary">
+      <p className="comment-text mt-1 text-sm leading-relaxed whitespace-pre-wrap text-text-secondary">
         {comment.content}
       </p>
-      {canReply && onReply && (
+      {canReply && onReply && !isChtholly && (
         <button
           type="button"
           onClick={onReply}

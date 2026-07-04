@@ -7,6 +7,7 @@ export type CommentItem = {
   authorAvatar: string | null;
   content: string;
   createdAt: string;
+  chtholly: boolean;
   replies: CommentItem[];
 };
 
