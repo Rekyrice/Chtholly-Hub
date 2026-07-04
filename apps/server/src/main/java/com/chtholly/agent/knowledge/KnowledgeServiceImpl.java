@@ -7,6 +7,7 @@ import com.chtholly.bangumi.model.BangumiSubjectRow;
 import com.chtholly.bangumi.service.BangumiService;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
@@ -42,14 +43,23 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     private final ResourcePatternResolver resourceResolver;
     private final ObjectProvider<ElasticsearchClient> esClientProvider;
     private final ObjectProvider<BangumiService> bangumiServiceProvider;
+    private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
     private final List<KnowledgeChunk> chunks = new ArrayList<>();
 
     public KnowledgeServiceImpl(ResourcePatternResolver resourceResolver,
                                 ObjectProvider<ElasticsearchClient> esClientProvider,
-                                ObjectProvider<BangumiService> bangumiServiceProvider) {
+                                ObjectProvider<BangumiService> bangumiServiceProvider,
+                                ObjectProvider<EmbeddingModel> embeddingModelProvider) {
         this.resourceResolver = resourceResolver;
         this.esClientProvider = esClientProvider;
         this.bangumiServiceProvider = bangumiServiceProvider;
+        this.embeddingModelProvider = embeddingModelProvider;
+    }
+
+    KnowledgeServiceImpl(ResourcePatternResolver resourceResolver,
+                         ObjectProvider<ElasticsearchClient> esClientProvider,
+                         ObjectProvider<BangumiService> bangumiServiceProvider) {
+        this(resourceResolver, esClientProvider, bangumiServiceProvider, null);
     }
 
     /**
@@ -196,6 +206,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         if (esClient == null || loaded.isEmpty()) {
             return;
         }
+        EmbeddingModel embeddingModel = embeddingModelProvider == null ? null : embeddingModelProvider.getIfAvailable();
         try {
             boolean exists = esClient.indices().exists(request -> request.index(INDEX_NAME)).value();
             if (!exists) {
@@ -208,6 +219,10 @@ public class KnowledgeServiceImpl implements KnowledgeService {
                 document.put("title", chunk.title());
                 document.put("chunkIndex", chunk.index());
                 document.put("text", chunk.text());
+                List<Float> embedding = embedChunk(embeddingModel, chunk.text());
+                if (!embedding.isEmpty()) {
+                    document.put("embedding", embedding);
+                }
                 esClient.index(request -> request.index(INDEX_NAME).id(chunk.id()).document(document));
             }
         } catch (Exception e) {
@@ -231,6 +246,26 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             parts.add(truncate(row.getSummary(), 140));
         }
         return String.join("；", parts);
+    }
+
+    private List<Float> embedChunk(EmbeddingModel embeddingModel, String text) {
+        if (embeddingModel == null || !StringUtils.hasText(text)) {
+            return List.of();
+        }
+        try {
+            float[] vector = embeddingModel.embed(text);
+            if (vector == null || vector.length == 0) {
+                return List.of();
+            }
+            List<Float> values = new ArrayList<>(vector.length);
+            for (float value : vector) {
+                values.add(value);
+            }
+            return values;
+        } catch (Exception e) {
+            log.warn("Failed to embed Chtholly knowledge chunk: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     private static Set<String> queryTerms(String query) {
