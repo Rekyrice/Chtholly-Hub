@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import ChthollyIllustration from "@/components/site/ChthollyIllustration";
+import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import { Button } from "@/components/ui/Button";
 import { isLoggedIn } from "@/lib/auth/tokens";
 import { commentService } from "@/lib/services/commentService";
