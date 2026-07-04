@@ -42,6 +42,9 @@
   --color-warn-text: var(--color-sunset);
   --color-avatar-ring: color-mix(in srgb, var(--color-sky) 15%, var(--color-surface));
   --color-unread-bg: color-mix(in srgb, var(--color-sky) 6%, var(--color-surface));
+  --bg-card: var(--color-surface);
+  --border-subtle: var(--color-border);
+  --color-primary: var(--color-sky);
 
   /* 卡片与留白（間） */
   --card-shadow: color-mix(in srgb, var(--color-sky) 8%, transparent);
@@ -3020,6 +3023,104 @@
     border-radius: 2px;
   }
 
+  .article-detail-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 720px);
+    gap: 32px;
+    justify-content: center;
+    align-items: start;
+  }
+
+  .article-main {
+    width: 100%;
+    max-width: 720px;
+    min-width: 0;
+  }
+
+  .article-sidebar {
+    display: none;
+  }
+
+  .article-sidebar-text {
+    margin: 12px 0 0;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    color: var(--color-text-secondary);
+    font-style: italic;
+  }
+
+  .article-sidebar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    margin-top: 18px;
+    padding: 8px 20px;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 48%, var(--border-subtle));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    color: var(--color-primary);
+    font-size: 0.9rem;
+    line-height: 1.4;
+    text-decoration: none;
+    transition:
+      background 0.2s ease,
+      color 0.2s ease,
+      transform 0.2s ease;
+  }
+
+  .article-sidebar-btn:hover {
+    background: var(--color-primary);
+    color: white;
+    transform: translateY(-1px);
+  }
+
+  .article-ask-chtholly {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 48px;
+    padding: 24px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    background: var(--bg-card);
+    box-shadow: 0 10px 32px color-mix(in srgb, var(--color-text) 7%, transparent);
+  }
+
+  .article-ask-content {
+    min-width: 0;
+  }
+
+  .article-ask-content p {
+    margin: 0 0 12px;
+    color: var(--color-text);
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+
+  .article-ask-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 8px 20px;
+    border-radius: 8px;
+    background: var(--color-primary);
+    color: white;
+    text-decoration: none;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    transition:
+      opacity 0.2s ease,
+      transform 0.2s ease;
+  }
+
+  .article-ask-btn:hover {
+    color: white;
+    opacity: 0.85;
+    transform: translateY(-1px);
+  }
+
   .search-page-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -3078,6 +3179,20 @@
   }
 
   @media (min-width: 1024px) {
+    .article-detail-layout {
+      grid-template-columns: minmax(0, 720px) 240px;
+      gap: 40px;
+    }
+
+    .article-sidebar {
+      position: sticky;
+      top: 100px;
+      display: block;
+      min-width: 0;
+      padding: 24px;
+      text-align: center;
+    }
+
     .search-page-layout {
       grid-template-columns: minmax(0, 1fr) 300px;
     }
@@ -3275,6 +3390,41 @@
   }
 
   @media (max-width: 640px) {
+    .article-ask-chtholly {
+      align-items: flex-start;
+      margin-top: 32px;
+      padding: 0 16px;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .article-ask-chtholly .chtholly-illustration {
+      display: none;
+    }
+
+    .article-ask-content p {
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+    }
+
+    .article-ask-btn {
+      min-height: auto;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--color-primary);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .article-ask-btn:hover {
+      color: var(--color-primary);
+      opacity: 0.85;
+      transform: none;
+    }
+
     .entry-header {
       padding: 18px 16px;
     }

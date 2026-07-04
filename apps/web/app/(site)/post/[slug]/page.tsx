@@ -4,9 +4,14 @@ import { notFound } from "next/navigation";
 import { Clock, Heart, Tag } from "lucide-react";
 import MarkdownContent from "@/components/site/MarkdownContent";
 import CommentSection from "@/components/site/CommentSection";
-import Sidebar from "@/components/site/Sidebar";
+import {
+  ChthollyIllustration,
+  type ChthollyIllustrationProps,
+  type IllustrationState,
+} from "@/components/site/ChthollyIllustration";
 import { Badge } from "@/components/ui/Badge";
 import { postService } from "@/lib/services/postService";
+import type { PostDetailResponse } from "@/lib/types/post";
 import { formatDate } from "@/lib/utils";
 
 interface Props {
@@ -14,6 +19,8 @@ interface Props {
 }
 
 export const revalidate = 60;
+
+type ArticleKind = "technical" | "reflection" | "default";
 
 export async function generateMetadata({ params }: Props) {
   const { slug } = await params;
@@ -31,7 +38,7 @@ export async function generateMetadata({ params }: Props) {
 export default async function PostPage({ params }: Props) {
   const { slug } = await params;
 
-  let post;
+  let post: PostDetailResponse;
   try {
     post = await postService.detailBySlug(slug);
   } catch {
@@ -50,10 +57,14 @@ export default async function PostPage({ params }: Props) {
   }
 
   const cover = post.images?.[0];
+  const readingState = getArticleReadingState(post);
+  const readingComment = getReadingComment(post);
+  const timeOfDay = getCurrentTimeOfDay();
+  const askHref = `/agent?context=${encodeURIComponent(`post:${post.slug}`)}`;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 lg:items-start">
-      <div>
+    <div className="article-detail-layout">
+      <main className="article-main">
         <article className="post-card">
           {cover && (
             <div className="post-card-image">
@@ -109,10 +120,109 @@ export default async function PostPage({ params }: Props) {
               </div>
             </div>
           )}
+
         </article>
+        <div className="article-ask-chtholly">
+          <ChthollyIllustration size="xs" state="curious" />
+          <div className="article-ask-content">
+            <p>对这篇文章有什么想法？</p>
+            <Link href={askHref} className="article-ask-btn">
+              问珂朵莉
+            </Link>
+          </div>
+        </div>
         <CommentSection postId={post.id} />
-      </div>
-      <Sidebar />
+      </main>
+
+      <aside className="article-sidebar" aria-label="问珂朵莉关于这篇文章">
+        <ChthollyIllustration
+          size="sm"
+          state={readingState}
+          mood={0}
+          timeOfDay={timeOfDay}
+        />
+        <p className="article-sidebar-text">{readingComment}</p>
+        <Link href={askHref} className="article-sidebar-btn">
+          问珂朵莉
+        </Link>
+      </aside>
     </div>
   );
+}
+
+function getArticleReadingState(post: PostDetailResponse): IllustrationState {
+  const kind = getArticleKind(post);
+  if (kind === "technical") return "serious";
+  if (kind === "reflection") return "thinking";
+  return "calm";
+}
+
+function getReadingComment(post: PostDetailResponse) {
+  const kind = getArticleKind(post);
+  if (kind === "technical") return "看起来很认真呢……我 quietly 在旁边陪着。";
+  if (kind === "reflection") return "原来你也在想这些啊。";
+  return "慢慢看，不着急。";
+}
+
+function getArticleKind(post: PostDetailResponse): ArticleKind {
+  const text = [
+    post.title,
+    post.description,
+    post.type,
+    ...(post.tags ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    includesAny(text, [
+      "技术",
+      "编程",
+      "开发",
+      "后端",
+      "前端",
+      "架构",
+      "java",
+      "spring",
+      "react",
+      "next",
+      "typescript",
+      "redis",
+      "mysql",
+      "elasticsearch",
+    ])
+  ) {
+    return "technical";
+  }
+
+  if (
+    includesAny(text, [
+      "观后感",
+      "杂谈",
+      "随便聊聊",
+      "动画",
+      "动漫",
+      "番剧",
+      "治愈",
+      "日常",
+      "感想",
+    ])
+  ) {
+    return "reflection";
+  }
+
+  return "default";
+}
+
+function includesAny(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function getCurrentTimeOfDay(): ChthollyIllustrationProps["timeOfDay"] {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 18) return "afternoon";
+  if (hour >= 18 && hour < 21) return "evening";
+  if (hour >= 21 || hour < 1) return "night";
+  return "late-night";
 }

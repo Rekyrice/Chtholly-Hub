@@ -11,10 +11,13 @@ export type IllustrationState =
   | "reading"
   | "bored"
   | "greeting"
-  | "away";
+  | "away"
+  | "serious"
+  | "thinking"
+  | "calm";
 
 export type ChthollyIllustrationProps = {
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
   className?: string;
   mood?: number;
   timeOfDay?: "morning" | "afternoon" | "evening" | "night" | "late-night";
@@ -31,9 +34,13 @@ export const ILLUSTRATION_MAP: Record<IllustrationState, string> = {
   bored: "/images/illustrations/bored.png",
   greeting: "/images/illustrations/greeting.png",
   away: "/images/illustrations/away.png",
+  serious: "/images/illustrations/reading.png",
+  thinking: "/images/illustrations/curious.png",
+  calm: "/images/illustrations/default.png",
 };
 
 const IMAGE_SIZE = {
+  xs: { width: 84, height: 112, className: "h-28 w-auto" },
   sm: { width: 120, height: 160, className: "h-40 w-auto" },
   md: { width: 200, height: 280, className: "h-60 w-auto" },
   lg: { width: 300, height: 400, className: "h-80 w-auto" },
