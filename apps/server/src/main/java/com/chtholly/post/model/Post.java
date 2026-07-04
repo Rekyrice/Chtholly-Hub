@@ -35,4 +35,6 @@ public class Post {
     private Instant createTime;
     private Instant updateTime;
     private Instant publishTime;
+    private String contentAnalysis;
+    private Instant contentAnalyzedAt;
 }

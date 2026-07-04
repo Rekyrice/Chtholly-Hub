@@ -1,7 +1,9 @@
 package com.chtholly.post.service;
 
+import com.chtholly.agent.content.ContentAnalysis;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.api.dto.PostSummary;
+import com.chtholly.post.model.Post;
 
 import java.time.Duration;
 import java.util.List;
@@ -36,6 +38,12 @@ public interface PostService {
     List<PostSummary> getRecentPosts(Duration window);
 
     long countSince(Duration window);
+
+    List<Post> getPostsNeedingUnderstanding();
+
+    void saveContentAnalysis(Long postId, ContentAnalysis analysis);
+
+    ContentAnalysis getContentAnalysis(Long postId);
 
     /** 详情 ETag：hash(status + layoutVersion + updateTime)。 */
     String computeDetailEtag(long id);

@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS posts (
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     publish_time TIMESTAMP NULL DEFAULT NULL,
+    content_analysis JSON NULL COMMENT 'Agent content understanding result',
+    content_analyzed_at DATETIME(3) NULL COMMENT 'Last Agent content understanding time',
     PRIMARY KEY (id),
     KEY ix_posts_creator_ct (creator_id, create_time),
     KEY ix_posts_status_ct (status, create_time),

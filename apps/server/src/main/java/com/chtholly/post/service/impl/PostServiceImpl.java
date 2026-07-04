@@ -1,5 +1,6 @@
 package com.chtholly.post.service.impl;
 
+import com.chtholly.agent.content.ContentAnalysis;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.post.event.PostPublishedEvent;
@@ -161,6 +162,63 @@ public class PostServiceImpl implements PostService {
                 ? Duration.ofDays(3)
                 : window;
         return mapper.countPublicSince(Instant.now().minus(safeWindow));
+    }
+
+    /**
+     * Loads public posts whose Agent content understanding is missing or stale.
+     *
+     * @return posts to analyze in the scheduled understanding job.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<Post> getPostsNeedingUnderstanding() {
+        return mapper.listPostsNeedingUnderstanding(20);
+    }
+
+    /**
+     * Stores Agent content understanding JSON on the post row.
+     *
+     * @param postId   post ID.
+     * @param analysis content understanding result.
+     */
+    @Override
+    @Transactional
+    public void saveContentAnalysis(Long postId, ContentAnalysis analysis) {
+        if (postId == null || analysis == null) {
+            return;
+        }
+        try {
+            mapper.updateContentAnalysis(
+                    postId,
+                    objectMapper.writeValueAsString(analysis),
+                    analysis.analyzedAt() == null ? Instant.now() : analysis.analyzedAt());
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "内容理解结果序列化失败");
+        }
+    }
+
+    /**
+     * Loads stored Agent content understanding for a post.
+     *
+     * @param postId post ID.
+     * @return content analysis, or null when absent.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public ContentAnalysis getContentAnalysis(Long postId) {
+        if (postId == null) {
+            return null;
+        }
+        String json = mapper.findContentAnalysisById(postId);
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, ContentAnalysis.class);
+        } catch (Exception e) {
+            log.warn("Post content analysis deserialize failed, postId={}: {}", postId, e.getMessage());
+            return null;
+        }
     }
 
     /**

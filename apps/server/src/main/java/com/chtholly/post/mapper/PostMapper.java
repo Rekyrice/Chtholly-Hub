@@ -102,4 +102,15 @@ public interface PostMapper {
 
     /** Count public posts after a timestamp for community quietness checks. */
     long countPublicSince(@Param("since") Instant since);
+
+    /** Published public posts whose content understanding is missing or stale. */
+    List<Post> listPostsNeedingUnderstanding(@Param("limit") int limit);
+
+    /** Persist Agent content understanding JSON for a post. */
+    int updateContentAnalysis(@Param("id") Long id,
+                              @Param("contentAnalysis") String contentAnalysis,
+                              @Param("analyzedAt") Instant analyzedAt);
+
+    /** Fetch stored Agent content understanding JSON for a post. */
+    String findContentAnalysisById(@Param("id") Long id);
 }

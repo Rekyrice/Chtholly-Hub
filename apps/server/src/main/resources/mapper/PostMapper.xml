@@ -8,6 +8,7 @@
         <result property="tags" column="tags" />
         <result property="title" column="title" />
         <result property="slug" column="slug" />
+        <result property="description" column="description" />
         <result property="contentUrl" column="content_url" />
         <result property="contentObjectKey" column="content_object_key" />
         <result property="contentEtag" column="content_etag" />
@@ -23,6 +24,8 @@
         <result property="createTime" column="create_time" />
         <result property="updateTime" column="update_time" />
         <result property="publishTime" column="publish_time" />
+        <result property="contentAnalysis" column="content_analysis" />
+        <result property="contentAnalyzedAt" column="content_analyzed_at" />
     </resultMap>
 
     <insert id="insertDraft" parameterType="com.chtholly.post.model.Post">
@@ -188,6 +191,33 @@
         WHERE status = 'published'
           AND visible = 'public'
           AND publish_time &gt;= #{since}
+    </select>
+
+    <select id="listPostsNeedingUnderstanding" resultMap="PostResultMap">
+        SELECT *
+        FROM posts
+        WHERE status = 'published'
+          AND visible = 'public'
+          AND (
+              content_analysis IS NULL
+              OR content_analyzed_at IS NULL
+              OR update_time &gt; content_analyzed_at
+          )
+        ORDER BY update_time ASC, id ASC
+        LIMIT #{limit}
+    </select>
+
+    <update id="updateContentAnalysis">
+        UPDATE posts
+        SET content_analysis = #{contentAnalysis},
+            content_analyzed_at = #{analyzedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findContentAnalysisById" resultType="string">
+        SELECT content_analysis
+        FROM posts
+        WHERE id = #{id}
     </select>
 
     <!-- 按创作者过滤的公开 Feed（Phase A 站长专属列表） -->

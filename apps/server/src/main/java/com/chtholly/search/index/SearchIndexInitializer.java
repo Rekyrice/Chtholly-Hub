@@ -79,6 +79,14 @@ public class SearchIndexInitializer {
                 .properties("img_urls", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("is_top", Property.of(p -> p.boolean_(b -> b)))
                 .properties("title_suggest", Property.of(p -> p.completion(CompletionProperty.of(b -> b))))
-        );
+                .properties("contentAnalysis", Property.of(p -> p.object(o -> o
+                        .properties("entities", Property.of(ep -> ep.nested(n -> n
+                                .properties("name", Property.of(np -> np.keyword(KeywordProperty.of(b -> b))))
+                                .properties("category", Property.of(cp -> cp.keyword(KeywordProperty.of(b -> b))))
+                                .properties("confidence", Property.of(fp -> fp.float_(b -> b))))))
+                        .properties("summary", Property.of(sp -> sp.text(TextProperty.of(b -> b.analyzer(bodyAnalyzer)))))
+                        .properties("relatedPostIds", Property.of(rp -> rp.long_(LongNumberProperty.of(b -> b))))
+                        .properties("analyzedAt", Property.of(ap -> ap.date(DateProperty.of(b -> b))))))
+        ));
     }
 }
