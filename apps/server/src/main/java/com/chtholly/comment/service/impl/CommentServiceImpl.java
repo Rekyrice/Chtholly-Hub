@@ -157,7 +157,7 @@ public class CommentServiceImpl implements CommentService {
         }
 
         long id = idGen.nextId();
-        commentMapper.insert(id, postId, parentId, userId, content);
+        commentMapper.insert(id, postId, parentId, userId, content, false);
         CommentRow row = commentMapper.findById(id);
         Post post = postMapper.findById(postId);
         eventPublisher.publishEvent(new CommentCreatedEvent(
@@ -286,6 +286,7 @@ public class CommentServiceImpl implements CommentService {
                 row.getAuthorAvatar(),
                 content,
                 row.getCreatedAt(),
+                Boolean.TRUE.equals(row.getIsChtholly()),
                 replies
         );
     }

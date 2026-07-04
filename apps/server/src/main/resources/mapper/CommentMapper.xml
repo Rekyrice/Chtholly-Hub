@@ -11,6 +11,7 @@
             c.parent_id AS parentId,
             c.user_id AS userId,
             c.content,
+            c.is_chtholly AS isChtholly,
             c.created_at AS createdAt,
             c.deleted_at AS deletedAt,
             c.updated_at AS updatedAt,
@@ -54,9 +55,46 @@
     </select>
 
     <insert id="insert">
-        INSERT INTO comments (id, post_id, parent_id, user_id, content)
-        VALUES (#{id}, #{postId}, #{parentId}, #{userId}, #{content})
+        INSERT INTO comments (id, post_id, parent_id, user_id, content, is_chtholly)
+        VALUES (#{id}, #{postId}, #{parentId}, #{userId}, #{content}, #{isChtholly})
     </insert>
+
+    <select id="countChthollyCommentsSince" resultType="long">
+        SELECT COUNT(1)
+        FROM comments
+        WHERE is_chtholly = 1
+          AND deleted_at IS NULL
+          AND created_at &gt;= #{since}
+    </select>
+
+    <select id="listRecentPublicWithoutChthollyComment" resultType="com.chtholly.post.model.PostFeedRow">
+        SELECT
+            p.id,
+            p.title,
+            p.slug,
+            p.description,
+            p.tags,
+            p.img_urls AS imgUrls,
+            u.avatar AS authorAvatar,
+            u.nickname AS authorNickname,
+            u.tags_json AS authorTagJson,
+            p.publish_time AS publishTime,
+            p.is_top AS isTop
+        FROM posts p
+        JOIN users u ON p.creator_id = u.id
+        WHERE p.status = 'published'
+          AND p.visible = 'public'
+          AND p.publish_time &gt;= #{since}
+          AND NOT EXISTS (
+              SELECT 1
+              FROM comments c
+              WHERE c.post_id = p.id
+                AND c.is_chtholly = 1
+                AND c.deleted_at IS NULL
+          )
+        ORDER BY p.publish_time DESC
+        LIMIT #{limit}
+    </select>
 
     <select id="countRootByPostId" resultType="long">
         SELECT COUNT(1)

@@ -26,7 +26,16 @@ public interface CommentMapper {
                @Param("postId") long postId,
                @Param("parentId") Long parentId,
                @Param("userId") long userId,
-               @Param("content") String content);
+               @Param("content") String content,
+               @Param("isChtholly") boolean isChtholly);
+
+    /** 今日珂朵莉评论数（UTC 日界）。 */
+    long countChthollyCommentsSince(@Param("since") java.time.Instant since);
+
+    /** 近期公开帖中尚无珂朵莉评论的候选。 */
+    List<com.chtholly.post.model.PostFeedRow> listRecentPublicWithoutChthollyComment(
+            @Param("since") java.time.Instant since,
+            @Param("limit") int limit);
 
     /** 顶层评论总数（未软删除，用于分页）。 */
     long countRootByPostId(@Param("postId") long postId);

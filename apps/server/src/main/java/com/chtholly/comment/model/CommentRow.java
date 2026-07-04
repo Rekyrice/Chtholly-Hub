@@ -17,4 +17,6 @@ public class CommentRow {
     private String authorAvatar;
     private Instant deletedAt;
     private Instant updatedAt;
+    /** 珂朵莉 AI 生成的评论。 */
+    private Boolean isChtholly;
 }

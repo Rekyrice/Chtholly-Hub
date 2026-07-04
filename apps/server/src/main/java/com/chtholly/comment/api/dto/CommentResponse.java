@@ -16,5 +16,6 @@ public record CommentResponse(
         @Schema(description = "作者头像") String authorAvatar,
         @Schema(description = "评论内容") String content,
         @Schema(description = "创建时间") Instant createdAt,
+        @Schema(description = "珂朵莉 AI 评论") boolean chtholly,
         @Schema(description = "子回复列表") List<CommentResponse> replies
 ) {}

@@ -107,7 +107,7 @@ class CommentServiceImplTest {
 
         CommentResponse response = service.create(1L, 9L, new CreateCommentRequest("hello", null));
 
-        verify(commentMapper).insert(500L, 1L, null, 9L, "hello");
+        verify(commentMapper).insert(500L, 1L, null, 9L, "hello", false);
         assertThat(response.postId()).isEqualTo("1");
         assertThat(response.parentId()).isNull();
     }
@@ -124,7 +124,7 @@ class CommentServiceImplTest {
 
         CommentResponse response = service.create(1L, 9L, new CreateCommentRequest("reply", "100"));
 
-        verify(commentMapper).insert(501L, 1L, 100L, 9L, "reply");
+        verify(commentMapper).insert(501L, 1L, 100L, 9L, "reply", false);
         assertThat(response.parentId()).isEqualTo("100");
     }
 
