@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +12,25 @@ import { storageService } from "@/lib/services/storageService";
 import { cn } from "@/lib/utils";
 import { sha256Hex } from "@/lib/utils/sha256";
 
+const PLACEHOLDERS = [
+  "想写点什么呢……慢慢来，不着急。",
+  "把想说的话写下来吧，我会安静地陪着你的。",
+  "今天是想记录些什么吗？",
+  "写给自己看的东西，不用太在意格式。",
+  "有些想法，写下来就不会忘记了呢。",
+];
+
+const DRAFT_KEY = "chtholly-write-draft";
+
+type SaveStatus = "saved" | "saving" | "unsaved";
+
+type WriteDraft = {
+  title: string;
+  tags: string;
+  description: string;
+  markdown: string;
+};
+
 export default function WritePage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -21,12 +40,59 @@ export default function WritePage() {
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const [draftHydrated, setDraftHydrated] = useState(false);
+
+  const draft = useMemo<WriteDraft>(
+    () => ({ title, tags, description, markdown }),
+    [title, tags, description, markdown],
+  );
 
   useEffect(() => {
     if (!getAccessToken()) {
       router.replace("/login");
     }
   }, [router]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as Partial<WriteDraft>;
+        setTitle(saved.title ?? "");
+        setTags(saved.tags ?? "");
+        setDescription(saved.description ?? "");
+        setMarkdown(saved.markdown ?? "");
+      }
+    } catch {
+      // 本地草稿损坏时直接忽略，避免影响写作入口。
+    } finally {
+      setDraftHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setPlaceholderIndex((prev) => (prev + 1) % PLACEHOLDERS.length);
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!draftHydrated) return undefined;
+    setSaveStatus("unsaved");
+    const timer = window.setTimeout(() => {
+      setSaveStatus("saving");
+      try {
+        window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        window.setTimeout(() => setSaveStatus("saved"), 180);
+      } catch {
+        setSaveStatus("unsaved");
+      }
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [draft, draftHydrated]);
 
   const onPublish = async (e: FormEvent) => {
     e.preventDefault();
@@ -65,7 +131,9 @@ export default function WritePage() {
         visible: "public",
       });
       await postService.publish(id);
-      router.push("/");
+      window.localStorage.removeItem(DRAFT_KEY);
+      setSaveStatus("saved");
+      router.push("/hub");
       router.refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "发布失败");
@@ -75,86 +143,81 @@ export default function WritePage() {
   };
 
   return (
-    <div className="post-card p-6 md:p-10 max-w-4xl mx-auto" data-testid="write-page">
-      <h1 className="entry-title entry-title-single text-center mb-6">Write</h1>
-
-      <form onSubmit={onPublish} className="space-y-4">
-        <div>
-          <label className="field-label">标题</label>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="field-input"
-            required
-          />
+    <div className="write-container" data-testid="write-page">
+      <form onSubmit={onPublish} className="write-editor-wrapper">
+        <div className="write-status" aria-live="polite">
+          {saveStatus === "saved" && <span>已保存</span>}
+          {saveStatus === "saving" && <span>保存中...</span>}
+          {saveStatus === "unsaved" && <span>有未保存的更改</span>}
         </div>
 
-        <div>
-          <label className="field-label">标签（逗号分隔）</label>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="write-title-input"
+          placeholder="标题"
+          aria-label="标题"
+          required
+        />
+
+        <div className="write-meta-row">
           <input
             value={tags}
             onChange={(e) => setTags(e.target.value)}
-            placeholder="动漫, 追番"
-            className="field-input"
+            placeholder="标签，用逗号分隔"
+            className="write-meta-input"
+            aria-label="标签"
           />
-        </div>
-
-        <div>
-          <label className="field-label">摘要</label>
           <input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="field-input"
+            placeholder="一句话摘要"
+            className="write-meta-input"
+            aria-label="摘要"
           />
         </div>
 
-        <div className="flex gap-2 mb-2">
-          <Button
-            type="button"
-            size="sm"
-            variant={!preview ? "primary" : "ghost"}
-            onClick={() => setPreview(false)}
-          >
-            编辑
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={preview ? "primary" : "ghost"}
-            onClick={() => setPreview(true)}
-          >
-            预览
+        <div className="write-toolbar">
+          <div className="write-mode-toggle" aria-label="编辑模式">
+            <button
+              type="button"
+              className={cn("write-mode-btn", !preview && "write-mode-btn--active")}
+              onClick={() => setPreview(false)}
+            >
+              编辑
+            </button>
+            <button
+              type="button"
+              className={cn("write-mode-btn", preview && "write-mode-btn--active")}
+              onClick={() => setPreview(true)}
+            >
+              预览
+            </button>
+          </div>
+          <Button type="submit" loading={loading} size="sm" data-testid="write-publish">
+            发布
           </Button>
         </div>
 
         {preview ? (
-          <div className="prose-anime border border-border p-4 min-h-[240px] rounded-xl">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+          <div className="write-preview prose-anime">
+            {markdown ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
+            ) : (
+              <p className="write-preview-empty">还没有内容呢。</p>
+            )}
           </div>
         ) : (
           <textarea
+            className={cn("write-editor", "write-placeholder-fade")}
+            placeholder={PLACEHOLDERS[placeholderIndex]}
             value={markdown}
             onChange={(e) => setMarkdown(e.target.value)}
-            rows={16}
-            placeholder="# 用 Markdown 写正文…"
-            className={cn(
-              "field-input font-mono text-[15px] leading-relaxed resize-y min-h-[240px]",
-            )}
             required
           />
         )}
 
-        {error && <p className="text-sm text-error">{error}</p>}
-
-        <Button
-          type="submit"
-          loading={loading}
-          size="lg"
-          className="w-full tracking-wide"
-          data-testid="write-publish"
-        >
-          发布
-        </Button>
+        {error && <p className="write-error">{error}</p>}
       </form>
     </div>
   );
