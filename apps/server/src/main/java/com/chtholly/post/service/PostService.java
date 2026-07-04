@@ -1,7 +1,9 @@
 package com.chtholly.post.service;
 
 import com.chtholly.post.api.dto.PostDetailResponse;
+import com.chtholly.post.api.dto.PostSummary;
 
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -30,6 +32,8 @@ public interface PostService {
     PostDetailResponse getDetail(long id, Long currentUserIdNullable);
 
     PostDetailResponse getDetailBySlug(String slug, Long currentUserIdNullable);
+
+    List<PostSummary> getRecentPosts(Duration window);
 
     /** 详情 ETag：hash(status + layoutVersion + updateTime)。 */
     String computeDetailEtag(long id);

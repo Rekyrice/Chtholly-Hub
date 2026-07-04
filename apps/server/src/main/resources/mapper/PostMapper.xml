@@ -160,6 +160,28 @@
         LIMIT #{limit}
     </select>
 
+    <select id="listRecentPublicSince" resultType="com.chtholly.post.model.PostFeedRow">
+        SELECT
+            p.id,
+            p.title,
+            p.slug,
+            p.description,
+            p.tags,
+            p.img_urls AS imgUrls,
+            u.avatar AS authorAvatar,
+            u.nickname AS authorNickname,
+            u.tags_json AS authorTagJson,
+            p.publish_time AS publishTime,
+            p.is_top AS isTop
+        FROM posts p
+        JOIN users u ON p.creator_id = u.id
+        WHERE p.status = 'published'
+          AND p.visible = 'public'
+          AND p.publish_time &gt;= #{since}
+        ORDER BY p.publish_time DESC, p.id DESC
+        LIMIT #{limit}
+    </select>
+
     <!-- 按创作者过滤的公开 Feed（Phase A 站长专属列表） -->
     <select id="listFeedPublicByCreator" resultType="com.chtholly.post.model.PostFeedRow">
         SELECT

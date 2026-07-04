@@ -95,4 +95,8 @@ public interface PostMapper {
     List<PostFeedRow> listRecentPublicByCreators(@Param("creatorIds") List<Long> creatorIds,
                                                 @Param("since") Instant since,
                                                 @Param("limit") int limit);
+
+    /** Recent public posts after a timestamp for background cognitive jobs. */
+    List<PostFeedRow> listRecentPublicSince(@Param("since") Instant since,
+                                            @Param("limit") int limit);
 }

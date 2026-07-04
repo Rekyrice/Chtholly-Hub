@@ -19,6 +19,7 @@ import com.chtholly.post.util.SlugUtils;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.api.dto.PostDetailResponse;
+import com.chtholly.post.api.dto.PostSummary;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.storage.config.OssProperties;
@@ -135,6 +136,23 @@ public class PostServiceImpl implements PostService {
                 .build();
         mapper.insertDraft(post);
         return id;
+    }
+
+    /**
+     * Returns recently published public posts for background agent cognition.
+     *
+     * @param window Lookback window.
+     * @return Recent post summaries.
+     */
+    @Override
+    public List<PostSummary> getRecentPosts(Duration window) {
+        Duration safeWindow = window == null || window.isNegative() || window.isZero()
+                ? Duration.ofHours(6)
+                : window;
+        Instant since = Instant.now().minus(safeWindow);
+        return mapper.listRecentPublicSince(since, 20).stream()
+                .map(row -> new PostSummary(row.getId(), row.getTitle(), row.getDescription(), row.getPublishTime()))
+                .toList();
     }
 
     /**
