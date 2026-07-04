@@ -588,6 +588,24 @@
     list-style: none;
   }
 
+  .room-experience-stack {
+    display: grid;
+    gap: 24px;
+  }
+
+  .room-experience-group {
+    display: grid;
+    gap: 12px;
+  }
+
+  .room-experience-group h3 {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
   .room-experience-list li {
     padding: 18px 20px;
     border: 1px solid color-mix(in srgb, var(--color-border) 64%, transparent);
@@ -604,7 +622,8 @@
     line-height: 1.8;
   }
 
-  .room-experience-list time {
+  .room-experience-list time,
+  .room-experience-list span {
     display: block;
     margin-top: 10px;
     color: var(--color-text-secondary);

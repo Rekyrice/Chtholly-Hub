@@ -4,7 +4,7 @@ import { agentService } from "@/lib/services/agentService";
 import { postService } from "@/lib/services/postService";
 import { tagService } from "@/lib/services/tagService";
 import type { ChthollyIllustrationProps } from "@/components/site/ChthollyIllustration";
-import type { AgentExperience } from "@/lib/types/agent";
+import type { AgentExperienceTimeline } from "@/lib/types/agent";
 import type { FeedItem } from "@/lib/types/post";
 
 export const metadata = {
@@ -17,8 +17,8 @@ export const revalidate = 60;
 export default async function ChthollyRoom() {
   const mood = 0;
   const timeOfDay = getCurrentTimePeriod();
-  const [experiences, feedItems, tagCount] = await Promise.all([
-    loadRecentExperiences(),
+  const [timeline, feedItems, tagCount] = await Promise.all([
+    loadExperienceTimeline(),
     loadRecommendations(),
     loadTagCount(),
   ]);
@@ -35,7 +35,7 @@ export default async function ChthollyRoom() {
 
       <section className="room-zone room-zone--desk">
         <h2>她最近在想什么</h2>
-        <ExperienceList experiences={experiences} />
+        <ExperienceList timeline={timeline} />
       </section>
 
       <section className="room-zone room-zone--shelf">
@@ -51,11 +51,11 @@ export default async function ChthollyRoom() {
   );
 }
 
-async function loadRecentExperiences(): Promise<AgentExperience[]> {
+async function loadExperienceTimeline(): Promise<AgentExperienceTimeline> {
   try {
-    return await agentService.recentExperiences(5);
+    return await agentService.experienceTimeline();
   } catch {
-    return [];
+    return { recent: [], weeklySummaries: [], archived: [] };
   }
 }
 
@@ -77,8 +77,13 @@ async function loadTagCount(): Promise<number> {
   }
 }
 
-function ExperienceList({ experiences }: { experiences: AgentExperience[] }) {
-  if (experiences.length === 0) {
+function ExperienceList({ timeline }: { timeline: AgentExperienceTimeline }) {
+  const hasAny =
+    timeline.recent.length > 0 ||
+    timeline.weeklySummaries.length > 0 ||
+    timeline.archived.length > 0;
+
+  if (!hasAny) {
     return (
       <div className="room-empty-note">
         <ChthollyIllustration size="sm" state="reading" />
@@ -88,14 +93,57 @@ function ExperienceList({ experiences }: { experiences: AgentExperience[] }) {
   }
 
   return (
-    <ul className="room-experience-list">
-      {experiences.map((experience) => (
-        <li key={`${experience.createdAt}-${experience.text}`}>
-          <p>{experience.text}</p>
-          <time dateTime={experience.createdAt}>{formatExperienceTime(experience.createdAt)}</time>
-        </li>
-      ))}
-    </ul>
+    <div className="room-experience-stack">
+      {timeline.recent.length > 0 && (
+        <ExperienceGroup title="最近 7 天" items={timeline.recent.map((experience) => ({
+          key: `${experience.createdAt}-${experience.text}`,
+          text: experience.text,
+          meta: formatExperienceTime(experience.createdAt),
+          dateTime: experience.createdAt,
+        }))} />
+      )}
+      {timeline.weeklySummaries.length > 0 && (
+        <ExperienceGroup title="7-30 天" items={timeline.weeklySummaries.map((summary) => ({
+          key: summary.weekKey,
+          text: summary.summary,
+          meta: summary.weekKey,
+        }))} />
+      )}
+      {timeline.archived.length > 0 && (
+        <ExperienceGroup title="难忘时刻" items={timeline.archived.map((experience) => ({
+          key: String(experience.id),
+          text: experience.text,
+          meta: `重要度 ${experience.importance}/10`,
+          dateTime: experience.createdAt,
+        }))} />
+      )}
+    </div>
+  );
+}
+
+function ExperienceGroup({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<{ key: string; text: string; meta: string; dateTime?: string }>;
+}) {
+  return (
+    <section className="room-experience-group">
+      <h3>{title}</h3>
+      <ul className="room-experience-list">
+        {items.map((item) => (
+          <li key={item.key}>
+            <p>{item.text}</p>
+            {item.dateTime ? (
+              <time dateTime={item.dateTime}>{item.meta}</time>
+            ) : (
+              <span>{item.meta}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

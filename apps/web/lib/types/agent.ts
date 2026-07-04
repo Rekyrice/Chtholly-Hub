@@ -18,6 +18,27 @@ export interface ChatMessage {
 export type AgentExperience = {
   text: string;
   valueScore: number;
+  importance: number;
   createdAt: string;
   source: string;
+};
+
+export type AgentWeeklyExperience = {
+  weekKey: string;
+  summary: string;
+};
+
+export type AgentArchivedExperience = {
+  id: number;
+  text: string;
+  importance: number;
+  source: string;
+  createdAt: string;
+  archivedAt: string;
+};
+
+export type AgentExperienceTimeline = {
+  recent: AgentExperience[];
+  weeklySummaries: AgentWeeklyExperience[];
+  archived: AgentArchivedExperience[];
 };
