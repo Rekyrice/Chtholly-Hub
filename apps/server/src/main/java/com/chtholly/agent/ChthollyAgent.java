@@ -6,6 +6,7 @@ import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentMetrics;
+import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -57,6 +58,7 @@ public class ChthollyAgent {
     private final AgentMetrics agentMetrics;
     private final CharacterSoulService characterSoulService;
     private final ContextEngine contextEngine;
+    private final TracePersistenceService tracePersistenceService;
 
     /**
      * Runs one agent turn, emitting think/act/observe/delta/final/error events via sink.
@@ -93,6 +95,7 @@ public class ChthollyAgent {
         try {
             if (question == null || question.isBlank()) {
                 trace.terminateError();
+                trace.setErrorMessage("问题不能为空");
                 emitError(sink, "问题不能为空");
                 return;
             }
@@ -128,11 +131,13 @@ public class ChthollyAgent {
                 } catch (TimeoutException e) {
                     log.warn("Agent LLM 调用超时 (>{}s)", properties.getLlmTimeoutSeconds());
                     trace.terminateTimeout();
+                    trace.setErrorMessage("模型响应超时，请稍后重试");
                     emitError(sink, "模型响应超时，请稍后重试");
                     return;
                 } catch (Exception e) {
                     log.warn("Agent LLM 调用失败: {}", e.getMessage());
                     trace.terminateError();
+                    trace.setErrorMessage("模型调用失败，请检查 LLM 配置");
                     emitError(sink, "模型调用失败，请检查 LLM 配置");
                     return;
                 }
@@ -145,6 +150,7 @@ public class ChthollyAgent {
                 } catch (Exception e) {
                     trace.recordStep(step, "parse_error", stepLlmMs, 0);
                     trace.terminateError();
+                    trace.setErrorMessage("无法解析模型输出，请重试");
                     emitError(sink, "无法解析模型输出，请重试");
                     return;
                 }
@@ -181,7 +187,7 @@ public class ChthollyAgent {
                 long toolStart = System.currentTimeMillis();
                 String observation = executeTool(tool, inputMap, userId);
                 long stepToolMs = System.currentTimeMillis() - toolStart;
-                trace.recordToolCall(tool.name(), stepToolMs);
+                trace.recordToolCall(tool.name(), stepToolMs, summarizeToolInput(action.input()), observation);
                 // 站内搜索空结果时追加系统提示，引导 LLM 切换 Bangumi 工具（避免重复无效检索）
                 observation = augmentObservation(tool.name(), observation);
                 emitObserve(sink, observation);
@@ -192,9 +198,12 @@ public class ChthollyAgent {
             }
 
             trace.terminateMaxSteps();
+            trace.setErrorMessage("已达到最大推理步数（" + maxSteps + "），请简化问题后重试");
             emitError(sink, "已达到最大推理步数（" + maxSteps + "），请简化问题后重试");
         } finally {
+            trace.finish();
             trace.finishAndLog(objectMapper, agentMetrics);
+            tracePersistenceService.persist(trace);
         }
     }
 
@@ -259,11 +268,13 @@ public class ChthollyAgent {
             if (isTimeout(e)) {
                 log.warn("Agent 流式回答超时 (>{}s)", timeoutSec);
                 trace.terminateTimeout();
+                trace.setErrorMessage("生成回答超时，请稍后重试");
                 emitError(sink, "生成回答超时，请稍后重试");
                 return streamMs;
             }
             log.warn("Agent 流式回答失败: {}", e.getMessage());
             trace.terminateError();
+            trace.setErrorMessage("生成回答失败，请重试");
             emitError(sink, "生成回答失败，请重试");
             return streamMs;
         }
@@ -412,6 +423,18 @@ public class ChthollyAgent {
                     Bangumi 查询刚才有点慢。请用相同或更简短的 keyword 再试一次；如果还是超时，就如实告诉用户暂时查不到，不要编造数据。""";
         }
         return result;
+    }
+
+    private String summarizeToolInput(JsonNode input) {
+        if (input == null || input.isMissingNode() || input.isNull()) {
+            return "";
+        }
+        try {
+            String json = objectMapper.writeValueAsString(input);
+            return json.length() <= 256 ? json : json.substring(0, 256);
+        } catch (Exception e) {
+            return input.toString();
+        }
     }
 
     private AgentAction parseAction(String llmOut) throws Exception {

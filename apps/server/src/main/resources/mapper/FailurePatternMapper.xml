@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.agent.trace.FailurePatternMapper">
+
+    <select id="findByPatternKey" resultType="com.chtholly.agent.trace.TraceFailurePatternRow">
+        SELECT
+            id,
+            pattern_key AS patternKey,
+            occurrence_count AS occurrenceCount,
+            last_seen_at AS lastSeenAt,
+            sample_trace_ids AS sampleTraceIds,
+            resolution_hint AS resolutionHint,
+            created_at AS createdAt
+        FROM trace_failure_patterns
+        WHERE pattern_key = #{patternKey}
+        LIMIT 1
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO trace_failure_patterns (
+            pattern_key, occurrence_count, last_seen_at, sample_trace_ids, resolution_hint
+        ) VALUES (
+            #{patternKey}, #{occurrenceCount}, #{lastSeenAt}, #{sampleTraceIds}, #{resolutionHint}
+        )
+    </insert>
+
+    <update id="updatePattern">
+        UPDATE trace_failure_patterns
+        SET occurrence_count = occurrence_count + #{increment},
+            last_seen_at = #{lastSeenAt},
+            sample_trace_ids = #{sampleTraceIds}
+        WHERE pattern_key = #{patternKey}
+    </update>
+
+    <select id="listAllOrderByCountDesc" resultType="com.chtholly.agent.trace.TraceFailurePatternRow">
+        SELECT
+            id,
+            pattern_key AS patternKey,
+            occurrence_count AS occurrenceCount,
+            last_seen_at AS lastSeenAt,
+            sample_trace_ids AS sampleTraceIds,
+            resolution_hint AS resolutionHint,
+            created_at AS createdAt
+        FROM trace_failure_patterns
+        ORDER BY occurrence_count DESC, last_seen_at DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

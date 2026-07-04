@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.agent.trace.TraceMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO execution_traces (
+            correlation_id, user_id, session_id,
+            started_at, finished_at, duration_ms, status,
+            steps_count, tool_calls, error_message,
+            input_tokens, output_tokens, trace_payload, pattern_analyzed
+        ) VALUES (
+            #{correlationId}, #{userId}, #{sessionId},
+            #{startedAt}, #{finishedAt}, #{durationMs}, #{status},
+            #{stepsCount}, #{toolCalls}, #{errorMessage},
+            #{inputTokens}, #{outputTokens}, #{tracePayload}, 0
+        )
+    </insert>
+
+    <select id="findByCorrelationId" resultType="com.chtholly.agent.trace.ExecutionTraceRow">
+        SELECT
+            id,
+            correlation_id AS correlationId,
+            user_id AS userId,
+            session_id AS sessionId,
+            started_at AS startedAt,
+            finished_at AS finishedAt,
+            duration_ms AS durationMs,
+            status,
+            steps_count AS stepsCount,
+            tool_calls AS toolCalls,
+            error_message AS errorMessage,
+            input_tokens AS inputTokens,
+            output_tokens AS outputTokens,
+            trace_payload AS tracePayload,
+            pattern_analyzed AS patternAnalyzed,
+            created_at AS createdAt
+        FROM execution_traces
+        WHERE correlation_id = #{correlationId}
+        LIMIT 1
+    </select>
+
+    <select id="list" resultType="com.chtholly.agent.trace.ExecutionTraceRow">
+        SELECT
+            id,
+            correlation_id AS correlationId,
+            user_id AS userId,
+            session_id AS sessionId,
+            started_at AS startedAt,
+            finished_at AS finishedAt,
+            duration_ms AS durationMs,
+            status,
+            steps_count AS stepsCount,
+            tool_calls AS toolCalls,
+            error_message AS errorMessage,
+            input_tokens AS inputTokens,
+            output_tokens AS outputTokens,
+            trace_payload AS tracePayload,
+            pattern_analyzed AS patternAnalyzed,
+            created_at AS createdAt
+        FROM execution_traces
+        <where>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+            <if test="userId != null">
+                AND user_id = #{userId}
+            </if>
+        </where>
+        ORDER BY started_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(1)
+        FROM execution_traces
+        <where>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+            <if test="userId != null">
+                AND user_id = #{userId}
+            </if>
+        </where>
+    </select>
+
+    <select id="findUnanalyzedByStatus" resultType="com.chtholly.agent.trace.ExecutionTraceRow">
+        SELECT
+            id,
+            correlation_id AS correlationId,
+            user_id AS userId,
+            session_id AS sessionId,
+            started_at AS startedAt,
+            finished_at AS finishedAt,
+            duration_ms AS durationMs,
+            status,
+            steps_count AS stepsCount,
+            tool_calls AS toolCalls,
+            error_message AS errorMessage,
+            input_tokens AS inputTokens,
+            output_tokens AS outputTokens,
+            trace_payload AS tracePayload,
+            pattern_analyzed AS patternAnalyzed,
+            created_at AS createdAt
+        FROM execution_traces
+        WHERE status = #{status}
+          AND pattern_analyzed = 0
+        ORDER BY started_at ASC
+        LIMIT #{limit}
+    </select>
+
+    <update id="markPatternAnalyzed">
+        UPDATE execution_traces
+        SET pattern_analyzed = 1
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <select id="countSince" resultType="long">
+        SELECT COUNT(1)
+        FROM execution_traces
+        WHERE started_at &gt;= #{since}
+    </select>
+
+    <select id="countByStatusSince" resultType="long">
+        SELECT COUNT(1)
+        FROM execution_traces
+        WHERE started_at &gt;= #{since}
+          AND status = #{status}
+    </select>
+
+    <select id="avgDurationSince" resultType="java.lang.Double">
+        SELECT AVG(duration_ms)
+        FROM execution_traces
+        WHERE started_at &gt;= #{since}
+          AND duration_ms IS NOT NULL
+    </select>
+
+    <select id="listDurationsSince" resultType="int">
+        SELECT duration_ms
+        FROM execution_traces
+        WHERE started_at &gt;= #{since}
+          AND duration_ms IS NOT NULL
+        ORDER BY duration_ms ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="tokenTrendSince" resultType="com.chtholly.agent.trace.TraceTokenTrendRow">
+        SELECT
+            DATE(started_at) AS day,
+            SUM(input_tokens) AS inputTokens,
+            SUM(output_tokens) AS outputTokens
+        FROM execution_traces
+        WHERE started_at &gt;= #{since}
+        GROUP BY DATE(started_at)
+        ORDER BY day ASC
+    </select>
+</mapper>
