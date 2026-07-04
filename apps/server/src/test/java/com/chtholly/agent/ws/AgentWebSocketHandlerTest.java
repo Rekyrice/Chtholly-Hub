@@ -1,6 +1,7 @@
 package com.chtholly.agent.ws;
 
 import com.chtholly.agent.ChthollyAgent;
+import com.chtholly.agent.cognitive.CognitiveEngine;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -29,6 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.timeout;
@@ -52,6 +55,8 @@ class AgentWebSocketHandlerTest {
     private CharacterStateService characterStateService;
     @Mock
     private InsightService insightService;
+    @Mock
+    private CognitiveEngine cognitiveEngine;
 
     private AgentSessionRateLimiter rateLimiter;
     private AgentWebSocketHeartbeat heartbeat;
@@ -63,8 +68,10 @@ class AgentWebSocketHandlerTest {
         objectMapper = new ObjectMapper();
         rateLimiter = new AgentSessionRateLimiter();
         heartbeat = new AgentWebSocketHeartbeat();
+        ObjectProvider<CognitiveEngine> cognitiveProvider = org.mockito.Mockito.mock(ObjectProvider.class);
+        lenient().when(cognitiveProvider.getIfAvailable()).thenReturn(cognitiveEngine);
         handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
-                agentMetrics, characterStateService, insightService);
+                agentMetrics, characterStateService, insightService, cognitiveProvider);
     }
 
     @Test
@@ -214,5 +221,17 @@ class AgentWebSocketHandlerTest {
         handler.afterConnectionClosed(rawSession, org.springframework.web.socket.CloseStatus.NORMAL);
 
         verify(insightService).reflectOnConversation(101L, turns);
+    }
+
+    @Test
+    void triggersCognitiveCycleAfterConnectionClosed() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-cognitive");
+        when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=t6"));
+        when(ticketStore.consume("t6")).thenReturn(102L);
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.afterConnectionClosed(rawSession, org.springframework.web.socket.CloseStatus.NORMAL);
+
+        verify(cognitiveEngine, timeout(500)).triggerIfDue();
     }
 }

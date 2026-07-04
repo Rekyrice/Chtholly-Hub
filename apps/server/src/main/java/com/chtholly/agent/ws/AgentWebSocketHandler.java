@@ -3,6 +3,7 @@ package com.chtholly.agent.ws;
 import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.ChthollyAgent;
+import com.chtholly.agent.cognitive.CognitiveEngine;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
@@ -15,6 +16,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -52,6 +54,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final AgentMetrics agentMetrics;
     private final CharacterStateService characterStateService;
     private final InsightService insightService;
+    private final ObjectProvider<CognitiveEngine> cognitiveEngineProvider;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     /** 原始 sessionId -> 线程安全装饰 session（并发 send 串行化）。 */
@@ -106,6 +109,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         Long connectedAt = sessionConnectedAt.remove(session.getId());
         String chatSessionId = sessionChatSessionIds.remove(session.getId());
         reflectOnConversation(userId, chatSessionId);
+        triggerCognitiveCycleIfDue();
         safeSessions.remove(session.getId());
         rateLimiter.removeSession(session.getId());
         heartbeat.stop(session.getId());
@@ -217,6 +221,20 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             log.warn("Agent insight reflection scheduling failed userId={}, sessionId={}: {}",
                     userId, chatSessionId, e.getMessage());
         }
+    }
+
+    private void triggerCognitiveCycleIfDue() {
+        CognitiveEngine cognitiveEngine = cognitiveEngineProvider.getIfAvailable();
+        if (cognitiveEngine == null) {
+            return;
+        }
+        executor.submit(() -> {
+            try {
+                cognitiveEngine.triggerIfDue();
+            } catch (Exception e) {
+                log.warn("Agent cognitive cycle scheduling failed: {}", e.getMessage(), e);
+            }
+        });
     }
 
     private void appendTextContext(List<String> lines, String label, String value) {
