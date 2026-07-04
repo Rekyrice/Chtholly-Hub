@@ -1392,52 +1392,60 @@
     animation: agent-pulse 1s step-end infinite;
   }
 
-  /* Agent 页全页背景：插画 + 蒙版，工作台 UI 叠在上方 */
+  /* Agent 页全页背景：壁纸轮换 + 蒙版 */
   .agent-page-background {
-    position: absolute;
+    position: fixed;
     inset: 0;
-    z-index: 0;
+    z-index: -1;
     pointer-events: none;
     overflow: hidden;
   }
 
-  .agent-page-background__image {
+  .agent-page-background__layer {
     position: absolute;
     inset: 0;
-    background-image: url("/images/agent/page-bg.png");
     background-size: cover;
-    background-position: 62% 44%;
+    background-position: center;
     background-repeat: no-repeat;
+    animation: agent-wallpaper-fade-in 1s ease-in-out;
   }
 
-  .agent-page-background__scrim {
+  @keyframes agent-wallpaper-fade-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  .agent-page-background::after {
+    content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-      to right,
-      rgba(255, 255, 255, 0.62) 0%,
-      rgba(255, 255, 255, 0.56) 50%,
-      rgba(255, 255, 255, 0.5) 100%
-    );
-    backdrop-filter: blur(8px) saturate(1.06);
-    -webkit-backdrop-filter: blur(8px) saturate(1.06);
+    background: rgb(255 255 255 / 40%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
 
-  .relative:has(.agent-workspace--dark) .agent-page-background__scrim {
-    background: linear-gradient(
-      to right,
-      rgba(8, 12, 24, 0.58) 0%,
-      rgba(8, 12, 24, 0.5) 50%,
-      rgba(8, 12, 24, 0.42) 100%
-    );
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
+  @media (prefers-color-scheme: dark) {
+    .agent-page-background::after {
+      background: rgb(0 0 0 / 30%);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+  }
+
+  .relative:has(.agent-workspace--dark) .agent-page-background::after {
+    background: rgb(0 0 0 / 36%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
 
   .agent-workspace {
     --agent-main-col: minmax(0, 1fr);
     --agent-sessions-col: clamp(200px, 16vw, 240px);
-    --agent-character-zone: clamp(280px, 44%, 520px);
     display: grid;
     grid-template-columns: var(--agent-main-col) var(--agent-sessions-col);
     grid-template-rows: auto minmax(0, 1fr);
@@ -1608,34 +1616,64 @@
     overflow: hidden;
     background: transparent;
     border-right: none;
-    display: grid;
-    grid-template-columns: var(--agent-character-zone) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
   }
 
-  .agent-workspace-main-live2d {
-    position: relative;
-    z-index: 1;
-    grid-column: 1;
-    grid-row: 1;
+  .agent-layout {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0;
+    width: 100%;
+    height: 100%;
+    min-height: calc(100vh - 64px);
+  }
+
+  .agent-layout-left {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
     min-height: 0;
     height: 100%;
+  }
+
+  .agent-chat-area {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    width: 100%;
+    max-width: 720px;
+    min-height: 0;
+    margin: 0 auto;
+    padding: 24px 16px;
+  }
+
+  .agent-live2d-zone {
+    position: sticky;
+    top: 80px;
+    z-index: 1;
+    width: clamp(320px, 44%, 600px);
+    min-height: 400px;
+    align-self: start;
+    height: calc(100vh - 80px - 52px);
     overflow: hidden;
     pointer-events: auto;
   }
 
-  .agent-workspace-main-live2d .agent-live2d-stage,
-  .agent-workspace-main-live2d .agent-workspace-stage-body {
+  .agent-live2d-zone .agent-live2d-stage,
+  .agent-live2d-zone .agent-workspace-stage-body {
     height: 100%;
     min-height: 0;
   }
 
-  .agent-workspace-main-chat {
+  .agent-workspace-main-live2d {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .agent-workspace-main-chat,
+  .agent-chat-area .agent-workspace-chat {
     position: relative;
     z-index: 2;
-    grid-column: 2;
-    grid-row: 1;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -1643,6 +1681,12 @@
     height: 100%;
     overflow: hidden;
     background: transparent;
+  }
+
+  .agent-input::placeholder {
+    color: var(--text-tertiary);
+    font-style: italic;
+    transition: opacity 0.3s ease;
   }
 
   .agent-workspace-chat .floating-agent-header {
@@ -1662,10 +1706,15 @@
   }
 
   .agent-workspace-main-chat .floating-agent-panel-inner,
+  .agent-chat-area .floating-agent-panel-inner,
   .agent-workspace-main-chat .floating-agent-header,
+  .agent-chat-area .floating-agent-header,
   .agent-workspace-main-chat .floating-agent-input,
+  .agent-chat-area .floating-agent-input,
   .agent-workspace-main-chat .floating-agent-messages,
-  .agent-workspace-main-chat .agent-suggestion-chip {
+  .agent-chat-area .floating-agent-messages,
+  .agent-workspace-main-chat .agent-suggestion-chip,
+  .agent-chat-area .agent-suggestion-chip {
     pointer-events: auto;
   }
 
@@ -2745,8 +2794,32 @@
 
   @media (max-width: 1200px) {
     .agent-workspace {
-      --agent-character-zone: clamp(220px, 38vw, 400px);
       --agent-sessions-col: clamp(180px, 14vw, 220px);
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .agent-layout {
+      grid-template-columns: 1fr;
+      min-height: auto;
+    }
+
+    .agent-layout-left {
+      order: 2;
+    }
+
+    .agent-live2d-zone {
+      order: 1;
+      width: 100%;
+      min-height: 280px;
+      height: auto;
+      position: relative;
+      top: 0;
+    }
+
+    .agent-chat-area {
+      max-width: none;
+      padding: 16px 12px;
     }
   }
 
@@ -2802,24 +2875,13 @@
     .agent-workspace-main {
       grid-column: 1;
       grid-row: 2;
-      grid-template-columns: 1fr;
-      grid-template-rows: minmax(140px, 26vh) minmax(0, 1fr);
       min-height: 0;
       border-right: none;
     }
 
-    .agent-workspace-main-live2d {
-      grid-column: 1;
-      grid-row: 1;
+    .agent-live2d-zone {
       width: 100%;
-      height: 100%;
-      min-height: 0;
-    }
-
-    .agent-workspace-main-chat {
-      grid-column: 1;
-      grid-row: 2;
-      min-height: 0;
+      min-height: 280px;
     }
 
     .agent-session-sidebar {
