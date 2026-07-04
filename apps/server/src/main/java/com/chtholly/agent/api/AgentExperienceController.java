@@ -1,6 +1,9 @@
 package com.chtholly.agent.api;
 
 import com.chtholly.agent.api.dto.AgentExperienceResponse;
+import com.chtholly.agent.api.dto.AgentExperienceTimelineResponse;
+import com.chtholly.agent.api.dto.AgentArchivedExperienceResponse;
+import com.chtholly.agent.api.dto.AgentWeeklyExperienceResponse;
 import com.chtholly.agent.cognitive.ExperienceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -38,8 +41,39 @@ public class AgentExperienceController {
                 .map(experience -> new AgentExperienceResponse(
                         experience.text(),
                         experience.valueScore(),
+                        Math.clamp((int) Math.round(experience.valueScore() * 10), 1, 10),
                         experience.createdAt(),
                         experience.source()))
                 .toList();
+    }
+
+    /**
+     * Returns all room timeline layers: recent items, weekly summaries, and archived memories.
+     *
+     * @return room timeline data
+     */
+    @GetMapping("/timeline")
+    public AgentExperienceTimelineResponse timeline() {
+        List<AgentExperienceResponse> recent = experienceService.getRecentExperienceItems(5).stream()
+                .map(experience -> new AgentExperienceResponse(
+                        experience.text(),
+                        experience.importance() / 10.0,
+                        experience.importance(),
+                        experience.createdAt(),
+                        experience.source()))
+                .toList();
+        List<AgentWeeklyExperienceResponse> weekly = experienceService.getWeeklySummaries(4).stream()
+                .map(summary -> new AgentWeeklyExperienceResponse(summary.weekKey(), summary.summary()))
+                .toList();
+        List<AgentArchivedExperienceResponse> archived = experienceService.getArchivedMemories(5).stream()
+                .map(memory -> new AgentArchivedExperienceResponse(
+                        memory.id(),
+                        memory.text(),
+                        memory.importance(),
+                        memory.source(),
+                        memory.createdAt(),
+                        memory.archivedAt()))
+                .toList();
+        return new AgentExperienceTimelineResponse(recent, weekly, archived);
     }
 }

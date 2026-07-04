@@ -99,4 +99,7 @@ public interface PostMapper {
     /** Recent public posts after a timestamp for background cognitive jobs. */
     List<PostFeedRow> listRecentPublicSince(@Param("since") Instant since,
                                             @Param("limit") int limit);
+
+    /** Count public posts after a timestamp for community quietness checks. */
+    long countPublicSince(@Param("since") Instant since);
 }

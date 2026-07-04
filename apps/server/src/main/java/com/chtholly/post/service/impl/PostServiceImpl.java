@@ -155,6 +155,14 @@ public class PostServiceImpl implements PostService {
                 .toList();
     }
 
+    @Override
+    public long countSince(Duration window) {
+        Duration safeWindow = window == null || window.isNegative() || window.isZero()
+                ? Duration.ofDays(3)
+                : window;
+        return mapper.countPublicSince(Instant.now().minus(safeWindow));
+    }
+
     /**
      * Confirms OSS content upload and stores object metadata on the draft.
      *

@@ -35,6 +35,8 @@ public interface PostService {
 
     List<PostSummary> getRecentPosts(Duration window);
 
+    long countSince(Duration window);
+
     /** 详情 ETag：hash(status + layoutVersion + updateTime)。 */
     String computeDetailEtag(long id);
 

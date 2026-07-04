@@ -182,6 +182,14 @@
         LIMIT #{limit}
     </select>
 
+    <select id="countPublicSince" resultType="long">
+        SELECT COUNT(*)
+        FROM posts
+        WHERE status = 'published'
+          AND visible = 'public'
+          AND publish_time &gt;= #{since}
+    </select>
+
     <!-- 按创作者过滤的公开 Feed（Phase A 站长专属列表） -->
     <select id="listFeedPublicByCreator" resultType="com.chtholly.post.model.PostFeedRow">
         SELECT

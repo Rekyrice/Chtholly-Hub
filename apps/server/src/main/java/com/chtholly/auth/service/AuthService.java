@@ -1,6 +1,7 @@
 package com.chtholly.auth.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import com.chtholly.admin.security.UserBanService;
 import com.chtholly.auth.api.dto.AuthResponse;
 import com.chtholly.auth.api.dto.AuthUserResponse;
@@ -13,6 +14,7 @@ import com.chtholly.auth.api.dto.TokenRefreshRequest;
 import com.chtholly.auth.api.dto.TokenResponse;
 import com.chtholly.auth.audit.LoginFailureReason;
 import com.chtholly.auth.audit.LoginLogService;
+import com.chtholly.auth.event.UserRegisteredEvent;
 import com.chtholly.auth.security.LoginFailureGuard;
 import com.chtholly.auth.config.AuthProperties;
 import com.chtholly.common.exception.BusinessException;
@@ -30,6 +32,7 @@ import com.chtholly.auth.verification.VerificationCheckResult;
 import com.chtholly.auth.verification.VerificationCodeStatus;
 import com.chtholly.auth.verification.VerificationScene;
 import com.chtholly.auth.verification.VerificationService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
@@ -58,6 +61,7 @@ import org.springframework.security.oauth2.jwt.JwtException;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private final UserService userService;
@@ -69,6 +73,7 @@ public class AuthService {
     private final LoginFailureGuard loginFailureGuard;
     private final AuthProperties authProperties;
     private final UserBanService userBanService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * 发送验证码并返回过期信息。
@@ -141,6 +146,7 @@ public class AuthService {
         TokenPair tokenPair = jwtService.issueTokenPair(user);
         storeRefreshToken(user.getId(), tokenPair);
         loginLogService.recordSuccess(user.getId(), handle, "REGISTER", clientInfo.ip(), clientInfo.userAgent());
+        publishUserRegistered(user);
         return new AuthResponse(mapUser(user), mapToken(tokenPair));
     }
 
@@ -176,7 +182,16 @@ public class AuthService {
         TokenPair tokenPair = jwtService.issueTokenPair(user);
         storeRefreshToken(user.getId(), tokenPair);
         loginLogService.recordSuccess(user.getId(), identifier, "REGISTER", clientInfo.ip(), clientInfo.userAgent());
+        publishUserRegistered(user);
         return new AuthResponse(mapUser(user), mapToken(tokenPair));
+    }
+
+    private void publishUserRegistered(User user) {
+        try {
+            eventPublisher.publishEvent(new UserRegisteredEvent(user));
+        } catch (Exception e) {
+            log.warn("UserRegisteredEvent failed, userId={}: {}", user.getId(), e.getMessage());
+        }
     }
 
     /**

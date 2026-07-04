@@ -13,6 +13,7 @@ import java.time.Instant;
 public record AgentExperienceResponse(
         String text,
         double valueScore,
+        int importance,
         Instant createdAt,
         String source
 ) {
