@@ -10,13 +10,15 @@ export const AGENT_WALLPAPERS = [
   "/images/agent/wallpaper-library.jpg",
 ] as const;
 
-/** 页面加载随机壁纸，之后每 5 分钟顺序轮换 */
+/** 页面加载随机壁纸，之后每 5 分钟顺序轮换（首屏固定壁纸，避免 SSR hydration 不一致） */
 export function useWallpaperRotation(intervalMs = 300_000) {
-  const [wallpaper, setWallpaper] = useState(
-    () => AGENT_WALLPAPERS[Math.floor(Math.random() * AGENT_WALLPAPERS.length)],
+  const [wallpaper, setWallpaper] = useState<(typeof AGENT_WALLPAPERS)[number]>(
+    AGENT_WALLPAPERS[0],
   );
 
   useEffect(() => {
+    setWallpaper(AGENT_WALLPAPERS[Math.floor(Math.random() * AGENT_WALLPAPERS.length)]);
+
     const timer = setInterval(() => {
       setWallpaper((prev) => {
         const index = AGENT_WALLPAPERS.indexOf(prev as (typeof AGENT_WALLPAPERS)[number]);

@@ -282,12 +282,27 @@ public class CommentServiceImpl implements CommentService {
                 String.valueOf(row.getPostId()),
                 row.getParentId() == null ? null : String.valueOf(row.getParentId()),
                 String.valueOf(row.getUserId()),
-                row.getAuthorNickname(),
+                resolveAuthorNickname(row),
                 row.getAuthorAvatar(),
                 content,
                 row.getCreatedAt(),
                 Boolean.TRUE.equals(row.getIsChtholly()),
                 replies
         );
+    }
+
+    /** 珂朵莉评论固定昵称；损坏的 ??? 昵称回退到 handle。 */
+    private static String resolveAuthorNickname(CommentRow row) {
+        if (Boolean.TRUE.equals(row.getIsChtholly())) {
+            return "珂朵莉";
+        }
+        String nickname = row.getAuthorNickname();
+        if (StringUtils.hasText(nickname) && !"???".equals(nickname)) {
+            return nickname;
+        }
+        if (StringUtils.hasText(row.getAuthorHandle())) {
+            return row.getAuthorHandle();
+        }
+        return "用户";
     }
 }

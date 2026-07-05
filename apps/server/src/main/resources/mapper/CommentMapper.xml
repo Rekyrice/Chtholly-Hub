@@ -16,6 +16,7 @@
             c.deleted_at AS deletedAt,
             c.updated_at AS updatedAt,
             u.nickname AS authorNickname,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar
         FROM comments c
         JOIN users u ON c.user_id = u.id

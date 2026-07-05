@@ -14,6 +14,7 @@ public class CommentRow {
     private String content;
     private Instant createdAt;
     private String authorNickname;
+    private String authorHandle;
     private String authorAvatar;
     private Instant deletedAt;
     private Instant updatedAt;

@@ -92,7 +92,7 @@ function CommentBubble({
       <div className="comment-header flex items-center gap-2 flex-wrap">
         {isChtholly && <ChthollyIllustration size="xs" state="calm" />}
         <span className="comment-author text-sm font-medium text-text">
-          {isChtholly ? "珂朵莉" : comment.authorNickname}
+          {isChtholly ? "珂朵莉" : comment.authorNickname || "用户"}
         </span>
         {isChtholly && <span className="comment-badge">珂朵莉的想法</span>}
         <span className="comment-time text-xs text-text-secondary">{formatDate(comment.createdAt)}</span>

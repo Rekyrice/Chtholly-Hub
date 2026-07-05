@@ -15,7 +15,7 @@ public record SiteProperties(
 ) {
     public SiteProperties {
         if (chthollyUserId <= 0) {
-            chthollyUserId = 2L;
+            chthollyUserId = 888888888888888888L;
         }
         if (ownerBootstrapPassword == null) {
             ownerBootstrapPassword = "";

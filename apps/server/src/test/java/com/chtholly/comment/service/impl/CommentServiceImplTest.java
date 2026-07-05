@@ -172,6 +172,39 @@ class CommentServiceImplTest {
                 .containsExactly("reply-a", "reply-b");
     }
 
+    @Test
+    void resolvesCorruptedNicknameToHandle() {
+        stubPublishedPost(1L, 10L);
+        when(commentMapper.countRootByPostId(1L)).thenReturn(1L);
+
+        CommentRow root = row(100L, null, "root");
+        root.setAuthorNickname("???");
+        root.setAuthorHandle("myhandle");
+        when(commentMapper.listRootByPostId(eq(1L), eq(20), eq(0))).thenReturn(List.of(root));
+        when(commentMapper.listRepliesByParentIds(eq(1L), eq(List.of(100L)))).thenReturn(List.of());
+
+        PageResponse<CommentResponse> response = service.listByPost(1L, null, 1, 20);
+
+        assertThat(response.items().get(0).authorNickname()).isEqualTo("myhandle");
+    }
+
+    @Test
+    void chthollyCommentUsesFixedNickname() {
+        stubPublishedPost(1L, 10L);
+        when(commentMapper.countRootByPostId(1L)).thenReturn(1L);
+
+        CommentRow root = row(100L, null, "ai comment");
+        root.setIsChtholly(true);
+        root.setAuthorNickname("???");
+        when(commentMapper.listRootByPostId(eq(1L), eq(20), eq(0))).thenReturn(List.of(root));
+        when(commentMapper.listRepliesByParentIds(eq(1L), eq(List.of(100L)))).thenReturn(List.of());
+
+        PageResponse<CommentResponse> response = service.listByPost(1L, null, 1, 20);
+
+        assertThat(response.items().get(0).authorNickname()).isEqualTo("珂朵莉");
+        assertThat(response.items().get(0).chtholly()).isTrue();
+    }
+
     private void stubPublishedPost(long postId, long creatorId) {
         Post post = new Post();
         post.setId(postId);
