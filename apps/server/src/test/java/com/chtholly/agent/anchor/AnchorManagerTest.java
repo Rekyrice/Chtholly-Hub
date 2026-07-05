@@ -1,9 +1,9 @@
 package com.chtholly.agent.anchor;
 
 import com.chtholly.agent.CharacterSoulService;
+import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.agent.memory.AgentTurn;
-import com.chtholly.agent.memory.ProceduralMemoryService;
 import com.chtholly.agent.state.BehaviorProb;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
@@ -27,21 +27,21 @@ class AnchorManagerTest {
         CharacterSoulService soulService = mock(CharacterSoulService.class);
         AgentMemoryStore memoryStore = mock(AgentMemoryStore.class);
         KnowledgeService knowledgeService = mock(KnowledgeService.class);
-        ProceduralMemoryService proceduralService = mock(ProceduralMemoryService.class);
+        InsightService insightService = mock(InsightService.class);
         CharacterStateService stateService = mock(CharacterStateService.class);
         CharacterState state = state(0.42, 8);
 
         when(soulService.getSoulContent()).thenReturn("identity");
         when(memoryStore.getTurns(7L, "ws-1")).thenReturn(List.of(AgentTurn.user("hello")));
         when(knowledgeService.getRelevantKnowledge(7L, "ws-1")).thenReturn(List.of("semantic"));
-        when(proceduralService.getTopRules(7L, 5, 500)).thenReturn(List.of("rule"));
+        when(insightService.getInsightTextsForUser(7L, 5, 500)).thenReturn(List.of("rule"));
         when(stateService.load(7L)).thenReturn(state);
 
         AnchorContext context = new AnchorManager(
                 soulService,
                 memoryStore,
                 knowledgeService,
-                proceduralService,
+                insightService,
                 stateService).buildContext(7L, "ws-1");
 
         assertThat(context.soul()).isEqualTo("identity");
@@ -56,20 +56,20 @@ class AnchorManagerTest {
         CharacterSoulService soulService = mock(CharacterSoulService.class);
         AgentMemoryStore memoryStore = mock(AgentMemoryStore.class);
         KnowledgeService knowledgeService = mock(KnowledgeService.class);
-        ProceduralMemoryService proceduralService = mock(ProceduralMemoryService.class);
+        InsightService insightService = mock(InsightService.class);
         CharacterStateService stateService = mock(CharacterStateService.class);
 
         when(soulService.getSoulContent()).thenThrow(new IllegalStateException("identity down"));
         when(memoryStore.getTurns(7L, "ws-1")).thenThrow(new IllegalStateException("memory down"));
         when(knowledgeService.getRelevantKnowledge(7L, "ws-1")).thenReturn(List.of("semantic still works"));
-        when(proceduralService.getTopRules(7L, 5, 500)).thenThrow(new IllegalStateException("rules down"));
+        when(insightService.getInsightTextsForUser(7L, 5, 500)).thenThrow(new IllegalStateException("rules down"));
         when(stateService.load(7L)).thenThrow(new IllegalStateException("state down"));
 
         AnchorContext context = new AnchorManager(
                 soulService,
                 memoryStore,
                 knowledgeService,
-                proceduralService,
+                insightService,
                 stateService).buildContext(7L, "ws-1");
 
         assertThat(context.soul()).isNotBlank();
@@ -83,20 +83,20 @@ class AnchorManagerTest {
     void buildContextUsesEmptyEpisodicAnchorWhenMemoryStoreIsDisabled() {
         CharacterSoulService soulService = mock(CharacterSoulService.class);
         KnowledgeService knowledgeService = mock(KnowledgeService.class);
-        ProceduralMemoryService proceduralService = mock(ProceduralMemoryService.class);
+        InsightService insightService = mock(InsightService.class);
         CharacterStateService stateService = mock(CharacterStateService.class);
         CharacterState state = state(0.0, 0);
 
         when(soulService.getSoulContent()).thenReturn("identity");
         when(knowledgeService.getRelevantKnowledge(7L, "ws-1")).thenReturn(List.of());
-        when(proceduralService.getTopRules(7L, 5, 500)).thenReturn(List.of());
+        when(insightService.getInsightTextsForUser(7L, 5, 500)).thenReturn(List.of());
         when(stateService.load(7L)).thenReturn(state);
 
         AnchorContext context = new AnchorManager(
                 soulService,
                 (AgentMemoryStore) null,
                 knowledgeService,
-                proceduralService,
+                insightService,
                 stateService).buildContext(7L, "ws-1");
 
         assertThat(context.episodic()).isEmpty();

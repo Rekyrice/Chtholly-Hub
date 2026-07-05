@@ -1,8 +1,8 @@
 package com.chtholly.agent.anchor;
 
 import com.chtholly.agent.CharacterSoulService;
+import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentMemoryStore;
-import com.chtholly.agent.memory.ProceduralMemoryService;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
 import lombok.extern.slf4j.Slf4j;
@@ -27,27 +27,27 @@ public class AnchorManager {
     private final CharacterSoulService soulService;
     private final AgentMemoryStore memoryStore;
     private final KnowledgeService knowledgeService;
-    private final ProceduralMemoryService proceduralService;
+    private final InsightService insightService;
     private final CharacterStateService stateService;
 
     @Autowired
     public AnchorManager(CharacterSoulService soulService,
                          ObjectProvider<AgentMemoryStore> memoryStoreProvider,
                          KnowledgeService knowledgeService,
-                         ProceduralMemoryService proceduralService,
+                         InsightService insightService,
                          CharacterStateService stateService) {
-        this(soulService, memoryStoreProvider.getIfAvailable(), knowledgeService, proceduralService, stateService);
+        this(soulService, memoryStoreProvider.getIfAvailable(), knowledgeService, insightService, stateService);
     }
 
     AnchorManager(CharacterSoulService soulService,
                   AgentMemoryStore memoryStore,
                   KnowledgeService knowledgeService,
-                  ProceduralMemoryService proceduralService,
+                  InsightService insightService,
                   CharacterStateService stateService) {
         this.soulService = soulService;
         this.memoryStore = memoryStore;
         this.knowledgeService = knowledgeService;
-        this.proceduralService = proceduralService;
+        this.insightService = insightService;
         this.stateService = stateService;
     }
 
@@ -83,7 +83,7 @@ public class AnchorManager {
         }
 
         try {
-            builder.procedural(proceduralService.getTopRules(userId, 5, 500));
+            builder.procedural(insightService.getInsightTextsForUser(userId, 5, 500));
         } catch (Exception e) {
             log.warn("Procedural anchor failed userId={}", userId, e);
             builder.procedural(List.of());
