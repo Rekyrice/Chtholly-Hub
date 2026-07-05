@@ -13,6 +13,7 @@ import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
+import com.chtholly.agent.state.EmotionState;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -134,6 +136,8 @@ public class ContextEngine {
     private void appendCharacterState(StringBuilder sb, CharacterState state) {
         CharacterState safeState = state == null ? CharacterState.defaultState() : state;
         double moodBaseline = stateService.getMoodBaseline();
+        double moodValence = stateService.getMoodValence();
+        EmotionState emotion = stateService.getCurrentEmotion();
         double intimacy = safeState.relationship().intimacy();
 
         sb.append("## 当前状态\n\n");
@@ -147,6 +151,18 @@ public class ContextEngine {
                 .append(timePeriodLabel())
                 .append("（心境基线：")
                 .append(moodBaseline)
+                .append("）\n");
+        sb.append("- 心情：")
+                .append(describeMood(moodValence))
+                .append("（valence: ")
+                .append(String.format(Locale.ROOT, "%.2f", moodValence))
+                .append("）\n");
+        sb.append("- 情绪：")
+                .append(describeEmotion(emotion))
+                .append("（")
+                .append(emotion.label())
+                .append(", intensity: ")
+                .append(String.format(Locale.ROOT, "%.2f", emotion.intensity()))
                 .append("）\n");
         sb.append("互动次数：").append(safeState.relationship().interactionCount()).append("\n\n");
     }
@@ -511,6 +527,36 @@ public class ContextEngine {
             return "有点低落";
         }
         return "低落";
+    }
+
+    static String describeMood(double valence) {
+        if (valence > 0.5) {
+            return "心情很好，有点开心";
+        }
+        if (valence > 0.2) {
+            return "平静偏暖，感觉不错";
+        }
+        if (valence > -0.2) {
+            return "平静，安安静静的";
+        }
+        if (valence > -0.5) {
+            return "有点低落，说不上为什么";
+        }
+        return "心情不太好，想安静一会儿";
+    }
+
+    static String describeEmotion(EmotionState emotion) {
+        EmotionState safeEmotion = emotion == null
+                ? new EmotionState("平静", 0.2, java.time.Instant.EPOCH, "default")
+                : emotion;
+        return switch (safeEmotion.label()) {
+            case "好奇" -> "对当前话题感到好奇，想了解更多";
+            case "开心" -> "因为刚才的互动感到开心";
+            case "感伤" -> "有些感伤，但愿意继续聊";
+            case "认真" -> "在认真思考";
+            case "困" -> "有点犯困了";
+            default -> "平静地在这里";
+        };
     }
 
     private void appendParameterSchema(StringBuilder sb, Map<String, ParamDef> schema) {

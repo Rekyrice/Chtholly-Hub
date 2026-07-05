@@ -14,6 +14,7 @@ import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.state.BehaviorProb;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
+import com.chtholly.agent.state.EmotionState;
 import com.chtholly.agent.state.Mood;
 import com.chtholly.agent.state.Needs;
 import com.chtholly.agent.state.Personality;
@@ -44,6 +45,12 @@ class ContextEngineTest {
         anchorManager = mock(AnchorManager.class);
         stateService = mock(CharacterStateService.class);
         when(stateService.getMoodBaseline()).thenReturn(-0.1);
+        when(stateService.getMoodValence()).thenReturn(0.3);
+        when(stateService.getCurrentEmotion()).thenReturn(new EmotionState(
+                "好奇",
+                0.65,
+                Instant.parse("2026-07-05T03:00:00Z"),
+                "user-interaction"));
         when(anchorManager.buildContext(7L, "ws-1")).thenReturn(new AnchorContext(
                 "# 珂朵莉\n认真到笨拙，但不会编造答案。",
                 List.of(AgentTurn.user("anchor history")),
@@ -51,6 +58,28 @@ class ContextEngineTest {
                 List.of("用户喜欢简洁回答"),
                 defaultState()));
         contextEngine = new ContextEngine(anchorManager, stateService);
+    }
+
+    @Test
+    void injectsSlowMoodAndFastEmotionIntoCurrentStateLayer() {
+        when(stateService.getMoodValence()).thenReturn(-0.35);
+        when(stateService.getCurrentEmotion()).thenReturn(new EmotionState(
+                "感伤",
+                0.5,
+                Instant.parse("2026-07-05T03:00:00Z"),
+                "user-interaction"));
+
+        String prompt = contextEngine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "",
+                List.of(),
+                "",
+                "继续聊聊吧");
+
+        assertThat(prompt)
+                .contains("- 心情：有点低落，说不上为什么（valence: -0.35）")
+                .contains("- 情绪：有些感伤，但愿意继续聊（感伤, intensity: 0.50）");
     }
 
     @Test

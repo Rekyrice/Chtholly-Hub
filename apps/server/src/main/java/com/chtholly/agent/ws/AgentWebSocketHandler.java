@@ -180,6 +180,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                     }
                 });
             } finally {
+                characterStateService.updateEmotion(userId, text);
                 characterStateService.recordInteraction(userId);
             }
         } catch (Exception e) {

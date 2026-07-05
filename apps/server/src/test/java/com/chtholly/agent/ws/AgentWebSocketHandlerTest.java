@@ -181,6 +181,7 @@ class AgentWebSocketHandlerTest {
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-c\",\"message\":\"hi\"}"));
 
         verify(characterStateService, timeout(ASYNC_VERIFY_TIMEOUT_MS)).recordInteraction(66L);
+        verify(characterStateService, timeout(ASYNC_VERIFY_TIMEOUT_MS)).updateEmotion(66L, "hi");
     }
 
     @Test
