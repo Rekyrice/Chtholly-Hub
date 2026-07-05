@@ -76,6 +76,18 @@ public class BangumiClient {
         return exchangeJson(url, HttpMethod.POST, body);
     }
 
+    /** Fetches ranked anime subjects for launch recommendation seeding. */
+    public Optional<JsonNode> searchTopAnimeSubjects(int limit) {
+        String url = UriComponentsBuilder
+                .fromHttpUrl(properties.getBaseUrl() + "/v0/search/subjects")
+                .queryParam("type", 2)
+                .queryParam("sort", "rank")
+                .queryParam("limit", Math.min(Math.max(limit, 1), 25))
+                .queryParam("offset", 0)
+                .toUriString();
+        return exchangeJson(url, HttpMethod.GET, null);
+    }
+
     /** 搜索人物（作者/漫画家/声优等）。 */
     public Optional<JsonNode> searchPersons(String keyword, List<String> careers, int limit) {
         String url = UriComponentsBuilder

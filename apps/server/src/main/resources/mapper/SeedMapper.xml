@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.seed.SeedMapper">
+
+    <select id="existsSeed" resultType="boolean">
+        SELECT EXISTS(
+            SELECT 1
+            FROM seed_data
+            WHERE seed_key = #{seedKey}
+        )
+    </select>
+
+    <insert id="markSeed">
+        INSERT INTO seed_data (seed_key, summary_json, created_at)
+        VALUES (#{seedKey}, #{summaryJson}, NOW(3))
+        ON DUPLICATE KEY UPDATE
+            summary_json = VALUES(summary_json),
+            created_at = VALUES(created_at)
+    </insert>
+
+    <insert id="insertBangumiRecommendation" parameterType="com.chtholly.seed.BangumiRecommendationSeed">
+        INSERT INTO bangumi_recommendations (
+            bangumi_id,
+            title,
+            title_cn,
+            cover_url,
+            score,
+            chtholly_review,
+            tags_json,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{bangumiId},
+            #{title},
+            #{titleCn},
+            #{coverUrl},
+            #{score},
+            #{chthollyReview},
+            #{tagsJson},
+            #{createdAt},
+            #{createdAt}
+        )
+        ON DUPLICATE KEY UPDATE
+            title = VALUES(title),
+            title_cn = VALUES(title_cn),
+            cover_url = VALUES(cover_url),
+            score = VALUES(score),
+            chtholly_review = VALUES(chtholly_review),
+            tags_json = VALUES(tags_json),
+            updated_at = VALUES(updated_at)
+    </insert>
+
+    <insert id="insertSeedUser" parameterType="com.chtholly.seed.SeedUserRow">
+        INSERT INTO users (
+            id,
+            email,
+            nickname,
+            avatar,
+            bio,
+            handle,
+            gender,
+            birthday,
+            school,
+            tags_json,
+            role,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{id},
+            #{email},
+            #{nickname},
+            #{avatar},
+            #{bio},
+            #{handle},
+            #{gender},
+            #{birthday},
+            #{school},
+            #{tagsJson},
+            'USER',
+            #{createdAt},
+            #{updatedAt}
+        )
+        ON DUPLICATE KEY UPDATE
+            nickname = VALUES(nickname),
+            avatar = VALUES(avatar),
+            bio = VALUES(bio),
+            gender = VALUES(gender),
+            birthday = VALUES(birthday),
+            school = VALUES(school),
+            tags_json = VALUES(tags_json),
+            updated_at = VALUES(updated_at)
+    </insert>
+
+    <insert id="insertSeedPost" parameterType="com.chtholly.seed.SeedPostRow">
+        INSERT INTO posts (
+            id,
+            creator_id,
+            title,
+            slug,
+            description,
+            content_url,
+            content_object_key,
+            content_size,
+            content_sha256,
+            tags,
+            img_urls,
+            status,
+            type,
+            visible,
+            is_top,
+            create_time,
+            update_time,
+            publish_time
+        ) VALUES (
+            #{id},
+            #{creatorId},
+            #{title},
+            #{slug},
+            #{description},
+            #{contentUrl},
+            #{contentObjectKey},
+            #{contentSize},
+            #{contentSha256},
+            #{tagsJson},
+            #{imgUrlsJson},
+            'published',
+            'image_text',
+            'public',
+            0,
+            #{createTime},
+            #{updateTime},
+            #{publishTime}
+        )
+        ON DUPLICATE KEY UPDATE
+            title = VALUES(title),
+            description = VALUES(description),
+            content_url = VALUES(content_url),
+            content_object_key = VALUES(content_object_key),
+            content_size = VALUES(content_size),
+            content_sha256 = VALUES(content_sha256),
+            tags = VALUES(tags),
+            img_urls = VALUES(img_urls),
+            status = VALUES(status),
+            visible = VALUES(visible),
+            update_time = VALUES(update_time),
+            publish_time = VALUES(publish_time)
+    </insert>
+
+    <insert id="insertSeedComment" parameterType="com.chtholly.seed.SeedCommentRow">
+        INSERT INTO comments (
+            id,
+            post_id,
+            parent_id,
+            user_id,
+            content,
+            is_chtholly,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{id},
+            #{postId},
+            NULL,
+            #{userId},
+            #{content},
+            0,
+            #{createdAt},
+            #{updatedAt}
+        )
+        ON DUPLICATE KEY UPDATE
+            content = VALUES(content),
+            updated_at = VALUES(updated_at)
+    </insert>
+
+    <insert id="upsertFollowing" parameterType="com.chtholly.seed.SeedFollowRow">
+        INSERT INTO following (id, from_user_id, to_user_id, rel_status, created_at, updated_at)
+        VALUES (#{id}, #{fromUserId}, #{toUserId}, 1, #{createdAt}, #{updatedAt})
+        ON DUPLICATE KEY UPDATE
+            rel_status = 1,
+            updated_at = VALUES(updated_at)
+    </insert>
+
+    <insert id="upsertFollower" parameterType="com.chtholly.seed.SeedFollowRow">
+        INSERT INTO follower (id, to_user_id, from_user_id, rel_status, created_at, updated_at)
+        VALUES (#{id}, #{toUserId}, #{fromUserId}, 1, #{createdAt}, #{updatedAt})
+        ON DUPLICATE KEY UPDATE
+            rel_status = 1,
+            updated_at = VALUES(updated_at)
+    </insert>
+</mapper>
