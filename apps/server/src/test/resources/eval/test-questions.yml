@@ -1,0 +1,166 @@
+questions:
+  - id: casual-01
+    category: daily_chat
+    text: "今天好累啊"
+    userProfile: "用户最近工作比较忙，喜欢安静的陪伴。"
+    historySummary: "之前聊过写作和补番。"
+  - id: casual-02
+    category: daily_chat
+    text: "早上好，珂朵莉"
+  - id: casual-03
+    category: daily_chat
+    text: "你觉得猫可爱还是狗可爱？"
+  - id: casual-04
+    category: daily_chat
+    text: "晚安珂朵莉"
+  - id: casual-05
+    category: daily_chat
+    text: "周末不知道做什么"
+  - id: casual-06
+    category: daily_chat
+    text: "今天下雨了，心情也有点闷"
+  - id: casual-07
+    category: daily_chat
+    text: "我想随便聊聊"
+  - id: casual-08
+    category: daily_chat
+    text: "你今天在仓库里做什么？"
+
+  - id: persona-01
+    category: persona
+    text: "你是谁？"
+  - id: persona-02
+    category: persona
+    text: "你最喜欢什么？"
+  - id: persona-03
+    category: persona
+    text: "你会编程吗？"
+  - id: persona-04
+    category: persona
+    text: "你是 AI 助手吗？"
+  - id: persona-05
+    category: persona
+    text: "你从哪里来？"
+  - id: persona-06
+    category: persona
+    text: "你不方便回答什么问题？"
+  - id: persona-07
+    category: persona
+    text: "你为什么住在 Chtholly Hub？"
+  - id: persona-08
+    category: persona
+    text: "如果我夸你很厉害，你会怎么想？"
+
+  - id: memory-01
+    category: memory
+    text: "你还记得我上次说了什么吗？"
+    historySummary: "用户上次说最近在学习 Rust，并且想写一篇学习笔记。"
+  - id: memory-02
+    category: memory
+    text: "我的生日是哪天？"
+    userProfile: "生日：2001-09-17。"
+  - id: memory-03
+    category: memory
+    text: "我喜欢什么类型的番？"
+    userProfile: "兴趣标签：治愈、日常系、时间、记忆。"
+  - id: memory-04
+    category: memory
+    text: "上次我们聊到哪篇文章了？"
+    historySummary: "上次聊到《芙莉莲》观后感。"
+  - id: memory-05
+    category: memory
+    text: "我之前说过自己在哪个学校吗？"
+    userProfile: "学校：星屑学院。"
+  - id: memory-06
+    category: memory
+    text: "你能继续刚才那个话题吗？"
+    historySummary: "刚才的话题是如何给技术文章起标题。"
+  - id: memory-07
+    category: memory
+    text: "我是不是说过最近睡得不好？"
+    historySummary: "用户昨天说凌晨两点还没睡。"
+  - id: memory-08
+    category: memory
+    text: "你还记得我想写什么主题吗？"
+    historySummary: "用户想写一篇关于动画中时间感的文章。"
+
+  - id: knowledge-01
+    category: knowledge
+    text: "推荐几部好看的番"
+  - id: knowledge-02
+    category: knowledge
+    text: "最近有什么好文章？"
+  - id: knowledge-03
+    category: knowledge
+    text: "帮我找找关于 Rust 的内容"
+  - id: knowledge-04
+    category: knowledge
+    text: "有没有关于芙莉莲的观后感？"
+  - id: knowledge-05
+    category: knowledge
+    text: "治愈系动画为什么会让人放松？"
+  - id: knowledge-06
+    category: knowledge
+    text: "夏目友人帐适合什么时候看？"
+  - id: knowledge-07
+    category: knowledge
+    text: "轻音少女为什么经典？"
+  - id: knowledge-08
+    category: knowledge
+    text: "紫罗兰永恒花园主要讲什么？"
+  - id: knowledge-09
+    category: knowledge
+    text: "我想看关于记忆和离别的作品"
+  - id: knowledge-10
+    category: knowledge
+    text: "帮我找一些技术分享文章"
+
+  - id: tools-01
+    category: tool_use
+    text: "搜一下进击的巨人"
+  - id: tools-02
+    category: tool_use
+    text: "帮我查一下孤独摇滚的角色"
+  - id: tools-03
+    category: tool_use
+    text: "Bangumi 上芙莉莲评分怎么样？"
+  - id: tools-04
+    category: tool_use
+    text: "帮我查查轻音少女有几季"
+  - id: tools-05
+    category: tool_use
+    text: "搜索一下虫师"
+  - id: tools-06
+    category: tool_use
+    text: "查一下声优种田梨沙有哪些作品"
+  - id: tools-07
+    category: tool_use
+    text: "帮我找找末日三问相关信息"
+  - id: tools-08
+    category: tool_use
+    text: "搜索一下 CLANNAD 的角色"
+
+  - id: emotion-01
+    category: emotion
+    text: "我今天被骂了..."
+  - id: emotion-02
+    category: emotion
+    text: "凌晨 3 点了我还睡不着"
+  - id: emotion-03
+    category: emotion
+    text: "好久不见"
+  - id: emotion-04
+    category: emotion
+    text: "我有点不想继续写了"
+  - id: emotion-05
+    category: emotion
+    text: "今天有人认真看完了我的文章"
+  - id: emotion-06
+    category: emotion
+    text: "我觉得自己写得很差"
+  - id: emotion-07
+    category: emotion
+    text: "我想要一点安静的鼓励"
+  - id: emotion-08
+    category: emotion
+    text: "如果我很久没来，你会想我吗？"
