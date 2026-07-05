@@ -24,18 +24,34 @@ public final class AgentJsonExtractor {
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("no json found");
         }
-        String source = text.trim();
 
-        if (isActionJson(source)) {
-            return source;
+        IllegalArgumentException lastError = null;
+        for (String candidate : candidateTexts(text)) {
+            try {
+                return extractFromNormalizedText(candidate);
+            } catch (IllegalArgumentException e) {
+                lastError = e;
+            }
+        }
+        throw lastError != null ? lastError : new IllegalArgumentException("no json found");
+    }
+
+    private String extractFromNormalizedText(String source) {
+        String trimmed = source.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("no json found");
+        }
+
+        if (isActionJson(trimmed)) {
+            return trimmed;
         }
 
         String lastValid = null;
-        for (int i = 0; i < source.length(); i++) {
-            if (source.charAt(i) != '{') {
+        for (int i = 0; i < trimmed.length(); i++) {
+            if (trimmed.charAt(i) != '{') {
                 continue;
             }
-            String snippet = readOneJsonObject(source, i);
+            String snippet = readOneJsonObject(trimmed, i);
             if (snippet != null && isActionJson(snippet)) {
                 lastValid = snippet;
             }
@@ -44,6 +60,36 @@ public final class AgentJsonExtractor {
             return lastValid;
         }
         throw new IllegalArgumentException("no json found");
+    }
+
+    /** 依次尝试原文、markdown 代码块内文本等候选。 */
+    private Iterable<String> candidateTexts(String text) {
+        java.util.LinkedHashSet<String> candidates = new java.util.LinkedHashSet<>();
+        String trimmed = text.trim();
+        candidates.add(trimmed);
+        candidates.add(stripMarkdownCodeBlocks(trimmed));
+        for (String block : extractMarkdownCodeBlocks(trimmed)) {
+            candidates.add(block);
+        }
+        return candidates;
+    }
+
+    private static String stripMarkdownCodeBlocks(String text) {
+        return text.replaceAll("(?is)```(?:json)?\\s*", "").replace("```", "").trim();
+    }
+
+    private static java.util.List<String> extractMarkdownCodeBlocks(String text) {
+        java.util.List<String> blocks = new java.util.ArrayList<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("(?is)```(?:json)?\\s*(.*?)```")
+                .matcher(text);
+        while (matcher.find()) {
+            String block = matcher.group(1).trim();
+            if (!block.isEmpty()) {
+                blocks.add(block);
+            }
+        }
+        return blocks;
     }
 
     private boolean isActionJson(String json) {

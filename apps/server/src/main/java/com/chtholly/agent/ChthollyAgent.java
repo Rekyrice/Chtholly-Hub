@@ -148,11 +148,19 @@ public class ChthollyAgent {
                 try {
                     action = parseAction(llmOut);
                 } catch (Exception e) {
+                    log.warn("Agent JSON 解析失败 (step {}): {}", step + 1, abbreviate(llmOut, 240));
+                    String observation = """
+                            输出格式有误：请只输出单个 JSON 对象，不要 markdown 代码块或多余说明。
+                            调用工具示例：{"action":"bangumi_search","input":{"keyword":"re0"}}
+                            结束回答示例：{"action":"final","answer":"占位"}""";
+                    ObjectNode thinkData = objectMapper.createObjectNode();
+                    thinkData.put("content", "回复格式需要调整，重新组织一下…");
+                    AgentEvent.send(sink, "think", thinkData);
+                    emitObserve(sink, observation);
+                    transcript.add("Assistant: " + llmOut);
+                    transcript.add("Observation: " + observation);
                     trace.recordStep(step, "parse_error", stepLlmMs, 0);
-                    trace.terminateError();
-                    trace.setErrorMessage("无法解析模型输出，请重试");
-                    emitError(sink, "无法解析模型输出，请重试");
-                    return;
+                    continue;
                 }
 
                 emitThink(sink, action);
@@ -363,6 +371,17 @@ public class ChthollyAgent {
             cur = cur.getCause();
         }
         return false;
+    }
+
+    private static String abbreviate(String text, int maxLen) {
+        if (text == null) {
+            return "";
+        }
+        String normalized = text.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= maxLen) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLen) + "…";
     }
 
     /** Emits delta chunks character-by-character for typewriter UX on WebSocket clients. */

@@ -162,6 +162,24 @@ class ChthollyAgentTest {
     }
 
     @Test
+    void given_unparseableLlmOutput_when_run_then_retriesInsteadOfError() {
+        AtomicInteger llmCalls = new AtomicInteger();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+                .thenAnswer(inv -> {
+                    if (llmCalls.getAndIncrement() == 0) {
+                        return "这不是合法 JSON";
+                    }
+                    return "{\"action\":\"final\",\"answer\":\"占位\"}";
+                });
+        stubStream("重试后成功");
+
+        agent.run("re0 有几季", 1L, null, events::add);
+
+        assertThat(eventTypes()).contains("observe", "final");
+        assertThat(eventTypes()).doesNotContain("error");
+    }
+
+    @Test
     void given_llmSlow_when_run_then_timeoutHandled() {
         properties.setLlmTimeoutSeconds(1);
         ChatClient.CallResponseSpec callSpec = org.mockito.Mockito.mock(ChatClient.CallResponseSpec.class);

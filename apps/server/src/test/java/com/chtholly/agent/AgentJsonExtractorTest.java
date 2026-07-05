@@ -53,6 +53,18 @@ class AgentJsonExtractorTest {
     }
 
     @Test
+    void extractsJsonFromMarkdownCodeBlock() {
+        String text = """
+                我来查一下。
+                ```json
+                {"action":"bangumi_search","input":{"keyword":"re0"}}
+                ```
+                """;
+        String json = extractor.extractActionJson(text);
+        assertThat(json).contains("bangumi_search");
+    }
+
+    @Test
     void rejectsPlainText() {
         assertThatThrownBy(() -> extractor.extractActionJson("这不是 JSON"))
                 .isInstanceOf(IllegalArgumentException.class);
