@@ -16,10 +16,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static java.util.Map.entry;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -142,6 +145,95 @@ class CharacterStateServiceTest {
                 fixedClockAtHour(hour));
 
         assertThat(clockedService.getMoodBaseline()).isEqualTo(expectedBaseline);
+    }
+
+    @Test
+    void updateAndGetMoodValenceUsesGlobalMoodHash() {
+        stubHashOps();
+        service.updateMoodValence(1.8);
+        verify(hashOps).put("character:state:mood", "valence", "1.0");
+
+        when(hashOps.get("character:state:mood", "valence")).thenReturn("-0.35");
+        assertThat(service.getMoodValence()).isEqualTo(-0.35);
+    }
+
+    @Test
+    void getActiveUserIntimaciesReadsRelationshipScoresFromStateHashes() {
+        stubHashOps();
+        when(redis.keys("agent:character-state:*")).thenReturn(Set.of(
+                "agent:character-state:1",
+                "agent:character-state:2",
+                "agent:character-state:3"));
+        when(hashOps.get("agent:character-state:1", "relationship.intimacy")).thenReturn("0.25");
+        when(hashOps.get("agent:character-state:2", "relationship.intimacy")).thenReturn("bad");
+        when(hashOps.get("agent:character-state:3", "relationship.intimacy")).thenReturn("0.75");
+
+        List<Double> intimacies = service.getActiveUserIntimacies();
+
+        assertThat(intimacies).containsExactlyInAnyOrder(0.25, 0.75);
+    }
+
+    @Test
+    void updateEmotionStoresCurrentEmotionWithThirtyMinuteTtl() {
+        CharacterStateService clockedService = new CharacterStateService(
+                redis,
+                new ObjectMapper(),
+                Clock.fixed(Instant.parse("2026-07-05T03:00:00Z"), ZoneOffset.UTC));
+        stubHashOps();
+
+        clockedService.updateEmotion(7L, "这个角色为什么会这样？我有点好奇");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> entriesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(hashOps).putAll(eq("character:state:emotion"), entriesCaptor.capture());
+        assertThat(entriesCaptor.getValue())
+                .containsEntry("label", "好奇")
+                .containsEntry("triggeredAt", "2026-07-05T03:00:00Z")
+                .containsEntry("trigger", "user-interaction");
+        assertThat(Double.parseDouble(entriesCaptor.getValue().get("intensity"))).isBetween(0.4, 1.0);
+        verify(redis).expire("character:state:emotion", Duration.ofMinutes(30));
+    }
+
+    @Test
+    void getCurrentEmotionAppliesThirtyMinuteDecay() {
+        CharacterStateService clockedService = new CharacterStateService(
+                redis,
+                new ObjectMapper(),
+                Clock.fixed(Instant.parse("2026-07-05T03:15:00Z"), ZoneOffset.UTC));
+        stubHashOps();
+        when(hashOps.entries("character:state:emotion")).thenReturn(Map.of(
+                "label", "开心",
+                "intensity", "0.8",
+                "triggeredAt", "2026-07-05T03:00:00Z",
+                "trigger", "user-interaction"
+        ));
+
+        EmotionState emotion = clockedService.getCurrentEmotion();
+
+        assertThat(emotion.label()).isEqualTo("开心");
+        assertThat(emotion.intensity()).isEqualTo(0.4);
+        assertThat(emotion.triggeredAt()).isEqualTo(Instant.parse("2026-07-05T03:00:00Z"));
+    }
+
+    @Test
+    void getCurrentEmotionFallsBackToCalmWhenDecayedAway() {
+        CharacterStateService clockedService = new CharacterStateService(
+                redis,
+                new ObjectMapper(),
+                Clock.fixed(Instant.parse("2026-07-05T03:31:00Z"), ZoneOffset.UTC));
+        stubHashOps();
+        when(hashOps.entries("character:state:emotion")).thenReturn(Map.of(
+                "label", "感伤",
+                "intensity", "0.8",
+                "triggeredAt", "2026-07-05T03:00:00Z",
+                "trigger", "user-interaction"
+        ));
+
+        EmotionState emotion = clockedService.getCurrentEmotion();
+
+        assertThat(emotion.label()).isEqualTo("平静");
+        assertThat(emotion.intensity()).isEqualTo(0.2);
+        assertThat(emotion.trigger()).isEqualTo("default");
     }
 
     private static Clock fixedClockAtHour(int hour) {
