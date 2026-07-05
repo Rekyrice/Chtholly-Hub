@@ -2,8 +2,8 @@ package com.chtholly.agent.tools;
 
 import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.ParamDef;
+import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.memory.AgentContextUtil;
-import com.chtholly.agent.AgentTool;
 import com.chtholly.bangumi.model.BangumiSubjectRow;
 import com.chtholly.bangumi.service.BangumiService;
 import lombok.RequiredArgsConstructor;
@@ -17,15 +17,17 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/** Bangumi 番剧搜索：本地缓存 + API 回填。 */
+/** Bangumi subject search tool backed by local cache and API fallback. */
 @Component
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class BangumiSearchTool implements AgentTool {
 
     private final BangumiService bangumiService;
+    private final AgentDomainConfig agentDomainConfig;
 
     @Override
     public String name() {
@@ -34,15 +36,13 @@ public class BangumiSearchTool implements AgentTool {
 
     @Override
     public String description() {
-        return """
-                搜索 Bangumi 条目（动画/漫画/游戏等）的评分、集数、放送日。
-                问「有几季/多少季」时会自动宽召回同系列全部动画条目。""";
+        return agentDomainConfig.getBangumi().getDescription();
     }
 
     @Override
     public Map<String, ParamDef> parameterSchema() {
         return Map.of(
-                "keyword", new ParamDef("条目名或系列简称", String.class, true)
+                "keyword", new ParamDef(agentDomainConfig.getBangumi().getKeywordParam(), String.class, true)
         );
     }
 
@@ -50,7 +50,7 @@ public class BangumiSearchTool implements AgentTool {
     public String execute(Map<String, Object> input, long userId) {
         List<String> keywords = buildKeywordCandidates(input);
         if (keywords.isEmpty()) {
-            return "错误：缺少参数 keyword";
+            return agentDomainConfig.getBangumi().getMissingKeyword();
         }
 
         if (isSeasonQuestion(input)) {
@@ -72,7 +72,9 @@ public class BangumiSearchTool implements AgentTool {
         if (lastApiError != null) {
             return lastApiError.getMessage();
         }
-        return "Bangumi 未找到与「" + keywords.get(0) + "」相关的条目。";
+        return agentDomainConfig.render(
+                agentDomainConfig.getBangumi().getNoSubjectResult(),
+                "keyword", keywords.get(0));
     }
 
     private String searchSeries(List<String> keywords) {
@@ -93,11 +95,15 @@ public class BangumiSearchTool implements AgentTool {
             if (lastApiError != null) {
                 return lastApiError.getMessage();
             }
-            return "Bangumi 未找到与「" + keywords.get(0) + "」相关的动画条目。";
+            return agentDomainConfig.render(
+                    agentDomainConfig.getBangumi().getNoAnimeResult(),
+                    "keyword", keywords.get(0));
         }
 
         List<BangumiSubjectRow> rows = new ArrayList<>(merged.values());
-        String header = "共找到 " + rows.size() + " 部相关动画条目（按放送日排序，请据此统计季数）：";
+        String header = agentDomainConfig.render(
+                agentDomainConfig.getBangumi().getSeriesResultTemplate(),
+                "count", rows.size());
         String body = rows.stream().map(this::formatSubject).collect(Collectors.joining("\n\n"));
         return header + "\n\n" + body;
     }
@@ -107,8 +113,9 @@ public class BangumiSearchTool implements AgentTool {
         if (q == null) {
             return false;
         }
-        String s = String.valueOf(q);
-        return s.contains("几季") || s.contains("季数") || s.contains("多少季") || s.contains("一共几季");
+        return Pattern.compile(agentDomainConfig.getBangumi().getSeasonQuestionRegex())
+                .matcher(String.valueOf(q))
+                .find();
     }
 
     private List<String> buildKeywordCandidates(Map<String, Object> input) {
@@ -133,13 +140,13 @@ public class BangumiSearchTool implements AgentTool {
         if (!StringUtils.hasText(history)) {
             return;
         }
-        for (String title : AgentContextUtil.extractWorkTitleCandidates(history, userQuestion)) {
+        for (String title : AgentContextUtil.extractWorkTitleCandidates(history, userQuestion, agentDomainConfig)) {
             candidates.add(title);
             candidates.add(shortSeriesName(title));
         }
     }
 
-    /** 去掉季数/评分等问句后缀，提取可能的条目名 keyword。 */
+    /** Extracts likely title candidates after removing season/rating question suffixes. */
     private void addTitleCandidates(Set<String> candidates, String question) {
         String title = extractTitle(question);
         if (StringUtils.hasText(title)) {
@@ -148,14 +155,14 @@ public class BangumiSearchTool implements AgentTool {
         }
     }
 
-    /** 去掉季数/后缀标记，尝试提取系列简称以便宽召回多季条目。 */
+    /** Removes season markers so the series search can recall multiple related entries. */
     private String shortSeriesName(String keyword) {
         if (!StringUtils.hasText(keyword)) {
             return keyword;
         }
         String s = keyword.trim();
-        s = s.replaceAll("(第一季|第二季|第三季|第四季|第五季|Season\\s*\\d+).*$", "");
-        s = s.replaceAll("(的成.*|成名录.*|第二季.*|第三季.*)$", "");
+        s = s.replaceAll(agentDomainConfig.getBangumi().getShortSeriesRegex(), "");
+        s = s.replaceAll(agentDomainConfig.getBangumi().getShortSeriesSuffixRegex(), "");
         if (s.length() >= 2 && s.length() < keyword.length()) {
             return s;
         }
@@ -167,53 +174,58 @@ public class BangumiSearchTool implements AgentTool {
             return "";
         }
         return question.trim()
-                .replaceAll("[？?。！!，,；;].*$", "")
-                .replaceAll("^(查找|搜索|查一下|帮我查|帮我搜|查询|请问|告诉我|想知道|看看)", "")
-                .replaceAll("(一共有|有几|几季|季数|多少季|的评分|评分多少|多少分|有多少集|集数|怎么样|是什么|信息).*$", "")
+                .replaceAll(agentDomainConfig.getBangumi().getTitleStopRegex(), "")
+                .replaceAll(agentDomainConfig.getBangumi().getTitlePrefixRegex(), "")
+                .replaceAll(agentDomainConfig.getBangumi().getTitleSuffixRegex(), "")
                 .trim();
     }
 
     private String formatSubject(BangumiSubjectRow row) {
         String displayName = row.getNameCn() != null && !row.getNameCn().isBlank()
-                ? row.getNameCn() + "（" + row.getName() + "）"
+                ? agentDomainConfig.render(
+                agentDomainConfig.getBangumi().getDisplayNameTemplate(),
+                "nameCn", row.getNameCn(),
+                "name", row.getName())
                 : row.getName();
         StringBuilder sb = new StringBuilder();
-        sb.append("- 《").append(displayName).append("》");
+        sb.append(agentDomainConfig.render(
+                agentDomainConfig.getBangumi().getItemPrefix(),
+                "displayName", displayName));
         sb.append(" [Bangumi ").append(row.getId()).append("]");
-        sb.append("\n  类型：").append(typeLabel(row.getType()));
+        sb.append("\n  ").append(agentDomainConfig.getBangumi().getTypeLabel()).append(typeLabel(row.getType()));
         if (row.getScore() != null) {
-            sb.append(" | 评分：").append(row.getScore());
+            sb.append(" | ").append(agentDomainConfig.getBangumi().getScoreLabel()).append(row.getScore());
         }
         if (row.getRank() != null && row.getRank() > 0) {
-            sb.append(" | 排名：").append(row.getRank());
+            sb.append(" | ").append(agentDomainConfig.getBangumi().getRankLabel()).append(row.getRank());
         }
         if (row.getEpsCount() != null) {
-            sb.append(" | 集数：").append(row.getEpsCount());
+            sb.append(" | ").append(agentDomainConfig.getBangumi().getEpisodesLabel()).append(row.getEpsCount());
         }
         if (row.getAirDate() != null) {
-            sb.append(" | 放送/发售：").append(row.getAirDate());
+            sb.append(" | ").append(agentDomainConfig.getBangumi().getAirDateLabel()).append(row.getAirDate());
         }
         if (row.getSummary() != null && !row.getSummary().isBlank()) {
             String summary = row.getSummary().strip();
             if (summary.length() > 180) {
-                summary = summary.substring(0, 180) + "…";
+                summary = summary.substring(0, 180) + agentDomainConfig.getBangumi().getTruncatedSuffix();
             }
-            sb.append("\n  简介：").append(summary);
+            sb.append("\n  ").append(agentDomainConfig.getBangumi().getSummaryLabel()).append(summary);
         }
         return sb.toString();
     }
 
     private String typeLabel(Integer type) {
         if (type == null) {
-            return "未知";
+            return agentDomainConfig.getBangumi().getUnknownType();
         }
         return switch (type) {
-            case 1 -> "书籍";
-            case 2 -> "动画";
-            case 3 -> "音乐";
-            case 4 -> "游戏";
-            case 6 -> "三次元";
-            default -> "类型" + type;
+            case 1 -> agentDomainConfig.getBangumi().getBookType();
+            case 2 -> agentDomainConfig.getBangumi().getAnimeType();
+            case 3 -> agentDomainConfig.getBangumi().getMusicType();
+            case 4 -> agentDomainConfig.getBangumi().getGameType();
+            case 6 -> agentDomainConfig.getBangumi().getRealType();
+            default -> agentDomainConfig.getBangumi().getFallbackTypePrefix() + type;
         };
     }
 }

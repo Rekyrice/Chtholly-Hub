@@ -1,6 +1,7 @@
 package com.chtholly.agent;
 
 import com.chtholly.agent.config.AgentProperties;
+import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.context.ContextEngine;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.trace.TracePersistenceService;
@@ -12,6 +13,11 @@ import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.ClassPathResource;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
@@ -40,6 +46,7 @@ class ChthollyAgentTest {
     private ObjectMapper objectMapper;
     private AgentJsonExtractor jsonExtractor;
     private CharacterSoulService characterSoulService;
+    private AgentDomainConfig agentDomainConfig;
     @Mock
     private ContextEngine contextEngine;
     @Mock
@@ -61,6 +68,7 @@ class ChthollyAgentTest {
 
                 认真到笨拙，但不会编造答案。
                 """);
+        agentDomainConfig = loadAgentDomainConfig();
         when(contextEngine.buildSystemPrompt(
                 anyLong(),
                 nullable(String.class),
@@ -70,7 +78,7 @@ class ChthollyAgentTest {
                 anyString()
         )).thenReturn("## ContextEngine Prompt");
         agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(mockTool()), jsonExtractor,
-                agentMetrics, characterSoulService, contextEngine, tracePersistenceService);
+                agentMetrics, characterSoulService, contextEngine, tracePersistenceService, agentDomainConfig);
         events = new ArrayList<>();
     }
 
@@ -143,7 +151,7 @@ class ChthollyAgentTest {
             }
         };
         agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(failingTool), jsonExtractor,
-                agentMetrics, characterSoulService, contextEngine, tracePersistenceService);
+                agentMetrics, characterSoulService, contextEngine, tracePersistenceService, agentDomainConfig);
 
         AtomicInteger llmCalls = new AtomicInteger();
         when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
@@ -226,6 +234,18 @@ class ChthollyAgentTest {
                 return "mock observation";
             }
         };
+    }
+
+    private AgentDomainConfig loadAgentDomainConfig() {
+        try {
+            List<PropertySource<?>> sources = new YamlPropertySourceLoader()
+                    .load("agent-domain", new ClassPathResource("agent-domain.yml"));
+            return new Binder(ConfigurationPropertySources.from(sources))
+                    .bind("agent.domain", AgentDomainConfig.class)
+                    .get();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private void stubLlmCall(String json) {

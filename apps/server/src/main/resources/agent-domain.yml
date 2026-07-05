@@ -1,0 +1,88 @@
+agent:
+  domain:
+    system-prompt:
+      error-fallback: "抱歉，我遇到了一些问题，请稍后再试。"
+      parse-error-observation: |
+        输出格式有误：请只输出单个 JSON 对象，不要 markdown 代码块或多余说明。
+        调用工具示例：{"action":"bangumi_search","input":{"keyword":"re0"}}
+        结束回答示例：{"action":"final","answer":"占位"}
+      parse-error-think: "回复格式需要调整，重新组织一下。"
+      final-answer-system: |
+        ## 你的身份
+
+        {soul}
+
+        ## 回答准则
+
+        根据对话历史、当前问题与工具 Observation 用简洁中文直接回答用户。
+        用户可能在追问上文（如「他们是谁」「宿舍伙伴有哪些」），请结合历史理解指代。
+        只陈述 Observation 中有依据的事实；若工具未返回数据请如实说明。
+        不要输出 JSON 或 markdown 代码块。
+      final-answer-prompt: "请回答用户的当前问题。"
+      final-thinking: "综合工具结果，生成回答。"
+      tool-thinking: "计划调用工具：{toolName}"
+      site-empty-guidance: |
+        站内没有找到相关帖子呢。如果用户问的是动漫条目事实（评分、季数、角色、作者作品等），下一步请试着用 bangumi_search、bangumi_characters 或 bangumi_person_works，不要重复同样的站内检索。
+      bangumi-timeout-guidance: |
+        Bangumi 查询刚才有点慢。请用相同或更简短的 keyword 再试一次；如果还是超时，就如实告诉用户暂时查不到，不要编造数据。
+      empty-site-result-markers:
+        - "未找到与"
+        - "未找到相关"
+        - "向量库中未找到"
+    errors:
+      question-empty: "问题不能为空"
+      model-response-timeout: "模型响应超时，请稍后重试"
+      model-call-failed: "模型调用失败，请检查 LLM 配置"
+      response-timeout: "生成回答超时，请稍后重试"
+      response-failed: "生成回答失败，请重试"
+      max-steps: "已达到最大推理步数（{maxSteps}），请简化问题后重试"
+      unknown-tool: "未知工具：{toolName}。请使用已注册工具或返回 final。"
+      tool-failed: "工具执行失败：{message}"
+      tool-interrupted: "工具执行被中断"
+      no-result: "没有找到相关信息呢。"
+    bangumi:
+      description: |
+        搜索 Bangumi 条目（动画/漫画/游戏等）的评分、集数、放送日。
+        问「有几季/多少季」时会自动宽召回同系列全部动画条目。
+      keyword-param: "条目名或系列简称"
+      missing-keyword: "错误：缺少参数 keyword"
+      no-subject-result: "Bangumi 未找到与「{keyword}」相关的条目。"
+      no-anime-result: "Bangumi 未找到与「{keyword}」相关的动画条目。"
+      series-result-template: "共找到 {count} 部相关动画条目（按放送日排序，请据此统计季数）："
+      season-question-regex: "(几季|季数|多少季|一共几季)"
+      short-series-regex: "(第一季|第二季|第三季|第四季|第五季|Season\\s*\\d+).*$"
+      short-series-suffix-regex: "(的成.*|成名曲.*|第二季.*|第三季.*)$"
+      title-stop-regex: "[？?。！!，,；;].*$"
+      title-prefix-regex: "^(查找|搜索|查一个|帮我查|帮我搜|查询|请问|告诉我|想知道|看看)"
+      title-suffix-regex: "(一共有|有几|几季|季数|多少季|的评分|评分多少|多少分|有多少集|集数|怎么样|是什么|信息).*$"
+      search-keywords: ["动漫", "番剧", "动画"]
+      result-template: "找到了 {count} 部相关作品"
+      display-name-template: "{nameCn}（{name}）"
+      item-prefix: "- 「{displayName}」"
+      type-label: "类型："
+      score-label: "评分："
+      rank-label: "排名："
+      episodes-label: "集数："
+      air-date-label: "放送/发售："
+      summary-label: "简介："
+      truncated-suffix: "…"
+      unknown-type: "未知"
+      book-type: "书籍"
+      anime-type: "动画"
+      music-type: "音乐"
+      game-type: "游戏"
+      real-type: "三次元"
+      fallback-type-prefix: "类型"
+    context:
+      time-label: "当前时间"
+      user-label: "User:"
+      page-label: "当前页面"
+      assistant-label: "Assistant:"
+      observation-label: "Observation:"
+      current-question-heading: "## 当前问题"
+      quoted-title-regex: "《([^》]+)》|「([^」]+)」|“([^”]+)”|\"([^\"]+)\""
+      title-stop-regex: "[？?。！!，,；;].*$"
+      topic-prefix-regex: "^(请问|告诉我|想知道|帮我查|查一个|搜索)"
+      topic-suffix-regex: "(的主要人物|主要人物|的人物|有哪些人物|有哪些角色|的角色|的伙伴|伙伴都有|都有谁|是谁|怎么样|是什么).*$"
+      clause-split-regex: "[，、。！？?]"
+      comma-marker: "，"

@@ -1,6 +1,7 @@
 package com.chtholly.agent.tools;
 
 import com.chtholly.agent.AgentTool;
+import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.memory.AgentContextUtil;
 import com.chtholly.bangumi.service.BangumiService;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import java.util.Set;
 public class BangumiCharactersTool implements AgentTool {
 
     private final BangumiService bangumiService;
+    private final AgentDomainConfig agentDomainConfig;
 
     @Override
     public String name() {
@@ -70,7 +72,7 @@ public class BangumiCharactersTool implements AgentTool {
         Object history = input.get("_conversationHistory");
         String q = userQuestion == null ? "" : String.valueOf(userQuestion);
         String h = history == null ? "" : String.valueOf(history);
-        for (String title : AgentContextUtil.extractWorkTitleCandidates(h, q)) {
+        for (String title : AgentContextUtil.extractWorkTitleCandidates(h, q, agentDomainConfig)) {
             candidates.add(title);
         }
         return new ArrayList<>(candidates);

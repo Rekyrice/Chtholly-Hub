@@ -6,6 +6,8 @@ kafka:
   enabled: ${KAFKA_ENABLED:false}
 
 spring:
+  config:
+    import: optional:classpath:agent-domain.yml
   application:
     name: chtholly-server
   mvc:

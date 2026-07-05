@@ -1,5 +1,6 @@
 package com.chtholly.agent.memory;
 
+import com.chtholly.agent.config.AgentDomainConfig;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -9,50 +10,58 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 从对话历史与用户问题中提取作品名候选，供 Bangumi 工具 keyword 回退。 */
+/** Extracts likely work title candidates from conversation history and user questions. */
 public final class AgentContextUtil {
-
-    private static final Pattern WORK_TITLE = Pattern.compile(
-            "《([^》]+)》|「([^」]+)」|“([^”]+)”|\"([^\"]+)\"");
 
     private AgentContextUtil() {
     }
 
-    /** 合并历史与当前问题中的作品/条目名候选（去重、保序）。 */
-    public static List<String> extractWorkTitleCandidates(String history, String userQuestion) {
+    /** Merges candidates from conversation history and the current user question. */
+    public static List<String> extractWorkTitleCandidates(
+            String history,
+            String userQuestion,
+            AgentDomainConfig agentDomainConfig) {
         Set<String> candidates = new LinkedHashSet<>();
         if (StringUtils.hasText(history)) {
-            addQuotedTitles(candidates, history);
+            addQuotedTitles(candidates, history, agentDomainConfig);
             for (String line : history.split("\n")) {
-                if (line.startsWith("User:")) {
-                    addTopicFromQuestion(candidates, line.substring("User:".length()).trim());
+                if (line.startsWith(agentDomainConfig.getContext().getUserLabel())) {
+                    addTopicFromQuestion(candidates,
+                            line.substring(agentDomainConfig.getContext().getUserLabel().length()).trim(),
+                            agentDomainConfig);
                 }
             }
-            addCommaSeparatedFragment(candidates, history);
+            addCommaSeparatedFragment(candidates, history, agentDomainConfig);
         }
         if (StringUtils.hasText(userQuestion)) {
-            addQuotedTitles(candidates, userQuestion);
-            addTopicFromQuestion(candidates, userQuestion);
+            addQuotedTitles(candidates, userQuestion, agentDomainConfig);
+            addTopicFromQuestion(candidates, userQuestion, agentDomainConfig);
         }
         return new ArrayList<>(candidates);
     }
 
-    private static void addTopicFromQuestion(Set<String> candidates, String question) {
+    private static void addTopicFromQuestion(
+            Set<String> candidates,
+            String question,
+            AgentDomainConfig agentDomainConfig) {
         if (!StringUtils.hasText(question)) {
             return;
         }
         String topic = question.trim()
-                .replaceAll("[？?。！!，,；;].*$", "")
-                .replaceAll("^(请问|告诉我|想知道|帮我查|查一下|搜索)", "")
-                .replaceAll("(的主要人物|主要人物|的人物|有哪些人物|有哪些角色|的角色|的伙伴|伙伴都有|都有谁|是谁|怎么样|是什么).*$", "")
+                .replaceAll(agentDomainConfig.getContext().getTitleStopRegex(), "")
+                .replaceAll(agentDomainConfig.getContext().getTopicPrefixRegex(), "")
+                .replaceAll(agentDomainConfig.getContext().getTopicSuffixRegex(), "")
                 .trim();
         if (topic.length() >= 2 && topic.length() <= 30) {
             candidates.add(topic);
         }
     }
 
-    private static void addQuotedTitles(Set<String> candidates, String text) {
-        Matcher m = WORK_TITLE.matcher(text);
+    private static void addQuotedTitles(
+            Set<String> candidates,
+            String text,
+            AgentDomainConfig agentDomainConfig) {
+        Matcher m = Pattern.compile(agentDomainConfig.getContext().getQuotedTitleRegex()).matcher(text);
         while (m.find()) {
             for (int i = 1; i <= m.groupCount(); i++) {
                 if (StringUtils.hasText(m.group(i))) {
@@ -62,23 +71,30 @@ public final class AgentContextUtil {
         }
     }
 
-    /** 从对话行中提取逗号分隔的短标题片段（无特定作品硬编码）。 */
-    private static void addCommaSeparatedFragment(Set<String> candidates, String text) {
+    /** Extracts short comma-separated title fragments from recent turns. */
+    private static void addCommaSeparatedFragment(
+            Set<String> candidates,
+            String text,
+            AgentDomainConfig agentDomainConfig) {
         for (String line : text.split("\n")) {
             String trimmed = line.trim();
-            if (trimmed.startsWith("Assistant:")) {
-                trimmed = trimmed.substring("Assistant:".length()).trim();
-            } else if (trimmed.startsWith("User:")) {
-                trimmed = trimmed.substring("User:".length()).trim();
+            if (trimmed.startsWith(agentDomainConfig.getContext().getAssistantLabel())) {
+                trimmed = trimmed.substring(agentDomainConfig.getContext().getAssistantLabel().length()).trim();
+            } else if (trimmed.startsWith(agentDomainConfig.getContext().getUserLabel())) {
+                trimmed = trimmed.substring(agentDomainConfig.getContext().getUserLabel().length()).trim();
             }
-            if (trimmed.contains("，") && trimmed.length() >= 4 && trimmed.length() <= 40) {
-                int comma = trimmed.indexOf('，');
+            if (trimmed.contains(agentDomainConfig.getContext().getCommaMarker())
+                    && trimmed.length() >= 4
+                    && trimmed.length() <= 40) {
+                int comma = trimmed.indexOf(agentDomainConfig.getContext().getCommaMarker());
                 if (comma > 1) {
-                    candidates.add(trimmed.substring(0, comma + 1) + trimmed.substring(comma + 1).split("[，。！？?]")[0]);
+                    candidates.add(trimmed.substring(0, comma + 1)
+                            + trimmed.substring(comma + 1)
+                            .split(agentDomainConfig.getContext().getClauseSplitRegex())[0]);
                 }
             }
             if (trimmed.length() >= 3 && trimmed.length() <= 24) {
-                String firstClause = trimmed.split("[，。！？?]")[0].trim();
+                String firstClause = trimmed.split(agentDomainConfig.getContext().getClauseSplitRegex())[0].trim();
                 if (firstClause.length() >= 3) {
                     candidates.add(firstClause);
                 }
