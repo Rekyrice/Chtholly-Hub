@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -40,6 +41,7 @@ public class CognitiveEngine {
     private final Clock clock;
     private volatile Instant lastTriggeredAt = Instant.EPOCH;
 
+    @Autowired
     public CognitiveEngine(PostService postService,
                            InsightService insightService,
                            ExperienceService experienceService,

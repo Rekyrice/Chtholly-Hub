@@ -1,6 +1,7 @@
 package com.chtholly.agent;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,7 @@ public class CharacterSoulService {
      * @param soulResource Classpath resource containing the character soul.
      * @throws IOException if the resource cannot be read.
      */
+    @Autowired
     public CharacterSoulService(
             @Value("classpath:agent/character-soul.md") Resource soulResource
     ) throws IOException {

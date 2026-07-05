@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -37,6 +38,7 @@ public class InsightService {
     private final Clock clock;
     private final ProceduralMemoryService proceduralMemoryService;
 
+    @Autowired
     public InsightService(ObjectMapper objectMapper,
                           ObjectProvider<ChatClient> chatClientProvider,
                           ProceduralMemoryService proceduralMemoryService) {

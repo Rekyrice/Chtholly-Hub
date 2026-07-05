@@ -1,6 +1,7 @@
 package com.chtholly.agent.state;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -41,6 +42,7 @@ public class CharacterStateService {
      * @param redis        Redis template used for hash persistence.
      * @param objectMapper Shared mapper reserved for future nested state serialization.
      */
+    @Autowired
     public CharacterStateService(StringRedisTemplate redis, ObjectMapper objectMapper) {
         this(redis, objectMapper, Clock.systemDefaultZone());
     }

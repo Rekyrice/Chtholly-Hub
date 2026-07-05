@@ -10,6 +10,7 @@ import com.chtholly.post.service.PostService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +36,7 @@ public class ProactiveTriggerEngine {
     private final UserActivityProvider activityProvider;
     private final TextGenerator textGenerator;
 
+    @Autowired
     public ProactiveTriggerEngine(CharacterStateService characterStateService,
                                   PostService postService,
                                   NotificationService notificationService,

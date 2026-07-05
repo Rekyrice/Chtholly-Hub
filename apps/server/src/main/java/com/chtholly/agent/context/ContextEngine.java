@@ -16,6 +16,7 @@ import com.chtholly.agent.state.CharacterStateService;
 import com.chtholly.agent.state.EmotionState;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalTime;
@@ -47,6 +48,7 @@ public class ContextEngine {
     private final KnowledgeService knowledgeService;
     private final ContentUnderstandingService contentUnderstandingService;
 
+    @Autowired
     public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                          ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
                          ObjectProvider<KnowledgeService> knowledgeServiceProvider,

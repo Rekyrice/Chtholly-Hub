@@ -79,6 +79,30 @@ class AnchorManagerTest {
         assertThat(context.relational()).isEqualTo(CharacterState.defaultState());
     }
 
+    @Test
+    void buildContextUsesEmptyEpisodicAnchorWhenMemoryStoreIsDisabled() {
+        CharacterSoulService soulService = mock(CharacterSoulService.class);
+        KnowledgeService knowledgeService = mock(KnowledgeService.class);
+        ProceduralMemoryService proceduralService = mock(ProceduralMemoryService.class);
+        CharacterStateService stateService = mock(CharacterStateService.class);
+        CharacterState state = state(0.0, 0);
+
+        when(soulService.getSoulContent()).thenReturn("identity");
+        when(knowledgeService.getRelevantKnowledge(7L, "ws-1")).thenReturn(List.of());
+        when(proceduralService.getTopRules(7L, 5, 500)).thenReturn(List.of());
+        when(stateService.load(7L)).thenReturn(state);
+
+        AnchorContext context = new AnchorManager(
+                soulService,
+                (AgentMemoryStore) null,
+                knowledgeService,
+                proceduralService,
+                stateService).buildContext(7L, "ws-1");
+
+        assertThat(context.episodic()).isEmpty();
+        assertThat(context.relational()).isSameAs(state);
+    }
+
     private CharacterState state(double intimacy, long interactionCount) {
         return new CharacterState(
                 new Personality(0.7, 0.8, 0.5),

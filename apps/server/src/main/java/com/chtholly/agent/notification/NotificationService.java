@@ -2,6 +2,7 @@ package com.chtholly.agent.notification;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +34,7 @@ public class NotificationService {
     private final Clock clock;
     private final Map<Long, Map<String, Consumer<Notification>>> onlineSessions = new ConcurrentHashMap<>();
 
+    @Autowired
     public NotificationService(StringRedisTemplate redis, ObjectMapper objectMapper) {
         this(redis, objectMapper, Clock.systemUTC());
     }

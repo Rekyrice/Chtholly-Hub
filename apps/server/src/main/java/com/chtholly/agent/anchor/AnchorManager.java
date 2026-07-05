@@ -6,6 +6,8 @@ import com.chtholly.agent.memory.ProceduralMemoryService;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -28,11 +30,20 @@ public class AnchorManager {
     private final ProceduralMemoryService proceduralService;
     private final CharacterStateService stateService;
 
+    @Autowired
     public AnchorManager(CharacterSoulService soulService,
-                         AgentMemoryStore memoryStore,
+                         ObjectProvider<AgentMemoryStore> memoryStoreProvider,
                          KnowledgeService knowledgeService,
                          ProceduralMemoryService proceduralService,
                          CharacterStateService stateService) {
+        this(soulService, memoryStoreProvider.getIfAvailable(), knowledgeService, proceduralService, stateService);
+    }
+
+    AnchorManager(CharacterSoulService soulService,
+                  AgentMemoryStore memoryStore,
+                  KnowledgeService knowledgeService,
+                  ProceduralMemoryService proceduralService,
+                  CharacterStateService stateService) {
         this.soulService = soulService;
         this.memoryStore = memoryStore;
         this.knowledgeService = knowledgeService;
@@ -58,7 +69,7 @@ public class AnchorManager {
         }
 
         try {
-            builder.episodic(memoryStore.getTurns(userId, sessionId));
+            builder.episodic(memoryStore == null ? List.of() : memoryStore.getTurns(userId, sessionId));
         } catch (Exception e) {
             log.warn("Episodic anchor failed userId={}, sessionId={}", userId, sessionId, e);
             builder.episodic(List.of());

@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -50,6 +51,7 @@ public class CommentGenerationService {
     private final CommentDraftGenerator draftGenerator;
     private final Clock clock;
 
+    @Autowired
     public CommentGenerationService(CommentMapper commentMapper,
                                     PostMapper postMapper,
                                     KnowledgeService knowledgeService,

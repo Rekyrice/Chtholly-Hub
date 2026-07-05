@@ -1,7 +1,6 @@
 package com.chtholly.counter.event;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
@@ -10,7 +9,6 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "kafka.enabled", havingValue = "false", matchIfMissing = true)
-@ConditionalOnMissingBean(CounterEventPublisher.class)
 public class SpringEventCounterPublisher implements CounterEventPublisher {
 
     private final ApplicationEventPublisher applicationEventPublisher;

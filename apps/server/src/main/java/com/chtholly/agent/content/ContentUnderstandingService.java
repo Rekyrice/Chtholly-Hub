@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -45,6 +46,7 @@ public class ContentUnderstandingService {
     private final ContentFetcher contentFetcher;
     private final Clock clock;
 
+    @Autowired
     public ContentUnderstandingService(PostService postService,
                                        ElasticsearchClient esClient,
                                        ObjectMapper objectMapper,

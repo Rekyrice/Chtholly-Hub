@@ -9,6 +9,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Service;
@@ -46,6 +47,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
     private final List<KnowledgeChunk> chunks = new ArrayList<>();
 
+    @Autowired
     public KnowledgeServiceImpl(ResourcePatternResolver resourceResolver,
                                 ObjectProvider<ElasticsearchClient> esClientProvider,
                                 ObjectProvider<BangumiService> bangumiServiceProvider,
