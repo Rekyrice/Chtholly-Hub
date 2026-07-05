@@ -33,6 +33,19 @@ export type FailurePattern = {
   resolutionHint: string | null;
 };
 
+export type TraceTokenTrendRow = {
+  day: string;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+export type TraceExecutionTrendRow = {
+  day: string;
+  totalExecutions: number;
+  successCount: number;
+  successRate: number;
+};
+
 export type TraceStats = {
   days: number;
   totalExecutions: number;
@@ -44,7 +57,8 @@ export type TraceStats = {
   avgDurationMs: number | null;
   p95DurationMs: number | null;
   topFailurePatterns: FailurePattern[];
-  tokenTrend: Array<{ day: string; inputTokens: number; outputTokens: number }>;
+  tokenTrend: TraceTokenTrendRow[];
+  executionTrend: TraceExecutionTrendRow[];
 };
 
 export type TraceListResponse = {
