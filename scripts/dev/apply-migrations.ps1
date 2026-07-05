@@ -153,6 +153,23 @@ foreach ($v in $appliedList) {
     if ($v) { $applied[$v] = $true }
 }
 
+# 列/表已存在但未登记 migration 时自动补 baseline（常见于手动改库或中断）
+if ((Test-TableExists "posts") -and (Test-ColumnExists "posts" "content_analysis") -and -not $applied.ContainsKey("V15__add_content_analysis_field")) {
+    Write-Host ">> Baseline V15 (content_analysis already exists)" -ForegroundColor Yellow
+    Register-Migration "V15__add_content_analysis_field"
+    $applied["V15__add_content_analysis_field"] = $true
+}
+if ((Test-TableExists "comments") -and (Test-ColumnExists "comments" "is_chtholly") -and -not $applied.ContainsKey("V16__chtholly_comments")) {
+    Write-Host ">> Baseline V16 (is_chtholly already exists)" -ForegroundColor Yellow
+    Register-Migration "V16__chtholly_comments"
+    $applied["V16__chtholly_comments"] = $true
+}
+if ((Test-TableExists "execution_traces") -and -not $applied.ContainsKey("V17__add_execution_traces")) {
+    Write-Host ">> Baseline V17 (execution_traces already exists)" -ForegroundColor Yellow
+    Register-Migration "V17__add_execution_traces"
+    $applied["V17__add_execution_traces"] = $true
+}
+
 $files = Get-ChildItem (Join-Path $migrationDir "V*.sql") | Sort-Object {
     if ($_.BaseName -match '^V(\d+)__') { [int]$Matches[1] } else { 999999 }
 }

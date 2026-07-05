@@ -144,14 +144,12 @@ export default function AgentWorkspace() {
         </div>
       </section>
 
-      <section className="agent-workspace-main agent-layout" aria-label="珂朵莉对话舞台">
-        <div className="agent-layout-left">
-          <div className="agent-chat-area">
-            <AgentChatPanel variant="workspace" className="h-full min-h-0" />
-          </div>
-        </div>
-        <div className="agent-live2d-zone agent-workspace-main-live2d">
+      <section className="agent-workspace-main" aria-label="珂朵莉对话舞台">
+        <div className="agent-workspace-main-live2d">
           <AgentLive2DStage />
+        </div>
+        <div className="agent-workspace-main-chat">
+          <AgentChatPanel variant="workspace" />
         </div>
       </section>
 
