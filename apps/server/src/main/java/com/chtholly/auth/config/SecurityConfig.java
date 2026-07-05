@@ -70,6 +70,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/posts/feed").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/tags").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search/hub-feed").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search/suggest").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/*/comments").permitAll()
