@@ -4,23 +4,31 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
+import co.elastic.clients.elasticsearch.core.MsearchResponse;
+import co.elastic.clients.elasticsearch.core.msearch.MultiSearchItem;
+import co.elastic.clients.elasticsearch.core.msearch.MultiSearchResponseItem;
+import co.elastic.clients.elasticsearch.core.msearch.RequestItem;
 import co.elastic.clients.elasticsearch._types.query_dsl.FieldValueFactorModifier;
 import co.elastic.clients.elasticsearch._types.query_dsl.FunctionBoostMode;
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
 import co.elastic.clients.elasticsearch.core.search.CompletionSuggestOption;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.Suggestion;
-import com.chtholly.post.api.dto.FeedItemResponse;
+import com.chtholly.agent.api.dto.AgentExperienceResponse;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.common.api.pagination.Pagination;
 import com.chtholly.post.api.dto.FeedItemResponse;
+import com.chtholly.search.api.dto.HubFeedResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
+import com.chtholly.search.api.dto.TagCountResponse;
 import com.chtholly.search.service.SearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
@@ -45,6 +53,17 @@ public class SearchServiceImpl implements SearchService {
      * ES 索引名：Chtholly Hub 内容统一索引。
      */
     private static final String INDEX = "chtholly_content_index";
+    private static final String EXPERIENCE_INDEX = "experiences";
+    private static final String STATUS_OK = "ok";
+    private static final String STATUS_DEGRADED = "degraded";
+    private static final String HOT_TAGS_AGG = "hot_tags";
+
+    private enum HubRegion {
+        LATEST_POSTS,
+        HOT_TAGS,
+        RECOMMENDATIONS,
+        EXPERIENCES
+    }
 
     /**
      * Full-text search with relevance ranking, highlights, and search_after cursor pagination.
@@ -206,6 +225,47 @@ public class SearchServiceImpl implements SearchService {
     }
 
     /**
+     * Aggregates Hub search regions with one Elasticsearch msearch request.
+     *
+     * @param interestTags Optional comma-separated user interest tags for recommendations.
+     * @param currentUserIdNullable Current user for liked/faved enrichment.
+     * @return Hub payload with per-region status for partial failure handling.
+     */
+    @SuppressWarnings("unchecked")
+    @Override
+    public HubFeedResponse hubFeed(String interestTags, Long currentUserIdNullable) {
+        List<String> tags = parseCsv(interestTags);
+        MsearchResponse<Map<String, Object>> response;
+        try {
+            response = es.msearch(ms -> ms
+                            .searches(latestPostsRequest())
+                            .searches(hotTagsRequest())
+                            .searches(recommendationsRequest(tags))
+                            .searches(experiencesRequest()),
+                    (Class<Map<String, Object>>) (Class<?>) Map.class);
+        } catch (Exception e) {
+            log.warn("Hub msearch failed: {}", e.getMessage(), e);
+            return degradedHubFeed();
+        }
+
+        List<MultiSearchResponseItem<Map<String, Object>>> responses =
+                response.responses() == null ? Collections.emptyList() : response.responses();
+
+        RegionResult<FeedItemResponse> latest = parseFeedRegion(responses, HubRegion.LATEST_POSTS, currentUserIdNullable);
+        RegionResult<TagCountResponse> hotTags = parseHotTagsRegion(responses);
+        RegionResult<FeedItemResponse> recommendations =
+                parseFeedRegion(responses, HubRegion.RECOMMENDATIONS, currentUserIdNullable);
+        RegionResult<AgentExperienceResponse> experiences = parseExperiencesRegion(responses);
+
+        return new HubFeedResponse(
+                latest.items(), latest.status(),
+                hotTags.items(), hotTags.status(),
+                recommendations.items(), recommendations.status(),
+                experiences.items(), experiences.status()
+        );
+    }
+
+    /**
      * Typeahead suggestions via ES Completion Suggester on {@code title_suggest} field.
      *
      * @param prefix Query prefix.
@@ -245,6 +305,207 @@ public class SearchServiceImpl implements SearchService {
             log.warn("Suggest response parse failed, prefix={}: {}", prefix, e.getMessage(), e);
         }
         return new SuggestResponse(items);
+    }
+
+    private RequestItem latestPostsRequest() {
+        return RequestItem.of(r -> r
+                .header(h -> h.index(INDEX))
+                .body(b -> b
+                        .size(10)
+                        .query(q -> q.term(t -> t.field("status").value("published")))
+                        .sort(s -> s.field(f -> f.field("publish_time").order(SortOrder.Desc)))));
+    }
+
+    private RequestItem hotTagsRequest() {
+        return RequestItem.of(r -> r
+                .header(h -> h.index(INDEX))
+                .body(b -> b
+                        .size(0)
+                        .query(q -> q.term(t -> t.field("status").value("published")))
+                        .aggregations(HOT_TAGS_AGG, a -> a.terms(t -> t.field("tags").size(20)))));
+    }
+
+    private RequestItem recommendationsRequest(List<String> tags) {
+        return RequestItem.of(r -> r
+                .header(h -> h.index(INDEX))
+                .body(b -> b
+                        .size(5)
+                        .query(q -> q.bool(bool -> {
+                            bool.filter(f -> f.term(t -> t.field("status").value("published")));
+                            if (tags != null && !tags.isEmpty()) {
+                                bool.must(m -> m.terms(t -> t.field("tags")
+                                        .terms(tv -> tv.value(tags.stream().map(FieldValue::of).toList()))));
+                            } else {
+                                bool.must(m -> m.matchAll(ma -> ma));
+                            }
+                            return bool;
+                        }))
+                        .sort(s -> s.field(f -> f.field("like_count").order(SortOrder.Desc)))
+                        .sort(s -> s.field(f -> f.field("publish_time").order(SortOrder.Desc)))));
+    }
+
+    private RequestItem experiencesRequest() {
+        return RequestItem.of(r -> r
+                .header(h -> h.index(EXPERIENCE_INDEX).ignoreUnavailable(true))
+                .body(b -> b
+                        .size(8)
+                        .sort(s -> s.field(f -> f.field("createdAt").order(SortOrder.Desc)))));
+    }
+
+    private HubFeedResponse degradedHubFeed() {
+        return new HubFeedResponse(
+                Collections.emptyList(), STATUS_DEGRADED,
+                Collections.emptyList(), STATUS_DEGRADED,
+                Collections.emptyList(), STATUS_DEGRADED,
+                Collections.emptyList(), STATUS_DEGRADED
+        );
+    }
+
+    private RegionResult<FeedItemResponse> parseFeedRegion(
+            List<MultiSearchResponseItem<Map<String, Object>>> responses,
+            HubRegion region,
+            Long currentUserIdNullable) {
+        MultiSearchItem<Map<String, Object>> item = resultOrNull(responses, region);
+        if (item == null) {
+            return RegionResult.degraded();
+        }
+        return new RegionResult<>(mapHitsToFeedItems(hitsOf(item), currentUserIdNullable), STATUS_OK);
+    }
+
+    private RegionResult<TagCountResponse> parseHotTagsRegion(
+            List<MultiSearchResponseItem<Map<String, Object>>> responses) {
+        MultiSearchItem<Map<String, Object>> item = resultOrNull(responses, HubRegion.HOT_TAGS);
+        if (item == null) {
+            return RegionResult.degraded();
+        }
+        Aggregate aggregate = item.aggregations() == null ? null : item.aggregations().get(HOT_TAGS_AGG);
+        if (aggregate == null || !aggregate.isSterms()) {
+            return new RegionResult<>(Collections.emptyList(), STATUS_OK);
+        }
+        List<TagCountResponse> tags = aggregate.sterms().buckets().array().stream()
+                .map(bucket -> {
+                    String name = fieldValueToString(bucket.key());
+                    return new TagCountResponse(name, name, name, bucket.docCount());
+                })
+                .toList();
+        return new RegionResult<>(tags, STATUS_OK);
+    }
+
+    private RegionResult<AgentExperienceResponse> parseExperiencesRegion(
+            List<MultiSearchResponseItem<Map<String, Object>>> responses) {
+        MultiSearchItem<Map<String, Object>> item = resultOrNull(responses, HubRegion.EXPERIENCES);
+        if (item == null) {
+            return RegionResult.degraded();
+        }
+        List<AgentExperienceResponse> experiences = hitsOf(item).stream()
+                .map(Hit::source)
+                .filter(source -> source != null)
+                .map(source -> new AgentExperienceResponse(
+                        asString(source.get("text")),
+                        asDouble(source.get("valueScore"), 0.0),
+                        asInt(source.get("importance"), 1),
+                        asInstant(source.get("createdAt")),
+                        asString(source.get("source"))))
+                .toList();
+        return new RegionResult<>(experiences, STATUS_OK);
+    }
+
+    private MultiSearchItem<Map<String, Object>> resultOrNull(
+            List<MultiSearchResponseItem<Map<String, Object>>> responses,
+            HubRegion region) {
+        int index = region.ordinal();
+        if (index >= responses.size()) {
+            log.warn("Hub msearch missing response for region={}", region);
+            return null;
+        }
+        MultiSearchResponseItem<Map<String, Object>> item = responses.get(index);
+        if (item == null || item.isFailure()) {
+            log.warn("Hub msearch subquery degraded region={}", region);
+            return null;
+        }
+        try {
+            return item.result();
+        } catch (Exception e) {
+            log.warn("Hub msearch response parse failed region={}: {}", region, e.getMessage(), e);
+            return null;
+        }
+    }
+
+    private List<Hit<Map<String, Object>>> hitsOf(MultiSearchItem<Map<String, Object>> item) {
+        return item.hits() == null ? Collections.emptyList() : item.hits().hits();
+    }
+
+    private List<FeedItemResponse> mapHitsToFeedItems(
+            List<Hit<Map<String, Object>>> hits,
+            Long currentUserIdNullable) {
+        List<Long> postIds = new ArrayList<>(hits.size());
+        for (Hit<Map<String, Object>> hit : hits) {
+            Map<String, Object> source = hit.source();
+            if (source == null) {
+                continue;
+            }
+            Long postId = asLong(source.get("content_id"));
+            if (postId != null) {
+                postIds.add(postId);
+            }
+        }
+
+        Map<Long, Boolean> likedMap = currentUserIdNullable == null || postIds.isEmpty()
+                ? Collections.emptyMap()
+                : counterService.batchIsLiked(currentUserIdNullable, postIds);
+        Map<Long, Boolean> favedMap = currentUserIdNullable == null || postIds.isEmpty()
+                ? Collections.emptyMap()
+                : counterService.batchIsFaved(currentUserIdNullable, postIds);
+
+        List<FeedItemResponse> items = new ArrayList<>();
+        for (Hit<Map<String, Object>> hit : hits) {
+            Map<String, Object> source = hit.source();
+            if (source == null) {
+                continue;
+            }
+            items.add(mapHitToFeedItem(hit, likedMap, favedMap));
+        }
+        return items;
+    }
+
+    private FeedItemResponse mapHitToFeedItem(
+            Hit<Map<String, Object>> hit,
+            Map<Long, Boolean> likedMap,
+            Map<Long, Boolean> favedMap) {
+        Map<String, Object> source = hit.source();
+        Long postId = asLong(source.get("content_id"));
+        String id = asString(source.get("content_id"));
+        String title = asString(source.get("title"));
+        String descriptionFromDoc = asString(source.get("description"));
+        String snippet = buildSnippet(hit);
+        String description = (snippet != null && !snippet.isBlank()) ? snippet : descriptionFromDoc;
+        List<String> tagList = asStringList(source.get("tags"));
+        List<String> imgs = asStringList(source.get("img_urls"));
+        String cover = imgs.isEmpty() ? null : imgs.getFirst();
+        String authorAvatar = asString(source.get("author_avatar"));
+        String authorNickname = asString(source.get("author_nickname"));
+        String tagJson = asString(source.get("author_tag_json"));
+        Long likeCount = asLong(source.get("like_count"));
+        Long favoriteCount = asLong(source.get("favorite_count"));
+        Boolean liked = postId != null && Boolean.TRUE.equals(likedMap.get(postId));
+        Boolean faved = postId != null && Boolean.TRUE.equals(favedMap.get(postId));
+        String slug = asString(source.get("slug"));
+        return new FeedItemResponse(
+                id,
+                slug,
+                title,
+                description,
+                cover,
+                tagList,
+                authorAvatar,
+                authorNickname,
+                tagJson,
+                likeCount,
+                favoriteCount,
+                liked,
+                faved,
+                null
+        );
     }
 
     /**
@@ -393,6 +654,51 @@ public class SearchServiceImpl implements SearchService {
         }
     }
 
+    private Double asDouble(Object o, double fallback) {
+        if (o == null) {
+            return fallback;
+        }
+        if (o instanceof Number n) {
+            return n.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(o));
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    private int asInt(Object o, int fallback) {
+        if (o == null) {
+            return fallback;
+        }
+        if (o instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(o));
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    private Instant asInstant(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Instant instant) {
+            return instant;
+        }
+        if (o instanceof Number n) {
+            return Instant.ofEpochMilli(n.longValue());
+        }
+        try {
+            return Instant.parse(String.valueOf(o));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private Boolean asBoolean(Object o) {
         switch (o) {
             case null -> {
@@ -458,5 +764,11 @@ public class SearchServiceImpl implements SearchService {
             return out;
         }
         return Collections.emptyList();
+    }
+
+    private record RegionResult<T>(List<T> items, String status) {
+        private static <T> RegionResult<T> degraded() {
+            return new RegionResult<>(Collections.emptyList(), STATUS_DEGRADED);
+        }
     }
 }

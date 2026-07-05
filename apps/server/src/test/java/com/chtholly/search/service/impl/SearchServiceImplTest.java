@@ -2,11 +2,18 @@ package com.chtholly.search.service.impl;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.StringTermsAggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
+import co.elastic.clients.elasticsearch.core.MsearchResponse;
+import co.elastic.clients.elasticsearch.core.msearch.MultiSearchItem;
+import co.elastic.clients.elasticsearch.core.msearch.MultiSearchResponseItem;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.HitsMetadata;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
+import com.chtholly.search.api.dto.HubFeedResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +29,9 @@ import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -129,5 +139,120 @@ class SearchServiceImplTest {
 
         assertThat(second.degraded()).isFalse();
         verify(es, times(2)).search(any(Function.class), any(Class.class));
+    }
+
+    @Test
+    void given_msearchItems_when_hubFeed_then_mapsEveryRegionAndUsesSingleRequest() throws Exception {
+        MultiSearchResponseItem<Map<String, Object>> latest =
+                resultItem(List.of(postSource(42L, "Latest", "latest")), Collections.emptyMap());
+        MultiSearchResponseItem<Map<String, Object>> tags =
+                resultItem(List.of(), Map.of("hot_tags", hotTagsAggregate()));
+        MultiSearchResponseItem<Map<String, Object>> recommendations =
+                resultItem(List.of(postSource(77L, "Recommended", "recommended")), Collections.emptyMap());
+        MultiSearchResponseItem<Map<String, Object>> experiences =
+                resultItem(List.of(experienceSource("今天仓库里也很安静呢")), Collections.emptyMap());
+        MsearchResponse<Map<String, Object>> msearch =
+                msearchResponse(latest, tags, recommendations, experiences);
+        when(es.msearch(any(Function.class), eq(Map.class)))
+                .thenReturn(msearch);
+
+        HubFeedResponse response = service.hubFeed("anime,治愈", null);
+
+        assertThat(response.latestPostsStatus()).isEqualTo("ok");
+        assertThat(response.latestPosts()).extracting(FeedItemResponse::title).containsExactly("Latest");
+        assertThat(response.hotTagsStatus()).isEqualTo("ok");
+        assertThat(response.hotTags()).extracting("name").containsExactly("anime");
+        assertThat(response.recommendationsStatus()).isEqualTo("ok");
+        assertThat(response.recommendations()).extracting(FeedItemResponse::title).containsExactly("Recommended");
+        assertThat(response.experiencesStatus()).isEqualTo("ok");
+        assertThat(response.experiences()).extracting("text").containsExactly("今天仓库里也很安静呢");
+        verify(es).msearch(any(Function.class), eq(Map.class));
+    }
+
+    @Test
+    void given_oneMsearchItemFails_when_hubFeed_then_onlyThatRegionIsDegraded() throws Exception {
+        MultiSearchResponseItem<Map<String, Object>> latest =
+                resultItem(List.of(postSource(42L, "Latest", "latest")), Collections.emptyMap());
+        MultiSearchResponseItem<Map<String, Object>> failedTags = mock(MultiSearchResponseItem.class);
+        when(failedTags.isFailure()).thenReturn(true);
+        MultiSearchResponseItem<Map<String, Object>> recommendations =
+                resultItem(List.of(postSource(77L, "Recommended", "recommended")), Collections.emptyMap());
+        MultiSearchResponseItem<Map<String, Object>> experiences =
+                resultItem(List.of(experienceSource("安静的一天")), Collections.emptyMap());
+        MsearchResponse<Map<String, Object>> msearch =
+                msearchResponse(latest, failedTags, recommendations, experiences);
+        when(es.msearch(any(Function.class), eq(Map.class)))
+                .thenReturn(msearch);
+
+        HubFeedResponse response = service.hubFeed(null, null);
+
+        assertThat(response.latestPostsStatus()).isEqualTo("ok");
+        assertThat(response.latestPosts()).hasSize(1);
+        assertThat(response.hotTagsStatus()).isEqualTo("degraded");
+        assertThat(response.hotTags()).isEmpty();
+        assertThat(response.recommendationsStatus()).isEqualTo("ok");
+        assertThat(response.experiencesStatus()).isEqualTo("ok");
+    }
+
+    @SafeVarargs
+    private MsearchResponse<Map<String, Object>> msearchResponse(MultiSearchResponseItem<Map<String, Object>>... items) {
+        @SuppressWarnings("unchecked")
+        MsearchResponse<Map<String, Object>> response = mock(MsearchResponse.class);
+        when(response.responses()).thenReturn(List.of(items));
+        return response;
+    }
+
+    private MultiSearchResponseItem<Map<String, Object>> resultItem(
+            List<Map<String, Object>> sources,
+            Map<String, Aggregate> aggregations) {
+        @SuppressWarnings("unchecked")
+        MultiSearchResponseItem<Map<String, Object>> item = mock(MultiSearchResponseItem.class);
+        @SuppressWarnings("unchecked")
+        MultiSearchItem<Map<String, Object>> result = mock(MultiSearchItem.class);
+        HitsMetadata<Map<String, Object>> hitsMeta = mock(HitsMetadata.class);
+        List<Hit<Map<String, Object>>> hits = sources.stream()
+                .map(source -> {
+                    @SuppressWarnings("unchecked")
+                    Hit<Map<String, Object>> hit = mock(Hit.class);
+                    when(hit.source()).thenReturn(source);
+                    lenient().when(hit.highlight()).thenReturn(null);
+                    return hit;
+                })
+                .toList();
+        lenient().when(hitsMeta.hits()).thenReturn(hits);
+        lenient().when(result.hits()).thenReturn(hitsMeta);
+        lenient().when(result.aggregations()).thenReturn(aggregations);
+        when(item.isFailure()).thenReturn(false);
+        when(item.result()).thenReturn(result);
+        return item;
+    }
+
+    private Map<String, Object> postSource(long id, String title, String slug) {
+        Map<String, Object> source = new HashMap<>();
+        source.put("content_id", id);
+        source.put("title", title);
+        source.put("slug", slug);
+        source.put("description", "desc");
+        source.put("tags", List.of("anime"));
+        source.put("like_count", 1L);
+        source.put("favorite_count", 2L);
+        source.put("author_nickname", "tester");
+        return source;
+    }
+
+    private Map<String, Object> experienceSource(String text) {
+        Map<String, Object> source = new HashMap<>();
+        source.put("text", text);
+        source.put("valueScore", 0.8);
+        source.put("importance", 8);
+        source.put("createdAt", "2026-07-05T00:00:00Z");
+        source.put("source", "test");
+        return source;
+    }
+
+    private Aggregate hotTagsAggregate() {
+        StringTermsBucket bucket = StringTermsBucket.of(b -> b.key("anime").docCount(3L));
+        StringTermsAggregate aggregate = StringTermsAggregate.of(a -> a.buckets(b -> b.array(List.of(bucket))));
+        return new Aggregate(aggregate);
     }
 }

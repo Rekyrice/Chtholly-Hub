@@ -4,23 +4,48 @@ import { postService } from "@/lib/services/postService";
 import { tagService } from "@/lib/services/tagService";
 import { siteConfig } from "@/lib/site.config";
 import type { FeedItem } from "@/lib/types/post";
+import type { AgentExperienceItem } from "@/lib/types/search";
 import type { TagItem } from "@/lib/types/tag";
 
-export default async function Sidebar() {
-  let items: FeedItem[] = [];
-  let tags: TagItem[] = [];
+type SidebarProps = {
+  items?: FeedItem[];
+  tags?: TagItem[];
+  recommendations?: FeedItem[];
+  experiences?: AgentExperienceItem[];
+  latestStatus?: "ok" | "degraded";
+  tagsStatus?: "ok" | "degraded";
+  recommendationsStatus?: "ok" | "degraded";
+  experiencesStatus?: "ok" | "degraded";
+};
 
-  try {
-    const feed = await postService.feed(1, 50, siteConfig.ownerUserId);
-    items = feed.items;
-  } catch {
-    items = [];
+export default async function Sidebar({
+  items: providedItems,
+  tags: providedTags,
+  recommendations = [],
+  experiences = [],
+  latestStatus,
+  tagsStatus,
+  recommendationsStatus,
+  experiencesStatus,
+}: SidebarProps = {}) {
+  let items: FeedItem[] = providedItems ?? [];
+  let tags: TagItem[] = providedTags ?? [];
+
+  if (providedItems == null) {
+    try {
+      const feed = await postService.feed(1, 50, siteConfig.ownerUserId);
+      items = feed.items;
+    } catch {
+      items = [];
+    }
   }
 
-  try {
-    tags = await tagService.list(50);
-  } catch {
-    tags = [];
+  if (providedTags == null) {
+    try {
+      tags = await tagService.list(50);
+    } catch {
+      tags = [];
+    }
   }
 
   const profileName = siteConfig.author.name;
@@ -52,7 +77,14 @@ export default async function Sidebar() {
         </div>
       </div>
 
-      {items.length > 0 && (
+      {latestStatus === "degraded" && (
+        <div className="widget">
+          <h3 className="widget-title">最新文章</h3>
+          <p className="text-sm text-text-secondary m-0">暂时无法获取，稍后再试试。</p>
+        </div>
+      )}
+
+      {latestStatus !== "degraded" && items.length > 0 && (
         <div className="widget">
           <h3 className="widget-title">最新文章</h3>
           <ul className="list-none p-0 m-0">
@@ -73,7 +105,65 @@ export default async function Sidebar() {
         </div>
       )}
 
-      {tags.length > 0 && (
+      {recommendationsStatus === "degraded" && (
+        <div className="widget">
+          <h3 className="widget-title">推荐内容</h3>
+          <p className="text-sm text-text-secondary m-0">推荐暂时走丢了，等一下就好。</p>
+        </div>
+      )}
+
+      {recommendationsStatus !== "degraded" && recommendations.length > 0 && (
+        <div className="widget">
+          <h3 className="widget-title">推荐内容</h3>
+          <ul className="list-none p-0 m-0">
+            {recommendations.slice(0, 5).map((post) => (
+              <li
+                key={post.id}
+                className="border-b border-border py-2 text-sm last:border-b-0"
+              >
+                <Link
+                  href={`/post/${post.slug}`}
+                  className="text-text no-underline block hover:text-sky transition-colors duration-150"
+                >
+                  {post.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {experiencesStatus === "degraded" && (
+        <div className="widget">
+          <h3 className="widget-title">珂朵莉最近在想</h3>
+          <p className="text-sm text-text-secondary m-0">她现在有点安静，稍后再听听看。</p>
+        </div>
+      )}
+
+      {experiencesStatus !== "degraded" && experiences.length > 0 && (
+        <div className="widget">
+          <h3 className="widget-title">珂朵莉最近在想</h3>
+          <ul className="list-none p-0 m-0">
+            {experiences.slice(0, 3).map((experience, index) => (
+              <li
+                key={`${experience.createdAt ?? "experience"}-${index}`}
+                className="border-b border-border py-2 text-sm text-text-secondary last:border-b-0"
+              >
+                {experience.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {tagsStatus === "degraded" && (
+        <div className="widget">
+          <h3 className="widget-title">标签</h3>
+          <p className="text-sm text-text-secondary m-0">标签热度暂时没有回来。</p>
+        </div>
+      )}
+
+      {tagsStatus !== "degraded" && tags.length > 0 && (
         <div className="widget">
           <h3 className="widget-title">标签</h3>
           <div className="flex flex-wrap gap-1.5">

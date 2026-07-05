@@ -3,15 +3,33 @@ import { AnimateIn } from "@/components/ui/AnimateIn";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { postService } from "@/lib/services/postService";
 import { siteConfig } from "@/lib/site.config";
+import type { FeedItem } from "@/lib/types/post";
 
-export default async function HomeFeed() {
-  let items: Awaited<ReturnType<typeof postService.feed>>["items"] = [];
+type HomeFeedProps = {
+  items?: FeedItem[];
+  status?: "ok" | "degraded";
+};
 
-  try {
-    const feed = await postService.feed(1, 20, siteConfig.ownerUserId);
-    items = feed.items;
-  } catch {
-    items = [];
+export default async function HomeFeed({ items: providedItems, status }: HomeFeedProps = {}) {
+  let items: FeedItem[] = providedItems ?? [];
+
+  if (providedItems == null) {
+    try {
+      const feed = await postService.feed(1, 20, siteConfig.ownerUserId);
+      items = feed.items;
+    } catch {
+      items = [];
+    }
+  }
+
+  if (status === "degraded") {
+    return (
+      <EmptyState
+        className="post-card"
+        title="文章暂时没有加载出来"
+        description="搜索服务有点慢，稍后再回来看看。"
+      />
+    );
   }
 
   if (items.length === 0) {

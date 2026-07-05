@@ -3,6 +3,7 @@ package com.chtholly.search.api;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.common.api.pagination.Pagination;
 import com.chtholly.post.api.dto.FeedItemResponse;
+import com.chtholly.search.api.dto.HubFeedResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 import com.chtholly.search.service.SearchService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -54,6 +55,21 @@ public class SearchController {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
         String pageCursor = cursor != null && !cursor.isBlank() ? cursor : after;
         return searchService.search(q, size, tagsCsv, pageCursor, userId);
+    }
+
+    /**
+     * Returns Hub page regions from one Elasticsearch msearch request.
+     *
+     * @param interestTags optional comma-separated tags for recommendations
+     * @param jwt optional JWT for personalized fields
+     * @return aggregated Hub feed sections with per-section status
+     */
+    @Operation(summary = "Hub 聚合搜索 Feed")
+    @GetMapping("/hub-feed")
+    public HubFeedResponse hubFeed(@RequestParam(value = "interestTags", required = false) String interestTags,
+                                   @AuthenticationPrincipal Jwt jwt) {
+        Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
+        return searchService.hubFeed(interestTags, userId);
     }
 
     /**

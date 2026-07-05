@@ -2,6 +2,7 @@ package com.chtholly.search.service;
 
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
+import com.chtholly.search.api.dto.HubFeedResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 
 /**
@@ -17,6 +18,15 @@ public interface SearchService {
      * @param currentUserIdNullable 当前用户ID（可空）
      */
     PageResponse<FeedItemResponse> search(String q, int size, String tagsCsv, String after, Long currentUserIdNullable);
+
+    /**
+     * Aggregates Hub page search-backed regions with one msearch request.
+     *
+     * @param interestTags optional user interest tags for recommendations
+     * @param currentUserIdNullable current user ID for liked/faved enrichment
+     */
+    HubFeedResponse hubFeed(String interestTags, Long currentUserIdNullable);
+
     /**
      * 联想建议（Completion Suggester）。
      * @param prefix 前缀

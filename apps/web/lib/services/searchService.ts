@@ -1,5 +1,5 @@
 import { apiFetch } from "./apiClient";
-import type { SearchResponse, SuggestResponse } from "@/lib/types/search";
+import type { HubFeedResponse, SearchResponse, SuggestResponse } from "@/lib/types/search";
 
 const SEARCH_PREFIX = "/api/v1/search";
 
@@ -14,4 +14,11 @@ export const searchService = {
     apiFetch<SuggestResponse>(
       `${SEARCH_PREFIX}/suggest?prefix=${encodeURIComponent(prefix)}&size=${size}`,
     ),
+
+  hubFeed: (interestTags?: string[]) => {
+    const params = new URLSearchParams();
+    if (interestTags?.length) params.set("interestTags", interestTags.join(","));
+    const query = params.toString();
+    return apiFetch<HubFeedResponse>(`${SEARCH_PREFIX}/hub-feed${query ? `?${query}` : ""}`);
+  },
 };
