@@ -1,6 +1,7 @@
 package com.chtholly.agent.experience;
 
 import com.chtholly.agent.cognitive.ExperienceService;
+import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.auth.event.UserRegisteredEvent;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.event.PostPublishedEvent;
@@ -23,6 +24,7 @@ class ExperienceGeneratorTest {
 
     private ExperienceService experienceService;
     private PostService postService;
+    private SeasonService seasonService;
     private ExperienceGenerator.TextGenerator textGenerator;
     private ExperienceGenerator generator;
 
@@ -30,8 +32,10 @@ class ExperienceGeneratorTest {
     void setUp() {
         experienceService = mock(ExperienceService.class);
         postService = mock(PostService.class);
+        seasonService = mock(SeasonService.class);
+        when(seasonService.getSeasonalThought()).thenReturn("好安静……下雪的时候，世界好像被按下了静音键。");
         textGenerator = mock(ExperienceGenerator.TextGenerator.class);
-        generator = new ExperienceGenerator(experienceService, postService, textGenerator);
+        generator = new ExperienceGenerator(experienceService, postService, textGenerator, seasonService);
     }
 
     @Test
@@ -79,6 +83,17 @@ class ExperienceGeneratorTest {
                 experience.text().equals("我读完了这篇文章，里面的时间很轻。")
                         && experience.importance() == 3
                         && experience.source().equals("post-published")));
+    }
+
+    @Test
+    void eventPromptsIncludeSeasonalThoughtContext() {
+        when(textGenerator.generate(any())).thenReturn("我会把这个冬天的安静也记下来。");
+        User user = User.builder().id(7L).nickname("rekyrice").build();
+
+        generator.onUserRegistered(new UserRegisteredEvent(user));
+
+        verify(textGenerator).generate(argThat(prompt ->
+                prompt.contains("好安静……下雪的时候，世界好像被按下了静音键。")));
     }
 
     @Test

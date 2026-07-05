@@ -9,6 +9,7 @@ import com.chtholly.agent.content.ContentAnalysis;
 import com.chtholly.agent.content.ContentUnderstandingService;
 import com.chtholly.agent.content.Entity;
 import com.chtholly.agent.memory.AgentTurn;
+import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.state.CharacterState;
@@ -47,41 +48,51 @@ public class ContextEngine {
     private final HybridSearchService hybridSearchService;
     private final KnowledgeService knowledgeService;
     private final ContentUnderstandingService contentUnderstandingService;
+    private final SeasonService seasonService;
 
     @Autowired
     public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                          ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
                          ObjectProvider<KnowledgeService> knowledgeServiceProvider,
-                         ObjectProvider<ContentUnderstandingService> contentUnderstandingServiceProvider) {
+                         ObjectProvider<ContentUnderstandingService> contentUnderstandingServiceProvider,
+                         ObjectProvider<SeasonService> seasonServiceProvider) {
         this(anchorManager,
                 stateService,
                 hybridSearchServiceProvider.getIfAvailable(),
                 knowledgeServiceProvider.getIfAvailable(),
-                contentUnderstandingServiceProvider.getIfAvailable());
+                contentUnderstandingServiceProvider.getIfAvailable(),
+                seasonServiceProvider.getIfAvailable());
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService) {
-        this(anchorManager, stateService, (HybridSearchService) null, (KnowledgeService) null, null);
+        this(anchorManager, stateService, (HybridSearchService) null, (KnowledgeService) null, null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService) {
-        this(anchorManager, stateService, hybridSearchService, null, null);
+        this(anchorManager, stateService, hybridSearchService, null, null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService, KnowledgeService knowledgeService) {
-        this(anchorManager, stateService, hybridSearchService, knowledgeService, null);
+        this(anchorManager, stateService, hybridSearchService, knowledgeService, null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService, KnowledgeService knowledgeService,
                   ContentUnderstandingService contentUnderstandingService) {
+        this(anchorManager, stateService, hybridSearchService, knowledgeService, contentUnderstandingService, null);
+    }
+
+    ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
+                  HybridSearchService hybridSearchService, KnowledgeService knowledgeService,
+                  ContentUnderstandingService contentUnderstandingService, SeasonService seasonService) {
         this.anchorManager = anchorManager;
         this.stateService = stateService;
         this.hybridSearchService = hybridSearchService;
         this.knowledgeService = knowledgeService;
         this.contentUnderstandingService = contentUnderstandingService;
+        this.seasonService = seasonService;
     }
 
     /**
@@ -117,6 +128,7 @@ public class ContextEngine {
 
         appendSoul(sb, anchors.soul());
         appendCharacterState(sb, anchors.relational());
+        appendSeasonalFeeling(sb);
         appendPageContext(sb, pageContext);
         appendCurrentPostAnalysis(sb, pageContext);
         appendKnownFacts(sb, userQuestion);
@@ -167,6 +179,22 @@ public class ContextEngine {
                 .append(String.format(Locale.ROOT, "%.2f", emotion.intensity()))
                 .append("）\n");
         sb.append("互动次数：").append(safeState.relationship().interactionCount()).append("\n\n");
+    }
+
+    private void appendSeasonalFeeling(StringBuilder sb) {
+        if (seasonService == null) {
+            return;
+        }
+        try {
+            String seasonalPrompt = seasonService.getSeasonalPrompt();
+            if (!hasText(seasonalPrompt)) {
+                return;
+            }
+            sb.append("## 季节感受\n\n");
+            sb.append(seasonalPrompt.trim()).append("\n\n");
+        } catch (Exception e) {
+            log.warn("Seasonal context failed: {}", e.getMessage(), e);
+        }
     }
 
     private void appendPageContext(StringBuilder sb, String pageContext) {

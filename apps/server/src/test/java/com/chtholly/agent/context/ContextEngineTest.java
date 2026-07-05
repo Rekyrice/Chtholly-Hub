@@ -9,6 +9,7 @@ import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.content.ContentAnalysis;
 import com.chtholly.agent.content.ContentUnderstandingService;
 import com.chtholly.agent.content.Entity;
+import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.state.BehaviorProb;
@@ -38,6 +39,7 @@ class ContextEngineTest {
 
     private AnchorManager anchorManager;
     private CharacterStateService stateService;
+    private SeasonService seasonService;
     private ContextEngine contextEngine;
 
     @BeforeEach
@@ -57,7 +59,9 @@ class ContextEngineTest {
                 List.of("站内有一篇关于芙莉莲时间主题的文章"),
                 List.of("用户喜欢简洁回答"),
                 defaultState()));
-        contextEngine = new ContextEngine(anchorManager, stateService);
+        seasonService = mock(SeasonService.class);
+        when(seasonService.getSeasonalPrompt()).thenReturn("秋天了……适合感性一点的故事，关于离别和怀念的。");
+        contextEngine = new ContextEngine(anchorManager, stateService, null, null, null, seasonService);
     }
 
     @Test
@@ -80,6 +84,21 @@ class ContextEngineTest {
         assertThat(prompt)
                 .contains("- 心情：有点低落，说不上为什么（valence: -0.35）")
                 .contains("- 情绪：有些感伤，但愿意继续聊（感伤, intensity: 0.50）");
+    }
+
+    @Test
+    void injectsSeasonalFeelingAfterCurrentStateLayer() {
+        String prompt = contextEngine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "",
+                List.of(),
+                "",
+                "推荐一点适合现在看的作品");
+
+        assertThat(prompt)
+                .contains("## 季节感受")
+                .contains("秋天了……适合感性一点的故事，关于离别和怀念的。");
     }
 
     @Test

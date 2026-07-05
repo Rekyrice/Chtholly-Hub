@@ -1,6 +1,7 @@
 package com.chtholly.agent.experience;
 
 import com.chtholly.agent.cognitive.ExperienceService;
+import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.auth.event.UserRegisteredEvent;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.event.PostPublishedEvent;
@@ -27,20 +28,27 @@ public class ExperienceGenerator {
     private final ExperienceService experienceService;
     private final PostService postService;
     private final TextGenerator textGenerator;
+    private final SeasonService seasonService;
 
     @Autowired
     public ExperienceGenerator(ExperienceService experienceService,
                                PostService postService,
-                               ObjectProvider<ChatClient> chatClientProvider) {
-        this(experienceService, postService, prompt -> generateWithChatClient(chatClientProvider.getIfAvailable(), prompt));
+                               ObjectProvider<ChatClient> chatClientProvider,
+                               ObjectProvider<SeasonService> seasonServiceProvider) {
+        this(experienceService,
+                postService,
+                prompt -> generateWithChatClient(chatClientProvider.getIfAvailable(), prompt),
+                seasonServiceProvider.getIfAvailable());
     }
 
     ExperienceGenerator(ExperienceService experienceService,
                         PostService postService,
-                        TextGenerator textGenerator) {
+                        TextGenerator textGenerator,
+                        SeasonService seasonService) {
         this.experienceService = experienceService;
         this.postService = postService;
         this.textGenerator = textGenerator;
+        this.seasonService = seasonService;
     }
 
     /**
@@ -58,7 +66,8 @@ public class ExperienceGenerator {
                 你是珂朵莉。有新客人来到了仓库，用第一人称写一句话描述你的感受。
                 风格：温和、好奇、不张扬。
                 用户名：%s
-                """.formatted(nickname == null ? "新客人" : nickname));
+                季节感受：%s
+                """.formatted(nickname == null ? "新客人" : nickname, seasonalThought()));
         storeIfPresent(experience, 4, "user-registered");
     }
 
@@ -85,7 +94,8 @@ public class ExperienceGenerator {
                 你是珂朵莉。有人带了一篇新文章来仓库，用第一人称写一句话。
                 风格：安静地读完后说一句真心话。
                 文章标题：%s
-                """.formatted(title));
+                季节感受：%s
+                """.formatted(title, seasonalThought()));
         storeIfPresent(experience, 3, "post-published");
     }
 
@@ -108,6 +118,19 @@ public class ExperienceGenerator {
             return;
         }
         experienceService.store(new Experience(text.trim(), importance, source));
+    }
+
+    private String seasonalThought() {
+        if (seasonService == null) {
+            return "";
+        }
+        try {
+            String thought = seasonService.getSeasonalThought();
+            return thought == null ? "" : thought.trim();
+        } catch (Exception e) {
+            log.warn("Load seasonal thought failed: {}", e.getMessage(), e);
+            return "";
+        }
     }
 
     private static String generateWithChatClient(ChatClient chatClient, String prompt) {
