@@ -47,4 +47,20 @@
         ORDER BY occurrence_count DESC, last_seen_at DESC
         LIMIT #{limit}
     </select>
+
+    <select id="listBetweenOrderByCountDesc" resultType="com.chtholly.agent.trace.TraceFailurePatternRow">
+        SELECT
+            id,
+            pattern_key AS patternKey,
+            occurrence_count AS occurrenceCount,
+            last_seen_at AS lastSeenAt,
+            sample_trace_ids AS sampleTraceIds,
+            resolution_hint AS resolutionHint,
+            created_at AS createdAt
+        FROM trace_failure_patterns
+        WHERE last_seen_at &gt;= #{from}
+          AND last_seen_at &lt; #{to}
+        ORDER BY occurrence_count DESC, last_seen_at DESC
+        LIMIT #{limit}
+    </select>
 </mapper>

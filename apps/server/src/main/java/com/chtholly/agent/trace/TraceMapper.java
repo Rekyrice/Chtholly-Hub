@@ -33,4 +33,20 @@ public interface TraceMapper {
     List<Integer> listDurationsSince(@Param("since") Instant since, @Param("limit") int limit);
 
     List<TraceTokenTrendRow> tokenTrendSince(@Param("since") Instant since);
+
+    long countBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    long countByStatusBetween(@Param("status") String status,
+                              @Param("from") Instant from,
+                              @Param("to") Instant to);
+
+    Double avgDurationBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    List<Integer> listDurationsBetween(@Param("from") Instant from,
+                                       @Param("to") Instant to,
+                                       @Param("limit") int limit);
+
+    List<TraceTokenTrendRow> tokenTrendBetween(@Param("from") Instant from, @Param("to") Instant to);
+
+    List<TraceDailyTrendRow> executionTrendBetween(@Param("from") Instant from, @Param("to") Instant to);
 }

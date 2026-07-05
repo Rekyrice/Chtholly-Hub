@@ -19,4 +19,8 @@ public interface FailurePatternMapper {
                       @Param("sampleTraceIds") String sampleTraceIds);
 
     List<TraceFailurePatternRow> listAllOrderByCountDesc(@Param("limit") int limit);
+
+    List<TraceFailurePatternRow> listBetweenOrderByCountDesc(@Param("from") Instant from,
+                                                             @Param("to") Instant to,
+                                                             @Param("limit") int limit);
 }

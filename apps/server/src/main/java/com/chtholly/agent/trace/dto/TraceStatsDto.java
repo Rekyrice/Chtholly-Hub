@@ -14,7 +14,10 @@ public record TraceStatsDto(
         Double avgDurationMs,
         Integer p95DurationMs,
         List<FailurePatternDto> topFailurePatterns,
-        List<TokenTrendPoint> tokenTrend
+        List<TokenTrendPoint> tokenTrend,
+        List<ExecutionTrendPoint> executionTrend
 ) {
     public record TokenTrendPoint(LocalDate day, long inputTokens, long outputTokens) {}
+
+    public record ExecutionTrendPoint(LocalDate day, long totalExecutions, long successCount, double successRate) {}
 }

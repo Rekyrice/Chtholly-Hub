@@ -158,4 +158,61 @@
         GROUP BY DATE(started_at)
         ORDER BY day ASC
     </select>
+
+    <select id="countBetween" resultType="long">
+        SELECT COUNT(1)
+        FROM execution_traces
+        WHERE started_at &gt;= #{from}
+          AND started_at &lt; #{to}
+    </select>
+
+    <select id="countByStatusBetween" resultType="long">
+        SELECT COUNT(1)
+        FROM execution_traces
+        WHERE started_at &gt;= #{from}
+          AND started_at &lt; #{to}
+          AND status = #{status}
+    </select>
+
+    <select id="avgDurationBetween" resultType="java.lang.Double">
+        SELECT AVG(duration_ms)
+        FROM execution_traces
+        WHERE started_at &gt;= #{from}
+          AND started_at &lt; #{to}
+          AND duration_ms IS NOT NULL
+    </select>
+
+    <select id="listDurationsBetween" resultType="int">
+        SELECT duration_ms
+        FROM execution_traces
+        WHERE started_at &gt;= #{from}
+          AND started_at &lt; #{to}
+          AND duration_ms IS NOT NULL
+        ORDER BY duration_ms ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="tokenTrendBetween" resultType="com.chtholly.agent.trace.TraceTokenTrendRow">
+        SELECT
+            DATE(started_at) AS day,
+            SUM(input_tokens) AS inputTokens,
+            SUM(output_tokens) AS outputTokens
+        FROM execution_traces
+        WHERE started_at &gt;= #{from}
+          AND started_at &lt; #{to}
+        GROUP BY DATE(started_at)
+        ORDER BY day ASC
+    </select>
+
+    <select id="executionTrendBetween" resultType="com.chtholly.agent.trace.TraceDailyTrendRow">
+        SELECT
+            DATE(started_at) AS day,
+            COUNT(1) AS totalExecutions,
+            SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS successCount
+        FROM execution_traces
+        WHERE started_at &gt;= #{from}
+          AND started_at &lt; #{to}
+        GROUP BY DATE(started_at)
+        ORDER BY day ASC
+    </select>
 </mapper>
