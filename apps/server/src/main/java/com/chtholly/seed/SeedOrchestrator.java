@@ -4,6 +4,7 @@ import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +37,7 @@ public class SeedOrchestrator {
     private final SeedAccountGenerator accountGenerator = new SeedAccountGenerator();
     private final SeedContentGenerator contentGenerator = new SeedContentGenerator();
 
+    @Autowired
     public SeedOrchestrator(SeedMapper mapper,
                             BangumiRecommendationSource bangumiSource,
                             SeedTextGenerator textGenerator,
