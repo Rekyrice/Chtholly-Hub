@@ -54,6 +54,12 @@
   --font-sans: var(--blog-font);
 }
 
+:where(:root) {
+  --font-serif: "Playfair Display", "Noto Serif SC", Georgia, serif;
+  --font-jp: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+}
+
 :root {
   /* 珂朵莉角色色板 */
   --color-sky: #4ab0d9;
@@ -288,7 +294,7 @@
   }
 
   .landing-title {
-    font-family: "Playfair Display", "Noto Serif SC", serif;
+    font-family: var(--font-serif);
     font-size: clamp(48px, 8vw, 96px);
     font-weight: 700;
     letter-spacing: 0;
@@ -1335,6 +1341,12 @@
     border-radius: 4px 16px 16px 16px;
     padding: 10px 14px;
     position: relative;
+  }
+
+  .agent-bubble-assistant .agent-rich-markdown,
+  .agent-bubble-assistant > span,
+  .agent-live2d-typewriter {
+    font-family: var(--font-jp);
   }
 
   .agent-bubble-assistant--speaking {
@@ -2693,20 +2705,22 @@
   }
 
   .agent-rich-markdown pre {
+    font-family: var(--font-mono);
     background: var(--color-pre-bg);
     color: var(--color-pre-fg);
     padding: 0.75rem 1rem;
     border-radius: 8px;
     overflow-x: auto;
     margin: 0.5rem 0;
-    font-size: 0.8125rem;
+    font-size: 0.9em;
   }
 
   .agent-rich-markdown code {
+    font-family: var(--font-mono);
     background: var(--color-cloud);
     padding: 0.1em 0.35em;
     border-radius: 4px;
-    font-size: 0.875em;
+    font-size: 0.9em;
     color: var(--color-sunset);
   }
 

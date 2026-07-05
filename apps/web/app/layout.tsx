@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
-import { Noto_Sans_SC, Source_Sans_3 } from "next/font/google";
+import {
+  JetBrains_Mono,
+  Noto_Sans_JP,
+  Noto_Sans_SC,
+  Playfair_Display,
+  Source_Sans_3,
+} from "next/font/google";
 import { siteConfig } from "@/lib/site.config";
 import "./globals.css";
 
@@ -13,6 +19,25 @@ const sourceSans = Source_Sans_3({
   subsets: ["latin"],
   weight: ["300", "400", "600", "700"],
   variable: "--font-source-sans",
+});
+
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-serif",
+  display: "swap",
+});
+
+const notoSansJp = Noto_Sans_JP({
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+  variable: "--font-jp",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -34,7 +59,7 @@ export default function RootLayout({
   return (
     <html
       lang="zh-CN"
-      className={`${notoSansSc.variable} ${sourceSans.variable} h-full antialiased`}
+      className={`${notoSansSc.variable} ${sourceSans.variable} ${playfair.variable} ${notoSansJp.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <style>{`:root { ${cssVars} }`}</style>
