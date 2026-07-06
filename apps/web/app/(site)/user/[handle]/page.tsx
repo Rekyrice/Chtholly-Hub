@@ -1,12 +1,14 @@
+import Image from "next/image";
+import { notFound } from "next/navigation";
+import { CalendarDays, FileText } from "lucide-react";
 import Sidebar from "@/components/site/Sidebar";
-import PostCard from "@/components/site/PostCard";
 import UserRelationPanel from "@/components/site/UserRelationPanel";
-import { EmptyState } from "@/components/ui/EmptyState";
+import ChthollyImpression from "@/components/site/ChthollyImpression";
+import UserTabs from "@/components/site/UserTabs";
 import { postService } from "@/lib/services/postService";
 import { relationService } from "@/lib/services/relationService";
 import { userService } from "@/lib/services/userService";
 import type { UserCounter } from "@/lib/types/relation";
-import { notFound } from "next/navigation";
 
 interface Props {
   params: Promise<{ handle: string }>;
@@ -58,39 +60,78 @@ export default async function UserPage({ params }: Props) {
 
   const displayName = user.nickname || user.handle;
   const initial = displayName.charAt(0) || "?";
+  const recentTopic = inferRecentTopic(items);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 lg:items-start">
       <div>
-        <div className="post-card mb-6 p-8 text-center">
-          <div className="w-[120px] h-[120px] mx-auto rounded-full overflow-hidden shadow-md border-2 border-surface avatar-ring flex items-center justify-center text-sky text-4xl font-bold">
+        <section className="member-hero">
+          <div className="member-hero__avatar">
             {user.avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <Image
                 src={user.avatar}
                 alt={displayName}
-                className="w-full h-full object-cover"
+                width={132}
+                height={132}
+                priority
               />
             ) : (
-              initial
+              <span>{initial}</span>
             )}
           </div>
-          <h1 className="mt-4 text-xl font-medium text-text">{displayName}</h1>
-          <p className="mt-1 text-sm text-text-secondary">@{user.handle}</p>
-          {user.bio && (
-            <p className="mt-3 text-sm leading-relaxed text-text-secondary">{user.bio}</p>
-          )}
-          <p className="mt-4 text-sm text-text-secondary">{user.publicPostCount} 篇公开文章</p>
-          <UserRelationPanel userId={user.id} initialCounter={counter} />
-        </div>
 
-        {items.length > 0 ? (
-          items.map((post) => <PostCard key={post.id} post={post} />)
-        ) : (
-          <EmptyState className="post-card" title="暂无公开文章" />
-        )}
+          <div className="member-hero__body">
+            <div className="member-hero__identity">
+              <div>
+                <h1>{displayName}</h1>
+                <p>@{user.handle}</p>
+              </div>
+              <UserRelationPanel userId={user.id} initialCounter={counter} />
+            </div>
+
+            {user.bio ? (
+              <p className="member-hero__bio">{user.bio}</p>
+            ) : (
+              <p className="member-hero__bio member-hero__bio--empty">
+                这个人还没有写简介。也许只是还没想好怎么介绍自己。
+              </p>
+            )}
+
+            <div className="member-hero__meta">
+              <span>
+                <CalendarDays size={15} />
+                {formatJoinedAt(user.createdAt)}
+              </span>
+              <span>
+                <FileText size={15} />
+                {counter?.posts ?? user.publicPostCount} 篇公开文章
+              </span>
+            </div>
+
+            <ChthollyImpression
+              nickname={displayName}
+              counter={counter}
+              recentTopic={recentTopic}
+            />
+          </div>
+        </section>
+
+        <UserTabs posts={items} displayName={displayName} />
       </div>
       <Sidebar />
     </div>
   );
+}
+
+function formatJoinedAt(createdAt?: string | null) {
+  if (!createdAt) return "加入时间还没公开";
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return "加入时间还没公开";
+  return `加入于 ${date.getFullYear()}年${date.getMonth() + 1}月`;
+}
+
+function inferRecentTopic(items: Awaited<ReturnType<typeof postService.feed>>["items"]) {
+  const first = items[0];
+  if (!first) return undefined;
+  return first.tags?.[0] || first.title;
 }

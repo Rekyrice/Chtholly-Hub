@@ -46,6 +46,7 @@ public class UserPublicServiceImpl implements UserPublicService {
                 user.getNickname(),
                 user.getAvatar(),
                 user.getBio(),
+                user.getCreatedAt(),
                 postCount
         );
     }
