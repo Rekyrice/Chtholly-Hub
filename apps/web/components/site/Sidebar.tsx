@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
 import { postService } from "@/lib/services/postService";
@@ -66,7 +67,7 @@ export default async function Sidebar({
         </Link>
         <p className="mt-2 text-sm text-text-secondary">{siteConfig.author.bio}</p>
         <div className="mt-3 grid grid-cols-2 gap-1.5">
-          <Link href="/" className="no-underline hover:opacity-80 transition-opacity duration-150">
+          <Link href="/hub" className="no-underline hover:opacity-80 transition-opacity duration-150">
             <div className="text-3xl leading-tight text-text">{items.length}</div>
             <div className="text-sm text-text-secondary">文章</div>
           </Link>
@@ -77,70 +78,26 @@ export default async function Sidebar({
         </div>
       </div>
 
-      {latestStatus === "degraded" && (
-        <div className="widget">
-          <h3 className="widget-title">最新文章</h3>
-          <p className="text-sm text-text-secondary m-0">暂时无法获取，稍后再试试。</p>
-        </div>
-      )}
+      <SidebarPostList
+        title="最新文章"
+        posts={items.slice(0, 5)}
+        degraded={latestStatus === "degraded"}
+        degradedText="暂时无法获取，稍后再试试。"
+      />
 
-      {latestStatus !== "degraded" && items.length > 0 && (
-        <div className="widget">
-          <h3 className="widget-title">最新文章</h3>
-          <ul className="list-none p-0 m-0">
-            {items.slice(0, 5).map((post) => (
-              <li
-                key={post.id}
-                className="border-b border-border py-2 text-sm last:border-b-0"
-              >
-                <Link
-                  href={`/post/${post.slug}`}
-                  className="text-text no-underline block hover:text-sky transition-colors duration-150"
-                >
-                  {post.title}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <SidebarPostList
+        title="推荐内容"
+        posts={recommendations.slice(0, 5)}
+        degraded={recommendationsStatus === "degraded"}
+        degradedText="推荐暂时走丢了，等一下就好。"
+      />
 
-      {recommendationsStatus === "degraded" && (
-        <div className="widget">
-          <h3 className="widget-title">推荐内容</h3>
-          <p className="text-sm text-text-secondary m-0">推荐暂时走丢了，等一下就好。</p>
-        </div>
-      )}
-
-      {recommendationsStatus !== "degraded" && recommendations.length > 0 && (
-        <div className="widget">
-          <h3 className="widget-title">推荐内容</h3>
-          <ul className="list-none p-0 m-0">
-            {recommendations.slice(0, 5).map((post) => (
-              <li
-                key={post.id}
-                className="border-b border-border py-2 text-sm last:border-b-0"
-              >
-                <Link
-                  href={`/post/${post.slug}`}
-                  className="text-text no-underline block hover:text-sky transition-colors duration-150"
-                >
-                  {post.title}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {experiencesStatus === "degraded" && (
+      {experiencesStatus === "degraded" ? (
         <div className="widget">
           <h3 className="widget-title">珂朵莉最近在想</h3>
           <p className="text-sm text-text-secondary m-0">她现在有点安静，稍后再听听看。</p>
         </div>
-      )}
-
-      {experiencesStatus !== "degraded" && experiences.length > 0 && (
+      ) : experiences.length > 0 ? (
         <div className="widget">
           <h3 className="widget-title">珂朵莉最近在想</h3>
           <ul className="list-none p-0 m-0">
@@ -154,20 +111,20 @@ export default async function Sidebar({
             ))}
           </ul>
         </div>
-      )}
+      ) : null}
 
-      {tagsStatus === "degraded" && (
+      <ActiveUsers items={items} />
+
+      {tagsStatus === "degraded" ? (
         <div className="widget">
-          <h3 className="widget-title">标签</h3>
+          <h3 className="widget-title">热门标签</h3>
           <p className="text-sm text-text-secondary m-0">标签热度暂时没有回来。</p>
         </div>
-      )}
-
-      {tagsStatus !== "degraded" && tags.length > 0 && (
+      ) : tags.length > 0 ? (
         <div className="widget">
-          <h3 className="widget-title">标签</h3>
-          <div className="flex flex-wrap gap-1.5">
-            {tags.map((tag) => (
+          <h3 className="widget-title">热门标签</h3>
+          <div className="hot-tags-cloud">
+            {tags.slice(0, 15).map((tag) => (
               <Link
                 key={tag.id}
                 href={`/tag/${encodeURIComponent(tag.name)}`}
@@ -179,7 +136,109 @@ export default async function Sidebar({
             ))}
           </div>
         </div>
-      )}
+      ) : null}
     </aside>
   );
+}
+
+function SidebarPostList({
+  title,
+  posts,
+  degraded,
+  degradedText,
+}: {
+  title: string;
+  posts: FeedItem[];
+  degraded: boolean;
+  degradedText: string;
+}) {
+  if (degraded) {
+    return (
+      <div className="widget">
+        <h3 className="widget-title">{title}</h3>
+        <p className="text-sm text-text-secondary m-0">{degradedText}</p>
+      </div>
+    );
+  }
+
+  if (posts.length === 0) return null;
+
+  return (
+    <div className="widget">
+      <h3 className="widget-title">{title}</h3>
+      <ul className="list-none p-0 m-0">
+        {posts.map((post) => (
+          <li key={post.id} className="border-b border-border py-2 text-sm last:border-b-0">
+            <Link
+              href={`/post/${post.slug}`}
+              className="text-text no-underline block hover:text-sky transition-colors duration-150"
+            >
+              {post.title}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ActiveUsers({ items }: { items: FeedItem[] }) {
+  const users = deriveActiveUsers(items);
+  if (users.length === 0) return null;
+
+  return (
+    <div className="widget">
+      <h3 className="widget-title">活跃用户</h3>
+      <div className="active-users">
+        {users.map((user) => (
+          <Link
+            key={user.id}
+            href={user.handle ? `/user/${encodeURIComponent(user.handle)}` : "/hub"}
+            className="active-users__item"
+          >
+            {user.avatar ? (
+              <Image src={user.avatar} alt="" width={34} height={34} />
+            ) : (
+              <span>{user.name.charAt(0)}</span>
+            )}
+            <span className="active-users__body">
+              <strong>{user.name}</strong>
+              <small>{user.count} 篇最近文章</small>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function deriveActiveUsers(items: FeedItem[]) {
+  const users = new Map<string, {
+    id: string;
+    handle?: string;
+    avatar?: string;
+    name: string;
+    count: number;
+  }>();
+
+  items.forEach((post) => {
+    const id = post.authorId ?? post.authorHandle ?? post.authorNickname;
+    if (!id) return;
+    const current = users.get(String(id));
+    if (current) {
+      current.count += 1;
+      return;
+    }
+    users.set(String(id), {
+      id: String(id),
+      handle: post.authorHandle,
+      avatar: post.authorAvatar,
+      name: post.authorNickname || post.authorHandle || "仓库居民",
+      count: 1,
+    });
+  });
+
+  return [...users.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
 }

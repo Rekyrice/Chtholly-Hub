@@ -28,6 +28,7 @@ export type AgentExperienceItem = {
 export type HubFeedResponse = {
   latestPosts: FeedItem[];
   latestPostsStatus: HubFeedStatus;
+  hotPosts?: FeedItem[];
   hotTags: TagItem[];
   hotTagsStatus: HubFeedStatus;
   recommendations: FeedItem[];
