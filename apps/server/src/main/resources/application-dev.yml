@@ -4,3 +4,8 @@ springdoc:
     enabled: ${SWAGGER_ENABLED:true}
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:true}
+
+# 本地冷启动：首次启动自动写入种子（seed_data 幂等标记，重复启动会跳过）
+seed:
+  enabled: true
+  mode: full

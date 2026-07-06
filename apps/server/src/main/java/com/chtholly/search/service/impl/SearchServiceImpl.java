@@ -311,7 +311,7 @@ public class SearchServiceImpl implements SearchService {
         return RequestItem.of(r -> r
                 .header(h -> h.index(INDEX))
                 .body(b -> b
-                        .size(10)
+                        .size(30)
                         .query(q -> q.term(t -> t.field("status").value("published")))
                         .sort(s -> s.field(f -> f.field("publish_time").order(SortOrder.Desc)))));
     }

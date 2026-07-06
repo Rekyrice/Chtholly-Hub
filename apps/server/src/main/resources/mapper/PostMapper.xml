@@ -138,6 +138,12 @@
         LIMIT #{limit} OFFSET #{offset}
     </select>
 
+    <select id="countFeedPublic" resultType="long">
+        SELECT COUNT(1)
+        FROM posts p
+        WHERE p.status = 'published' AND p.visible = 'public'
+    </select>
+
     <!-- 公开 Feed 游标分页：(publish_time, id) 字典序倒序 -->
     <select id="listFeedPublicByCursor" resultType="com.chtholly.post.model.PostFeedRow">
         SELECT

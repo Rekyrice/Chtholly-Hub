@@ -19,10 +19,15 @@ if (-not (Test-Path $envFile)) {
 if (-not $env:CANAL_ENABLED) { $env:CANAL_ENABLED = "false" }
 if (-not $env:LLM_ENABLED) { $env:LLM_ENABLED = "false" }
 
-# When LLM is on, activate Spring profile "llm" (application-llm.yml)
-if ($env:LLM_ENABLED -eq "true") {
-    $profile = ${env:SPRING_PROFILES_ACTIVE}
-    if ([string]::IsNullOrWhiteSpace($profile)) {
-        $env:SPRING_PROFILES_ACTIVE = "llm"
-    }
+# 本地开发始终启用 dev profile（Swagger + 冷启动 seed）；与 llm 等 profile 并存
+$profiles = @()
+if ($env:SPRING_PROFILES_ACTIVE) {
+    $profiles = $env:SPRING_PROFILES_ACTIVE.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 }
+if ($env:LLM_ENABLED -eq "true" -and $profiles -notcontains "llm") {
+    $profiles += "llm"
+}
+if ($profiles -notcontains "dev") {
+    $profiles = @("dev") + $profiles
+}
+$env:SPRING_PROFILES_ACTIVE = ($profiles | Select-Object -Unique) -join ","

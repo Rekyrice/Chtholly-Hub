@@ -1,9 +1,11 @@
 package com.chtholly.seed;
 
 import com.chtholly.post.id.SnowflakeIdGenerator;
+import com.chtholly.search.index.SearchIndexService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,7 @@ public class SeedOrchestrator {
     private final SeedTextGenerator textGenerator;
     private final SnowflakeIdGenerator idGenerator;
     private final ObjectMapper objectMapper;
+    private final SearchIndexService searchIndexService;
     private final Clock clock;
     private final SeedAccountGenerator accountGenerator = new SeedAccountGenerator();
     private final SeedContentGenerator contentGenerator = new SeedContentGenerator();
@@ -42,8 +45,15 @@ public class SeedOrchestrator {
                             BangumiRecommendationSource bangumiSource,
                             SeedTextGenerator textGenerator,
                             SnowflakeIdGenerator idGenerator,
-                            ObjectMapper objectMapper) {
-        this(mapper, bangumiSource, textGenerator, idGenerator, objectMapper, Clock.systemUTC());
+                            ObjectMapper objectMapper,
+                            ObjectProvider<SearchIndexService> searchIndexServiceProvider) {
+        this(mapper,
+                bangumiSource,
+                textGenerator,
+                idGenerator,
+                objectMapper,
+                searchIndexServiceProvider.getIfAvailable(),
+                Clock.systemUTC());
     }
 
     SeedOrchestrator(SeedMapper mapper,
@@ -51,12 +61,14 @@ public class SeedOrchestrator {
                      SeedTextGenerator textGenerator,
                      SnowflakeIdGenerator idGenerator,
                      ObjectMapper objectMapper,
+                     SearchIndexService searchIndexService,
                      Clock clock) {
         this.mapper = mapper;
         this.bangumiSource = bangumiSource;
         this.textGenerator = textGenerator;
         this.idGenerator = idGenerator;
         this.objectMapper = objectMapper;
+        this.searchIndexService = searchIndexService;
         this.clock = clock;
     }
 
@@ -81,6 +93,7 @@ public class SeedOrchestrator {
         }
 
         persist(plan);
+        indexSeedPosts(plan.posts());
         mapper.markSeed(marker, toJson(summary));
         return summary;
     }
@@ -221,6 +234,16 @@ public class SeedOrchestrator {
         for (SeedFollowRow follow : plan.follows()) {
             mapper.upsertFollowing(follow);
             mapper.upsertFollower(follow);
+        }
+    }
+
+    /** 种子文章写入 MySQL 后立即 upsert 到 ES，避免 Hub Feed 仍只显示旧索引。 */
+    private void indexSeedPosts(List<SeedPostRow> posts) {
+        if (searchIndexService == null || posts.isEmpty()) {
+            return;
+        }
+        for (SeedPostRow post : posts) {
+            searchIndexService.upsertPost(post.id());
         }
     }
 

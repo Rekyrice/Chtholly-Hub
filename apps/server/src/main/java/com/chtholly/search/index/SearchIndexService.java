@@ -66,30 +66,43 @@ public class SearchIndexService {
                 log.warn("Search index backfill skipped: index {} not found", INDEX);
                 return;
             }
-            long cnt = es.count(c -> c.index(INDEX)).count();
-            if (cnt > 0) {
+            long mysqlPublished = postMapper.countFeedPublic();
+            long esPublished = countPublishedDocuments();
+            if (mysqlPublished <= esPublished) {
                 return;
             }
-            log.info("Search index backfill started");
-            int limit = 500;
-            int offset = 0;
-            int indexed = 0;
-            while (true) {
-                List<PostFeedRow> rows = postMapper.listFeedPublic(limit, offset);
-                if (rows == null || rows.isEmpty()) {
-                    break;
-                }
-                for (PostFeedRow r : rows) {
-                    upsertPost(r.getId());
-                    indexed++;
-                }
-                offset += rows.size();
-            }
-            log.info("Search index backfill completed: {} posts processed, {} documents in index",
-                    indexed, es.count(c -> c.index(INDEX)).count());
+            log.info("Search index backfill started: mysqlPublished={} esPublished={}",
+                    mysqlPublished, esPublished);
+            int indexed = backfillPublishedPosts();
+            log.info("Search index backfill completed: {} posts processed, {} published documents in index",
+                    indexed, countPublishedDocuments());
         } catch (Exception e) {
             log.warn("Search index backfill skipped: {}", e.getMessage());
         }
+    }
+
+    /** 将 MySQL 中全部公开已发布帖子 upsert 到 ES（幂等，供 seed 与启动回灌复用）。 */
+    public int backfillPublishedPosts() {
+        int limit = 500;
+        int offset = 0;
+        int indexed = 0;
+        while (true) {
+            List<PostFeedRow> rows = postMapper.listFeedPublic(limit, offset);
+            if (rows == null || rows.isEmpty()) {
+                break;
+            }
+            for (PostFeedRow row : rows) {
+                upsertPost(row.getId());
+                indexed++;
+            }
+            offset += rows.size();
+        }
+        return indexed;
+    }
+
+    private long countPublishedDocuments() throws Exception {
+        return es.count(c -> c.index(INDEX)
+                .query(q -> q.term(t -> t.field("status").value("published")))).count();
     }
 
     /**

@@ -29,6 +29,9 @@ public interface PostMapper {
     List<PostFeedRow> listFeedPublic(@Param("limit") int limit,
                                          @Param("offset") int offset);
 
+    /** 公开 Feed 可见的已发布帖子总数（与 {@link #listFeedPublic} 条件一致）。 */
+    long countFeedPublic();
+
     /** 游标分页：返回 (publish_time, id) 严格小于锚点的记录。 */
     List<PostFeedRow> listFeedPublicByCursor(@Param("cursorTime") Instant cursorTime,
                                              @Param("cursorId") long cursorId,

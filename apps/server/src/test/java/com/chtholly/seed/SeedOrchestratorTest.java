@@ -1,6 +1,7 @@
 package com.chtholly.seed;
 
 import com.chtholly.post.id.SnowflakeIdGenerator;
+import com.chtholly.search.index.SearchIndexService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,8 @@ class SeedOrchestratorTest {
     private BangumiRecommendationSource bangumiSource;
     @Mock
     private SeedTextGenerator textGenerator;
+    @Mock
+    private SearchIndexService searchIndexService;
 
     private SeedOrchestrator orchestrator;
 
@@ -49,6 +52,7 @@ class SeedOrchestratorTest {
                 textGenerator,
                 new SnowflakeIdGenerator(1, 2),
                 new ObjectMapper(),
+                searchIndexService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -115,6 +119,7 @@ class SeedOrchestratorTest {
         verify(mapper, times(24)).upsertFollowing(any());
         verify(mapper, times(24)).upsertFollower(any());
         verify(mapper).markSeed(eq("accounts"), any());
+        verify(searchIndexService, times(24)).upsertPost(any(Long.class));
     }
 
     private static BangumiSubjectSeed subject(long id, String title, double score) {
