@@ -20,7 +20,7 @@ export type PostPatchRequest = {
 };
 
 export const postService = {
-  feed: (page = 1, size = 20, ownerId?: number, tag?: string) => {
+  feed: (page = 1, size = 20, ownerId?: number | string, tag?: string) => {
     const params = new URLSearchParams({
       page: String(page),
       size: String(size),

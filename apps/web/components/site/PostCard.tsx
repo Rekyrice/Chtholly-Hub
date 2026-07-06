@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Heart, User } from "lucide-react";
+import FollowButton from "@/components/site/FollowButton";
 import type { FeedItem } from "@/lib/types/post";
 import { siteConfig } from "@/lib/site.config";
 
@@ -51,12 +52,23 @@ export default function PostCard({
         <div className="entry-meta">
           <span className="mr-4 inline-flex items-center gap-1">
             <User size={13} className="inline" />
-            {post.authorNickname || authorName}
+            {post.authorHandle ? (
+              <Link href={`/user/${encodeURIComponent(post.authorHandle)}`}>
+                {post.authorNickname || authorName}
+              </Link>
+            ) : (
+              post.authorNickname || authorName
+            )}
           </span>
           {post.likeCount != null && post.likeCount > 0 && (
             <span className="inline-flex items-center gap-1">
               <Heart size={13} className="inline" />
               {post.likeCount}
+            </span>
+          )}
+          {post.authorId && (
+            <span className="post-card-follow">
+              <FollowButton userId={post.authorId} size="sm" showCounter={false} />
             </span>
           )}
         </div>

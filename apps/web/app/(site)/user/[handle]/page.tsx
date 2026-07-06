@@ -1,8 +1,11 @@
 import Sidebar from "@/components/site/Sidebar";
 import PostCard from "@/components/site/PostCard";
+import UserRelationPanel from "@/components/site/UserRelationPanel";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { postService } from "@/lib/services/postService";
+import { relationService } from "@/lib/services/relationService";
 import { userService } from "@/lib/services/userService";
+import type { UserCounter } from "@/lib/types/relation";
 import { notFound } from "next/navigation";
 
 interface Props {
@@ -34,10 +37,23 @@ export default async function UserPage({ params }: Props) {
 
   let items: Awaited<ReturnType<typeof postService.feed>>["items"] = [];
   try {
-    const feed = await postService.feed(1, 50, Number(user.id));
+    const feed = await postService.feed(1, 50, user.id);
     items = feed.items;
   } catch {
     items = [];
+  }
+
+  let counter: UserCounter | undefined;
+  try {
+    counter = await relationService.counter(user.id);
+  } catch {
+    counter = {
+      followings: 0,
+      followers: 0,
+      posts: user.publicPostCount,
+      likedPosts: 0,
+      favedPosts: 0,
+    };
   }
 
   const displayName = user.nickname || user.handle;
@@ -65,6 +81,7 @@ export default async function UserPage({ params }: Props) {
             <p className="mt-3 text-sm leading-relaxed text-text-secondary">{user.bio}</p>
           )}
           <p className="mt-4 text-sm text-text-secondary">{user.publicPostCount} 篇公开文章</p>
+          <UserRelationPanel userId={user.id} initialCounter={counter} />
         </div>
 
         {items.length > 0 ? (

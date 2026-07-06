@@ -7,6 +7,8 @@ export type FeedItem = {
   coverImage?: string;
   tags: string[];
   tagJson?: string;
+  authorId?: string;
+  authorHandle?: string;
   authorAvatar?: string;
   authorNickname: string;
   likeCount?: number;
