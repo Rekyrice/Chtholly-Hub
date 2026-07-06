@@ -16,6 +16,7 @@ public record AuthUserResponse(
         @Schema(description = "学校") String school,
         @Schema(description = "简介") String bio,
         @Schema(description = "性别") String gender,
-        @Schema(description = "标签 JSON") String tagJson
+        @Schema(description = "标签 JSON") String tagJson,
+        @Schema(description = "用户角色") String role
 ) {
 }

@@ -12,6 +12,7 @@ export type AuthUser = {
   bio?: string | null;
   gender?: string | null;
   tagJson?: string | null;
+  role?: string | null;
 };
 
 export type TokenPair = {

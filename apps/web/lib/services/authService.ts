@@ -24,6 +24,7 @@ function mapUser(raw: Record<string, unknown>): AuthUser {
     bio: (raw.bio as string | null) ?? null,
     gender: (raw.gender as string | null) ?? null,
     tagJson: (raw.tagJson as string | null) ?? null,
+    role: (raw.role as string | null) ?? null,
   };
 }
 
@@ -112,7 +113,20 @@ export const authService = {
 
   me: async () => {
     const raw = await apiFetch<Record<string, unknown>>(`${AUTH_PREFIX}/me`);
-    return mapUser(raw);
+    const user = mapUser(raw);
+    const stored = getStoredAuth();
+    if (stored) {
+      saveAuth(
+        {
+          accessToken: stored.accessToken,
+          accessTokenExpiresAt: stored.accessTokenExpiresAt,
+          refreshToken: stored.refreshToken,
+          refreshTokenExpiresAt: stored.refreshTokenExpiresAt,
+        },
+        user,
+      );
+    }
+    return user;
   },
 
   logout: async () => {

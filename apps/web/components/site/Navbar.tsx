@@ -28,10 +28,15 @@ export default function Navbar() {
   const brandMain = siteConfig.name.replace(/ Hub$/, "");
   const brandAccent = siteConfig.name.endsWith(" Hub") ? "Hub" : "";
   const drawerLinks = [...siteConfig.nav, ...drawerExtraLinks];
+  const isAdmin = user?.role?.toLowerCase() === "admin";
 
   const syncUser = useCallback(() => {
     purgeExpiredAuth();
-    setUser(getStoredAuth()?.user ?? null);
+    const stored = getStoredAuth();
+    setUser(stored?.user ?? null);
+    if (stored?.accessToken && !stored.user?.role) {
+      void authService.me().then(setUser).catch(() => undefined);
+    }
   }, []);
 
   useEffect(() => {
@@ -135,6 +140,15 @@ export default function Navbar() {
                   {link.label}
                 </Link>
               ))}
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  className={cn(isActive("/admin") && "header-mobile-dropdown__link--active")}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Admin
+                </Link>
+              )}
               {user ? (
                 <button
                   type="button"
@@ -173,6 +187,11 @@ export default function Navbar() {
               {navLink(item.href, item.label)}
             </li>
           ))}
+          {isAdmin && (
+            <li className="flex items-stretch">
+              {navLink("/admin", "Admin")}
+            </li>
+          )}
           {authLinks}
         </ul>
 
