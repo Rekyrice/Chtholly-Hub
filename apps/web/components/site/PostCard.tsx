@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Heart, User } from "lucide-react";
+import { Heart, MessageCircle, User } from "lucide-react";
 import FollowButton from "@/components/site/FollowButton";
 import type { FeedItem } from "@/lib/types/post";
 import { siteConfig } from "@/lib/site.config";
@@ -60,12 +60,6 @@ export default function PostCard({
               post.authorNickname || authorName
             )}
           </span>
-          {post.likeCount != null && post.likeCount > 0 && (
-            <span className="inline-flex items-center gap-1">
-              <Heart size={13} className="inline" />
-              {post.likeCount}
-            </span>
-          )}
           {post.authorId && (
             <span className="post-card-follow">
               <FollowButton userId={post.authorId} size="sm" showCounter={false} />
@@ -83,6 +77,17 @@ export default function PostCard({
         ) : (
           <div className="entry-summary">{post.description}</div>
         ))}
+
+      <Link href={`/post/${post.slug}`} className="post-card-stats" aria-label="查看文章互动数据">
+        <span>
+          <Heart size={15} />
+          {post.likeCount ?? 0}
+        </span>
+        <span>
+          <MessageCircle size={15} />
+          {post.commentCount ?? 0}
+        </span>
+      </Link>
     </article>
   );
 }

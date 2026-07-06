@@ -1,9 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Clock, Heart, Tag } from "lucide-react";
+import { Clock, Tag } from "lucide-react";
 import MarkdownContent from "@/components/site/MarkdownContent";
 import CommentSection from "@/components/site/CommentSection";
+import ArticleActions from "@/components/site/ArticleActions";
 import {
   ChthollyIllustration,
   type ChthollyIllustrationProps,
@@ -91,13 +92,15 @@ export default async function PostPage({ params }: Props) {
                 </span>
               )}
               <span className="mr-4">{post.authorNickname}</span>
-              {post.likeCount > 0 && (
-                <span className="inline-flex items-center gap-1">
-                  <Heart size={13} className="inline" />
-                  {post.likeCount}
-                </span>
-              )}
             </div>
+            <ArticleActions
+              postId={post.id}
+              slug={post.slug}
+              initialLiked={post.liked}
+              initialFaved={post.faved}
+              initialLikeCount={post.likeCount}
+              initialFavCount={post.favoriteCount}
+            />
           </div>
 
           <MarkdownContent content={markdown} />

@@ -12,6 +12,7 @@ export type FeedItem = {
   authorAvatar?: string;
   authorNickname: string;
   likeCount?: number;
+  commentCount?: number;
   favoriteCount?: number;
   liked?: boolean;
   faved?: boolean;
