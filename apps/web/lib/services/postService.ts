@@ -1,5 +1,5 @@
 import { apiFetch } from "./apiClient";
-import type { FeedResponse, PostDetailResponse } from "@/lib/types/post";
+import type { FeedResponse, PostDetailResponse, RelatedPostSummary } from "@/lib/types/post";
 
 const POST_PREFIX = "/api/v1/posts";
 
@@ -32,6 +32,12 @@ export const postService = {
 
   detailBySlug: (slug: string) =>
     apiFetch<PostDetailResponse>(`${POST_PREFIX}/detail/by-slug/${slug}`),
+
+  detailById: (id: string | number) =>
+    apiFetch<PostDetailResponse>(`${POST_PREFIX}/detail/${encodeURIComponent(String(id))}`),
+
+  related: (id: string | number) =>
+    apiFetch<RelatedPostSummary[]>(`${POST_PREFIX}/${encodeURIComponent(String(id))}/related`),
 
   createDraft: () =>
     apiFetch<PostDraftCreateResponse>(`${POST_PREFIX}/drafts`, { method: "POST" }),

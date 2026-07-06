@@ -5,6 +5,7 @@ import ShareButton from "@/components/site/ShareButton";
 type ArticleActionsProps = {
   postId: string;
   slug: string;
+  title: string;
   initialLiked?: boolean;
   initialFaved?: boolean;
   initialLikeCount?: number;
@@ -14,6 +15,7 @@ type ArticleActionsProps = {
 export default function ArticleActions({
   postId,
   slug,
+  title,
   initialLiked,
   initialFaved,
   initialLikeCount = 0,
@@ -35,7 +37,7 @@ export default function ArticleActions({
         initialFaved={initialFaved}
         initialCount={initialFavCount}
       />
-      <ShareButton href={shareHref} />
+      <ShareButton href={shareHref} title={title} />
     </div>
   );
 }

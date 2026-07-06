@@ -5,6 +5,9 @@ import { Clock, Tag } from "lucide-react";
 import MarkdownContent from "@/components/site/MarkdownContent";
 import CommentSection from "@/components/site/CommentSection";
 import ArticleActions from "@/components/site/ArticleActions";
+import AuthorCard from "@/components/site/AuthorCard";
+import ReadingProgress from "@/components/site/ReadingProgress";
+import RelatedPosts from "@/components/site/RelatedPosts";
 import {
   ChthollyIllustration,
   type ChthollyIllustrationProps,
@@ -65,6 +68,7 @@ export default async function PostPage({ params }: Props) {
 
   return (
     <div className="article-detail-layout">
+      <ReadingProgress />
       <main className="article-main">
         <article className="post-card">
           {cover && (
@@ -96,6 +100,7 @@ export default async function PostPage({ params }: Props) {
             <ArticleActions
               postId={post.id}
               slug={post.slug}
+              title={post.title}
               initialLiked={post.liked}
               initialFaved={post.faved}
               initialLikeCount={post.likeCount}
@@ -125,6 +130,12 @@ export default async function PostPage({ params }: Props) {
           )}
 
         </article>
+        <AuthorCard
+          authorId={post.authorId}
+          avatar={post.authorAvatar}
+          nickname={post.authorNickname}
+        />
+        <RelatedPosts postId={post.id} />
         <div className="article-ask-chtholly">
           <ChthollyIllustration size="xs" state="curious" />
           <div className="article-ask-content">

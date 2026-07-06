@@ -49,3 +49,14 @@ export type PostDetailResponse = {
   type: string;
   publishTime?: string;
 };
+
+export type RelatedPostSummary = {
+  id: string;
+  slug?: string;
+  title: string;
+  summary?: string;
+  description?: string;
+  coverImage?: string;
+  authorNickname?: string;
+  sharedEntities?: string[];
+};
