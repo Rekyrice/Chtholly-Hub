@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/Button";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { ApiError } from "@/lib/services/apiClient";
+import { postAiService } from "@/lib/services/postAiService";
 import { postService } from "@/lib/services/postService";
 import { storageService } from "@/lib/services/storageService";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ export default function WritePage() {
   const [markdown, setMarkdown] = useState("");
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [descriptionLoading, setDescriptionLoading] = useState(false);
   const [error, setError] = useState("");
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
@@ -142,6 +144,23 @@ export default function WritePage() {
     }
   };
 
+  const onSuggestDescription = async () => {
+    if (!markdown.trim()) {
+      setError("先写一点正文吧，我需要读到内容才能帮你概括。");
+      return;
+    }
+    setDescriptionLoading(true);
+    setError("");
+    try {
+      const result = await postAiService.suggestDescription(markdown);
+      setDescription(result.description);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "AI 生成描述失败");
+    } finally {
+      setDescriptionLoading(false);
+    }
+  };
+
   return (
     <div className="write-container" data-testid="write-page">
       <form onSubmit={onPublish} className="write-editor-wrapper">
@@ -175,6 +194,17 @@ export default function WritePage() {
             className="write-meta-input"
             aria-label="摘要"
           />
+        </div>
+
+        <div className="write-ai-description-row">
+          <button
+            type="button"
+            className="write-ai-description-btn"
+            onClick={() => void onSuggestDescription()}
+            disabled={descriptionLoading || !markdown.trim()}
+          >
+            {descriptionLoading ? "生成中..." : "AI 生成描述"}
+          </button>
         </div>
 
         <div className="write-toolbar">
