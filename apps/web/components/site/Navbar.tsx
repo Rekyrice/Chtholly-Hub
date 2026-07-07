@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu } from "lucide-react";
+import { ChevronDown, Menu } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import NotificationBell from "@/components/site/NotificationBell";
 import { authService } from "@/lib/services/authService";
@@ -20,9 +20,11 @@ const drawerExtraLinks = [
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLLIElement>(null);
   const pathname = usePathname();
   const router = useRouter();
   const brandMain = siteConfig.name.replace(/ Hub$/, "");
@@ -68,11 +70,25 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!userMenuOpen) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (!userMenuRef.current?.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [userMenuOpen]);
+
   const handleLogout = async () => {
     await authService.logout();
     setUser(null);
     window.dispatchEvent(new Event("chtholly-auth-change"));
     setMenuOpen(false);
+    setUserMenuOpen(false);
     router.push("/");
     router.refresh();
   };
@@ -94,17 +110,68 @@ export default function Navbar() {
       <li className="flex items-center">
         <NotificationBell />
       </li>
-      <li className="flex items-center px-3 text-sm text-text-secondary">
-        {user.nickname || user.phone}
-      </li>
-      <li className="flex items-center">
+      <li className="relative flex items-center" ref={userMenuRef}>
         <button
           type="button"
-          onClick={handleLogout}
-          className="sakuga-nav-link bg-transparent border-0 cursor-pointer transition-colors duration-150"
+          onClick={() => setUserMenuOpen((open) => !open)}
+          className="sakuga-nav-link flex items-center gap-2 bg-transparent border-0 cursor-pointer transition-colors duration-150"
+          aria-haspopup="menu"
+          aria-expanded={userMenuOpen}
         >
-          Logout
+          {user.avatar ? (
+            <img
+              src={user.avatar}
+              alt={user.nickname || user.phone || "User avatar"}
+              className="h-7 w-7 rounded-full object-cover"
+            />
+          ) : (
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sky/15 text-xs font-semibold text-sky">
+              {(user.nickname || user.phone || "U").charAt(0).toUpperCase()}
+            </span>
+          )}
+          <span className="max-w-[8rem] truncate">{user.nickname || user.phone}</span>
+          <ChevronDown
+            size={15}
+            className={cn(
+              "transition-transform duration-150",
+              userMenuOpen && "rotate-180",
+            )}
+            aria-hidden="true"
+          />
         </button>
+
+        {userMenuOpen && (
+          <div
+            className="animate-in fade-in slide-in-from-top-2 absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-xl border border-black/10 bg-white/95 py-1 text-sm shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95"
+            role="menu"
+          >
+            <Link
+              href={`/user/${user.handle || user.id}`}
+              className="flex items-center gap-2 px-4 py-2.5 text-text transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+              role="menuitem"
+              onClick={() => setUserMenuOpen(false)}
+            >
+              Profile
+            </Link>
+            <Link
+              href="/settings"
+              className="flex items-center gap-2 px-4 py-2.5 text-text transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+              role="menuitem"
+              onClick={() => setUserMenuOpen(false)}
+            >
+              Settings
+            </Link>
+            <div className="my-1 h-px bg-black/10 dark:bg-white/10" />
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
+              role="menuitem"
+              onClick={() => void handleLogout()}
+            >
+              Logout
+            </button>
+          </div>
+        )}
       </li>
     </>
   ) : (
