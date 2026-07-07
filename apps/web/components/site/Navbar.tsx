@@ -110,11 +110,11 @@ export default function Navbar() {
       <li className="flex items-center">
         <NotificationBell />
       </li>
-      <li className="relative flex items-center" ref={userMenuRef}>
+      <li className="navbar-user-menu" ref={userMenuRef}>
         <button
           type="button"
           onClick={() => setUserMenuOpen((open) => !open)}
-          className="sakuga-nav-link flex items-center gap-2 bg-transparent border-0 cursor-pointer transition-colors duration-150"
+          className="navbar-user-menu__trigger"
           aria-haspopup="menu"
           aria-expanded={userMenuOpen}
         >
@@ -122,19 +122,19 @@ export default function Navbar() {
             <img
               src={user.avatar}
               alt={user.nickname || user.phone || "User avatar"}
-              className="h-7 w-7 rounded-full object-cover"
+              className="navbar-user-menu__avatar"
             />
           ) : (
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sky/15 text-xs font-semibold text-sky">
+            <span className="navbar-user-menu__avatar navbar-user-menu__avatar--fallback">
               {(user.nickname || user.phone || "U").charAt(0).toUpperCase()}
             </span>
           )}
-          <span className="max-w-[8rem] truncate">{user.nickname || user.phone}</span>
+          <span className="navbar-user-menu__name">{user.nickname || user.phone}</span>
           <ChevronDown
             size={15}
             className={cn(
-              "transition-transform duration-150",
-              userMenuOpen && "rotate-180",
+              "navbar-user-menu__chevron",
+              userMenuOpen && "navbar-user-menu__chevron--open",
             )}
             aria-hidden="true"
           />
@@ -142,12 +142,12 @@ export default function Navbar() {
 
         {userMenuOpen && (
           <div
-            className="animate-in fade-in slide-in-from-top-2 absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-xl border border-black/10 bg-white/95 py-1 text-sm shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95"
+            className="navbar-user-menu__dropdown"
             role="menu"
           >
             <Link
               href={`/user/${user.handle || user.id}`}
-              className="flex items-center gap-2 px-4 py-2.5 text-text transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+              className="navbar-user-menu__item"
               role="menuitem"
               onClick={() => setUserMenuOpen(false)}
             >
@@ -155,16 +155,16 @@ export default function Navbar() {
             </Link>
             <Link
               href="/settings"
-              className="flex items-center gap-2 px-4 py-2.5 text-text transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+              className="navbar-user-menu__item"
               role="menuitem"
               onClick={() => setUserMenuOpen(false)}
             >
               Settings
             </Link>
-            <div className="my-1 h-px bg-black/10 dark:bg-white/10" />
+            <div className="navbar-user-menu__divider" />
             <button
               type="button"
-              className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
+              className="navbar-user-menu__item navbar-user-menu__item--danger"
               role="menuitem"
               onClick={() => void handleLogout()}
             >
