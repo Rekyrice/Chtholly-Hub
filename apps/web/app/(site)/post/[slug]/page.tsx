@@ -8,6 +8,7 @@ import ArticleActions from "@/components/site/ArticleActions";
 import AuthorCard from "@/components/site/AuthorCard";
 import ReadingProgress from "@/components/site/ReadingProgress";
 import RelatedPosts from "@/components/site/RelatedPosts";
+import PostQnA from "@/components/site/PostQnA";
 import {
   ChthollyIllustration,
   type ChthollyIllustrationProps,
@@ -140,15 +141,7 @@ export default async function PostPage({ params }: Props) {
           postVisibility={post.visible}
         />
         <RelatedPosts postId={post.id} />
-        <div className="article-ask-chtholly">
-          <ChthollyIllustration size="xs" state="curious" />
-          <div className="article-ask-content">
-            <p>对这篇文章有什么想法？</p>
-            <Link href={askHref} className="article-ask-btn">
-              问珂朵莉
-            </Link>
-          </div>
-        </div>
+        <PostQnA postId={post.id} />
         <CommentSection postId={post.id} />
       </main>
 
