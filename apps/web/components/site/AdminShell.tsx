@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, ScrollText, Shield, Users } from "lucide-react";
+import { LayoutDashboard, MailWarning, ScrollText, Shield, Users } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { authService } from "@/lib/services/authService";
 import { getStoredAuth } from "@/lib/auth/tokens";
@@ -16,6 +16,7 @@ const ADMIN_LINKS = [
   { href: "/admin", label: "概览", icon: LayoutDashboard },
   { href: "/admin/users", label: "用户管理", icon: Users },
   { href: "/admin/posts", label: "内容管理", icon: ScrollText },
+  { href: "/admin/dead-letter", label: "死信队列", icon: MailWarning },
   { href: "/admin/traces", label: "Trace Dashboard", icon: Shield },
 ] as const;
 

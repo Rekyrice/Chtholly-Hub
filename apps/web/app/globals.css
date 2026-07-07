@@ -6857,6 +6857,58 @@
   color: var(--color-sunset);
 }
 
+.admin-badge--warn {
+  background: color-mix(in srgb, #f59e0b 14%, var(--color-surface));
+  color: #d97706;
+}
+
+.dead-letter-table {
+  min-width: 1040px;
+}
+
+.dead-letter-topic,
+.dead-letter-payload,
+.dead-letter-reason {
+  display: block;
+}
+
+.dead-letter-topic {
+  min-width: 180px;
+}
+
+.dead-letter-topic strong,
+.dead-letter-topic small {
+  display: block;
+}
+
+.dead-letter-topic small {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.dead-letter-payload,
+.dead-letter-reason {
+  max-width: 320px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.dead-letter-payload {
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-cloud) 62%, var(--color-surface));
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.dead-letter-reason {
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
 .admin-pagination {
   border-top: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
   color: var(--color-text-secondary);
