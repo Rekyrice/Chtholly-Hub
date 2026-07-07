@@ -53,53 +53,47 @@ export default async function Sidebar({
   }
 
   const profileName = siteConfig.author.name;
+  const activeUsers = deriveActiveUsers(items);
 
   return (
-    <aside className="sidebar-scroll-hidden sticky top-[52px] max-h-[calc(100vh-52px)] overflow-y-auto">
-      <div className="widget text-center">
+    <aside className="hub-sidebar sidebar-scroll-hidden sticky top-[52px] max-h-[calc(100vh-52px)] overflow-y-auto">
+      <div className="widget hub-profile-widget text-center">
         <Link
           href={`/user/${siteConfig.ownerHandle}`}
-          className="no-underline text-inherit hover:opacity-90 transition-opacity duration-150"
+          className="hub-profile-widget__identity"
         >
-          <div className="w-40 h-40 mx-auto rounded-full overflow-hidden shadow-md border-2 border-surface flex items-center justify-center">
+          <div className="hub-profile-widget__avatar">
             <span className="navbar-brand-icon navbar-brand-icon--lg" aria-hidden="true">
               C
             </span>
           </div>
-          <div className="mt-3.5 text-lg text-text font-medium">{profileName}</div>
+          <div>
+            <div className="hub-profile-widget__name">{profileName}</div>
+            <small>@{siteConfig.ownerHandle}</small>
+          </div>
         </Link>
-        <p className="mt-2 text-sm text-text-secondary">{siteConfig.author.bio}</p>
-        <div className="mt-3 grid grid-cols-2 gap-1.5">
-          <Link href="/hub" className="no-underline hover:opacity-80 transition-opacity duration-150">
-            <div className="text-3xl leading-tight text-text">{items.length}</div>
-            <div className="text-sm text-text-secondary">文章</div>
+        <p>{siteConfig.author.bio}</p>
+        <div className="hub-profile-widget__stats">
+          <Link href="/hub">
+            <strong>{items.length}</strong>
+            <span>文章</span>
           </Link>
-          <Link href="/archive" className="no-underline hover:opacity-80 transition-opacity duration-150">
-            <div className="text-3xl leading-tight text-text">{tags.length}</div>
-            <div className="text-sm text-text-secondary">标签</div>
+          <Link href="/archive">
+            <strong>{tags.length}</strong>
+            <span>标签</span>
+          </Link>
+          <Link href="/search">
+            <strong>{activeUsers.length}</strong>
+            <span>活跃</span>
           </Link>
         </div>
       </div>
 
       <SidebarObservation experiences={experiences} degraded={experiencesStatus === "degraded"} />
 
+      <SidebarQuickLinks />
+
       <SidebarHotPosts posts={hotPosts} />
-
-      <SidebarPostList
-        title="最新文章"
-        posts={items.slice(0, 5)}
-        degraded={latestStatus === "degraded"}
-        degradedText="暂时无法获取，稍后再试试。"
-      />
-
-      <SidebarPostList
-        title="推荐内容"
-        posts={recommendations.slice(0, 5)}
-        degraded={recommendationsStatus === "degraded"}
-        degradedText="推荐暂时走丢了，等一下就好。"
-      />
-
-      <ActiveUsers items={items} />
 
       {tagsStatus === "degraded" ? (
         <div className="widget">
@@ -123,7 +117,45 @@ export default async function Sidebar({
           </div>
         </div>
       ) : null}
+
+      <ActiveUsers users={activeUsers} />
+
+      <SidebarPostList
+        title="最新文章"
+        posts={items.slice(0, 5)}
+        degraded={latestStatus === "degraded"}
+        degradedText="暂时无法获取，稍后再试试。"
+      />
+
+      <SidebarPostList
+        title="推荐内容"
+        posts={recommendations.slice(0, 5)}
+        degraded={recommendationsStatus === "degraded"}
+        degradedText="推荐暂时走丢了，等一下就好。"
+      />
     </aside>
+  );
+}
+
+function SidebarQuickLinks() {
+  const links = [
+    { href: "/write", label: "写点什么", desc: "把今天的故事放进仓库" },
+    { href: "/search", label: "搜索仓库", desc: "找文章、番剧和灵感" },
+    { href: "/chtholly", label: "珂朵莉房间", desc: "看看她最近在想什么" },
+  ];
+
+  return (
+    <div className="widget hub-quick-links-widget">
+      <h3 className="widget-title">社区入口</h3>
+      <div className="hub-quick-links">
+        {links.map((link) => (
+          <Link key={link.href} href={link.href}>
+            <strong>{link.label}</strong>
+            <small>{link.desc}</small>
+          </Link>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -230,8 +262,7 @@ function SidebarPostList({
   );
 }
 
-function ActiveUsers({ items }: { items: FeedItem[] }) {
-  const users = deriveActiveUsers(items);
+function ActiveUsers({ users }: { users: ReturnType<typeof deriveActiveUsers> }) {
   if (users.length === 0) return null;
 
   return (
