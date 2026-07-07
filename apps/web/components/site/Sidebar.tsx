@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
+import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import { postService } from "@/lib/services/postService";
 import { tagService } from "@/lib/services/tagService";
 import { siteConfig } from "@/lib/site.config";
@@ -12,6 +13,7 @@ type SidebarProps = {
   items?: FeedItem[];
   tags?: TagItem[];
   recommendations?: FeedItem[];
+  hotPosts?: FeedItem[];
   experiences?: AgentExperienceItem[];
   latestStatus?: "ok" | "degraded";
   tagsStatus?: "ok" | "degraded";
@@ -23,6 +25,7 @@ export default async function Sidebar({
   items: providedItems,
   tags: providedTags,
   recommendations = [],
+  hotPosts = [],
   experiences = [],
   latestStatus,
   tagsStatus,
@@ -78,6 +81,10 @@ export default async function Sidebar({
         </div>
       </div>
 
+      <SidebarObservation experiences={experiences} degraded={experiencesStatus === "degraded"} />
+
+      <SidebarHotPosts posts={hotPosts} />
+
       <SidebarPostList
         title="最新文章"
         posts={items.slice(0, 5)}
@@ -91,27 +98,6 @@ export default async function Sidebar({
         degraded={recommendationsStatus === "degraded"}
         degradedText="推荐暂时走丢了，等一下就好。"
       />
-
-      {experiencesStatus === "degraded" ? (
-        <div className="widget">
-          <h3 className="widget-title">珂朵莉最近在想</h3>
-          <p className="text-sm text-text-secondary m-0">她现在有点安静，稍后再听听看。</p>
-        </div>
-      ) : experiences.length > 0 ? (
-        <div className="widget">
-          <h3 className="widget-title">珂朵莉最近在想</h3>
-          <ul className="list-none p-0 m-0">
-            {experiences.slice(0, 3).map((experience, index) => (
-              <li
-                key={`${experience.createdAt ?? "experience"}-${index}`}
-                className="border-b border-border py-2 text-sm text-text-secondary last:border-b-0"
-              >
-                {experience.text}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
 
       <ActiveUsers items={items} />
 
@@ -138,6 +124,68 @@ export default async function Sidebar({
         </div>
       ) : null}
     </aside>
+  );
+}
+
+function SidebarObservation({
+  experiences,
+  degraded,
+}: {
+  experiences: AgentExperienceItem[];
+  degraded: boolean;
+}) {
+  const lines = experiences
+    .map((experience) => experience.text)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  return (
+    <div className="widget sidebar-observation-widget">
+      <div className="sidebar-observation-widget__head">
+        <ChthollyIllustration size="xs" mood={0} pageContext="/hub" />
+        <div>
+          <span>Observation</span>
+          <h3>珂朵莉观察</h3>
+        </div>
+      </div>
+      {degraded ? (
+        <p>她现在有点安静，稍后再听听看。</p>
+      ) : lines.length > 0 ? (
+        lines.map((line, index) => <p key={`${line}-${index}`}>{line}</p>)
+      ) : (
+        <p>今天仓库里还算安静。没有关系，安静的时候也适合读一点东西。</p>
+      )}
+    </div>
+  );
+}
+
+function SidebarHotPosts({ posts }: { posts: FeedItem[] }) {
+  const hotPosts = posts
+    .slice()
+    .sort((a, b) => {
+      const scoreA = (a.likeCount ?? 0) * 3 + (a.commentCount ?? 0) * 2 + (a.favoriteCount ?? 0);
+      const scoreB = (b.likeCount ?? 0) * 3 + (b.commentCount ?? 0) * 2 + (b.favoriteCount ?? 0);
+      return scoreB - scoreA;
+    })
+    .slice(0, 6);
+
+  if (hotPosts.length === 0) return null;
+
+  return (
+    <div className="widget sidebar-hot-posts">
+      <h3 className="widget-title">热门文章</h3>
+      <ol className="sidebar-hot-posts__list">
+        {hotPosts.map((post, index) => (
+          <li key={post.id}>
+            <Link href={`/post/${post.slug}`}>
+              <span>{index + 1}</span>
+              <strong>{post.title}</strong>
+              <small>{post.likeCount ?? 0} 赞 · {post.commentCount ?? 0} 评论</small>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 

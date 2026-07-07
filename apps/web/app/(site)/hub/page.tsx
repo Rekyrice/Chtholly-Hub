@@ -45,26 +45,23 @@ export default async function HomePage() {
 
   return (
     <div className="hub-page">
-      <HubDiscovery
-        recommendations={recommendations}
-        hotPosts={hotPosts}
-        experiences={experiences}
-      />
-
       <div className="hub-timeline-layout">
         <main className="feed-ma">
+          <HubDiscovery recommendations={recommendations} />
+
           <div className="hub-timeline-heading">
             <p>Timeline</p>
             <h2>仓库动态</h2>
           </div>
-        <Suspense fallback={<PostCardSkeletonList count={3} />}>
-          <HomeFeed items={hubFeed.latestPosts} status={hubFeed.latestPostsStatus} />
-        </Suspense>
+          <Suspense fallback={<PostCardSkeletonList count={3} />}>
+            <HomeFeed items={hubFeed.latestPosts} status={hubFeed.latestPostsStatus} />
+          </Suspense>
         </main>
         <Sidebar
           items={hubFeed.latestPosts}
           tags={hubFeed.hotTags}
           recommendations={hubFeed.recommendations}
+          hotPosts={hotPosts}
           experiences={experiences}
           latestStatus={hubFeed.latestPostsStatus}
           tagsStatus={hubFeed.hotTagsStatus}
