@@ -41,11 +41,12 @@ export const ILLUSTRATION_MAP: Record<IllustrationState, string> = {
   speaking: "/images/illustrations/greeting.png",
 };
 
+// 源图均为正方形 PNG，width/height 须保持 1:1，避免 object-fit 产生灰底 letterbox
 const IMAGE_SIZE = {
-  xs: { width: 84, height: 112, className: "h-28 w-auto" },
-  sm: { width: 120, height: 160, className: "h-40 w-auto" },
-  md: { width: 200, height: 280, className: "h-60 w-auto" },
-  lg: { width: 300, height: 400, className: "h-80 w-auto" },
+  xs: { width: 500, height: 500, className: "h-28 w-auto" },
+  sm: { width: 500, height: 500, className: "h-40 w-auto" },
+  md: { width: 500, height: 500, className: "h-60 w-auto" },
+  lg: { width: 500, height: 500, className: "h-80 w-auto" },
 } as const;
 
 export function ChthollyIllustration({
@@ -60,12 +61,13 @@ export function ChthollyIllustration({
   const imageSize = IMAGE_SIZE[size];
 
   return (
-    <div className={cn("chtholly-illustration", className)}>
+    <div className={cn("chtholly-illustration", `chtholly-illustration--${size}`, className)}>
       <Image
         src={ILLUSTRATION_MAP[illustrationState]}
         alt={`珂朵莉 - ${illustrationState}`}
         width={imageSize.width}
         height={imageSize.height}
+        unoptimized
         className={cn("chtholly-illustration__image", imageSize.className)}
       />
     </div>

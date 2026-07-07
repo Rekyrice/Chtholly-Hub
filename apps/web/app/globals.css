@@ -705,20 +705,30 @@
     justify-content: center;
     max-width: 100%;
     pointer-events: none;
+    animation: chtholly-breathe 5s ease-in-out infinite;
+    will-change: transform;
+    backface-visibility: hidden;
   }
 
   .chtholly-illustration__image {
     display: block;
     max-width: 100%;
     object-fit: contain;
-    animation: chtholly-breathe 4s ease-in-out infinite;
     filter: drop-shadow(0 16px 30px rgb(15 23 42 / 18%));
-    will-change: transform;
+  }
+
+  /* 小尺寸不用 drop-shadow，避免与位移动画叠加时轮廓闪烁 */
+  .chtholly-illustration--xs .chtholly-illustration__image {
+    filter: none;
   }
 
   @media (prefers-color-scheme: dark) {
     .chtholly-illustration__image {
       filter: drop-shadow(0 16px 30px rgb(0 0 0 / 32%));
+    }
+
+    .chtholly-illustration--xs .chtholly-illustration__image {
+      filter: none;
     }
   }
 
@@ -2458,11 +2468,11 @@
   @keyframes chtholly-breathe {
     0%,
     100% {
-      transform: translateY(0);
+      transform: translate3d(0, 0, 0);
     }
 
     50% {
-      transform: translateY(-6px);
+      transform: translate3d(0, -3px, 0);
     }
   }
 
@@ -5704,7 +5714,7 @@
 
   .sidebar-observation-widget__head {
     display: grid;
-    grid-template-columns: 72px minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
     gap: 12px;
     align-items: center;
     margin-bottom: 12px;
@@ -5712,15 +5722,12 @@
 
   .sidebar-observation-widget .chtholly-illustration {
     display: flex;
-    height: 72px;
+    width: fit-content;
     align-items: flex-end;
     justify-content: center;
-    overflow: hidden;
   }
 
-  .sidebar-observation-widget .chtholly-illustration__image {
-    height: 86px;
-  }
+  /* 侧边栏用 xs 默认 h-28（112px），不再压到 72px 以免缩放发虚、动画闪线 */
 
   .sidebar-observation-widget__head span {
     display: block;
@@ -6239,6 +6246,10 @@
     }
 
     .not-found-illustration {
+      animation: none;
+    }
+
+    .chtholly-illustration {
       animation: none;
     }
 

@@ -12,8 +12,9 @@ export default function NotFound() {
         <Image
           src="/images/illustrations/lost.png"
           alt="珂朵莉迷路了"
-          width={300}
-          height={400}
+          width={500}
+          height={500}
+          unoptimized
           className="not-found-illustration"
           priority
         />
