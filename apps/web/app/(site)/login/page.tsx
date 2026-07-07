@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { Button } from "@/components/ui/Button";
@@ -249,6 +250,11 @@ export default function LoginPage() {
             <div>
               <label className="field-label">密码</label>
               <PasswordInput value={password} onChange={setPassword} placeholder="登录密码" required />
+              <div className="mt-2 text-right text-xs">
+                <Link href="/reset-password" className="text-sky transition-colors duration-150 hover:text-sky-deep">
+                  忘记密码？
+                </Link>
+              </div>
             </div>
           </>
         )}

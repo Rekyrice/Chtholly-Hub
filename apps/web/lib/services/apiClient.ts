@@ -1,7 +1,7 @@
 /** 相对路径，经 Next.js rewrites 代理到后端 */
 const BASE_URL = "";
 
-import { clearAuth, getAccessToken } from "@/lib/auth/tokens";
+import { clearAuth, getAccessToken, getStoredAuth } from "@/lib/auth/tokens";
 
 export type ApiFetchOptions = {
   method?: string;
@@ -9,6 +9,7 @@ export type ApiFetchOptions = {
   body?: unknown;
   accessToken?: string | null;
   signal?: AbortSignal;
+  skipAuthRefresh?: boolean;
 };
 
 export class ApiError extends Error {
@@ -27,6 +28,27 @@ type ApiFetchInternalOptions = ApiFetchOptions & {
   _retriedWithoutAuth?: boolean;
 };
 
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessTokenOnce(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = import("@/lib/services/authService")
+      .then(({ authService }) => authService.refreshToken())
+      .then((token) => token.accessToken)
+      .catch(() => {
+        clearAuth();
+        if (typeof window !== "undefined") {
+          window.location.assign("/login");
+        }
+        return null;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 export async function apiFetch<TResponse>(
   path: string,
   options: ApiFetchOptions = {},
@@ -44,6 +66,7 @@ async function apiFetchInternal<TResponse>(
     body,
     accessToken,
     signal,
+    skipAuthRefresh = false,
     _retriedWithoutAuth = false,
   } = options;
 
@@ -93,7 +116,18 @@ async function apiFetchInternal<TResponse>(
     credentials: "include",
   });
 
-  if (response.status === 401 && token && !_retriedWithoutAuth) {
+  if (response.status === 401 && !skipAuthRefresh && !_retriedWithoutAuth && accessToken !== null) {
+    if (getStoredAuth()?.refreshToken) {
+      const nextAccessToken = await refreshAccessTokenOnce();
+      if (nextAccessToken) {
+        return apiFetchInternal<TResponse>(path, {
+          ...options,
+          accessToken: nextAccessToken,
+          skipAuthRefresh: true,
+          _retriedWithoutAuth: true,
+        });
+      }
+    }
     clearAuth();
     if (isIdempotent) {
       return apiFetchInternal<TResponse>(path, {

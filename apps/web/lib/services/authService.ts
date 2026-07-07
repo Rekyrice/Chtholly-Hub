@@ -4,6 +4,7 @@ import type {
   AuthUser,
   IdentifierType,
   SendCodeResponse,
+  TokenPair,
   VerificationScene,
 } from "@/lib/types/auth";
 import { isValidPhone, resolvePasswordLoginType } from "@/lib/validation/auth";
@@ -128,6 +129,36 @@ export const authService = {
     }
     return user;
   },
+
+  refreshToken: async () => {
+    const stored = getStoredAuth();
+    if (!stored?.refreshToken) {
+      throw new Error("没有可用的刷新令牌");
+    }
+    const token = await apiFetch<TokenPair>(`${AUTH_PREFIX}/token/refresh`, {
+      method: "POST",
+      body: { refreshToken: stored.refreshToken },
+      accessToken: null,
+      skipAuthRefresh: true,
+    });
+    saveAuth(token, stored.user);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("chtholly-auth-change"));
+    }
+    return token;
+  },
+
+  resetPassword: (phone: string, code: string, newPassword: string) =>
+    apiFetch<void>(`${AUTH_PREFIX}/password/reset`, {
+      method: "POST",
+      body: {
+        identifierType: "PHONE",
+        identifier: phone,
+        code,
+        newPassword,
+      },
+      accessToken: null,
+    }),
 
   logout: async () => {
     const refresh = getStoredAuth()?.refreshToken;
