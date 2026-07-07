@@ -1,3 +1,4 @@
+import Link from "next/link";
 import PostCard from "@/components/site/PostCard";
 import { AnimateIn } from "@/components/ui/AnimateIn";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -8,9 +9,16 @@ import type { FeedItem } from "@/lib/types/post";
 type HomeFeedProps = {
   items?: FeedItem[];
   status?: "ok" | "degraded";
+  currentPage?: number;
+  pageSize?: number;
 };
 
-export default async function HomeFeed({ items: providedItems, status }: HomeFeedProps = {}) {
+export default async function HomeFeed({
+  items: providedItems,
+  status,
+  currentPage = 1,
+  pageSize = 8,
+}: HomeFeedProps = {}) {
   let items: FeedItem[] = providedItems ?? [];
 
   if (providedItems == null) {
@@ -42,9 +50,43 @@ export default async function HomeFeed({ items: providedItems, status }: HomeFee
     );
   }
 
-  return items.map((post, index) => (
-    <AnimateIn key={post.id} delay={index * 100}>
-      <PostCard post={post} />
-    </AnimateIn>
-  ));
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(Math.max(currentPage, 1), totalPages);
+  const start = (safePage - 1) * pageSize;
+  const pageItems = items.slice(start, start + pageSize);
+
+  return (
+    <>
+      <div className="hub-feed-list">
+        {pageItems.map((post, index) => (
+          <AnimateIn key={post.id} delay={index * 100}>
+            <PostCard post={post} />
+          </AnimateIn>
+        ))}
+      </div>
+
+      {items.length > pageSize && (
+        <nav className="hub-feed-pagination" aria-label="仓库动态分页">
+          <div>
+            <span>第 {safePage} / {totalPages} 页</span>
+            <small>
+              显示 {start + 1}-{Math.min(start + pageSize, items.length)} / {items.length} 篇
+            </small>
+          </div>
+          <div className="hub-feed-pagination__actions">
+            {safePage > 1 ? (
+              <Link href={`/hub?page=${safePage - 1}`}>上一页</Link>
+            ) : (
+              <span aria-disabled="true">上一页</span>
+            )}
+            {safePage < totalPages ? (
+              <Link href={`/hub?page=${safePage + 1}`}>下一页</Link>
+            ) : (
+              <span aria-disabled="true">下一页</span>
+            )}
+          </div>
+        </nav>
+      )}
+    </>
+  );
 }

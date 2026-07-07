@@ -4439,6 +4439,79 @@
     margin-bottom: 0;
   }
 
+  .hub-feed-list {
+    display: grid;
+  }
+
+  .hub-feed-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: -8px;
+    padding: 18px 20px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+    box-shadow: 0 10px 28px color-mix(in srgb, var(--color-text) 6%, transparent);
+  }
+
+  .hub-feed-pagination span,
+  .hub-feed-pagination small {
+    display: block;
+  }
+
+  .hub-feed-pagination span {
+    color: var(--color-text);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .hub-feed-pagination small {
+    margin-top: 3px;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+  }
+
+  .hub-feed-pagination__actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .hub-feed-pagination__actions a,
+  .hub-feed-pagination__actions span {
+    display: inline-flex;
+    min-width: 72px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+    border-radius: 999px;
+    font-size: 13px;
+    text-decoration: none;
+  }
+
+  .hub-feed-pagination__actions a {
+    background: color-mix(in srgb, var(--color-sky) 9%, transparent);
+    color: var(--color-sky);
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  .hub-feed-pagination__actions a:hover {
+    border-color: color-mix(in srgb, var(--color-sky) 48%, var(--color-border));
+    background: color-mix(in srgb, var(--color-sky) 15%, transparent);
+    transform: translateY(-1px);
+  }
+
+  .hub-feed-pagination__actions span {
+    color: var(--color-text-secondary);
+    opacity: 0.55;
+  }
+
   @media (min-width: 1024px) {
     .hub-timeline-layout {
       grid-template-columns: minmax(0, 1fr) 308px;
@@ -4503,6 +4576,20 @@
 
     .hub-observation__body {
       grid-template-columns: 1fr;
+    }
+
+    .hub-feed-pagination {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .hub-feed-pagination__actions {
+      justify-content: space-between;
+    }
+
+    .hub-feed-pagination__actions a,
+    .hub-feed-pagination__actions span {
+      flex: 1;
     }
   }
 
