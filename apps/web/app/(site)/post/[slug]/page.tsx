@@ -134,6 +134,10 @@ export default async function PostPage({ params }: Props) {
           authorId={post.authorId}
           avatar={post.authorAvatar}
           nickname={post.authorNickname}
+          postId={post.id}
+          postTitle={post.title}
+          postTop={post.isTop}
+          postVisibility={post.visible}
         />
         <RelatedPosts postId={post.id} />
         <div className="article-ask-chtholly">

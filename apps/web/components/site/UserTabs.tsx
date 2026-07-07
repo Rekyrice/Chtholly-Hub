@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Heart, MessageSquareText, Newspaper, ScrollText } from "lucide-react";
 import PostCard from "@/components/site/PostCard";
+import PostOwnerActions from "@/components/site/PostOwnerActions";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { getStoredAuth } from "@/lib/auth/tokens";
+import { postService } from "@/lib/services/postService";
 import type { FeedItem } from "@/lib/types/post";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +15,8 @@ type UserTabKey = "overview" | "posts" | "comments" | "likes";
 type UserTabsProps = {
   posts: FeedItem[];
   displayName: string;
+  userId: string | number;
+  userHandle?: string | null;
 };
 
 const TABS: Array<{ key: UserTabKey; label: string; icon: typeof ScrollText }> = [
@@ -21,9 +26,77 @@ const TABS: Array<{ key: UserTabKey; label: string; icon: typeof ScrollText }> =
   { key: "likes", label: "点赞", icon: Heart },
 ];
 
-export default function UserTabs({ posts, displayName }: UserTabsProps) {
+export default function UserTabs({ posts, displayName, userId, userHandle }: UserTabsProps) {
   const [activeTab, setActiveTab] = useState<UserTabKey>("overview");
-  const recentPosts = useMemo(() => posts.slice(0, 3), [posts]);
+  const [items, setItems] = useState<FeedItem[]>(posts);
+  const [isOwnProfile, setIsOwnProfile] = useState(false);
+  const [loadingMine, setLoadingMine] = useState(false);
+  const [mineError, setMineError] = useState<string | null>(null);
+  const recentPosts = useMemo(() => items.slice(0, 3), [items]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const syncProfile = () => {
+      const current = getStoredAuth()?.user;
+      const own =
+        current?.id != null && String(current.id) === String(userId) ||
+        Boolean(current?.handle && userHandle && current.handle.toLowerCase() === userHandle.toLowerCase());
+      setIsOwnProfile(own);
+
+      if (!own) {
+        setItems(posts);
+        setMineError(null);
+        return;
+      }
+
+      setLoadingMine(true);
+      void postService
+        .mine(1, 50)
+        .then((response) => {
+          if (!alive) return;
+          setItems(response.items);
+          setMineError(null);
+        })
+        .catch((err) => {
+          if (!alive) return;
+          setItems(posts);
+          setMineError(err instanceof Error ? err.message : "我的文章加载失败");
+        })
+        .finally(() => {
+          if (alive) setLoadingMine(false);
+        });
+    };
+
+    syncProfile();
+    window.addEventListener("chtholly-auth-change", syncProfile);
+    return () => {
+      alive = false;
+      window.removeEventListener("chtholly-auth-change", syncProfile);
+    };
+  }, [posts, userHandle, userId]);
+
+  const updatePost = (postId: string, patch: Partial<FeedItem>) => {
+    setItems((current) => current.map((post) => (post.id === postId ? { ...post, ...patch } : post)));
+  };
+
+  const removePost = (postId: string) => {
+    setItems((current) => current.filter((post) => post.id !== postId));
+  };
+
+  const renderPost = (post: FeedItem) =>
+    isOwnProfile ? (
+      <ManagedPostCard
+        key={post.id}
+        post={post}
+        ownerUserId={userId}
+        onTopChange={(top) => updatePost(post.id, { isTop: top })}
+        onVisibilityChange={(visible) => updatePost(post.id, { visible })}
+        onDeleted={() => removePost(post.id)}
+      />
+    ) : (
+      <PostCard key={post.id} post={post} />
+    );
 
   return (
     <section className="member-tabs" aria-label="用户内容">
@@ -47,22 +120,31 @@ export default function UserTabs({ posts, displayName }: UserTabsProps) {
       </div>
 
       <div className="member-tabs__panel" role="tabpanel">
+        {mineError && isOwnProfile && <div className="member-tab-alert">{mineError}</div>}
         {activeTab === "overview" && (
           <div className="member-overview">
             <section className="member-section">
               <div className="member-section__header">
                 <p>最近的故事</p>
-                <h2>最近 3 篇文章</h2>
+                <h2>{isOwnProfile ? "我的最近 3 篇文章" : "最近 3 篇文章"}</h2>
               </div>
-              {recentPosts.length > 0 ? (
+              {loadingMine ? (
+                <div className="member-coming-soon">
+                  <p>正在整理你的文章……</p>
+                </div>
+              ) : recentPosts.length > 0 ? (
                 <div className="member-post-list">
-                  {recentPosts.map((post) => <PostCard key={post.id} post={post} />)}
+                  {recentPosts.map(renderPost)}
                 </div>
               ) : (
                 <EmptyState
                   className="member-empty"
-                  title="暂时还没有公开文章"
-                  description={`${displayName} 还没有把故事放到这里。`}
+                  title={isOwnProfile ? "你还没有文章" : "暂时还没有公开文章"}
+                  description={
+                    isOwnProfile
+                      ? "写下第一篇吧。仓库里还有很多空白书页。"
+                      : `${displayName} 还没有把故事放到这里。`
+                  }
                 />
               )}
             </section>
@@ -77,12 +159,16 @@ export default function UserTabs({ posts, displayName }: UserTabsProps) {
         )}
 
         {activeTab === "posts" && (
-          posts.length > 0 ? (
+          loadingMine ? (
+            <div className="member-coming-soon">
+              <p>正在整理你的文章……</p>
+            </div>
+          ) : items.length > 0 ? (
             <div className="member-post-list">
-              {posts.map((post) => <PostCard key={post.id} post={post} />)}
+              {items.map(renderPost)}
             </div>
           ) : (
-            <EmptyState className="member-empty" title="暂无公开文章" />
+            <EmptyState className="member-empty" title={isOwnProfile ? "暂无文章" : "暂无公开文章"} />
           )
         )}
 
@@ -96,6 +182,65 @@ export default function UserTabs({ posts, displayName }: UserTabsProps) {
       </div>
     </section>
   );
+}
+
+function ManagedPostCard({
+  post,
+  ownerUserId,
+  onTopChange,
+  onVisibilityChange,
+  onDeleted,
+}: {
+  post: FeedItem;
+  ownerUserId: string | number;
+  onTopChange: (top: boolean) => void;
+  onVisibilityChange: (visibility: string) => void;
+  onDeleted: () => void;
+}) {
+  return (
+    <div className="member-managed-post">
+      <div className="member-managed-post__bar">
+        <div className="member-managed-post__badges">
+          <span>{statusLabel(post.status)}</span>
+          <span>{visibilityLabel(post.visible)}</span>
+          {post.isTop && <span>已置顶</span>}
+        </div>
+        <PostOwnerActions
+          postId={post.id}
+          authorId={post.authorId ?? ownerUserId}
+          title={post.title}
+          initialTop={post.isTop}
+          initialVisibility={post.visible}
+          compact
+          onTopChange={onTopChange}
+          onVisibilityChange={onVisibilityChange}
+          onDeleted={onDeleted}
+        />
+      </div>
+      <PostCard post={post} />
+    </div>
+  );
+}
+
+function statusLabel(status?: string) {
+  if (status === "draft") return "草稿";
+  if (status === "deleted") return "已删除";
+  return "已发布";
+}
+
+function visibilityLabel(visible?: string) {
+  switch (visible) {
+    case "private":
+      return "私密";
+    case "followers":
+      return "粉丝可见";
+    case "school":
+      return "同校可见";
+    case "unlisted":
+      return "不列出";
+    default:
+      return "公开";
+  }
 }
 
 function ComingSoonCard({ message }: { message: string }) {

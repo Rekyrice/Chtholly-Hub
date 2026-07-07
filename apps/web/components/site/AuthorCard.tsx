@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { PenLine } from "lucide-react";
 import FollowButton from "@/components/site/FollowButton";
+import PostOwnerActions from "@/components/site/PostOwnerActions";
 
 type AuthorCardProps = {
   authorId?: string;
@@ -9,6 +10,10 @@ type AuthorCardProps = {
   avatar?: string;
   nickname: string;
   bio?: string | null;
+  postId?: string;
+  postTitle?: string;
+  postTop?: boolean;
+  postVisibility?: string | null;
 };
 
 export default function AuthorCard({
@@ -17,6 +22,10 @@ export default function AuthorCard({
   avatar,
   nickname,
   bio,
+  postId,
+  postTitle,
+  postTop,
+  postVisibility,
 }: AuthorCardProps) {
   const postsHref = authorHandle
     ? `/user/${encodeURIComponent(authorHandle)}`
@@ -39,7 +48,20 @@ export default function AuthorCard({
             <p className="author-card__eyebrow">作者</p>
             <h2>{nickname}</h2>
           </div>
-          {authorId && <FollowButton userId={authorId} size="sm" showCounter={false} />}
+          <div className="author-card__actions">
+            {postId && (
+              <PostOwnerActions
+                postId={postId}
+                authorId={authorId}
+                title={postTitle}
+                initialTop={postTop}
+                initialVisibility={postVisibility}
+                redirectAfterDelete="/hub"
+                compact
+              />
+            )}
+            {authorId && <FollowButton userId={authorId} size="sm" showCounter={false} />}
+          </div>
         </div>
         <p className="author-card__bio">
           {bio || "这个人还没有写简介，不过已经在仓库里留下了一些故事。"}

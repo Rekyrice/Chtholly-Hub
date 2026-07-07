@@ -30,6 +30,12 @@ export const postService = {
     return apiFetch<FeedResponse>(`${POST_PREFIX}/feed?${params.toString()}`);
   },
 
+  mine: (page = 1, size = 20) =>
+    apiFetch<FeedResponse>(`${POST_PREFIX}/mine?page=${page}&size=${size}`),
+
+  followingFeed: (page = 1, size = 20) =>
+    apiFetch<FeedResponse>(`${POST_PREFIX}/feed/following?page=${page}&size=${size}`),
+
   detailBySlug: (slug: string) =>
     apiFetch<PostDetailResponse>(`${POST_PREFIX}/detail/by-slug/${slug}`),
 
@@ -56,4 +62,19 @@ export const postService = {
 
   publish: (id: string) =>
     apiFetch<void>(`${POST_PREFIX}/${id}/publish`, { method: "POST" }),
+
+  setTop: (id: string, top: boolean) =>
+    apiFetch<void>(`${POST_PREFIX}/${id}/top`, {
+      method: "PATCH",
+      body: { isTop: top },
+    }),
+
+  setVisibility: (id: string, visibility: string) =>
+    apiFetch<void>(`${POST_PREFIX}/${id}/visibility`, {
+      method: "PATCH",
+      body: { visible: visibility },
+    }),
+
+  remove: (id: string) =>
+    apiFetch<void>(`${POST_PREFIX}/${id}`, { method: "DELETE" }),
 };

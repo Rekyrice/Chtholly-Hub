@@ -116,7 +116,12 @@ export default async function UserPage({ params }: Props) {
           </div>
         </section>
 
-        <UserTabs posts={items} displayName={displayName} />
+        <UserTabs
+          posts={items}
+          displayName={displayName}
+          userId={user.id}
+          userHandle={user.handle}
+        />
       </div>
       <Sidebar />
     </div>

@@ -11,6 +11,8 @@ export type FeedItem = {
   authorHandle?: string;
   authorAvatar?: string;
   authorNickname: string;
+  status?: string;
+  visible?: string;
   likeCount?: number;
   commentCount?: number;
   favoriteCount?: number;
@@ -60,3 +62,5 @@ export type RelatedPostSummary = {
   authorNickname?: string;
   sharedEntities?: string[];
 };
+
+export type PostSummary = RelatedPostSummary;

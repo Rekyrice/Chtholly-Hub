@@ -4432,6 +4432,127 @@
     animation: article-action-pulse 240ms ease-out;
   }
 
+  .post-owner-actions {
+    position: relative;
+    display: inline-flex;
+    justify-content: flex-end;
+  }
+
+  .post-owner-actions__trigger {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 13px;
+    border: 1px solid color-mix(in srgb, var(--color-text-secondary) 20%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 0.86rem;
+    transition:
+      border-color 0.18s ease,
+      color 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .post-owner-actions__trigger:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--color-sky) 44%, transparent);
+    color: var(--color-sky);
+  }
+
+  .post-owner-actions__trigger:disabled {
+    cursor: wait;
+    opacity: 0.68;
+  }
+
+  .post-owner-actions--compact .post-owner-actions__trigger {
+    min-width: 86px;
+    min-height: 32px;
+    padding-inline: 11px;
+    font-size: 0.8rem;
+  }
+
+  .post-owner-actions__menu {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 220px;
+    padding: 8px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+    box-shadow: 0 18px 44px color-mix(in srgb, var(--color-text) 16%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .post-owner-actions__menu button,
+  .post-owner-actions__field {
+    width: 100%;
+    border-radius: 9px;
+  }
+
+  .post-owner-actions__menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 0 9px;
+    border: 0;
+    background: transparent;
+    color: var(--color-text);
+    cursor: pointer;
+    font-size: 0.88rem;
+    text-align: left;
+  }
+
+  .post-owner-actions__menu button:hover,
+  .post-owner-actions__field:hover {
+    background: color-mix(in srgb, var(--color-sky) 8%, transparent);
+  }
+
+  .post-owner-actions__menu button:disabled,
+  .post-owner-actions__field select:disabled {
+    cursor: wait;
+    opacity: 0.65;
+  }
+
+  .post-owner-actions__field {
+    display: grid;
+    gap: 5px;
+    margin: 4px 0;
+    padding: 8px 9px;
+    color: var(--color-text-secondary);
+    font-size: 0.78rem;
+  }
+
+  .post-owner-actions__field select {
+    width: 100%;
+    padding: 7px 8px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+    border-radius: 8px;
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .post-owner-actions__field small {
+    color: var(--color-text-secondary);
+  }
+
+  .post-owner-actions__danger {
+    color: var(--color-sunset) !important;
+  }
+
+  .post-owner-actions__error {
+    margin: 7px 4px 0;
+    color: var(--color-sunset);
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
   .like-button--active {
     border-color: color-mix(in srgb, #ef4444 52%, transparent);
     background: color-mix(in srgb, #ef4444 12%, var(--color-surface));
@@ -4636,6 +4757,13 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
+  }
+
+  .author-card__actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
   }
 
   .author-card__eyebrow,
@@ -5640,6 +5768,51 @@
 .member-post-list {
   display: grid;
   gap: 0;
+}
+
+.member-managed-post {
+  position: relative;
+  min-width: 0;
+}
+
+.member-managed-post + .member-managed-post {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 52%, transparent);
+}
+
+.member-managed-post__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px 0;
+}
+
+.member-managed-post__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.member-managed-post__badges span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-sky) 10%, var(--color-surface));
+  color: var(--color-sky);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.member-tab-alert {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-sunset) 36%, var(--color-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-sunset) 8%, var(--color-surface));
+  color: var(--color-sunset);
+  font-size: 0.88rem;
 }
 
 .member-section {
