@@ -36,6 +36,8 @@ class SeedOrchestratorTest {
     private SeedTextGenerator textGenerator;
     @Mock
     private SearchIndexService searchIndexService;
+    @Mock
+    private SeedInteractionService interactionService;
 
     private SeedOrchestrator orchestrator;
 
@@ -53,6 +55,7 @@ class SeedOrchestratorTest {
                 new SnowflakeIdGenerator(1, 2),
                 new ObjectMapper(),
                 searchIndexService,
+                interactionService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -72,6 +75,7 @@ class SeedOrchestratorTest {
         assertThat(summary.dryRun()).isTrue();
         verify(mapper, never()).insertSeedUser(any());
         verify(mapper, never()).markSeed(any(), any());
+        verify(interactionService, never()).scheduleMultiRoundInteraction(any(), any());
     }
 
     @Test
@@ -84,6 +88,7 @@ class SeedOrchestratorTest {
         assertThat(summary.accounts()).isZero();
         verify(mapper, never()).insertSeedUser(any());
         verify(mapper, never()).insertBangumiRecommendation(any());
+        verify(interactionService, never()).scheduleMultiRoundInteraction(any(), any());
     }
 
     @Test
@@ -100,6 +105,7 @@ class SeedOrchestratorTest {
         assertThat(summary.accounts()).isZero();
         verify(mapper, times(2)).insertBangumiRecommendation(any());
         verify(mapper).markSeed(eq("bangumi"), any());
+        verify(interactionService, never()).scheduleMultiRoundInteraction(any(), any());
     }
 
     @Test
@@ -120,6 +126,7 @@ class SeedOrchestratorTest {
         verify(mapper, times(24)).upsertFollower(any());
         verify(mapper).markSeed(eq("accounts"), any());
         verify(searchIndexService, times(24)).upsertPost(any(Long.class));
+        verify(interactionService, times(24)).scheduleMultiRoundInteraction(any(), any());
     }
 
     private static BangumiSubjectSeed subject(long id, String title, double score) {
