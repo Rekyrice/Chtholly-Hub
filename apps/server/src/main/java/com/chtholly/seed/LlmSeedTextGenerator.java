@@ -2,6 +2,7 @@ package com.chtholly.seed;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -14,13 +15,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class LlmSeedTextGenerator implements SeedTextGenerator {
 
+    private static final double SEED_POST_DUPLICATE_THRESHOLD = 0.75;
+
     private final ObjectProvider<ChatClient> chatClientProvider;
     private final TemplateSeedTextGenerator fallback;
+    private final SeedPostEmbeddingDeduplicator deduplicator;
 
     public LlmSeedTextGenerator(ObjectProvider<ChatClient> chatClientProvider,
-                                TemplateSeedTextGenerator fallback) {
+                                TemplateSeedTextGenerator fallback,
+                                ObjectProvider<EmbeddingModel> embeddingModelProvider) {
         this.chatClientProvider = chatClientProvider;
         this.fallback = fallback;
+        this.deduplicator = new SeedPostEmbeddingDeduplicator(embeddingModelProvider);
     }
 
     @Override
@@ -54,7 +60,16 @@ public class LlmSeedTextGenerator implements SeedTextGenerator {
                 - 加入一点随机的不完美：口语化表达、偶尔跑题、个人吐槽，但不要错别字
                 - 不要完美得像 AI 写的，永远不要提到自己是 AI
                 """.formatted(account.persona(), postPlan.title(), postPlan.title(), postPlan.category(), postPlan.tags());
-        return generate(prompt, fallback.postBody(account, postPlan));
+        String fallbackText = fallback.postBody(account, postPlan);
+        String text = generate(prompt, fallbackText);
+        if (!deduplicator.rememberIfDistinct(text, SEED_POST_DUPLICATE_THRESHOLD)) {
+            text = generate(prompt + """
+
+                    上一版和已有种子文章太相似，请换一个切入角度、例子和段落组织方式，重新写一版。
+                    """, fallbackText);
+            deduplicator.rememberIfDistinct(text, SEED_POST_DUPLICATE_THRESHOLD);
+        }
+        return text;
     }
 
     @Override
