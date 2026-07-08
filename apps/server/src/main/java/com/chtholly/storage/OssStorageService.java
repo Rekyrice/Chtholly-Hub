@@ -3,7 +3,9 @@ package com.chtholly.storage;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
 import com.aliyun.oss.HttpMethod;
+import com.aliyun.oss.model.CannedAccessControlList;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
+import com.aliyun.oss.model.ObjectMetadata;
 import com.aliyun.oss.model.PutObjectRequest;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
@@ -75,7 +77,22 @@ public class OssStorageService implements StorageService {
 
     @Override
     public void uploadObject(String objectKey, InputStream inputStream, String contentType, long size) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "OSS 模式请使用预签名直传");
+        ensureConfigured();
+        StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
+        OSS client = newClient();
+        try {
+            ObjectMetadata metadata = new ObjectMetadata();
+            if (contentType != null && !contentType.isBlank()) {
+                metadata.setContentType(contentType.trim());
+            }
+            if (size >= 0) {
+                metadata.setContentLength(size);
+            }
+            client.putObject(new PutObjectRequest(props.getBucket(), objectKey, inputStream, metadata));
+            client.setObjectAcl(props.getBucket(), objectKey, CannedAccessControlList.PublicRead);
+        } finally {
+            client.shutdown();
+        }
     }
 
     @Override

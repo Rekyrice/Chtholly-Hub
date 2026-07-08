@@ -37,6 +37,7 @@ public class SeedOrchestrator {
     private final ObjectMapper objectMapper;
     private final SearchIndexService searchIndexService;
     private final SeedInteractionService interactionService;
+    private final SeedContentPublisher contentPublisher;
     private final Clock clock;
     private final SeedAccountGenerator accountGenerator = new SeedAccountGenerator();
     private final SeedContentGenerator contentGenerator = new SeedContentGenerator();
@@ -48,7 +49,8 @@ public class SeedOrchestrator {
                             SnowflakeIdGenerator idGenerator,
                             ObjectMapper objectMapper,
                             ObjectProvider<SearchIndexService> searchIndexServiceProvider,
-                            ObjectProvider<SeedInteractionService> interactionServiceProvider) {
+                            ObjectProvider<SeedInteractionService> interactionServiceProvider,
+                            ObjectProvider<SeedContentPublisher> contentPublisherProvider) {
         this(mapper,
                 bangumiSource,
                 textGenerator,
@@ -56,6 +58,7 @@ public class SeedOrchestrator {
                 objectMapper,
                 searchIndexServiceProvider.getIfAvailable(),
                 interactionServiceProvider.getIfAvailable(),
+                contentPublisherProvider.getIfAvailable(),
                 Clock.systemUTC());
     }
 
@@ -66,7 +69,7 @@ public class SeedOrchestrator {
                      ObjectMapper objectMapper,
                      SearchIndexService searchIndexService,
                      Clock clock) {
-        this(mapper, bangumiSource, textGenerator, idGenerator, objectMapper, searchIndexService, null, clock);
+        this(mapper, bangumiSource, textGenerator, idGenerator, objectMapper, searchIndexService, null, null, clock);
     }
 
     SeedOrchestrator(SeedMapper mapper,
@@ -77,6 +80,18 @@ public class SeedOrchestrator {
                      SearchIndexService searchIndexService,
                      SeedInteractionService interactionService,
                      Clock clock) {
+        this(mapper, bangumiSource, textGenerator, idGenerator, objectMapper, searchIndexService, interactionService, null, clock);
+    }
+
+    SeedOrchestrator(SeedMapper mapper,
+                     BangumiRecommendationSource bangumiSource,
+                     SeedTextGenerator textGenerator,
+                     SnowflakeIdGenerator idGenerator,
+                     ObjectMapper objectMapper,
+                     SearchIndexService searchIndexService,
+                     SeedInteractionService interactionService,
+                     SeedContentPublisher contentPublisher,
+                     Clock clock) {
         this.mapper = mapper;
         this.bangumiSource = bangumiSource;
         this.textGenerator = textGenerator;
@@ -84,6 +99,7 @@ public class SeedOrchestrator {
         this.objectMapper = objectMapper;
         this.searchIndexService = searchIndexService;
         this.interactionService = interactionService;
+        this.contentPublisher = contentPublisher;
         this.clock = clock;
     }
 
@@ -107,8 +123,8 @@ public class SeedOrchestrator {
             return summary;
         }
 
-        persist(plan);
-        indexSeedPosts(plan.posts());
+        List<SeedPostRow> publishedPosts = persist(plan);
+        indexSeedPosts(publishedPosts);
         mapper.markSeed(marker, toJson(summary));
         return summary;
     }
@@ -166,10 +182,7 @@ public class SeedOrchestrator {
             for (SeedPostPlan postPlan : contentGenerator.postsFor(profile)) {
                 Instant publishedAt = now.minus(postPlan.daysAgo(), ChronoUnit.DAYS)
                         .plus(postPlan.slot() * 3L, ChronoUnit.HOURS);
-                posts.add(new SeedPostWithPlan(
-                        profile,
-                        postPlan,
-                        toPostRow(userId, profile, postPlan, publishedAt)));
+                posts.add(toPostWithPlan(userId, profile, postPlan, publishedAt));
             }
         }
 
@@ -191,11 +204,36 @@ public class SeedOrchestrator {
                         .toList();
         return new AccountPlan(
                 users,
-                posts.stream().map(SeedPostWithPlan::row).toList(),
+                posts,
                 comments,
                 follows,
                 interactionAccounts,
                 interactionPosts);
+    }
+
+    private SeedPostWithPlan toPostWithPlan(long userId,
+                                            SeedAccountProfile profile,
+                                            SeedPostPlan postPlan,
+                                            Instant publishedAt) {
+        String body = textGenerator.postBody(profile, postPlan);
+        String slug = "seed-" + profile.handle() + "-" + postPlan.slot();
+        String objectKey = "seed/posts/" + slug + ".md";
+        SeedPostRow row = new SeedPostRow(
+                idGenerator.nextId(),
+                userId,
+                postPlan.title(),
+                slug,
+                excerptFromBody(body, 50),
+                "seed://" + objectKey,
+                objectKey,
+                body.getBytes(StandardCharsets.UTF_8).length,
+                sha256(body),
+                toJson(postPlan.tags()),
+                toJson(List.of()),
+                publishedAt.minus(2, ChronoUnit.HOURS),
+                publishedAt,
+                publishedAt);
+        return new SeedPostWithPlan(profile, postPlan, row, body);
     }
 
     private SeedUserRow toUserRow(long userId, SeedAccountProfile profile, Instant createdAt, Instant updatedAt) {
@@ -212,30 +250,6 @@ public class SeedOrchestrator {
                 toJson(profile.tags()),
                 createdAt,
                 updatedAt);
-    }
-
-    private SeedPostRow toPostRow(long userId,
-                                  SeedAccountProfile profile,
-                                  SeedPostPlan postPlan,
-                                  Instant publishedAt) {
-        String body = textGenerator.postBody(profile, postPlan);
-        String slug = "seed-" + profile.handle() + "-" + postPlan.slot();
-        String objectKey = "seed/posts/" + slug + ".md";
-        return new SeedPostRow(
-                idGenerator.nextId(),
-                userId,
-                postPlan.title(),
-                slug,
-                abbreviate(body.replaceAll("\\s+", " "), 50),
-                "seed://" + objectKey,
-                objectKey,
-                body.getBytes(StandardCharsets.UTF_8).length,
-                sha256(body),
-                toJson(postPlan.tags()),
-                toJson(List.of()),
-                publishedAt.minus(2, ChronoUnit.HOURS),
-                publishedAt,
-                publishedAt);
     }
 
     private List<SeedCommentRow> buildComments(
@@ -275,15 +289,48 @@ public class SeedOrchestrator {
         return follows;
     }
 
-    private void persist(SeedPlan plan) {
+    private List<SeedPostRow> persist(SeedPlan plan) {
         plan.recommendations().forEach(mapper::insertBangumiRecommendation);
         plan.users().forEach(mapper::insertSeedUser);
-        plan.posts().forEach(mapper::insertSeedPost);
+        List<SeedPostRow> publishedPosts = new ArrayList<>();
+        for (SeedPostWithPlan post : plan.posts()) {
+            SeedPostRow row = publishPost(post);
+            mapper.insertSeedPost(row);
+            publishedPosts.add(row);
+        }
         scheduleSeedInteractions(plan);
         plan.comments().forEach(mapper::insertSeedComment);
         for (SeedFollowRow follow : plan.follows()) {
             mapper.upsertFollowing(follow);
             mapper.upsertFollower(follow);
+        }
+        return publishedPosts;
+    }
+
+    private SeedPostRow publishPost(SeedPostWithPlan post) {
+        if (contentPublisher == null) {
+            return post.row();
+        }
+        try {
+            String contentUrl = contentPublisher.publishMarkdown(post.row().contentObjectKey(), post.body());
+            SeedPostRow row = post.row();
+            return new SeedPostRow(
+                    row.id(),
+                    row.creatorId(),
+                    row.title(),
+                    row.slug(),
+                    row.description(),
+                    contentUrl,
+                    row.contentObjectKey(),
+                    row.contentSize(),
+                    row.contentSha256(),
+                    row.tagsJson(),
+                    row.imgUrlsJson(),
+                    row.createTime(),
+                    row.updateTime(),
+                    row.publishTime());
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Failed to publish seed markdown: " + post.row().slug(), e);
         }
     }
 
@@ -331,12 +378,38 @@ public class SeedOrchestrator {
         return text.length() <= max ? text : text.substring(0, max);
     }
 
-    private record SeedPostWithPlan(SeedAccountProfile profile, SeedPostPlan plan, SeedPostRow row) {
+    private static String excerptFromBody(String body, int max) {
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        StringBuilder excerpt = new StringBuilder();
+        boolean skippedTitle = false;
+        for (String line : body.split("\\R")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (!skippedTitle && trimmed.startsWith("#")) {
+                skippedTitle = true;
+                continue;
+            }
+            if (trimmed.startsWith("#")) {
+                continue;
+            }
+            excerpt.append(trimmed.replaceAll("[*_`]", "")).append(' ');
+            if (excerpt.length() >= max) {
+                break;
+            }
+        }
+        return abbreviate(excerpt.toString().trim(), max);
+    }
+
+    private record SeedPostWithPlan(SeedAccountProfile profile, SeedPostPlan plan, SeedPostRow row, String body) {
     }
 
     private record AccountPlan(
             List<SeedUserRow> users,
-            List<SeedPostRow> posts,
+            List<SeedPostWithPlan> posts,
             List<SeedCommentRow> comments,
             List<SeedFollowRow> follows,
             List<SeedInteractionAccount> interactionAccounts,
@@ -349,7 +422,7 @@ public class SeedOrchestrator {
     private record SeedPlan(
             List<BangumiRecommendationSeed> recommendations,
             List<SeedUserRow> users,
-            List<SeedPostRow> posts,
+            List<SeedPostWithPlan> posts,
             List<SeedCommentRow> comments,
             List<SeedFollowRow> follows,
             List<SeedInteractionAccount> interactionAccounts,
