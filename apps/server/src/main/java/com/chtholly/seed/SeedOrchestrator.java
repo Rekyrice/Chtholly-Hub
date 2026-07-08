@@ -36,6 +36,7 @@ public class SeedOrchestrator {
     private final SnowflakeIdGenerator idGenerator;
     private final ObjectMapper objectMapper;
     private final SearchIndexService searchIndexService;
+    private final SeedInteractionService interactionService;
     private final Clock clock;
     private final SeedAccountGenerator accountGenerator = new SeedAccountGenerator();
     private final SeedContentGenerator contentGenerator = new SeedContentGenerator();
@@ -46,13 +47,15 @@ public class SeedOrchestrator {
                             SeedTextGenerator textGenerator,
                             SnowflakeIdGenerator idGenerator,
                             ObjectMapper objectMapper,
-                            ObjectProvider<SearchIndexService> searchIndexServiceProvider) {
+                            ObjectProvider<SearchIndexService> searchIndexServiceProvider,
+                            ObjectProvider<SeedInteractionService> interactionServiceProvider) {
         this(mapper,
                 bangumiSource,
                 textGenerator,
                 idGenerator,
                 objectMapper,
                 searchIndexServiceProvider.getIfAvailable(),
+                interactionServiceProvider.getIfAvailable(),
                 Clock.systemUTC());
     }
 
@@ -63,12 +66,24 @@ public class SeedOrchestrator {
                      ObjectMapper objectMapper,
                      SearchIndexService searchIndexService,
                      Clock clock) {
+        this(mapper, bangumiSource, textGenerator, idGenerator, objectMapper, searchIndexService, null, clock);
+    }
+
+    SeedOrchestrator(SeedMapper mapper,
+                     BangumiRecommendationSource bangumiSource,
+                     SeedTextGenerator textGenerator,
+                     SnowflakeIdGenerator idGenerator,
+                     ObjectMapper objectMapper,
+                     SearchIndexService searchIndexService,
+                     SeedInteractionService interactionService,
+                     Clock clock) {
         this.mapper = mapper;
         this.bangumiSource = bangumiSource;
         this.textGenerator = textGenerator;
         this.idGenerator = idGenerator;
         this.objectMapper = objectMapper;
         this.searchIndexService = searchIndexService;
+        this.interactionService = interactionService;
         this.clock = clock;
     }
 
@@ -105,7 +120,14 @@ public class SeedOrchestrator {
         AccountPlan accounts = mode == SeedRunMode.BANGUMI
                 ? AccountPlan.empty()
                 : buildAccountPlan();
-        return new SeedPlan(recommendations, accounts.users(), accounts.posts(), accounts.comments(), accounts.follows());
+        return new SeedPlan(
+                recommendations,
+                accounts.users(),
+                accounts.posts(),
+                accounts.comments(),
+                accounts.follows(),
+                accounts.interactionAccounts(),
+                accounts.interactionPosts());
     }
 
     private List<BangumiRecommendationSeed> buildRecommendations() {
@@ -130,10 +152,12 @@ public class SeedOrchestrator {
         List<SeedAccountProfile> profiles = accountGenerator.accounts();
         List<SeedUserRow> users = new ArrayList<>();
         List<SeedPostWithPlan> posts = new ArrayList<>();
+        List<SeedInteractionAccount> interactionAccounts = new ArrayList<>();
 
         for (SeedAccountProfile profile : profiles) {
             long userId = idGenerator.nextId();
             users.add(toUserRow(userId, profile, now.minus(14, ChronoUnit.DAYS), now));
+            interactionAccounts.add(new SeedInteractionAccount(userId, profile));
             for (SeedPostPlan postPlan : contentGenerator.postsFor(profile)) {
                 Instant publishedAt = now.minus(postPlan.daysAgo(), ChronoUnit.DAYS)
                         .plus(postPlan.slot() * 3L, ChronoUnit.HOURS);
@@ -146,7 +170,21 @@ public class SeedOrchestrator {
 
         List<SeedCommentRow> comments = buildComments(profiles, users, posts);
         List<SeedFollowRow> follows = buildFollows(users, now.minus(13, ChronoUnit.DAYS));
-        return new AccountPlan(users, posts.stream().map(SeedPostWithPlan::row).toList(), comments, follows);
+        List<SeedPostInteraction> interactionPosts = posts.stream()
+                .map(post -> new SeedPostInteraction(
+                        post.row().id(),
+                        post.row().creatorId(),
+                        post.plan().title(),
+                        post.plan().tags(),
+                        post.row().description()))
+                .toList();
+        return new AccountPlan(
+                users,
+                posts.stream().map(SeedPostWithPlan::row).toList(),
+                comments,
+                follows,
+                interactionAccounts,
+                interactionPosts);
     }
 
     private SeedUserRow toUserRow(long userId, SeedAccountProfile profile, Instant createdAt, Instant updatedAt) {
@@ -230,10 +268,20 @@ public class SeedOrchestrator {
         plan.recommendations().forEach(mapper::insertBangumiRecommendation);
         plan.users().forEach(mapper::insertSeedUser);
         plan.posts().forEach(mapper::insertSeedPost);
+        scheduleSeedInteractions(plan);
         plan.comments().forEach(mapper::insertSeedComment);
         for (SeedFollowRow follow : plan.follows()) {
             mapper.upsertFollowing(follow);
             mapper.upsertFollower(follow);
+        }
+    }
+
+    private void scheduleSeedInteractions(SeedPlan plan) {
+        if (interactionService == null || plan.interactionAccounts().isEmpty()) {
+            return;
+        }
+        for (SeedPostInteraction post : plan.interactionPosts()) {
+            interactionService.scheduleMultiRoundInteraction(post, plan.interactionAccounts());
         }
     }
 
@@ -278,9 +326,11 @@ public class SeedOrchestrator {
             List<SeedUserRow> users,
             List<SeedPostRow> posts,
             List<SeedCommentRow> comments,
-            List<SeedFollowRow> follows) {
+            List<SeedFollowRow> follows,
+            List<SeedInteractionAccount> interactionAccounts,
+            List<SeedPostInteraction> interactionPosts) {
         static AccountPlan empty() {
-            return new AccountPlan(List.of(), List.of(), List.of(), List.of());
+            return new AccountPlan(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         }
     }
 
@@ -289,7 +339,9 @@ public class SeedOrchestrator {
             List<SeedUserRow> users,
             List<SeedPostRow> posts,
             List<SeedCommentRow> comments,
-            List<SeedFollowRow> follows) {
+            List<SeedFollowRow> follows,
+            List<SeedInteractionAccount> interactionAccounts,
+            List<SeedPostInteraction> interactionPosts) {
         SeedRunSummary summary(SeedRunMode mode, boolean dryRun, boolean skipped) {
             return new SeedRunSummary(
                     mode,

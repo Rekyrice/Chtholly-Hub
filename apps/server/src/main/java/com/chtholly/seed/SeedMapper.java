@@ -21,6 +21,8 @@ public interface SeedMapper {
 
     int insertSeedComment(SeedCommentRow comment);
 
+    int insertSeedInteractionComment(SeedInteractionCommentRow comment);
+
     int upsertFollowing(SeedFollowRow follow);
 
     int upsertFollower(SeedFollowRow follow);

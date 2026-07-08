@@ -173,6 +173,28 @@
             updated_at = VALUES(updated_at)
     </insert>
 
+    <insert id="insertSeedInteractionComment" parameterType="com.chtholly.seed.SeedInteractionCommentRow">
+        INSERT INTO comments (
+            id,
+            post_id,
+            parent_id,
+            user_id,
+            content,
+            is_chtholly,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{id},
+            #{postId},
+            #{parentId},
+            #{userId},
+            #{content},
+            0,
+            #{createdAt},
+            #{updatedAt}
+        )
+    </insert>
+
     <insert id="upsertFollowing" parameterType="com.chtholly.seed.SeedFollowRow">
         INSERT INTO following (id, from_user_id, to_user_id, rel_status, created_at, updated_at)
         VALUES (#{id}, #{fromUserId}, #{toUserId}, 1, #{createdAt}, #{updatedAt})
