@@ -157,7 +157,8 @@ public class SeedOrchestrator {
         List<SeedInteractionAccount> interactionAccounts = new ArrayList<>();
 
         for (SeedAccountProfile profile : profiles) {
-            long userId = idGenerator.nextId();
+            Long existingUserId = mapper.findUserIdByHandle(profile.handle());
+            long userId = existingUserId != null ? existingUserId : idGenerator.nextId();
             users.add(toUserRow(userId, profile, now.minus(14, ChronoUnit.DAYS), now));
             if (!contentOnly) {
                 interactionAccounts.add(new SeedInteractionAccount(userId, profile));

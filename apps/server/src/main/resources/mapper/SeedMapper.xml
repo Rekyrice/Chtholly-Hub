@@ -155,6 +155,13 @@
         LIMIT 1
     </select>
 
+    <select id="findUserIdByHandle" resultType="long">
+        SELECT id
+        FROM users
+        WHERE handle = #{handle}
+        LIMIT 1
+    </select>
+
     <insert id="insertSeedComment" parameterType="com.chtholly.seed.SeedCommentRow">
         INSERT INTO comments (
             id,

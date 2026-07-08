@@ -16,6 +16,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.lenient;
@@ -161,6 +162,17 @@ class SeedOrchestratorTest {
         orchestrator.run(new SeedRunOptions(SeedRunMode.CONTENT_ONLY, false));
 
         verify(searchIndexService, times(32)).upsertPost(9001L);
+    }
+
+    @Test
+    void given_existingSeedUser_when_contentOnlyRun_then_reusesUserIdForPosts() {
+        when(mapper.existsSeed("seed:content_only")).thenReturn(false);
+        when(mapper.findUserIdByHandle(any())).thenReturn(42L);
+        when(mapper.findPostIdBySlug(any())).thenReturn(null);
+
+        orchestrator.run(new SeedRunOptions(SeedRunMode.CONTENT_ONLY, false));
+
+        verify(mapper, times(32)).insertSeedPost(argThat(post -> post.creatorId() == 42L));
     }
 
     @Test

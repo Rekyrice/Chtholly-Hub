@@ -29,4 +29,7 @@ public interface SeedMapper {
 
     /** slug 冲突 upsert 后取库内真实 id，供 ES 索引使用。 */
     Long findPostIdBySlug(@Param("slug") String slug);
+
+    /** 重复跑种子时复用已有账号 id，避免 posts.creator_id 外键失败。 */
+    Long findUserIdByHandle(@Param("handle") String handle);
 }
