@@ -3,6 +3,9 @@ package com.chtholly.agent.content;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import com.chtholly.agent.graph.KnowledgeExtractionResult;
+import com.chtholly.agent.graph.KnowledgeGraphExtractionService;
+import com.chtholly.agent.graph.KnowledgeGraphService;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.model.Post;
 import com.chtholly.post.service.PostService;
@@ -44,18 +47,24 @@ public class ContentUnderstandingService {
     private final ObjectMapper objectMapper;
     private final TextGenerator textGenerator;
     private final ContentFetcher contentFetcher;
+    private final KnowledgeGraphService knowledgeGraphService;
+    private final KnowledgeGraphExtractionService graphExtractionService;
     private final Clock clock;
 
     @Autowired
     public ContentUnderstandingService(PostService postService,
                                        ElasticsearchClient esClient,
                                        ObjectMapper objectMapper,
-                                       ObjectProvider<ChatClient> chatClientProvider) {
+                                       ObjectProvider<ChatClient> chatClientProvider,
+                                       ObjectProvider<KnowledgeGraphService> knowledgeGraphServiceProvider,
+                                       ObjectProvider<KnowledgeGraphExtractionService> graphExtractionServiceProvider) {
         this(postService,
                 esClient,
                 objectMapper,
                 prompt -> generateWithChatClient(chatClientProvider.getIfAvailable(), prompt),
                 ContentUnderstandingService::fetchContentFromUrl,
+                knowledgeGraphServiceProvider.getIfAvailable(),
+                graphExtractionServiceProvider.getIfAvailable(),
                 Clock.systemUTC());
     }
 
@@ -65,11 +74,24 @@ public class ContentUnderstandingService {
                                 TextGenerator textGenerator,
                                 ContentFetcher contentFetcher,
                                 Clock clock) {
+        this(postService, esClient, objectMapper, textGenerator, contentFetcher, null, null, clock);
+    }
+
+    ContentUnderstandingService(PostService postService,
+                                ElasticsearchClient esClient,
+                                ObjectMapper objectMapper,
+                                TextGenerator textGenerator,
+                                ContentFetcher contentFetcher,
+                                KnowledgeGraphService knowledgeGraphService,
+                                KnowledgeGraphExtractionService graphExtractionService,
+                                Clock clock) {
         this.postService = postService;
         this.esClient = esClient;
         this.objectMapper = objectMapper;
         this.textGenerator = textGenerator;
         this.contentFetcher = contentFetcher;
+        this.knowledgeGraphService = knowledgeGraphService;
+        this.graphExtractionService = graphExtractionService;
         this.clock = clock;
     }
 
@@ -86,6 +108,7 @@ public class ContentUnderstandingService {
             try {
                 ContentAnalysis analysis = analyzePost(post);
                 storeAnalysis(post.getId(), analysis);
+                ingestKnowledgeGraph(post, analysis);
             } catch (Exception e) {
                 log.warn("Content understanding failed, postId={}: {}", post == null ? null : post.getId(), e.getMessage(), e);
             }
@@ -197,6 +220,24 @@ public class ContentUnderstandingService {
                     .doc(doc), Map.class);
         } catch (Exception e) {
             log.warn("Store content analysis in ES failed, postId={}: {}", postId, e.getMessage(), e);
+        }
+    }
+
+    private void ingestKnowledgeGraph(Post post, ContentAnalysis analysis) {
+        if (post == null || knowledgeGraphService == null) {
+            return;
+        }
+        try {
+            knowledgeGraphService.ingestPostAnalysis(post.getId(), post.getTitle(), post.getDescription(), analysis);
+            if (graphExtractionService != null) {
+                String text = String.join("\n",
+                        post.getTitle() == null ? "" : post.getTitle(),
+                        post.getDescription() == null ? "" : post.getDescription());
+                KnowledgeExtractionResult extraction = graphExtractionService.extract(text);
+                knowledgeGraphService.ingestExtraction(extraction);
+            }
+        } catch (Exception e) {
+            log.warn("Knowledge graph ingestion failed, postId={}: {}", post.getId(), e.getMessage(), e);
         }
     }
 

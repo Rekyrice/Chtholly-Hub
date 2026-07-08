@@ -8,6 +8,7 @@ import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.agent.content.ContentAnalysis;
 import com.chtholly.agent.content.ContentUnderstandingService;
 import com.chtholly.agent.content.Entity;
+import com.chtholly.agent.graph.KnowledgeGraphService;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.search.HybridSearchService;
@@ -49,50 +50,61 @@ public class ContextEngine {
     private final KnowledgeService knowledgeService;
     private final ContentUnderstandingService contentUnderstandingService;
     private final SeasonService seasonService;
+    private final KnowledgeGraphService knowledgeGraphService;
 
     @Autowired
     public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                          ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
                          ObjectProvider<KnowledgeService> knowledgeServiceProvider,
                          ObjectProvider<ContentUnderstandingService> contentUnderstandingServiceProvider,
-                         ObjectProvider<SeasonService> seasonServiceProvider) {
+                         ObjectProvider<SeasonService> seasonServiceProvider,
+                         ObjectProvider<KnowledgeGraphService> knowledgeGraphServiceProvider) {
         this(anchorManager,
                 stateService,
                 hybridSearchServiceProvider.getIfAvailable(),
                 knowledgeServiceProvider.getIfAvailable(),
                 contentUnderstandingServiceProvider.getIfAvailable(),
-                seasonServiceProvider.getIfAvailable());
+                seasonServiceProvider.getIfAvailable(),
+                knowledgeGraphServiceProvider.getIfAvailable());
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService) {
-        this(anchorManager, stateService, (HybridSearchService) null, (KnowledgeService) null, null, null);
+        this(anchorManager, stateService, (HybridSearchService) null, (KnowledgeService) null, null, null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService) {
-        this(anchorManager, stateService, hybridSearchService, null, null, null);
+        this(anchorManager, stateService, hybridSearchService, null, null, null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService, KnowledgeService knowledgeService) {
-        this(anchorManager, stateService, hybridSearchService, knowledgeService, null, null);
+        this(anchorManager, stateService, hybridSearchService, knowledgeService, null, null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService, KnowledgeService knowledgeService,
                   ContentUnderstandingService contentUnderstandingService) {
-        this(anchorManager, stateService, hybridSearchService, knowledgeService, contentUnderstandingService, null);
+        this(anchorManager, stateService, hybridSearchService, knowledgeService, contentUnderstandingService, null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService, KnowledgeService knowledgeService,
                   ContentUnderstandingService contentUnderstandingService, SeasonService seasonService) {
+        this(anchorManager, stateService, hybridSearchService, knowledgeService, contentUnderstandingService, seasonService, null);
+    }
+
+    ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
+                  HybridSearchService hybridSearchService, KnowledgeService knowledgeService,
+                  ContentUnderstandingService contentUnderstandingService, SeasonService seasonService,
+                  KnowledgeGraphService knowledgeGraphService) {
         this.anchorManager = anchorManager;
         this.stateService = stateService;
         this.hybridSearchService = hybridSearchService;
         this.knowledgeService = knowledgeService;
         this.contentUnderstandingService = contentUnderstandingService;
         this.seasonService = seasonService;
+        this.knowledgeGraphService = knowledgeGraphService;
     }
 
     /**
@@ -131,6 +143,7 @@ public class ContextEngine {
         appendSeasonalFeeling(sb);
         appendPageContext(sb, pageContext);
         appendCurrentPostAnalysis(sb, pageContext);
+        appendKnowledgeGraphContext(sb, userQuestion);
         appendKnownFacts(sb, userQuestion);
         appendRelevantKnowledge(sb, anchors.semantic(), userQuestion);
         appendProceduralRules(sb, anchors.procedural());
@@ -225,6 +238,27 @@ public class ContextEngine {
             sb.append('\n');
         } catch (Exception e) {
             log.warn("Current post analysis context failed: {}", e.getMessage(), e);
+        }
+    }
+
+    private void appendKnowledgeGraphContext(StringBuilder sb, String userQuestion) {
+        if (knowledgeGraphService == null || !hasText(userQuestion)) {
+            return;
+        }
+        try {
+            List<String> graphContext = knowledgeGraphService.contextForQuestion(userQuestion, 5);
+            if (graphContext == null || graphContext.isEmpty()) {
+                return;
+            }
+            sb.append("## 话题关联\n\n");
+            for (String line : graphContext) {
+                if (hasText(line)) {
+                    sb.append("- ").append(line.trim()).append('\n');
+                }
+            }
+            sb.append('\n');
+        } catch (Exception e) {
+            log.warn("Knowledge graph context failed: {}", e.getMessage(), e);
         }
     }
 

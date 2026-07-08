@@ -9,6 +9,7 @@ import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.content.ContentAnalysis;
 import com.chtholly.agent.content.ContentUnderstandingService;
 import com.chtholly.agent.content.Entity;
+import com.chtholly.agent.graph.KnowledgeGraphService;
 import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
@@ -201,6 +202,28 @@ class ContextEngineTest {
                 .contains("## 你知道的事")
                 .contains("- 《葬送的芙莉莲》让我想到时间、记忆和迟来的理解。");
         verify(knowledgeService).searchRelevantKnowledge("聊聊芙莉莲关于时间的主题", 3);
+    }
+
+    @Test
+    void injectsKnowledgeGraphAssociationsWhenQuestionMentionsKnownTopic() {
+        KnowledgeGraphService graphService = mock(KnowledgeGraphService.class);
+        ContextEngine engine = new ContextEngine(anchorManager, stateService, null, null, null, seasonService, graphService);
+        when(graphService.contextForQuestion("聊聊葬送的芙莉莲和时间", 5)).thenReturn(List.of(
+                "Frieren -> time (RELATED_TO, weight=0.90): time and memory"
+        ));
+
+        String prompt = engine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "",
+                List.of(),
+                "",
+                "聊聊葬送的芙莉莲和时间");
+
+        assertThat(prompt)
+                .contains("## 话题关联")
+                .contains("Frieren -> time (RELATED_TO, weight=0.90): time and memory");
+        verify(graphService).contextForQuestion("聊聊葬送的芙莉莲和时间", 5);
     }
 
     @Test

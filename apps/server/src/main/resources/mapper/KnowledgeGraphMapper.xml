@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.agent.graph.KnowledgeGraphMapper">
+
+    <resultMap id="EntityResultMap" type="com.chtholly.agent.graph.KnowledgeEntityRow">
+        <id property="id" column="id" />
+        <result property="name" column="name" />
+        <result property="type" column="type" />
+        <result property="description" column="description" />
+        <result property="aliases" column="aliases" />
+        <result property="embedding" column="embedding" />
+        <result property="metadata" column="metadata" />
+        <result property="createdAt" column="created_at" />
+        <result property="updatedAt" column="updated_at" />
+    </resultMap>
+
+    <resultMap id="RelationResultMap" type="com.chtholly.agent.graph.KnowledgeRelationRow">
+        <id property="id" column="id" />
+        <result property="sourceEntityId" column="source_entity_id" />
+        <result property="targetEntityId" column="target_entity_id" />
+        <result property="relationType" column="relation_type" />
+        <result property="weight" column="weight" />
+        <result property="metadata" column="metadata" />
+        <result property="createdAt" column="created_at" />
+    </resultMap>
+
+    <select id="findEntityByNameAndType" resultMap="EntityResultMap">
+        SELECT *
+        FROM knowledge_entities
+        WHERE name = #{name}
+          AND type = #{type}
+        LIMIT 1
+    </select>
+
+    <select id="findEntityById" resultMap="EntityResultMap">
+        SELECT *
+        FROM knowledge_entities
+        WHERE id = #{id}
+    </select>
+
+    <select id="findEntitiesByIds" resultMap="EntityResultMap">
+        SELECT *
+        FROM knowledge_entities
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="searchByNameOrAlias" resultMap="EntityResultMap">
+        SELECT *
+        FROM knowledge_entities
+        WHERE name LIKE CONCAT('%', #{query}, '%')
+           OR description LIKE CONCAT('%', #{query}, '%')
+           OR aliases LIKE CONCAT('%', #{query}, '%')
+        ORDER BY updated_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findAllEntities" resultMap="EntityResultMap">
+        SELECT *
+        FROM knowledge_entities
+        ORDER BY updated_at DESC
+        LIMIT 2000
+    </select>
+
+    <insert id="insertEntity" parameterType="com.chtholly.agent.graph.KnowledgeEntityRow">
+        INSERT INTO knowledge_entities (
+            id,
+            name,
+            type,
+            description,
+            aliases,
+            embedding,
+            metadata,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{id},
+            #{name},
+            #{type},
+            #{description},
+            #{aliases},
+            #{embedding},
+            #{metadata},
+            #{createdAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateEntity" parameterType="com.chtholly.agent.graph.KnowledgeEntityRow">
+        UPDATE knowledge_entities
+        SET description = #{description},
+            aliases = #{aliases},
+            embedding = #{embedding},
+            metadata = #{metadata},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="findOutgoingRelations" resultMap="RelationResultMap">
+        SELECT *
+        FROM knowledge_relations
+        WHERE source_entity_id = #{sourceEntityId}
+          AND weight >= #{minWeight}
+        ORDER BY weight DESC, created_at DESC
+    </select>
+
+    <insert id="insertRelation" parameterType="com.chtholly.agent.graph.KnowledgeRelationRow">
+        INSERT INTO knowledge_relations (
+            id,
+            source_entity_id,
+            target_entity_id,
+            relation_type,
+            weight,
+            metadata,
+            created_at
+        ) VALUES (
+            #{id},
+            #{sourceEntityId},
+            #{targetEntityId},
+            #{relationType},
+            #{weight},
+            #{metadata},
+            #{createdAt}
+        )
+        ON DUPLICATE KEY UPDATE
+            weight = GREATEST(weight, VALUES(weight)),
+            metadata = VALUES(metadata)
+    </insert>
+</mapper>
