@@ -5461,30 +5461,16 @@
 
   .search-sidebar {
     display: grid;
-    gap: var(--widget-gap);
+    gap: 16px;
     min-width: 0;
   }
 
-  .search-chtholly-widget {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 18px;
-    align-items: center;
+  .search-sidebar__hint {
     margin-bottom: 0;
   }
 
-  .search-chtholly-widget h2 {
-    margin: 0 0 6px;
-    font-size: 18px;
-    font-weight: 500;
-    color: var(--color-text);
-  }
-
-  .search-chtholly-widget p {
-    margin: 0;
-    font-size: 14px;
-    line-height: 1.7;
-    color: var(--color-text-secondary);
+  .search-sidebar__hint .chtholly-illustration {
+    animation: none;
   }
 
   .search-empty {

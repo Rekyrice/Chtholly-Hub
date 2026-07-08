@@ -87,12 +87,20 @@ export default async function SearchPage({ searchParams }: Props) {
         )}
       </div>
       <div className="search-sidebar">
-        <div className="widget search-chtholly-widget">
-          <ChthollyIllustration size="sm" mood={0} timeOfDay={currentTimePeriod} />
-          <div>
-            <h2>Chtholly</h2>
-            <p>我会在旁边看着结果。要是没找到，我们就换个词再试试。</p>
+        <div className="widget sidebar-observation-widget search-sidebar__hint">
+          <div className="sidebar-observation-widget__head">
+            <ChthollyIllustration
+              size="xs"
+              mood={0}
+              timeOfDay={currentTimePeriod}
+              pageContext="/search"
+            />
+            <div>
+              <span>Search</span>
+              <h3>珂朵莉</h3>
+            </div>
           </div>
+          <p>我会在旁边看着结果。要是没找到，我们就换个词再试试。</p>
         </div>
         <Sidebar />
       </div>
