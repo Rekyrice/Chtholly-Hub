@@ -21,6 +21,10 @@ logs/*.log
 uploads/
 apps/server/uploads/
 
+# --- 图片临时投放区（中转，不纳入版本库）---
+apps/web/public/images/_incoming/*
+!apps/web/public/images/_incoming/.gitkeep
+
 # --- IDE / 编辑器（个人配置，不纳入版本库）---
 .vscode/*
 !.vscode/tasks.json
