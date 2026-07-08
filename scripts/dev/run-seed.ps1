@@ -1,6 +1,7 @@
 param(
     [ValidateSet("full", "bangumi", "accounts", "content_only", "content-only")]
-    [string]$Mode = "full"
+    [string]$Mode = "full",
+    [switch]$ResetMarker
 )
 
 # 一次性冷启动种子：在备用端口启动后端，写入 MySQL + ES 后自动退出
@@ -24,6 +25,12 @@ Write-Host ""
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 . (Join-Path $PSScriptRoot "load-env.ps1")
+
+if ($ResetMarker) {
+    $marker = if ($Mode -eq "content_only" -or $Mode -eq "content-only") { "seed:content_only" } else { $Mode }
+    Write-Host "ResetMarker: clearing seed marker '$marker'..." -ForegroundColor Yellow
+    docker exec -e "MYSQL_PWD=$env:MYSQL_PASSWORD" mysql mysql -uroot --default-character-set=utf8mb4 chtholly -e "DELETE FROM seed_data WHERE seed_key='$marker';" 2>$null | Out-Null
+}
 
 # content_only 用模板正文即可，关闭 LLM 避免 32 篇生成超时
 $savedLlmEnabled = $env:LLM_ENABLED
