@@ -37,12 +37,23 @@ public class LlmSeedTextGenerator implements SeedTextGenerator {
     @Override
     public String postBody(SeedAccountProfile account, SeedPostPlan postPlan) {
         String prompt = """
-                请以「%s」的人设写一篇种子文章。
+                你是「%s」，一个真实的博客作者。
+                请写一篇关于「%s」的博客文章，主题要围绕标题自然展开。
+
                 标题：%s
                 类型：%s
                 标签：%s
-                要求：符合人设，可读，像真实社区用户发布；技术文章包含代码片段；不要提到你是 AI。
-                """.formatted(account.persona(), postPlan.title(), postPlan.category(), postPlan.tags());
+
+                写作要求：
+                - 1000-3000 字，Markdown 格式
+                - 正文需要有 H2/H3 小标题，至少 2-3 个小标题
+                - 需要有开头引入、正文展开、结尾总结
+                - 有个人观点和具体例子，语气自然，像在和朋友聊天
+                - 技术类文章必须有代码示例，并解释为什么这样写
+                - 生活、读书、摄影、番剧类文章要有个人感悟、具体场景或引用
+                - 加入一点随机的不完美：口语化表达、偶尔跑题、个人吐槽，但不要错别字
+                - 不要完美得像 AI 写的，永远不要提到自己是 AI
+                """.formatted(account.persona(), postPlan.title(), postPlan.title(), postPlan.category(), postPlan.tags());
         return generate(prompt, fallback.postBody(account, postPlan));
     }
 

@@ -68,7 +68,7 @@ class SeedOrchestratorTest {
         SeedRunSummary summary = orchestrator.run(new SeedRunOptions(SeedRunMode.FULL, true));
 
         assertThat(summary.accounts()).isEqualTo(8);
-        assertThat(summary.posts()).isBetween(24, 40);
+        assertThat(summary.posts()).isBetween(32, 40);
         assertThat(summary.comments()).isGreaterThanOrEqualTo(16);
         assertThat(summary.follows()).isGreaterThanOrEqualTo(24);
         assertThat(summary.recommendations()).isEqualTo(1);
@@ -115,18 +115,18 @@ class SeedOrchestratorTest {
         SeedRunSummary summary = orchestrator.run(new SeedRunOptions(SeedRunMode.ACCOUNTS, false));
 
         assertThat(summary.accounts()).isEqualTo(8);
-        assertThat(summary.posts()).isBetween(24, 40);
+        assertThat(summary.posts()).isBetween(32, 40);
         assertThat(summary.comments()).isGreaterThanOrEqualTo(16);
         assertThat(summary.follows()).isGreaterThanOrEqualTo(24);
         assertThat(summary.recommendations()).isZero();
         verify(mapper, times(8)).insertSeedUser(any());
-        verify(mapper, times(24)).insertSeedPost(any());
+        verify(mapper, times(32)).insertSeedPost(any());
         verify(mapper, times(16)).insertSeedComment(any());
         verify(mapper, times(24)).upsertFollowing(any());
         verify(mapper, times(24)).upsertFollower(any());
         verify(mapper).markSeed(eq("accounts"), any());
-        verify(searchIndexService, times(24)).upsertPost(any(Long.class));
-        verify(interactionService, times(24)).scheduleMultiRoundInteraction(any(), any());
+        verify(searchIndexService, times(32)).upsertPost(any(Long.class));
+        verify(interactionService, times(32)).scheduleMultiRoundInteraction(any(), any());
     }
 
     private static BangumiSubjectSeed subject(long id, String title, double score) {
