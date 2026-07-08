@@ -25,6 +25,15 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 . (Join-Path $PSScriptRoot "load-env.ps1")
 
+# content_only 用模板正文即可，关闭 LLM 避免 32 篇生成超时
+$savedLlmEnabled = $env:LLM_ENABLED
+if ($Mode -eq "content_only" -or $Mode -eq "content-only") {
+    $env:LLM_ENABLED = "false"
+    $profiles = $env:SPRING_PROFILES_ACTIVE.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne "llm" }
+    if ($profiles -notcontains "dev") { $profiles = @("dev") + $profiles }
+    $env:SPRING_PROFILES_ACTIVE = ($profiles | Select-Object -Unique) -join ","
+}
+
 $listener = Get-NetTCPConnection -LocalPort $seedPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($listener) {
     Write-Host "Stopping process on port $seedPort (PID $($listener.OwningProcess))..." -ForegroundColor Yellow
@@ -48,7 +57,7 @@ $proc = Start-Process -FilePath "mvn" `
     -ArgumentList @(
         "spring-boot:run",
         "-Dmaven.test.skip=true",
-        "-Dspring-boot.run.arguments=--seed.enabled=true --seed.mode=$Mode"
+        "-Dspring-boot.run.arguments=--seed.mode=$Mode"
     ) `
     -WorkingDirectory (Join-Path $RepoRoot "apps/server") `
     -RedirectStandardOutput $logFile `
@@ -56,7 +65,8 @@ $proc = Start-Process -FilePath "mvn" `
     -PassThru `
     -NoNewWindow
 
-$deadline = (Get-Date).AddMinutes(8)
+$timeoutMinutes = if ($Mode -eq "content_only" -or $Mode -eq "content-only") { 20 } else { 8 }
+$deadline = (Get-Date).AddMinutes($timeoutMinutes)
 $finished = $false
 while ((Get-Date) -lt $deadline) {
     if ($proc.HasExited -and -not $finished) { break }
@@ -90,3 +100,7 @@ $postCount = docker exec -e "MYSQL_PWD=$env:MYSQL_PASSWORD" mysql mysql -uroot -
 Write-Host ""
 Write-Host "MySQL published posts: $postCount" -ForegroundColor Green
 Write-Host "请重启主后端 (http://localhost:$serverPort) 后刷新 /hub" -ForegroundColor Yellow
+
+if ($null -ne $savedLlmEnabled) {
+    $env:LLM_ENABLED = $savedLlmEnabled
+}
