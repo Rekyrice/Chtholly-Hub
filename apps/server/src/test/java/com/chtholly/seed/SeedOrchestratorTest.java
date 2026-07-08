@@ -109,8 +109,64 @@ class SeedOrchestratorTest {
     }
 
     @Test
+    void given_contentOnlyDryRun_when_run_then_buildsPostsWithoutSocialGraph() {
+        SeedRunSummary summary = orchestrator.run(new SeedRunOptions(SeedRunMode.CONTENT_ONLY, true));
+
+        assertThat(summary.accounts()).isEqualTo(8);
+        assertThat(summary.posts()).isBetween(32, 40);
+        assertThat(summary.comments()).isZero();
+        assertThat(summary.follows()).isZero();
+        assertThat(summary.recommendations()).isZero();
+        verify(mapper, never()).insertSeedComment(any());
+        verify(interactionService, never()).scheduleMultiRoundInteraction(any(), any());
+    }
+
+    @Test
+    void given_contentOnlyMode_when_run_then_persistsPostsAndIndexesWithoutSocialGraph() {
+        when(mapper.existsSeed("seed:content_only")).thenReturn(false);
+        when(mapper.findPostIdBySlug(any())).thenReturn(null);
+
+        SeedRunSummary summary = orchestrator.run(new SeedRunOptions(SeedRunMode.CONTENT_ONLY, false));
+
+        assertThat(summary.accounts()).isEqualTo(8);
+        assertThat(summary.posts()).isBetween(32, 40);
+        assertThat(summary.comments()).isZero();
+        assertThat(summary.follows()).isZero();
+        assertThat(summary.recommendations()).isZero();
+        verify(mapper, times(8)).insertSeedUser(any());
+        verify(mapper, times(32)).insertSeedPost(any());
+        verify(mapper, never()).insertSeedComment(any());
+        verify(mapper, never()).upsertFollowing(any());
+        verify(mapper, never()).upsertFollower(any());
+        verify(mapper).markSeed(eq("seed:content_only"), any());
+        verify(searchIndexService, times(32)).upsertPost(any(Long.class));
+        verify(interactionService, never()).scheduleMultiRoundInteraction(any(), any());
+    }
+
+    @Test
+    void given_existingContentOnlySeed_when_run_then_skipsWrites() {
+        when(mapper.existsSeed("seed:content_only")).thenReturn(true);
+
+        SeedRunSummary summary = orchestrator.run(new SeedRunOptions(SeedRunMode.CONTENT_ONLY, false));
+
+        assertThat(summary.skipped()).isTrue();
+        verify(mapper, never()).insertSeedPost(any());
+    }
+
+    @Test
+    void given_slugAlreadyExists_when_indexing_then_usesDatabasePostId() {
+        when(mapper.existsSeed("seed:content_only")).thenReturn(false);
+        when(mapper.findPostIdBySlug(any())).thenReturn(9001L);
+
+        orchestrator.run(new SeedRunOptions(SeedRunMode.CONTENT_ONLY, false));
+
+        verify(searchIndexService, times(32)).upsertPost(9001L);
+    }
+
+    @Test
     void given_accountsMode_when_run_then_createsSeedAccountsContentAndSocialGraph() {
         when(mapper.existsSeed("accounts")).thenReturn(false);
+        when(mapper.findPostIdBySlug(any())).thenReturn(null);
 
         SeedRunSummary summary = orchestrator.run(new SeedRunOptions(SeedRunMode.ACCOUNTS, false));
 

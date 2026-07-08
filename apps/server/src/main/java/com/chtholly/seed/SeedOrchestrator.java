@@ -115,11 +115,12 @@ public class SeedOrchestrator {
 
     private SeedPlan buildPlan(SeedRunMode mode) {
         List<BangumiRecommendationSeed> recommendations = mode == SeedRunMode.ACCOUNTS
+                || mode == SeedRunMode.CONTENT_ONLY
                 ? List.of()
                 : buildRecommendations();
         AccountPlan accounts = mode == SeedRunMode.BANGUMI
                 ? AccountPlan.empty()
-                : buildAccountPlan();
+                : buildAccountPlan(mode);
         return new SeedPlan(
                 recommendations,
                 accounts.users(),
@@ -147,7 +148,8 @@ public class SeedOrchestrator {
                 .toList();
     }
 
-    private AccountPlan buildAccountPlan() {
+    private AccountPlan buildAccountPlan(SeedRunMode mode) {
+        boolean contentOnly = mode == SeedRunMode.CONTENT_ONLY;
         Instant now = Instant.now(clock);
         List<SeedAccountProfile> profiles = accountGenerator.accounts();
         List<SeedUserRow> users = new ArrayList<>();
@@ -157,7 +159,9 @@ public class SeedOrchestrator {
         for (SeedAccountProfile profile : profiles) {
             long userId = idGenerator.nextId();
             users.add(toUserRow(userId, profile, now.minus(14, ChronoUnit.DAYS), now));
-            interactionAccounts.add(new SeedInteractionAccount(userId, profile));
+            if (!contentOnly) {
+                interactionAccounts.add(new SeedInteractionAccount(userId, profile));
+            }
             for (SeedPostPlan postPlan : contentGenerator.postsFor(profile)) {
                 Instant publishedAt = now.minus(postPlan.daysAgo(), ChronoUnit.DAYS)
                         .plus(postPlan.slot() * 3L, ChronoUnit.HOURS);
@@ -168,16 +172,22 @@ public class SeedOrchestrator {
             }
         }
 
-        List<SeedCommentRow> comments = buildComments(profiles, users, posts);
-        List<SeedFollowRow> follows = buildFollows(users, now.minus(13, ChronoUnit.DAYS));
-        List<SeedPostInteraction> interactionPosts = posts.stream()
-                .map(post -> new SeedPostInteraction(
-                        post.row().id(),
-                        post.row().creatorId(),
-                        post.plan().title(),
-                        post.plan().tags(),
-                        post.row().description()))
-                .toList();
+        List<SeedCommentRow> comments = contentOnly
+                ? List.of()
+                : buildComments(profiles, users, posts);
+        List<SeedFollowRow> follows = contentOnly
+                ? List.of()
+                : buildFollows(users, now.minus(13, ChronoUnit.DAYS));
+        List<SeedPostInteraction> interactionPosts = contentOnly
+                ? List.of()
+                : posts.stream()
+                        .map(post -> new SeedPostInteraction(
+                                post.row().id(),
+                                post.row().creatorId(),
+                                post.plan().title(),
+                                post.plan().tags(),
+                                post.row().description()))
+                        .toList();
         return new AccountPlan(
                 users,
                 posts.stream().map(SeedPostWithPlan::row).toList(),
@@ -291,7 +301,8 @@ public class SeedOrchestrator {
             return;
         }
         for (SeedPostRow post : posts) {
-            searchIndexService.upsertPost(post.id());
+            Long indexedId = mapper.findPostIdBySlug(post.slug());
+            searchIndexService.upsertPost(indexedId != null ? indexedId : post.id());
         }
     }
 

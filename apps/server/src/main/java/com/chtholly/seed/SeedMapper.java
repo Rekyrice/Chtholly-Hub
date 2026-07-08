@@ -26,4 +26,7 @@ public interface SeedMapper {
     int upsertFollowing(SeedFollowRow follow);
 
     int upsertFollower(SeedFollowRow follow);
+
+    /** slug 冲突 upsert 后取库内真实 id，供 ES 索引使用。 */
+    Long findPostIdBySlug(@Param("slug") String slug);
 }

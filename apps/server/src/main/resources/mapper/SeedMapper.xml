@@ -148,6 +148,13 @@
             publish_time = VALUES(publish_time)
     </insert>
 
+    <select id="findPostIdBySlug" resultType="long">
+        SELECT id
+        FROM posts
+        WHERE slug = #{slug}
+        LIMIT 1
+    </select>
+
     <insert id="insertSeedComment" parameterType="com.chtholly.seed.SeedCommentRow">
         INSERT INTO comments (
             id,

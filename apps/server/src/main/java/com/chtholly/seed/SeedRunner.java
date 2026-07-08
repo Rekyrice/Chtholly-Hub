@@ -14,7 +14,8 @@ import java.util.Optional;
  * <p>Examples:
  * {@code --seed.enabled=true --mode=full},
  * {@code --seed.enabled=true --mode=bangumi},
- * {@code --seed.enabled=true --mode=accounts --dry-run}.
+ * {@code --seed.enabled=true --mode=accounts --dry-run},
+ * {@code --seed.enabled=true --seed.mode=content_only}.
  */
 @Slf4j
 @Component

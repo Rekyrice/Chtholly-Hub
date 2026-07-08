@@ -8,9 +8,13 @@ import java.util.Locale;
 public enum SeedRunMode {
     FULL,
     BANGUMI,
-    ACCOUNTS;
+    ACCOUNTS,
+    CONTENT_ONLY;
 
     public String markerKey() {
+        if (this == CONTENT_ONLY) {
+            return "seed:content_only";
+        }
         return name().toLowerCase(Locale.ROOT);
     }
 
