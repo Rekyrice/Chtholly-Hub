@@ -169,6 +169,11 @@ if ((Test-TableExists "execution_traces") -and -not $applied.ContainsKey("V17__a
     Register-Migration "V17__add_execution_traces"
     $applied["V17__add_execution_traces"] = $true
 }
+if ((Test-TableExists "knowledge_entities") -and -not $applied.ContainsKey("V20__knowledge_graph")) {
+    Write-Host ">> Baseline V20 (knowledge_entities already exists)" -ForegroundColor Yellow
+    Register-Migration "V20__knowledge_graph"
+    $applied["V20__knowledge_graph"] = $true
+}
 
 $files = Get-ChildItem (Join-Path $migrationDir "V*.sql") | Sort-Object {
     if ($_.BaseName -match '^V(\d+)__') { [int]$Matches[1] } else { 999999 }
