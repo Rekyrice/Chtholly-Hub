@@ -1,3 +1,8 @@
+param(
+    [ValidateSet("full", "bangumi", "accounts", "content_only", "content-only")]
+    [string]$Mode = "full"
+)
+
 # 一次性冷启动种子：在备用端口启动后端，写入 MySQL + ES 后自动退出
 . (Join-Path $PSScriptRoot "load-env.ps1")
 
@@ -10,7 +15,7 @@ $serverPort = if ($env:SERVER_PORT) { [int]$env:SERVER_PORT } else { 8888 }
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " Chtholly Hub seed runner  :$seedPort" -ForegroundColor Cyan
+Write-Host " Chtholly Hub seed runner  :$seedPort  mode=$Mode" -ForegroundColor Cyan
 Write-Host " (主后端 $serverPort 可保持运行)" -ForegroundColor DarkGray
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
@@ -43,7 +48,7 @@ $proc = Start-Process -FilePath "mvn" `
     -ArgumentList @(
         "spring-boot:run",
         "-Dmaven.test.skip=true",
-        "-Dspring-boot.run.arguments=--seed.enabled=true --seed.mode=full"
+        "-Dspring-boot.run.arguments=--seed.enabled=true --seed.mode=$Mode"
     ) `
     -WorkingDirectory (Join-Path $RepoRoot "apps/server") `
     -RedirectStandardOutput $logFile `
