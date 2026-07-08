@@ -1,6 +1,7 @@
 package com.chtholly.seed;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +36,7 @@ public class SeedInteractionService {
     private final Clock clock;
     private final SeedInteractionDelayPlanner delayPlanner;
 
+    @Autowired
     public SeedInteractionService(SeedInteractionStateStore stateStore,
                                   SeedInteractionCommentWriter commentWriter,
                                   SeedInteractionPolicy policy,
