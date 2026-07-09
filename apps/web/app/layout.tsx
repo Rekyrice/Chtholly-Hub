@@ -60,8 +60,9 @@ export default function RootLayout({
     <html
       lang="zh-CN"
       className={`${notoSansSc.variable} ${sourceSans.variable} ${playfair.variable} ${notoSansJp.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <style>{`:root { ${cssVars} }`}</style>
         {children}
       </body>
