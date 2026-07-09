@@ -28,12 +28,15 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.data.redis.connection.DataType;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 
 /**
  * Multi-level cache feed service for public and personal post listings.
@@ -342,7 +345,8 @@ public class PostFeedServiceImpl implements PostFeedService {
             rows = rows.subList(0, safeSize);
         }
 
-        List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, false);
+        // 个人主页公开列表需要 isTop，访客才能看到置顶排序与标记
+        List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, true);
         String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
         log.info("feed.public source=db ownerId={} page={} size={} hasMore={}", ownerId, safePage, safeSize, hasMore);
         return PageResponse.offset(items, safePage, safeSize, 0L, hasMore, nextCursor);
@@ -594,6 +598,41 @@ public class PostFeedServiceImpl implements PostFeedService {
      */
     private String myCacheKey(long userId, int page, int size) {
         return "feed:mine:" + userId + ":" + size + ":" + page;
+    }
+
+    /**
+     * Drops Caffeine + Redis pages for {@code feed:mine:{userId}:*} after pin/visibility/delete.
+     *
+     * @param userId owner of the personal feed
+     */
+    @Override
+    public void invalidateMyPublishedCache(long userId) {
+        String prefix = "feed:mine:" + userId + ":";
+        try {
+            feedMineCache.asMap().keySet().removeIf(key -> key != null && key.startsWith(prefix));
+        } catch (Exception e) {
+            log.warn("feed.mine L1 invalidate failed, userId={}", userId, e);
+        }
+
+        String pattern = prefix + "*";
+        Set<String> keys = new HashSet<>();
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
+        try (Cursor<String> cursor = redis.scan(options)) {
+            while (cursor.hasNext()) {
+                keys.add(cursor.next());
+            }
+        } catch (Exception e) {
+            log.warn("feed.mine Redis SCAN failed, pattern={}", pattern, e);
+            return;
+        }
+        if (!keys.isEmpty()) {
+            try {
+                redis.delete(keys);
+            } catch (Exception e) {
+                log.warn("feed.mine Redis delete failed, userId={} size={}", userId, keys.size(), e);
+            }
+        }
+        log.info("feed.mine invalidated userId={} redisKeys={}", userId, keys.size());
     }
 
     /**

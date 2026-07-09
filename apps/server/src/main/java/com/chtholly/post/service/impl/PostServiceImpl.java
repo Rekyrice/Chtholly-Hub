@@ -4,6 +4,7 @@ import com.chtholly.agent.content.ContentAnalysis;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.post.event.PostPublishedEvent;
+import com.chtholly.post.service.PostFeedService;
 import com.chtholly.post.service.PostService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -80,6 +81,7 @@ public class PostServiceImpl implements PostService {
     private final TagService tagService;
     private final SearchIndexService searchIndexService;
     private final ApplicationEventPublisher eventPublisher;
+    private final PostFeedService postFeedService;
 
     // 手动编写构造器，Spring的@Qualifier直接标注在参数上（核心）
     public PostServiceImpl(
@@ -97,7 +99,8 @@ public class PostServiceImpl implements PostService {
             OutboxMapper outboxMapper,
             TagService tagService,
             SearchIndexService searchIndexService,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            PostFeedService postFeedService
     ) {
         this.mapper = mapper;
         this.idGen = idGen;
@@ -114,6 +117,7 @@ public class PostServiceImpl implements PostService {
         this.tagService = tagService;
         this.searchIndexService = searchIndexService;
         this.eventPublisher = eventPublisher;
+        this.postFeedService = postFeedService;
     }
     /**
      * Creates a new draft post and returns its snowflake ID.
@@ -416,6 +420,8 @@ public class PostServiceImpl implements PostService {
         }
 
         invalidateCache(id);
+        // 置顶会改排序与 isTop 标记，必须立刻丢掉 feed:mine 旧页
+        postFeedService.invalidateMyPublishedCache(creatorId);
     }
 
     /** Updates visibility (public/followers/school/private/unlisted). */
@@ -434,12 +440,14 @@ public class PostServiceImpl implements PostService {
         }
 
         invalidateCache(id);
+        postFeedService.invalidateMyPublishedCache(creatorId);
     }
 
     /** Soft-deletes a post and removes it from search index when previously published. */
     @Transactional
     public void delete(long creatorId, long id) {
         invalidateCache(id);
+        postFeedService.invalidateMyPublishedCache(creatorId);
 
         Post existing = mapper.findById(id);
         if (existing == null || !existing.getCreatorId().equals(creatorId)) {

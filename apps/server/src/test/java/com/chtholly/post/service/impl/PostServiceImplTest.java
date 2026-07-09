@@ -12,6 +12,7 @@ import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.service.PostFeedService;
 import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.tag.service.TagService;
@@ -68,6 +69,8 @@ class PostServiceImplTest {
     private SearchIndexService searchIndexService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private PostFeedService postFeedService;
 
     private Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     private Cache<String, PostDetailResponse> postDetailCache;
@@ -84,6 +87,7 @@ class PostServiceImplTest {
         HotKeyDetector hotKeyDetector = new HotKeyDetector(cacheProperties);
         OssProperties ossProperties = new OssProperties();
 
+        // 构造参数顺序需与 PostServiceImpl 一致，末尾为 PostFeedService
         service = new PostServiceImpl(
                 mapper,
                 new SnowflakeIdGenerator(),
@@ -99,9 +103,8 @@ class PostServiceImplTest {
                 outboxMapper,
                 tagService,
                 searchIndexService,
-                eventPublisher
-        );
-
+                eventPublisher,
+                postFeedService);
     }
 
     private Post draftOwnedBy(long postId, long creatorId) {
@@ -111,6 +114,17 @@ class PostServiceImplTest {
                 .status("draft")
                 .tags("[]")
                 .build();
+    }
+
+    @Test
+    void updateTopInvalidatesMyPublishedCache() {
+        long creatorId = 9L;
+        long postId = 42L;
+        when(mapper.updateTop(postId, creatorId, true)).thenReturn(1);
+
+        service.updateTop(creatorId, postId, true);
+
+        verify(postFeedService).invalidateMyPublishedCache(creatorId);
     }
 
     @Test
