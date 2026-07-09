@@ -17,6 +17,7 @@ type HubPageProps = {
 const DEGRADED_HUB_FEED: HubFeedResponse = {
   latestPosts: [],
   latestPostsStatus: "degraded",
+  latestPostsTotal: 0,
   hotTags: [],
   hotTagsStatus: "degraded",
   recommendations: [],
@@ -28,10 +29,11 @@ const DEGRADED_HUB_FEED: HubFeedResponse = {
 export default async function HomePage({ searchParams }: HubPageProps) {
   const { page } = await searchParams;
   const currentPage = parsePositiveInt(page, 1);
+  const pageSize = 8;
 
   let hubFeed = DEGRADED_HUB_FEED;
   try {
-    hubFeed = await searchService.hubFeed();
+    hubFeed = await searchService.hubFeed(undefined, currentPage, pageSize);
   } catch {
     hubFeed = DEGRADED_HUB_FEED;
   }
@@ -45,7 +47,7 @@ export default async function HomePage({ searchParams }: HubPageProps) {
 
   const hotPosts = hubFeed.hotPosts?.length
     ? hubFeed.hotPosts
-    : deriveHotPosts(hubFeed.latestPosts, hubFeed.recommendations);
+    : deriveHotPosts(hubFeed.recommendations.length > 0 ? hubFeed.recommendations : hubFeed.latestPosts);
   const recommendations = hubFeed.recommendations.length > 0
     ? hubFeed.recommendations
     : hotPosts.slice(0, 5);
@@ -64,8 +66,9 @@ export default async function HomePage({ searchParams }: HubPageProps) {
             <HomeFeed
               items={hubFeed.latestPosts}
               status={hubFeed.latestPostsStatus}
+              totalItems={hubFeed.latestPostsTotal}
               currentPage={currentPage}
-              pageSize={8}
+              pageSize={pageSize}
             />
           </Suspense>
         </main>
@@ -91,9 +94,9 @@ function parsePositiveInt(value: string | undefined, fallback: number) {
   return parsed;
 }
 
-function deriveHotPosts(latestPosts: FeedItem[], recommendations: FeedItem[]) {
+function deriveHotPosts(posts: FeedItem[]) {
   const byId = new Map<string, FeedItem>();
-  [...latestPosts, ...recommendations].forEach((post) => byId.set(post.id, post));
+  posts.forEach((post) => byId.set(post.id, post));
   return [...byId.values()]
     .sort((a, b) => {
       const scoreA = (a.likeCount ?? 0) * 3 + (a.commentCount ?? 0) * 2 + (a.favoriteCount ?? 0);

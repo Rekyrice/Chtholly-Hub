@@ -15,9 +15,11 @@ export const searchService = {
       `${SEARCH_PREFIX}/suggest?prefix=${encodeURIComponent(prefix)}&size=${size}`,
     ),
 
-  hubFeed: (interestTags?: string[]) => {
+  hubFeed: (interestTags?: string[], page = 1, size = 8) => {
     const params = new URLSearchParams();
     if (interestTags?.length) params.set("interestTags", interestTags.join(","));
+    params.set("page", String(page));
+    params.set("size", String(size));
     const query = params.toString();
     return apiFetch<HubFeedResponse>(`${SEARCH_PREFIX}/hub-feed${query ? `?${query}` : ""}`);
   },

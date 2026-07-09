@@ -9,6 +9,7 @@ import type { FeedItem } from "@/lib/types/post";
 type HomeFeedProps = {
   items?: FeedItem[];
   status?: "ok" | "degraded";
+  totalItems?: number;
   currentPage?: number;
   pageSize?: number;
 };
@@ -16,6 +17,7 @@ type HomeFeedProps = {
 export default async function HomeFeed({
   items: providedItems,
   status,
+  totalItems,
   currentPage = 1,
   pageSize = 8,
 }: HomeFeedProps = {}) {
@@ -50,27 +52,28 @@ export default async function HomeFeed({
     );
   }
 
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const total = Math.max(totalItems ?? items.length, items.length);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(Math.max(currentPage, 1), totalPages);
   const start = (safePage - 1) * pageSize;
-  const pageItems = items.slice(start, start + pageSize);
+  const end = Math.min(start + items.length, total);
 
   return (
     <>
       <div className="hub-feed-list">
-        {pageItems.map((post, index) => (
+        {items.map((post, index) => (
           <AnimateIn key={post.id} delay={index * 100}>
             <PostCard post={post} />
           </AnimateIn>
         ))}
       </div>
 
-      {items.length > pageSize && (
+      {total > pageSize && (
         <nav className="hub-feed-pagination" aria-label="仓库动态分页">
           <div>
             <span>第 {safePage} / {totalPages} 页</span>
             <small>
-              显示 {start + 1}-{Math.min(start + pageSize, items.length)} / {items.length} 篇
+              显示 {start + 1}-{end} / {total} 篇
             </small>
           </div>
           <div className="hub-feed-pagination__actions">
