@@ -14,8 +14,8 @@ import type { AuthUser } from "@/lib/types/auth";
 const SCROLL_THRESHOLD = 100;
 
 const drawerExtraLinks = [
-  { href: "/settings", label: "Settings" },
-  { href: "/about", label: "About" },
+  { href: "/settings", label: "设置" },
+  { href: "/about", label: "关于" },
 ] as const;
 
 export default function Navbar() {
@@ -151,7 +151,15 @@ export default function Navbar() {
               role="menuitem"
               onClick={() => setUserMenuOpen(false)}
             >
-              Profile
+              我的主页
+            </Link>
+            <Link
+              href="/profile/edit"
+              className="navbar-user-menu__item"
+              role="menuitem"
+              onClick={() => setUserMenuOpen(false)}
+            >
+              编辑资料
             </Link>
             <Link
               href="/settings"
@@ -159,7 +167,7 @@ export default function Navbar() {
               role="menuitem"
               onClick={() => setUserMenuOpen(false)}
             >
-              Settings
+              设置
             </Link>
             <div className="navbar-user-menu__divider" />
             <button
@@ -168,7 +176,7 @@ export default function Navbar() {
               role="menuitem"
               onClick={() => void handleLogout()}
             >
-              Logout
+              退出登录
             </button>
           </div>
         )}

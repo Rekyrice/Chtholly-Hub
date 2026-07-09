@@ -56,7 +56,7 @@ export default function UserRelationPanel({
       </div>
 
       {isSelf ? (
-        <Link href="/settings" className="user-edit-profile-btn">
+        <Link href="/profile/edit" className="user-edit-profile-btn">
           编辑资料
         </Link>
       ) : (

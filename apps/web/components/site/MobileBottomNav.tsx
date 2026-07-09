@@ -60,7 +60,12 @@ export default function MobileBottomNav() {
     return () => window.removeEventListener("chtholly-auth-change", syncUser);
   }, [syncUser]);
 
-  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
+  const profileHref = user ? `/user/${user.handle || user.id}` : "/login";
+  const profileActive =
+    pathname.startsWith("/user/") ||
+    pathname === "/settings" ||
+    pathname.startsWith("/settings/") ||
+    pathname.startsWith("/profile/");
 
   return (
     <nav className="mobile-bottom-nav md:hidden" aria-label="Mobile navigation">
@@ -80,10 +85,10 @@ export default function MobileBottomNav() {
         );
       })}
       <Link
-        href="/settings"
-        className={cn("mobile-bottom-nav__item", settingsActive && "mobile-bottom-nav__item--active")}
-        aria-label="Settings"
-        aria-current={settingsActive ? "page" : undefined}
+        href={profileHref}
+        className={cn("mobile-bottom-nav__item", profileActive && "mobile-bottom-nav__item--active")}
+        aria-label={user ? "我的主页" : "登录"}
+        aria-current={profileActive ? "page" : undefined}
       >
         <NavUserAvatar user={user} size={24} />
       </Link>
