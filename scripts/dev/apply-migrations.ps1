@@ -174,6 +174,11 @@ if ((Test-TableExists "knowledge_entities") -and -not $applied.ContainsKey("V20_
     Register-Migration "V20__knowledge_graph"
     $applied["V20__knowledge_graph"] = $true
 }
+if ((Test-TableExists "users") -and (Invoke-MysqlScalar "SELECT COUNT(1) FROM users WHERE id = 888888888888888888;") -gt 0 -and -not $applied.ContainsKey("V21__chtholly_bot_user")) {
+    Write-Host ">> Baseline V21 (chtholly bot user already exists)" -ForegroundColor Yellow
+    Register-Migration "V21__chtholly_bot_user"
+    $applied["V21__chtholly_bot_user"] = $true
+}
 
 $files = Get-ChildItem (Join-Path $migrationDir "V*.sql") | Sort-Object {
     if ($_.BaseName -match '^V(\d+)__') { [int]$Matches[1] } else { 999999 }

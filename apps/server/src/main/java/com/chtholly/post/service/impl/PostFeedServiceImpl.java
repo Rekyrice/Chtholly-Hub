@@ -31,7 +31,9 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import org.springframework.data.redis.connection.DataType;
 
 /**
  * Multi-level cache feed service for public and personal post listings.
@@ -56,6 +58,7 @@ public class PostFeedServiceImpl implements PostFeedService {
     private final FeedTimelineService feedTimelineService;
     private final FeedTimelineProperties feedTimelineProperties;
     private static final Logger log = LoggerFactory.getLogger(PostFeedServiceImpl.class);
+    private static final String FEED_PUBLIC_PAGES_KEY = "feed:public:pages";
     private static final int LAYOUT_VER = 2;
     private final SingleFlightLockRegistry singleFlight = new SingleFlightLockRegistry();
 
@@ -541,7 +544,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         }
 
         // 页面键索引（Sorted Set，score = 写入时间戳），供批量失效与容量清理
-        redis.opsForZSet().add("feed:public:pages", pageKey, System.currentTimeMillis());
+        indexFeedPublicPage(pageKey);
 
         for (FeedItemResponse it : items) {
             // 反向索引：按小时为每个内容建立“页面引用关系”，支持内容更新时快速定位受影响页面
@@ -558,6 +561,28 @@ public class PostFeedServiceImpl implements PostFeedService {
                 log.warn("Failed to cache feed item, id={}: {}", it.id(), e.getMessage());
             }
         }
+    }
+
+    /**
+     * 写入 feed 页面索引。旧版使用 SET，新版使用 ZSET；若类型不一致则自动迁移。
+     */
+    private void indexFeedPublicPage(String pageKey) {
+        DataType type = redis.type(FEED_PUBLIC_PAGES_KEY);
+        if (type == DataType.SET) {
+            Set<String> members = redis.opsForSet().members(FEED_PUBLIC_PAGES_KEY);
+            redis.delete(FEED_PUBLIC_PAGES_KEY);
+            if (members != null) {
+                long now = System.currentTimeMillis();
+                for (String member : members) {
+                    redis.opsForZSet().add(FEED_PUBLIC_PAGES_KEY, member, now);
+                }
+            }
+            log.info("feed.public migrated {} from SET to ZSET", FEED_PUBLIC_PAGES_KEY);
+        } else if (type != DataType.NONE && type != DataType.ZSET) {
+            redis.delete(FEED_PUBLIC_PAGES_KEY);
+            log.warn("feed.public reset unexpected key type {} for {}", type, FEED_PUBLIC_PAGES_KEY);
+        }
+        redis.opsForZSet().add(FEED_PUBLIC_PAGES_KEY, pageKey, System.currentTimeMillis());
     }
 
     /**
