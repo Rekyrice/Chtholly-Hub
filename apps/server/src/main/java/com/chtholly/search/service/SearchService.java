@@ -5,6 +5,10 @@ import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.api.dto.HubFeedResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+
 /**
  * 搜索服务接口：封装检索与联想能力，供控制器调用。
  */
@@ -28,6 +32,29 @@ public interface SearchService {
      * @param size latest-posts page size
      */
     HubFeedResponse hubFeed(String interestTags, Long currentUserIdNullable, int page, int size);
+
+    /**
+     * 按兴趣标签权重推荐文章（function_score）。
+     */
+    List<FeedItemResponse> recommendByInterest(Map<String, Double> tagWeights,
+                                               Collection<Long> excludePostIds,
+                                               int limit,
+                                               Long currentUserIdNullable);
+
+    /**
+     * 热门文章 fallback（按 like_count 排序）。
+     */
+    List<FeedItemResponse> recommendHot(Collection<Long> excludePostIds,
+                                        int limit,
+                                        Long currentUserIdNullable);
+
+    /**
+     * 基于种子帖子的标签/实体相似推荐。
+     */
+    List<FeedItemResponse> recommendSimilarToPost(long sourcePostId,
+                                                  Collection<Long> excludePostIds,
+                                                  int limit,
+                                                  Long currentUserIdNullable);
 
     /**
      * 联想建议（Completion Suggester）。
