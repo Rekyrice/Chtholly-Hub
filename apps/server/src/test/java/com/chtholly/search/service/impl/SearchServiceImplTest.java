@@ -5,11 +5,15 @@ import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
 import co.elastic.clients.elasticsearch._types.aggregations.StringTermsAggregate;
 import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
+import co.elastic.clients.elasticsearch.core.MsearchRequest;
 import co.elastic.clients.elasticsearch.core.MsearchResponse;
 import co.elastic.clients.elasticsearch.core.msearch.MultiSearchItem;
 import co.elastic.clients.elasticsearch.core.msearch.MultiSearchResponseItem;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.HitsMetadata;
+import co.elastic.clients.elasticsearch.core.search.TotalHits;
+import co.elastic.clients.elasticsearch.core.search.TotalHitsRelation;
+import co.elastic.clients.util.ObjectBuilder;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
@@ -17,6 +21,7 @@ import com.chtholly.search.api.dto.HubFeedResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -156,10 +161,11 @@ class SearchServiceImplTest {
         when(es.msearch(any(Function.class), eq(Map.class)))
                 .thenReturn(msearch);
 
-        HubFeedResponse response = service.hubFeed("anime,治愈", null);
+        HubFeedResponse response = service.hubFeed("anime,治愈", null, 1, 8);
 
         assertThat(response.latestPostsStatus()).isEqualTo("ok");
         assertThat(response.latestPosts()).extracting(FeedItemResponse::title).containsExactly("Latest");
+        assertThat(response.latestPostsTotal()).isEqualTo(1);
         assertThat(response.hotTagsStatus()).isEqualTo("ok");
         assertThat(response.hotTags()).extracting("name").containsExactly("anime");
         assertThat(response.recommendationsStatus()).isEqualTo("ok");
@@ -167,6 +173,27 @@ class SearchServiceImplTest {
         assertThat(response.experiencesStatus()).isEqualTo("ok");
         assertThat(response.experiences()).extracting("text").containsExactly("今天仓库里也很安静呢");
         verify(es).msearch(any(Function.class), eq(Map.class));
+    }
+
+    @Test
+    void given_pageAndSize_when_hubFeed_then_latestPostsRequestUsesFromSizeAndReturnsTotal() throws Exception {
+        MultiSearchResponseItem<Map<String, Object>> latest =
+                resultItem(List.of(postSource(42L, "Latest", "latest")), Collections.emptyMap(), 23);
+        MsearchResponse<Map<String, Object>> msearch =
+                msearchResponse(latest, resultItem(List.of(), Collections.emptyMap()),
+                        resultItem(List.of(), Collections.emptyMap()), resultItem(List.of(), Collections.emptyMap()));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Function<MsearchRequest.Builder, ObjectBuilder<MsearchRequest>>> captor =
+                ArgumentCaptor.forClass(Function.class);
+        when(es.msearch(any(Function.class), eq(Map.class))).thenReturn(msearch);
+
+        HubFeedResponse response = service.hubFeed(null, null, 2, 8);
+
+        verify(es).msearch(captor.capture(), eq(Map.class));
+        MsearchRequest request = captor.getValue().apply(new MsearchRequest.Builder()).build();
+        assertThat(request.searches().getFirst().body().from()).isEqualTo(8);
+        assertThat(request.searches().getFirst().body().size()).isEqualTo(8);
+        assertThat(response.latestPostsTotal()).isEqualTo(23);
     }
 
     @Test
@@ -184,7 +211,7 @@ class SearchServiceImplTest {
         when(es.msearch(any(Function.class), eq(Map.class)))
                 .thenReturn(msearch);
 
-        HubFeedResponse response = service.hubFeed(null, null);
+        HubFeedResponse response = service.hubFeed(null, null, 1, 8);
 
         assertThat(response.latestPostsStatus()).isEqualTo("ok");
         assertThat(response.latestPosts()).hasSize(1);
@@ -205,6 +232,13 @@ class SearchServiceImplTest {
     private MultiSearchResponseItem<Map<String, Object>> resultItem(
             List<Map<String, Object>> sources,
             Map<String, Aggregate> aggregations) {
+        return resultItem(sources, aggregations, sources.size());
+    }
+
+    private MultiSearchResponseItem<Map<String, Object>> resultItem(
+            List<Map<String, Object>> sources,
+            Map<String, Aggregate> aggregations,
+            long total) {
         @SuppressWarnings("unchecked")
         MultiSearchResponseItem<Map<String, Object>> item = mock(MultiSearchResponseItem.class);
         @SuppressWarnings("unchecked")
@@ -220,6 +254,7 @@ class SearchServiceImplTest {
                 })
                 .toList();
         lenient().when(hitsMeta.hits()).thenReturn(hits);
+        lenient().when(hitsMeta.total()).thenReturn(TotalHits.of(t -> t.value(total).relation(TotalHitsRelation.Eq)));
         lenient().when(result.hits()).thenReturn(hitsMeta);
         lenient().when(result.aggregations()).thenReturn(aggregations);
         when(item.isFailure()).thenReturn(false);

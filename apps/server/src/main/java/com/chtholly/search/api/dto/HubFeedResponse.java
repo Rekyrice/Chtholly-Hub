@@ -10,6 +10,7 @@ import java.util.List;
  *
  * @param latestPosts latest published posts
  * @param latestPostsStatus latest posts status, {@code ok} or {@code degraded}
+ * @param latestPostsTotal total published posts matching the latest feed query
  * @param hotTags hot tags aggregated from post documents
  * @param hotTagsStatus hot tags status, {@code ok} or {@code degraded}
  * @param recommendations personalized or fallback recommendations
@@ -20,6 +21,7 @@ import java.util.List;
 public record HubFeedResponse(
         List<FeedItemResponse> latestPosts,
         String latestPostsStatus,
+        int latestPostsTotal,
         List<TagCountResponse> hotTags,
         String hotTagsStatus,
         List<FeedItemResponse> recommendations,

@@ -67,9 +67,11 @@ public class SearchController {
     @Operation(summary = "Hub 聚合搜索 Feed")
     @GetMapping("/hub-feed")
     public HubFeedResponse hubFeed(@RequestParam(value = "interestTags", required = false) String interestTags,
+                                   @RequestParam(value = "page", required = false, defaultValue = "1") @Min(1) int page,
+                                   @RequestParam(value = "size", required = false, defaultValue = "8") @Min(1) @Max(50) int size,
                                    @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        return searchService.hubFeed(interestTags, userId);
+        return searchService.hubFeed(interestTags, userId, page, size);
     }
 
     /**

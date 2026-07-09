@@ -57,6 +57,9 @@ public class SearchServiceImpl implements SearchService {
     private static final String STATUS_OK = "ok";
     private static final String STATUS_DEGRADED = "degraded";
     private static final String HOT_TAGS_AGG = "hot_tags";
+    private static final int DEFAULT_HUB_PAGE = 1;
+    private static final int DEFAULT_HUB_PAGE_SIZE = 8;
+    private static final int MAX_HUB_PAGE_SIZE = 50;
 
     private enum HubRegion {
         LATEST_POSTS,
@@ -233,12 +236,14 @@ public class SearchServiceImpl implements SearchService {
      */
     @SuppressWarnings("unchecked")
     @Override
-    public HubFeedResponse hubFeed(String interestTags, Long currentUserIdNullable) {
+    public HubFeedResponse hubFeed(String interestTags, Long currentUserIdNullable, int page, int size) {
         List<String> tags = parseCsv(interestTags);
+        int safePage = Math.max(page, DEFAULT_HUB_PAGE);
+        int safeSize = Math.min(Math.max(size, 1), MAX_HUB_PAGE_SIZE);
         MsearchResponse<Map<String, Object>> response;
         try {
             response = es.msearch(ms -> ms
-                            .searches(latestPostsRequest())
+                            .searches(latestPostsRequest(safePage, safeSize))
                             .searches(hotTagsRequest())
                             .searches(recommendationsRequest(tags))
                             .searches(experiencesRequest()),
@@ -259,6 +264,7 @@ public class SearchServiceImpl implements SearchService {
 
         return new HubFeedResponse(
                 latest.items(), latest.status(),
+                latest.total(),
                 hotTags.items(), hotTags.status(),
                 recommendations.items(), recommendations.status(),
                 experiences.items(), experiences.status()
@@ -307,11 +313,13 @@ public class SearchServiceImpl implements SearchService {
         return new SuggestResponse(items);
     }
 
-    private RequestItem latestPostsRequest() {
+    private RequestItem latestPostsRequest(int page, int size) {
+        int from = (page - 1) * size;
         return RequestItem.of(r -> r
                 .header(h -> h.index(INDEX))
                 .body(b -> b
-                        .size(30)
+                        .from(from)
+                        .size(size)
                         .query(q -> q.term(t -> t.field("status").value("published")))
                         .sort(s -> s.field(f -> f.field("publish_time").order(SortOrder.Desc)))));
     }
@@ -354,7 +362,7 @@ public class SearchServiceImpl implements SearchService {
 
     private HubFeedResponse degradedHubFeed() {
         return new HubFeedResponse(
-                Collections.emptyList(), STATUS_DEGRADED,
+                Collections.emptyList(), STATUS_DEGRADED, 0,
                 Collections.emptyList(), STATUS_DEGRADED,
                 Collections.emptyList(), STATUS_DEGRADED,
                 Collections.emptyList(), STATUS_DEGRADED
@@ -369,7 +377,7 @@ public class SearchServiceImpl implements SearchService {
         if (item == null) {
             return RegionResult.degraded();
         }
-        return new RegionResult<>(mapHitsToFeedItems(hitsOf(item), currentUserIdNullable), STATUS_OK);
+        return new RegionResult<>(mapHitsToFeedItems(hitsOf(item), currentUserIdNullable), STATUS_OK, totalHitsOf(item));
     }
 
     private RegionResult<TagCountResponse> parseHotTagsRegion(
@@ -380,7 +388,7 @@ public class SearchServiceImpl implements SearchService {
         }
         Aggregate aggregate = item.aggregations() == null ? null : item.aggregations().get(HOT_TAGS_AGG);
         if (aggregate == null || !aggregate.isSterms()) {
-            return new RegionResult<>(Collections.emptyList(), STATUS_OK);
+            return new RegionResult<>(Collections.emptyList(), STATUS_OK, 0);
         }
         List<TagCountResponse> tags = aggregate.sterms().buckets().array().stream()
                 .map(bucket -> {
@@ -388,7 +396,7 @@ public class SearchServiceImpl implements SearchService {
                     return new TagCountResponse(name, name, name, bucket.docCount());
                 })
                 .toList();
-        return new RegionResult<>(tags, STATUS_OK);
+        return new RegionResult<>(tags, STATUS_OK, 0);
     }
 
     private RegionResult<AgentExperienceResponse> parseExperiencesRegion(
@@ -407,7 +415,7 @@ public class SearchServiceImpl implements SearchService {
                         asInstant(source.get("createdAt")),
                         asString(source.get("source"))))
                 .toList();
-        return new RegionResult<>(experiences, STATUS_OK);
+        return new RegionResult<>(experiences, STATUS_OK, 0);
     }
 
     private MultiSearchItem<Map<String, Object>> resultOrNull(
@@ -433,6 +441,14 @@ public class SearchServiceImpl implements SearchService {
 
     private List<Hit<Map<String, Object>>> hitsOf(MultiSearchItem<Map<String, Object>> item) {
         return item.hits() == null ? Collections.emptyList() : item.hits().hits();
+    }
+
+    private int totalHitsOf(MultiSearchItem<Map<String, Object>> item) {
+        if (item.hits() == null || item.hits().total() == null) {
+            return hitsOf(item).size();
+        }
+        long total = item.hits().total().value();
+        return total > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total;
     }
 
     private List<FeedItemResponse> mapHitsToFeedItems(
@@ -766,9 +782,9 @@ public class SearchServiceImpl implements SearchService {
         return Collections.emptyList();
     }
 
-    private record RegionResult<T>(List<T> items, String status) {
+    private record RegionResult<T>(List<T> items, String status, int total) {
         private static <T> RegionResult<T> degraded() {
-            return new RegionResult<>(Collections.emptyList(), STATUS_DEGRADED);
+            return new RegionResult<>(Collections.emptyList(), STATUS_DEGRADED, 0);
         }
     }
 }

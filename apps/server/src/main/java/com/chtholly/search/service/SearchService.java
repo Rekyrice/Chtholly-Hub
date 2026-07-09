@@ -24,8 +24,10 @@ public interface SearchService {
      *
      * @param interestTags optional user interest tags for recommendations
      * @param currentUserIdNullable current user ID for liked/faved enrichment
+     * @param page 1-indexed latest-posts page
+     * @param size latest-posts page size
      */
-    HubFeedResponse hubFeed(String interestTags, Long currentUserIdNullable);
+    HubFeedResponse hubFeed(String interestTags, Long currentUserIdNullable, int page, int size);
 
     /**
      * 联想建议（Completion Suggester）。
