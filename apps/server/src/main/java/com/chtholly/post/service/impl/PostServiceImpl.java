@@ -156,6 +156,21 @@ public class PostServiceImpl implements PostService {
                 .toList();
     }
 
+    /**
+     * Returns recently published public seed posts for Chtholly audit jobs.
+     *
+     * @param window Lookback window.
+     * @return Recent seed posts.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<Post> getRecentSeedPosts(Duration window) {
+        Duration safeWindow = window == null || window.isNegative() || window.isZero()
+                ? Duration.ofHours(24)
+                : window;
+        return mapper.listRecentSeedPosts(Instant.now().minus(safeWindow), 50);
+    }
+
     @Override
     public long countSince(Duration window) {
         Duration safeWindow = window == null || window.isNegative() || window.isZero()

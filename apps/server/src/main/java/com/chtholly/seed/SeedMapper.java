@@ -3,6 +3,9 @@ package com.chtholly.seed;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.Instant;
+import java.util.List;
+
 /**
  * MyBatis mapper dedicated to cold-start seed data.
  */
@@ -32,4 +35,7 @@ public interface SeedMapper {
 
     /** 重复跑种子时复用已有账号 id，避免 posts.creator_id 外键失败。 */
     Long findUserIdByHandle(@Param("handle") String handle);
+
+    /** Aggregates seed account post/comment activity since a timestamp. */
+    List<SeedAccountHealthRow> listSeedAccountHealthSince(@Param("since") Instant since);
 }

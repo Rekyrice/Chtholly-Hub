@@ -191,6 +191,17 @@
         LIMIT #{limit}
     </select>
 
+    <select id="listRecentSeedPosts" resultMap="PostResultMap">
+        SELECT *
+        FROM posts
+        WHERE status = 'published'
+          AND visible = 'public'
+          AND publish_time &gt;= #{since}
+          AND content_object_key LIKE 'seed/posts/%'
+        ORDER BY publish_time DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
     <select id="countPublicSince" resultType="long">
         SELECT COUNT(*)
         FROM posts

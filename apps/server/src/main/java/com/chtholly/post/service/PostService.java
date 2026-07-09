@@ -37,6 +37,8 @@ public interface PostService {
 
     List<PostSummary> getRecentPosts(Duration window);
 
+    List<Post> getRecentSeedPosts(Duration window);
+
     long countSince(Duration window);
 
     List<Post> getPostsNeedingUnderstanding();

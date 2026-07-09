@@ -162,6 +162,27 @@
         LIMIT 1
     </select>
 
+    <select id="listSeedAccountHealthSince" resultType="com.chtholly.seed.SeedAccountHealthRow">
+        SELECT
+            u.id AS userId,
+            u.handle AS handle,
+            u.nickname AS nickname,
+            COUNT(DISTINCT p.id) AS posts7d,
+            COUNT(DISTINCT c.id) AS comments7d
+        FROM users u
+        LEFT JOIN posts p
+            ON p.creator_id = u.id
+            AND p.status = 'published'
+            AND p.publish_time &gt;= #{since}
+        LEFT JOIN comments c
+            ON c.user_id = u.id
+            AND c.deleted_at IS NULL
+            AND c.created_at &gt;= #{since}
+        WHERE u.email LIKE '%@seed.chtholly.invalid'
+        GROUP BY u.id, u.handle, u.nickname
+        ORDER BY posts7d DESC, comments7d DESC, u.id ASC
+    </select>
+
     <insert id="insertSeedComment" parameterType="com.chtholly.seed.SeedCommentRow">
         INSERT INTO comments (
             id,
