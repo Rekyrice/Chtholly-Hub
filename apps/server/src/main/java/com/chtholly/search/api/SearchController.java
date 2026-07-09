@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.chtholly.auth.token.JwtService;
+import com.chtholly.recommendation.UserInterestProfile;
 
 /**
  * Full-text search and autocomplete suggestion endpoints backed by Elasticsearch.
@@ -33,6 +34,7 @@ public class SearchController {
 
     private final SearchService searchService;
     private final JwtService jwtService;
+    private final UserInterestProfile userInterestProfile;
 
     /**
      * Searches posts by keyword with optional tag filter and cursor pagination.
@@ -71,7 +73,11 @@ public class SearchController {
                                    @RequestParam(value = "size", required = false, defaultValue = "8") @Min(1) @Max(50) int size,
                                    @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        return searchService.hubFeed(interestTags, userId, page, size);
+        String resolvedTags = interestTags;
+        if ((resolvedTags == null || resolvedTags.isBlank()) && userId != null) {
+            resolvedTags = userInterestProfile.interestTagsCsv(userId);
+        }
+        return searchService.hubFeed(resolvedTags, userId, page, size);
     }
 
     /**

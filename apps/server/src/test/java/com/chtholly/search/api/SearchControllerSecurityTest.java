@@ -3,6 +3,7 @@ package com.chtholly.search.api;
 import com.chtholly.admin.security.BannedUserFilter;
 import com.chtholly.auth.config.SecurityConfig;
 import com.chtholly.auth.token.JwtService;
+import com.chtholly.recommendation.UserInterestProfile;
 import com.chtholly.search.api.dto.HubFeedResponse;
 import com.chtholly.search.service.SearchService;
 import com.chtholly.storage.config.LocalStorageWebConfig;
@@ -45,6 +46,9 @@ class SearchControllerSecurityTest {
 
     @MockBean
     private JwtService jwtService;
+
+    @MockBean
+    private UserInterestProfile userInterestProfile;
 
     @MockBean
     private BannedUserFilter bannedUserFilter;
