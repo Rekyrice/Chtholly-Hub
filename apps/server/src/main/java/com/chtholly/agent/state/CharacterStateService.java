@@ -162,7 +162,6 @@ public class CharacterStateService {
      * @return intimacy scores found in Redis state hashes.
      */
     public List<Double> getActiveUserIntimacies() {
-        // 当前用户状态只存在 Redis Hash 中，扫描 key 是 MVP 阶段最小接入面；后续用户活跃索引稳定后可替换。
         Set<String> keys = redis.keys(KEY_PREFIX + "*");
         if (keys == null || keys.isEmpty()) {
             return List.of();
@@ -180,6 +179,60 @@ public class CharacterStateService {
             }
         }
         return List.copyOf(intimacies);
+    }
+
+    /**
+     * 返回 Redis 中已有 CharacterState 的用户 ID。
+     */
+    public List<Long> listKnownUserIds() {
+        Set<String> keys = redis.keys(KEY_PREFIX + "*");
+        if (keys == null || keys.isEmpty()) {
+            return List.of();
+        }
+        List<Long> userIds = new ArrayList<>();
+        for (String stateKey : keys) {
+            String suffix = stateKey.substring(KEY_PREFIX.length());
+            try {
+                userIds.add(Long.parseLong(suffix));
+            } catch (NumberFormatException ignored) {
+                // skip malformed key
+            }
+        }
+        return List.copyOf(userIds);
+    }
+
+    /**
+     * 上次互动早于阈值的活跃用户（用于缺席/回归检测）。
+     */
+    public List<Long> findUserIdsLastSeenBefore(Instant threshold) {
+        if (threshold == null) {
+            return List.of();
+        }
+        List<Long> result = new ArrayList<>();
+        for (Long userId : listKnownUserIds()) {
+            Instant lastSeen = load(userId, false).relationship().lastSeen();
+            if (lastSeen.isBefore(threshold)) {
+                result.add(userId);
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    /**
+     * 在指定时间之后仍活跃的用户。
+     */
+    public List<Long> findUserIdsActiveSince(Instant since) {
+        if (since == null) {
+            return List.of();
+        }
+        List<Long> result = new ArrayList<>();
+        for (Long userId : listKnownUserIds()) {
+            Instant lastSeen = load(userId, false).relationship().lastSeen();
+            if (!lastSeen.isBefore(since)) {
+                result.add(userId);
+            }
+        }
+        return List.copyOf(result);
     }
 
     /**
