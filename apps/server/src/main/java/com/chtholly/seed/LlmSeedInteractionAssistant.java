@@ -6,17 +6,12 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 /**
- * LLM-backed generator and judge for seed account discussions.
+ * LLM-backed generator for seed account discussions.
  */
 @Slf4j
 @Component
-public class LlmSeedInteractionAssistant implements SeedInteractionTextGenerator, SeedInteractionQualityEvaluator {
-
-    private static final Pattern SCORE_PATTERN = Pattern.compile("([1-5](?:\\.\\d+)?)");
+public class LlmSeedInteractionAssistant implements SeedInteractionTextGenerator {
 
     private final ObjectProvider<ChatClient> chatClientProvider;
 
@@ -66,44 +61,6 @@ public class LlmSeedInteractionAssistant implements SeedInteractionTextGenerator
         }
     }
 
-    @Override
-    public double evaluate(SeedInteractionAccount account, SeedInteractionContext context, String comment) {
-        ChatClient chatClient = chatClientProvider.getIfAvailable();
-        if (chatClient == null) {
-            return heuristicScore(account, context, comment);
-        }
-
-        String prompt = """
-                请评估以下社区评论的质量，输出一个 1-5 分的加权总分即可，可以附一句简短理由。
-
-                评分维度：
-                - 内容相关性 0.3：是否与帖子或上级评论相关
-                - 人设一致性 0.3：是否符合账号性格
-                - 趣味性 0.2：是否有一点观点或细节
-                - 原创性 0.2：是否不像模板套话
-
-                账号人设：%s
-                帖子标题：%s
-                帖子标签：%s
-                帖子摘要：%s
-                上级评论：%s
-                待评评论：%s
-                """.formatted(
-                account.profile().persona(),
-                context.postTitle(),
-                context.postTags(),
-                context.postExcerpt(),
-                context.parentCommentContent() == null ? "无" : context.parentCommentContent(),
-                comment);
-        try {
-            String result = chatClient.prompt().user(prompt).call().content();
-            return parseScore(result, heuristicScore(account, context, comment));
-        } catch (Exception e) {
-            log.warn("Seed interaction quality evaluation failed, using heuristic: {}", e.getMessage());
-            return heuristicScore(account, context, comment);
-        }
-    }
-
     private String fallbackReply(SeedInteractionAccount account, SeedInteractionContext context) {
         String nickname = account.profile().nickname();
         String parent = context.parentCommentContent();
@@ -125,48 +82,4 @@ public class LlmSeedInteractionAssistant implements SeedInteractionTextGenerator
         return nickname + "觉得《" + title + "》这篇挺适合慢慢看。里面有些细节不是特别显眼，但认真读完会留下印象。";
     }
 
-    private double heuristicScore(SeedInteractionAccount account, SeedInteractionContext context, String comment) {
-        if (comment == null || comment.isBlank()) {
-            return 0.0;
-        }
-        double score = 2.8;
-        String normalized = comment.toLowerCase(Locale.ROOT);
-        if (comment.length() >= 20 && comment.length() <= 180) {
-            score += 0.5;
-        }
-        if (normalized.contains(context.postTitle().toLowerCase(Locale.ROOT))) {
-            score += 0.3;
-        }
-        for (String tag : context.postTags()) {
-            if (normalized.contains(tag.toLowerCase(Locale.ROOT))) {
-                score += 0.25;
-                break;
-            }
-        }
-        if (context.parentCommentContent() != null && (normalized.contains("前面") || normalized.contains("同意") || normalized.contains("补充"))) {
-            score += 0.35;
-        }
-        for (String tag : account.profile().tags()) {
-            if (normalized.contains(tag.toLowerCase(Locale.ROOT))) {
-                score += 0.2;
-                break;
-            }
-        }
-        return Math.min(5.0, score);
-    }
-
-    private double parseScore(String text, double fallback) {
-        if (text == null) {
-            return fallback;
-        }
-        Matcher matcher = SCORE_PATTERN.matcher(text);
-        if (!matcher.find()) {
-            return fallback;
-        }
-        try {
-            return Double.parseDouble(matcher.group(1));
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
-    }
 }
