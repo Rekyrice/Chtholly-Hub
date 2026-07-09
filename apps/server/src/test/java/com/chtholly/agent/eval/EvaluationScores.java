@@ -25,6 +25,17 @@ public record EvaluationScores(Map<String, EvaluationScore> dimensions, double o
         return score == null ? 0 : score.score();
     }
 
+    public boolean hasDimension(String key) {
+        return dimensions.containsKey(key);
+    }
+
+    public EvaluationScores withDimension(String key, EvaluationScore score) {
+        Map<String, EvaluationScore> copy = new LinkedHashMap<>(dimensions);
+        copy.put(key, score);
+        double overall = copy.values().stream().mapToInt(EvaluationScore::score).average().orElse(0.0);
+        return new EvaluationScores(copy, EvaluationReport.round(overall));
+    }
+
     public String reason(String key) {
         EvaluationScore score = dimensions.get(key);
         return score == null ? "" : score.reason();

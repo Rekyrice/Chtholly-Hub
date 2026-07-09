@@ -35,7 +35,9 @@ public record EvaluationQuestionSet(List<EvaluationQuestion> questions) {
                         string(raw, "category"),
                         string(raw, "text"),
                         string(raw, "userProfile"),
-                        string(raw, "historySummary")));
+                        string(raw, "historySummary"),
+                        stringList(raw, "expectedKeywords"),
+                        bool(raw, "consistencyCheck")));
             }
             return new EvaluationQuestionSet(List.copyOf(questions));
         } catch (Exception e) {
@@ -50,5 +52,34 @@ public record EvaluationQuestionSet(List<EvaluationQuestion> questions) {
     private static String string(Map<String, Object> raw, String key) {
         Object value = raw.get(key);
         return value == null ? "" : value.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> stringList(Map<String, Object> raw, String key) {
+        Object value = raw.get(key);
+        if (value == null) {
+            return List.of();
+        }
+        if (value instanceof List<?> list) {
+            List<String> result = new ArrayList<>(list.size());
+            for (Object item : list) {
+                if (item != null && !item.toString().isBlank()) {
+                    result.add(item.toString());
+                }
+            }
+            return List.copyOf(result);
+        }
+        return List.of(value.toString());
+    }
+
+    private static boolean bool(Map<String, Object> raw, String key) {
+        Object value = raw.get(key);
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return Boolean.parseBoolean(value.toString());
     }
 }
