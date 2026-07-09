@@ -1,5 +1,8 @@
 package com.chtholly.seed;
 
+import com.chtholly.agent.quality.QualityCriteria;
+import com.chtholly.agent.quality.QualityEvaluationService;
+import com.chtholly.agent.quality.QualityResult;
 import com.chtholly.common.scheduler.DistributedLockService;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.model.Post;
@@ -52,6 +55,7 @@ public class SeedContentAuditor {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final DistributedLockService lockService;
+    private final QualityEvaluationService qualityEvaluationService;
     private final TextGenerator textGenerator;
     private final Clock clock;
     private final PostContentLoader contentLoader;
@@ -62,12 +66,14 @@ public class SeedContentAuditor {
                               StringRedisTemplate redis,
                               ObjectMapper objectMapper,
                               DistributedLockService lockService,
+                              QualityEvaluationService qualityEvaluationService,
                               ObjectProvider<ChatClient> chatClientProvider) {
         this(postService,
                 seedMapper,
                 redis,
                 objectMapper,
                 lockService,
+                qualityEvaluationService,
                 new ChatClientTextGenerator(chatClientProvider),
                 Clock.systemUTC(),
                 SeedContentAuditor::defaultLoadPostContent);
@@ -78,6 +84,7 @@ public class SeedContentAuditor {
                        StringRedisTemplate redis,
                        ObjectMapper objectMapper,
                        DistributedLockService lockService,
+                       QualityEvaluationService qualityEvaluationService,
                        TextGenerator textGenerator,
                        Clock clock,
                        PostContentLoader contentLoader) {
@@ -86,6 +93,7 @@ public class SeedContentAuditor {
         this.redis = redis;
         this.objectMapper = objectMapper;
         this.lockService = lockService;
+        this.qualityEvaluationService = qualityEvaluationService;
         this.textGenerator = textGenerator;
         this.clock = clock;
         this.contentLoader = contentLoader;
@@ -131,10 +139,6 @@ public class SeedContentAuditor {
     }
 
     private void auditRecentSeedPosts() {
-        if (!textGenerator.available()) {
-            log.debug("Seed audit skipped because LLM is unavailable");
-            return;
-        }
         List<Post> posts = postService.getRecentSeedPosts(Duration.ofHours(24));
         for (Post post : posts.stream().limit(MAX_AUDIT_POSTS).toList()) {
             auditPost(post).ifPresent(result -> storeAuditResult(post.getId(), result));
@@ -146,34 +150,18 @@ public class SeedContentAuditor {
             return Optional.empty();
         }
         String content = safeContent(post);
-        String prompt = """
-                你是珂朵莉，这个网站的常驻居民。
-                请审核以下文章的质量（1-5 分）。
-                维度：内容深度、可读性、是否有价值、是否像真人写的。
-                文章标题：%s
-                文章摘要：%s
-                文章内容：
-                %s
-
-                请给出评分和一句话反馈。
-                如果评分 < 3.0，说明需要人工审核。
-                只输出 JSON：{ "score": 4.2, "feedback": "...", "needsReview": false }
-                """.formatted(
-                nullToBlank(post.getTitle()),
-                nullToBlank(post.getDescription()),
-                truncate(content, MAX_CONTENT_CHARS));
         try {
-            String raw = textGenerator.generate(prompt);
-            if (raw == null || raw.isBlank()) {
+            QualityResult quality = qualityEvaluationService.evaluate(
+                    truncate(content, MAX_CONTENT_CHARS),
+                    articleContext(post),
+                    QualityCriteria.articleQuality());
+            if (quality == null) {
                 return Optional.empty();
             }
-            AuditDraft draft = objectMapper.readValue(extractJsonObject(raw), AuditDraft.class);
-            double score = clamp(draft.score(), 1.0, 5.0);
-            boolean needsReview = score < 3.0 || Boolean.TRUE.equals(draft.needsReview());
             return Optional.of(new SeedAuditResult(
-                    score,
-                    normalizeFeedback(draft.feedback()),
-                    needsReview,
+                    quality.score(),
+                    normalizeFeedback(quality.feedback()),
+                    !quality.passed(),
                     clock.instant()));
         } catch (Exception e) {
             log.warn("Seed post audit failed, postId={}: {}", post.getId(), e.getMessage());
@@ -367,6 +355,15 @@ public class SeedContentAuditor {
                 .orElse("");
     }
 
+    private static String articleContext(Post post) {
+        return """
+                你是珂朵莉，这个网站的常驻居民。
+                请从内容深度、可读性、是否有价值、是否像真人写的角度审核文章。
+                文章标题：%s
+                文章摘要：%s
+                """.formatted(nullToBlank(post.getTitle()), nullToBlank(post.getDescription()));
+    }
+
     private static String extractJsonObject(String raw) {
         int start = raw.indexOf('{');
         int end = raw.lastIndexOf('}');
@@ -392,10 +389,6 @@ public class SeedContentAuditor {
 
     private static String nullToBlank(String value) {
         return value == null ? "" : value;
-    }
-
-    private static double clamp(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
     }
 
     @FunctionalInterface
@@ -434,10 +427,6 @@ public class SeedContentAuditor {
                     .call()
                     .content();
         }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private record AuditDraft(double score, String feedback, Boolean needsReview) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

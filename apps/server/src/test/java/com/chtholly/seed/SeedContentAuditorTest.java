@@ -1,5 +1,8 @@
 package com.chtholly.seed;
 
+import com.chtholly.agent.quality.QualityCriteria;
+import com.chtholly.agent.quality.QualityEvaluationService;
+import com.chtholly.agent.quality.QualityResult;
 import com.chtholly.common.scheduler.DistributedLockService;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.model.Post;
@@ -18,11 +21,9 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +38,7 @@ class SeedContentAuditorTest {
     private ValueOperations<String, String> valueOps;
     private DistributedLockService lockService;
     private ObjectMapper objectMapper;
+    private QualityEvaluationService qualityEvaluationService;
 
     @BeforeEach
     void setUp() {
@@ -47,27 +49,34 @@ class SeedContentAuditorTest {
         valueOps = mock(ValueOperations.class);
         lockService = mock(DistributedLockService.class);
         objectMapper = new ObjectMapper().findAndRegisterModules();
+        qualityEvaluationService = mock(QualityEvaluationService.class);
         when(redis.opsForHash()).thenReturn(hashOps);
         when(redis.opsForValue()).thenReturn(valueOps);
+        when(qualityEvaluationService.evaluate(any(), any(), any())).thenReturn(
+                new QualityResult(2.4, "像提纲，不像一篇完整文章。", false, Map.of("内容深度", 2.0)));
     }
 
     @Test
     void dailyAuditStoresNeedsReviewResultForLowQualitySeedPost() {
         when(lockService.tryLock("lock:scheduled:seedAudit", Duration.ofMinutes(15))).thenReturn(true);
         when(postService.getRecentSeedPosts(Duration.ofHours(24))).thenReturn(List.of(seedPost()));
-        SeedContentAuditor auditor = auditor(prompt ->
-                "{\"score\":2.4,\"feedback\":\"像提纲，不像一篇完整文章。\",\"needsReview\":true}");
+        SeedContentAuditor auditor = auditor(prompt -> "");
 
         auditor.dailyAudit();
 
         verify(hashOps).put(eq("agent:audit:posts"), eq("42"), any(String.class));
+        verify(qualityEvaluationService).evaluate(
+                any(),
+                org.mockito.ArgumentMatchers.contains("文章标题：夜里重构 CLI 的记录"),
+                eq(QualityCriteria.articleQuality()));
         verify(redis).expire("agent:audit:posts", Duration.ofDays(30));
         verify(lockService).unlock("lock:scheduled:seedAudit");
     }
 
     @Test
-    void dailyAuditSkipsCleanlyWhenLlmUnavailable() {
+    void dailyAuditUsesQualityServiceWhenTextGeneratorUnavailable() {
         when(lockService.tryLock("lock:scheduled:seedAudit", Duration.ofMinutes(15))).thenReturn(true);
+        when(postService.getRecentSeedPosts(Duration.ofHours(24))).thenReturn(List.of(seedPost()));
         SeedContentAuditor auditor = auditor(new SeedContentAuditor.TextGenerator() {
             @Override
             public boolean available() {
@@ -82,7 +91,8 @@ class SeedContentAuditorTest {
 
         auditor.dailyAudit();
 
-        verify(postService, never()).getRecentSeedPosts(any());
+        verify(hashOps).put(eq("agent:audit:posts"), eq("42"), any(String.class));
+        verify(qualityEvaluationService).evaluate(any(), any(), eq(QualityCriteria.articleQuality()));
         verify(lockService).unlock("lock:scheduled:seedAudit");
     }
 
@@ -130,6 +140,7 @@ class SeedContentAuditorTest {
                 redis,
                 objectMapper,
                 lockService,
+                qualityEvaluationService,
                 textGenerator,
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 post -> "这是一篇种子文章正文，内容还算完整。");
