@@ -203,6 +203,12 @@ management:
   health:
     elasticsearch:
       enabled: true
+  observations:
+    key-values:
+      service.name: chtholly-agent
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
 
 logging:
   level:

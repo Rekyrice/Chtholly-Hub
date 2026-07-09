@@ -1,10 +1,12 @@
 package com.chtholly.agent.observability;
 
 import com.chtholly.agent.trace.TraceStatus;
+import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -20,7 +22,7 @@ import java.util.UUID;
 @Getter
 public class AgentExecutionTrace {
 
-    private final String correlationId = UUID.randomUUID().toString().replace("-", "");
+    private final String correlationId;
     private final long userId;
     private final String sessionId;
     private final int maxSteps;
@@ -47,18 +49,33 @@ public class AgentExecutionTrace {
     private final List<String> stepActions = new ArrayList<>();
     private final List<TraceStepInfo> steps = new ArrayList<>();
     private final List<TraceToolCallInfo> toolCallDetails = new ArrayList<>();
+    private final List<TraceLlmCallInfo> llmCallDetails = new ArrayList<>();
 
     public AgentExecutionTrace(long userId, String sessionId, int maxSteps) {
+        this.correlationId = resolveCorrelationId();
         this.userId = userId;
         this.sessionId = sessionId;
         this.maxSteps = maxSteps;
     }
 
+    private static String resolveCorrelationId() {
+        String mdcId = MDC.get(CorrelationIdSupport.MDC_CORRELATION_ID);
+        if (mdcId != null && !mdcId.isBlank() && !CorrelationIdSupport.DEFAULT_ID.equals(mdcId)) {
+            return mdcId.replace("-", "");
+        }
+        return UUID.randomUUID().toString().replace("-", "");
+    }
+
     public void recordLlmCall(long durationMs, int inputChars, int outputChars) {
+        recordLlmCall(durationMs, inputChars, outputChars, null);
+    }
+
+    public void recordLlmCall(long durationMs, int inputChars, int outputChars, Long firstTokenMs) {
         llmCalls++;
         llmDurationMs += durationMs;
         inputTokenEstimate += estimateTokens(inputChars);
         outputTokenEstimate += estimateTokens(outputChars);
+        llmCallDetails.add(new TraceLlmCallInfo(durationMs, inputChars, outputChars, firstTokenMs));
     }
 
     public void recordToolCall(String toolName, long durationMs, String inputSummary, String observation) {
@@ -127,6 +144,20 @@ public class AgentExecutionTrace {
 
         if (metrics != null) {
             metrics.recordExecution(durationMs == null ? 0 : durationMs, llmCalls, toolsCalled, terminatedBy);
+            recordLatencyMetrics(metrics);
+        }
+    }
+
+    /** 从 LLM 调用明细中采集 TTFT / TPOT。 */
+    private void recordLatencyMetrics(AgentMetrics metrics) {
+        for (TraceLlmCallInfo call : llmCallDetails) {
+            if (call.firstTokenMs() != null && call.firstTokenMs() >= 0) {
+                metrics.recordTtft(call.firstTokenMs());
+            }
+            long outputTokens = estimateTokens(call.outputChars());
+            if (outputTokens > 0 && call.durationMs() > 0) {
+                metrics.recordTpot(call.durationMs(), outputTokens);
+            }
         }
     }
 
@@ -141,6 +172,7 @@ public class AgentExecutionTrace {
         }
         payload.put("steps", steps.stream().map(TraceStepInfo::toMap).toList());
         payload.put("toolCalls", toolCallDetails.stream().map(TraceToolCallInfo::toMap).toList());
+        payload.put("llmCalls", llmCallDetails.stream().map(TraceLlmCallInfo::toMap).toList());
         return payload;
     }
 
@@ -220,6 +252,19 @@ public class AgentExecutionTrace {
             map.put("input_summary", inputSummary);
             map.put("duration_ms", durationMs);
             map.put("success", success);
+            return map;
+        }
+    }
+
+    public record TraceLlmCallInfo(long durationMs, int inputChars, int outputChars, Long firstTokenMs) {
+        public Map<String, Object> toMap() {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("duration_ms", durationMs);
+            map.put("input_chars", inputChars);
+            map.put("output_chars", outputChars);
+            if (firstTokenMs != null) {
+                map.put("first_token_ms", firstTokenMs);
+            }
             return map;
         }
     }

@@ -17,6 +17,8 @@ public class AgentMetrics {
     private final MeterRegistry registry;
     private final Timer executionDuration;
     private final Counter llmCalls;
+    private final Timer ttft;
+    private final Timer tpot;
     private final AtomicInteger activeWsConnections = new AtomicInteger();
 
     public AgentMetrics(MeterRegistry registry) {
@@ -26,6 +28,12 @@ public class AgentMetrics {
                 .register(registry);
         this.llmCalls = Counter.builder("agent.llm.calls")
                 .description("Agent LLM 调用次数")
+                .register(registry);
+        this.ttft = Timer.builder("agent.llm.ttft")
+                .description("Time to First Token：从 Agent 开始到首个 delta 的耗时")
+                .register(registry);
+        this.tpot = Timer.builder("agent.llm.tpot")
+                .description("Time per Output Token：LLM 生成耗时 / 输出 token 数")
                 .register(registry);
         registry.gauge("agent.ws.connections.active", activeWsConnections, AtomicInteger::get);
     }
@@ -43,6 +51,21 @@ public class AgentMetrics {
 
     public void recordError(String type) {
         registry.counter("agent.errors", "type", type == null ? "unknown" : type).increment();
+    }
+
+    /** 记录 Time to First Token（毫秒）。 */
+    public void recordTtft(long ttftMs) {
+        if (ttftMs >= 0) {
+            ttft.record(java.time.Duration.ofMillis(ttftMs));
+        }
+    }
+
+    /** 记录 Time per Output Token（总生成耗时 / 输出 token 数）。 */
+    public void recordTpot(long totalGenerationMs, long outputTokens) {
+        if (totalGenerationMs > 0 && outputTokens > 0) {
+            long msPerToken = Math.max(1, totalGenerationMs / outputTokens);
+            tpot.record(java.time.Duration.ofMillis(msPerToken));
+        }
     }
 
     public void wsConnected() {

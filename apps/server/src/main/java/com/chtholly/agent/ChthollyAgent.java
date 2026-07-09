@@ -7,10 +7,12 @@ import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentMetrics;
+import com.chtholly.agent.observability.AgentObservationService;
 import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.micrometer.observation.Observation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -31,6 +33,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
@@ -58,6 +61,7 @@ public class ChthollyAgent {
     private final List<AgentTool> tools;
     private final AgentJsonExtractor jsonExtractor;
     private final AgentMetrics agentMetrics;
+    private final AgentObservationService agentObservationService;
     private final CharacterSoulService characterSoulService;
     private final ContextEngine contextEngine;
     private final TracePersistenceService tracePersistenceService;
@@ -95,6 +99,26 @@ public class ChthollyAgent {
                     String pageContext, Consumer<AgentEvent> sink) {
         int maxSteps = Math.max(1, properties.getMaxSteps());
         AgentExecutionTrace trace = new AgentExecutionTrace(userId, sessionId, maxSteps);
+        Observation agentSpan = agentObservationService.startAgentSpan(trace.getCorrelationId(), userId);
+        try (Observation.Scope ignored = agentSpan.openScope()) {
+            runInternal(question, userId, memory, sessionId, pageContext, sink, maxSteps, trace, agentSpan);
+        } finally {
+            agentObservationService.finishSpan(agentSpan, agentSpanAttributes(trace));
+            trace.finish();
+            trace.finishAndLog(objectMapper, agentMetrics);
+            tracePersistenceService.persist(trace);
+        }
+    }
+
+    private void runInternal(String question,
+                             long userId,
+                             AgentConversationMemory memory,
+                             String sessionId,
+                             String pageContext,
+                             Consumer<AgentEvent> sink,
+                             int maxSteps,
+                             AgentExecutionTrace trace,
+                             Observation agentSpan) {
         try {
             if (question == null || question.isBlank()) {
                 trace.terminateError();
@@ -125,17 +149,25 @@ public class ChthollyAgent {
 
             for (int step = 0; step < maxSteps; step++) {
                 String userPrompt = String.join("\n\n", transcript);
+                int inputChars = system.length() + userPrompt.length();
+                Observation llmSpan = agentObservationService.startLlmSpan(agentSpan, properties.getModel());
                 long stepLlmStart = System.currentTimeMillis();
                 String llmOut;
                 try {
                     llmOut = callLlm(system, userPrompt);
                 } catch (TimeoutException e) {
+                    long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
+                    agentObservationService.finishSpanError(llmSpan, "llm_timeout",
+                            llmSpanAttributes(stepLlmMs, inputChars, 0, "timeout"));
                     log.warn("Agent LLM call timed out (>{}s)", properties.getLlmTimeoutSeconds());
                     trace.terminateTimeout();
                     trace.setErrorMessage(agentDomainConfig.getErrors().getModelResponseTimeout());
                     emitError(sink, agentDomainConfig.getErrors().getModelResponseTimeout());
                     return;
                 } catch (Exception e) {
+                    long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
+                    agentObservationService.finishSpanError(llmSpan, "llm_error",
+                            llmSpanAttributes(stepLlmMs, inputChars, 0, "error"));
                     log.warn("Agent LLM call failed: {}", e.getMessage());
                     trace.terminateError();
                     trace.setErrorMessage(agentDomainConfig.getErrors().getModelCallFailed());
@@ -143,7 +175,9 @@ public class ChthollyAgent {
                     return;
                 }
                 long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
-                trace.recordLlmCall(stepLlmMs, system.length() + userPrompt.length(), llmOut.length());
+                trace.recordLlmCall(stepLlmMs, inputChars, llmOut.length());
+                agentObservationService.finishSpan(llmSpan,
+                        llmSpanAttributes(stepLlmMs, inputChars, llmOut.length(), "ok"));
 
                 AgentAction action;
                 try {
@@ -164,7 +198,7 @@ public class ChthollyAgent {
                 emitThink(sink, action);
 
                 if (action.isFinal()) {
-                    long streamLlmMs = streamFinalAnswer(sink, question, transcript, memory, trace);
+                    long streamLlmMs = streamFinalAnswer(sink, question, transcript, memory, trace, agentSpan);
                     trace.recordStep(step, "final_answer", stepLlmMs + streamLlmMs, 0);
                     return;
                 }
@@ -188,9 +222,11 @@ public class ChthollyAgent {
                     inputMap.put("_conversationHistory", memory.formatForPrompt());
                 }
                 emitAct(sink, tool.name(), action.input());
+                Observation toolSpan = agentObservationService.startToolSpan(agentSpan, tool.name());
                 long toolStart = System.currentTimeMillis();
                 String observation = executeTool(tool, inputMap, userId);
                 long stepToolMs = System.currentTimeMillis() - toolStart;
+                agentObservationService.finishSpan(toolSpan, toolSpanAttributes(tool.name(), stepToolMs, observation));
                 trace.recordToolCall(tool.name(), stepToolMs, summarizeToolInput(action.input()), observation);
                 observation = augmentObservation(tool.name(), observation);
                 emitObserve(sink, observation);
@@ -205,10 +241,10 @@ public class ChthollyAgent {
                     "maxSteps", maxSteps);
             trace.setErrorMessage(maxStepsMessage);
             emitError(sink, maxStepsMessage);
-        } finally {
-            trace.finish();
-            trace.finishAndLog(objectMapper, agentMetrics);
-            tracePersistenceService.persist(trace);
+        } catch (RuntimeException e) {
+            trace.terminateError();
+            trace.setErrorMessage(e.getMessage());
+            throw e;
         }
     }
 
@@ -222,15 +258,19 @@ public class ChthollyAgent {
             String question,
             List<String> transcript,
             AgentConversationMemory memory,
-            AgentExecutionTrace trace) {
+            AgentExecutionTrace trace,
+            Observation agentSpan) {
         String context = String.join("\n\n", transcript);
         String system = agentDomainConfig.render(
                 agentDomainConfig.getSystemPrompt().getFinalAnswerSystem(),
                 "soul", characterSoulService.getSoulContent());
         String userPrompt = context + "\n\n" + agentDomainConfig.getSystemPrompt().getFinalAnswerPrompt();
+        int inputChars = system.length() + userPrompt.length();
 
         int timeoutSec = Math.max(1, properties.getLlmTimeoutSeconds());
+        Observation llmSpan = agentObservationService.startLlmSpan(agentSpan, properties.getModel());
         long streamStart = System.currentTimeMillis();
+        AtomicLong firstTokenMs = new AtomicLong(-1);
         try {
             Flux<String> flux = chatClient.prompt()
                     .system(system)
@@ -243,6 +283,7 @@ public class ChthollyAgent {
             StringBuilder full = new StringBuilder();
             flux.doOnNext(chunk -> {
                 if (chunk != null && !chunk.isEmpty()) {
+                    firstTokenMs.compareAndSet(-1, System.currentTimeMillis() - trace.getStartedAtMs());
                     full.append(chunk);
                     emitThrottledDelta(sink, chunk);
                 }
@@ -250,7 +291,10 @@ public class ChthollyAgent {
 
             String answer = truncateAnswer(full.toString());
             long streamMs = System.currentTimeMillis() - streamStart;
-            trace.recordLlmCall(streamMs, system.length() + userPrompt.length(), answer.length());
+            Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
+            trace.recordLlmCall(streamMs, inputChars, answer.length(), ttft);
+            agentObservationService.finishSpan(llmSpan, llmSpanAttributes(
+                    streamMs, inputChars, answer.length(), "ok"));
             trace.terminateFinalAnswer(answer);
             emitFinal(sink, answer);
             if (memory != null && !answer.isBlank()) {
@@ -260,14 +304,19 @@ public class ChthollyAgent {
             return streamMs;
         } catch (Exception e) {
             long streamMs = System.currentTimeMillis() - streamStart;
-            trace.recordLlmCall(streamMs, system.length() + userPrompt.length(), 0);
+            Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
+            trace.recordLlmCall(streamMs, inputChars, 0, ttft);
             if (isTimeout(e)) {
+                agentObservationService.finishSpanError(llmSpan, "stream_timeout",
+                        llmSpanAttributes(streamMs, inputChars, 0, "timeout"));
                 log.warn("Agent streaming answer timed out (>{}s)", timeoutSec);
                 trace.terminateTimeout();
                 trace.setErrorMessage(agentDomainConfig.getErrors().getResponseTimeout());
                 emitError(sink, agentDomainConfig.getErrors().getResponseTimeout());
                 return streamMs;
             }
+            agentObservationService.finishSpanError(llmSpan, "stream_error",
+                    llmSpanAttributes(streamMs, inputChars, 0, "error"));
             log.warn("Agent streaming answer failed: {}", e.getMessage());
             trace.terminateError();
             trace.setErrorMessage(agentDomainConfig.getErrors().getResponseFailed());
@@ -504,5 +553,36 @@ public class ChthollyAgent {
         ObjectNode data = objectMapper.createObjectNode();
         data.put("message", message);
         AgentEvent.send(sink, "error", data);
+    }
+
+    private static Map<String, String> agentSpanAttributes(AgentExecutionTrace trace) {
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("agent.status", trace.getTerminatedBy());
+        attrs.put("agent.total_steps", String.valueOf(trace.getTotalSteps()));
+        attrs.put("agent.llm_calls", String.valueOf(trace.getLlmCalls()));
+        attrs.put("agent.duration_ms", String.valueOf(
+                trace.getDurationMs() == null ? 0 : trace.getDurationMs()));
+        return attrs;
+    }
+
+    private static Map<String, String> llmSpanAttributes(long durationMs, int inputChars, int outputChars, String status) {
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("llm.duration_ms", String.valueOf(durationMs));
+        attrs.put("llm.input_chars", String.valueOf(inputChars));
+        attrs.put("llm.output_chars", String.valueOf(outputChars));
+        attrs.put("llm.status", status);
+        return attrs;
+    }
+
+    private static Map<String, String> toolSpanAttributes(String toolName, long durationMs, String observation) {
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("tool.name", toolName);
+        attrs.put("tool.duration_ms", String.valueOf(durationMs));
+        attrs.put("tool.success", String.valueOf(!isToolTimeoutStatic(observation)));
+        return attrs;
+    }
+
+    private static boolean isToolTimeoutStatic(String observation) {
+        return observation != null && observation.contains(TOOL_TIMEOUT_MESSAGE);
     }
 }

@@ -4,8 +4,12 @@ import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.context.ContextEngine;
 import com.chtholly.agent.observability.AgentMetrics;
+import com.chtholly.agent.observability.AgentObservationService;
 import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationHandler;
+import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +46,9 @@ class ChthollyAgentTest {
     @Mock
     private AgentMetrics agentMetrics;
 
+    private AgentObservationService agentObservationService;
+    private final List<String> observationEvents = new ArrayList<>();
+
     private AgentProperties properties;
     private ObjectMapper objectMapper;
     private AgentJsonExtractor jsonExtractor;
@@ -69,6 +76,24 @@ class ChthollyAgentTest {
                 认真到笨拙，但不会编造答案。
                 """);
         agentDomainConfig = loadAgentDomainConfig();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        observationRegistry.observationConfig().observationHandler(new ObservationHandler<>() {
+            @Override
+            public void onStart(Observation.Context context) {
+                observationEvents.add("start:" + context.getName());
+            }
+
+            @Override
+            public void onStop(Observation.Context context) {
+                observationEvents.add("stop:" + context.getName());
+            }
+
+            @Override
+            public boolean supportsContext(Observation.Context context) {
+                return true;
+            }
+        });
+        agentObservationService = new AgentObservationService(observationRegistry);
         when(contextEngine.buildSystemPrompt(
                 anyLong(),
                 nullable(String.class),
@@ -78,8 +103,33 @@ class ChthollyAgentTest {
                 anyString()
         )).thenReturn("## ContextEngine Prompt");
         agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(mockTool()), jsonExtractor,
-                agentMetrics, characterSoulService, contextEngine, tracePersistenceService, agentDomainConfig);
+                agentMetrics, agentObservationService, characterSoulService, contextEngine,
+                tracePersistenceService, agentDomainConfig);
         events = new ArrayList<>();
+        observationEvents.clear();
+    }
+
+    @Test
+    void given_toolCall_when_run_then_createsAgentLlmAndToolObservationSpans() {
+        AtomicInteger llmCalls = new AtomicInteger();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+                .thenAnswer(inv -> {
+                    if (llmCalls.getAndIncrement() == 0) {
+                        return "{\"action\":\"test_tool\",\"input\":{\"keyword\":\"re0\"}}";
+                    }
+                    return "{\"action\":\"final\",\"answer\":\"占位\"}";
+                });
+        stubStream("根据工具结果回答");
+
+        agent.run("查一下 re0", 2L, null, events::add);
+
+        assertThat(observationEvents).contains(
+                "start:agent.run",
+                "start:agent.llm.call",
+                "stop:agent.llm.call",
+                "start:agent.tool.execute",
+                "stop:agent.tool.execute",
+                "stop:agent.run");
     }
 
     @Test
@@ -151,7 +201,8 @@ class ChthollyAgentTest {
             }
         };
         agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(failingTool), jsonExtractor,
-                agentMetrics, characterSoulService, contextEngine, tracePersistenceService, agentDomainConfig);
+                agentMetrics, agentObservationService, characterSoulService, contextEngine,
+                tracePersistenceService, agentDomainConfig);
 
         AtomicInteger llmCalls = new AtomicInteger();
         when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())

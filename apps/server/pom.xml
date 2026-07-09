@@ -169,6 +169,18 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Micrometer Observation → OTel span bridge（Jaeger/Zipkin 兼容） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+
+        <!-- OTLP exporter（可选；未配置 endpoint 时 span 仍可通过日志查看） -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+
         <!-- Lombok：减少样板代码（Getter/Setter/Builder 等），编译期生效 -->
         <dependency>
             <groupId>org.projectlombok</groupId>
