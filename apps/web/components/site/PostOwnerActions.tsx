@@ -65,6 +65,14 @@ export default function PostOwnerActions({
   }, [authorId]);
 
   useEffect(() => {
+    setTop(Boolean(initialTop));
+  }, [initialTop]);
+
+  useEffect(() => {
+    setVisibility(initialVisibility ?? "public");
+  }, [initialVisibility]);
+
+  useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: MouseEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) {

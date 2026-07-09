@@ -77,7 +77,14 @@ export default function UserTabs({ posts, displayName, userId, userHandle }: Use
   }, [posts, userHandle, userId]);
 
   const updatePost = (postId: string, patch: Partial<FeedItem>) => {
-    setItems((current) => current.map((post) => (post.id === postId ? { ...post, ...patch } : post)));
+    setItems((current) => {
+      const next = current.map((post) => (post.id === postId ? { ...post, ...patch } : post));
+      // 置顶变更后本地重排，避免等刷新才看到顺序变化
+      if ("isTop" in patch) {
+        return [...next].sort((a, b) => Number(Boolean(b.isTop)) - Number(Boolean(a.isTop)));
+      }
+      return next;
+    });
   };
 
   const removePost = (postId: string) => {
