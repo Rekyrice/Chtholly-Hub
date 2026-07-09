@@ -1,5 +1,6 @@
 package com.chtholly.agent.proactive;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,7 @@ public class ProactiveRateLimiter {
     private final StringRedisTemplate redis;
     private final Clock clock;
 
+    @Autowired
     public ProactiveRateLimiter(StringRedisTemplate redis) {
         this(redis, Clock.systemDefaultZone());
     }
