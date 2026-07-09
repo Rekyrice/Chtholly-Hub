@@ -56,8 +56,11 @@ public class LlmJudgeClient implements JudgeClient {
     }
 
     private String buildPrompt(JudgeRequest request) {
+        int dimensionCount = request.dimensions().size();
         StringBuilder sb = new StringBuilder();
-        sb.append("你是一个专业的 AI 对话质量评估员。请根据以下 6 个维度对珂朵莉的回复打分（1-5 分）。\n\n");
+        sb.append("你是一个专业的 AI 对话质量评估员。请根据以下 ")
+                .append(dimensionCount)
+                .append(" 个维度对珂朵莉的回复打分（1-5 分）。\n\n");
         sb.append("用户问题：").append(request.question().text()).append("\n");
         sb.append("珂朵莉回复：").append(request.response()).append("\n");
         sb.append("用户资料：").append(request.question().userProfile()).append("\n");
