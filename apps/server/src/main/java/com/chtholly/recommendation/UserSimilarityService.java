@@ -27,6 +27,10 @@ import java.util.Set;
 public class UserSimilarityService {
 
     private static final String SIMILAR_KEY_PREFIX = "user:similar:";
+    /** 搭桥推送默认相似度阈值。 */
+    public static final double INTEREST_MATCH_THRESHOLD = 0.6;
+    /** 共同兴趣标签的最低权重。 */
+    public static final double COMMON_TAG_MIN_WEIGHT = 0.1;
 
     private final UserInterestProfile userInterestProfile;
     private final StringRedisTemplate redis;
@@ -71,6 +75,59 @@ public class UserSimilarityService {
         return computed;
     }
 
+    /**
+     * Lists all user IDs that currently have an interest profile in Redis.
+     *
+     * @return profile user IDs discovered via SCAN
+     */
+    public List<Long> listProfileUserIds() {
+        List<Long> ids = new ArrayList<>();
+        ScanOptions options = ScanOptions.scanOptions()
+                .match(UserInterestProfile.INTEREST_KEY_PREFIX + "*")
+                .count(50)
+                .build();
+        try (Cursor<String> cursor = redis.scan(options)) {
+            while (cursor.hasNext()) {
+                String key = cursor.next();
+                String suffix = key.substring(UserInterestProfile.INTEREST_KEY_PREFIX.length());
+                try {
+                    ids.add(Long.parseLong(suffix));
+                } catch (NumberFormatException ignored) {
+                    // skip malformed keys
+                }
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * Tags where both users have weight above {@code minWeight}, ranked by shared strength.
+     *
+     * @param userA     first user
+     * @param userB     second user
+     * @param minWeight minimum weight on both sides
+     * @return shared interest tags (may be empty)
+     */
+    public List<String> commonInterestTags(long userA, long userB, double minWeight) {
+        InterestProfile left = userInterestProfile.buildProfile(userA);
+        InterestProfile right = userInterestProfile.buildProfile(userB);
+        if (!left.hasSignal() || !right.hasSignal()) {
+            return List.of();
+        }
+        Map<String, Double> leftWeights = left.tagWeights() == null ? Map.of() : left.tagWeights();
+        Map<String, Double> rightWeights = right.tagWeights() == null ? Map.of() : right.tagWeights();
+        List<Map.Entry<String, Double>> shared = new ArrayList<>();
+        for (Map.Entry<String, Double> entry : leftWeights.entrySet()) {
+            double lw = entry.getValue() == null ? 0.0 : entry.getValue();
+            double rw = rightWeights.getOrDefault(entry.getKey(), 0.0);
+            if (lw > minWeight && rw > minWeight) {
+                shared.add(Map.entry(entry.getKey(), Math.min(lw, rw)));
+            }
+        }
+        shared.sort(Map.Entry.<String, Double>comparingByValue().reversed());
+        return shared.stream().map(Map.Entry::getKey).toList();
+    }
+
     private List<SimilarUser> computeSimilarUsers(InterestProfile source, int topK) {
         if (!source.hasSignal()) {
             return List.of();
@@ -88,26 +145,6 @@ public class UserSimilarityService {
         }
         ranked.sort(Comparator.comparingDouble(SimilarUser::similarity).reversed());
         return ranked.stream().limit(topK).toList();
-    }
-
-    private List<Long> listProfileUserIds() {
-        List<Long> ids = new ArrayList<>();
-        ScanOptions options = ScanOptions.scanOptions()
-                .match(UserInterestProfile.INTEREST_KEY_PREFIX + "*")
-                .count(50)
-                .build();
-        try (Cursor<String> cursor = redis.scan(options)) {
-            while (cursor.hasNext()) {
-                String key = cursor.next();
-                String suffix = key.substring(UserInterestProfile.INTEREST_KEY_PREFIX.length());
-                try {
-                    ids.add(Long.parseLong(suffix));
-                } catch (NumberFormatException ignored) {
-                    // skip
-                }
-            }
-        }
-        return ids;
     }
 
     private int countInterestProfiles() {

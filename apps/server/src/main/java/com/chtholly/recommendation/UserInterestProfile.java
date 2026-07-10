@@ -31,7 +31,7 @@ import java.util.Set;
 @Slf4j
 public class UserInterestProfile {
 
-    static final String INTEREST_KEY_PREFIX = "user:interest:";
+    public static final String INTEREST_KEY_PREFIX = "user:interest:";
     static final String INTERACTION_KEY_PREFIX = "user:interactions:";
 
     private static final TypeReference<Map<String, Double>> TAG_WEIGHTS_TYPE = new TypeReference<>() {};
