@@ -1,7 +1,6 @@
 package com.chtholly.post.service.impl;
 
 import com.chtholly.post.service.PostFeedService;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.common.api.pagination.PageResponse;
@@ -323,10 +322,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         }
         List<FeedItemResponse> neutral = new ArrayList<>(page.items().size());
         for (FeedItemResponse it : page.items()) {
-            neutral.add(new FeedItemResponse(
-                    it.id(), it.slug(), it.title(), it.description(), it.coverImage(),
-                    it.tags(), it.authorAvatar(), it.authorNickname(), it.tagJson(),
-                    it.likeCount(), it.favoriteCount(), null, null, it.isTop()));
+            neutral.add(it.withoutUserFlags());
         }
         return PageResponse.offset(neutral, page.page(), page.size(), page.total(), page.hasMore(), page.nextCursor());
     }
@@ -414,22 +410,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             long postId = Long.parseLong(it.id());
             boolean liked = uid != null && Boolean.TRUE.equals(likedBatch.get(postId));
             boolean faved = uid != null && Boolean.TRUE.equals(favBatch.get(postId));
-            out.add(new FeedItemResponse(
-                    it.id(),
-                    it.slug(),
-                    it.title(),
-                    it.description(),
-                    it.coverImage(),
-                    it.tags(),
-                    it.authorAvatar(),
-                    it.authorNickname(),
-                    it.tagJson(),
-                    it.likeCount(),
-                    it.favoriteCount(),
-                    liked,
-                    faved,
-                    it.isTop()
-            ));
+            out.add(it.withUserFlags(liked, faved));
         }
         return out;
     }
@@ -485,21 +466,9 @@ public class PostFeedServiceImpl implements PostFeedService {
         List<FeedItemResponse> withCounts = new ArrayList<>(items.size());
         for (FeedItemResponse base : items) {
             Map<String, Long> counts = countsBatch.getOrDefault(base.id(), Map.of());
-            withCounts.add(new FeedItemResponse(
-                    base.id(),
-                    base.slug(),
-                    base.title(),
-                    base.description(),
-                    base.coverImage(),
-                    base.tags(),
-                    base.authorAvatar(),
-                    base.authorNickname(),
-                    base.tagJson(),
+            withCounts.add(base.withCounts(
                     counts.getOrDefault("like", 0L),
-                    counts.getOrDefault("fav", 0L),
-                    null,
-                    null,
-                    base.isTop()));
+                    counts.getOrDefault("fav", 0L)).withoutUserFlags());
         }
 
         List<FeedItemResponse> enriched = enrich(withCounts, uid);
@@ -789,16 +758,6 @@ public class PostFeedServiceImpl implements PostFeedService {
      * @param json JSON 数组字符串
      * @return 字符串列表；解析失败或空字符串返回空列表
      */
-    private List<String> parseStringArray(String json) {
-        if (json == null || json.isBlank()) return Collections.emptyList();
-        try {
-            return objectMapper.readValue(json, new TypeReference<>() {
-            });
-        } catch (Exception e) {
-            return Collections.emptyList();
-        }
-    }
-
     /**
      * 将数据库行映射为响应条目。
      * 计数通过计数服务填充；liked/faved 按需计算；isTop 仅在个人列表返回。
@@ -811,34 +770,16 @@ public class PostFeedServiceImpl implements PostFeedService {
         List<FeedItemResponse> items = new ArrayList<>(rows.size());
 
         for (PostFeedRow r : rows) {
-            List<String> tags = parseStringArray(r.getTags());
-            List<String> imgs = parseStringArray(r.getImgUrls());
-            String cover = imgs.isEmpty() ? null : imgs.getFirst();
-
             Map<String, Long> counts = counterService.getCounts("post", String.valueOf(r.getId()), List.of("like", "fav"));
-            Long likeCount = counts.getOrDefault("like", 0L);
-            Long favoriteCount = counts.getOrDefault("fav", 0L);
-
             Boolean liked = userIdNullable != null && counterService.isLiked("post", String.valueOf(r.getId()), userIdNullable);
             Boolean faved = userIdNullable != null && counterService.isFaved("post", String.valueOf(r.getId()), userIdNullable);
             Boolean isTop = includeIsTop ? r.getIsTop() : null;
 
-            items.add(new FeedItemResponse(
-                    String.valueOf(r.getId()),
-                    r.getSlug(),
-                    r.getTitle(),
-                    r.getDescription(),
-                    cover,
-                    tags,
-                    r.getAuthorAvatar(),
-                    r.getAuthorNickname(),
-                    r.getAuthorTagJson(),
-                    likeCount,
-                    favoriteCount,
+            items.add(FeedItemResponse.fromRow(
+                    r,
+                    FeedItemResponse.CounterSnapshot.from(counts),
                     liked,
-                    faved,
-                    isTop
-            ));
+                    faved).withTop(isTop));
         }
         return items;
     }
@@ -861,32 +802,15 @@ public class PostFeedServiceImpl implements PostFeedService {
 
         List<FeedItemResponse> items = new ArrayList<>(rows.size());
         for (PostFeedRow r : rows) {
-            List<String> tags = parseStringArray(r.getTags());
-            List<String> imgs = parseStringArray(r.getImgUrls());
-            String cover = imgs.isEmpty() ? null : imgs.getFirst();
-
             Map<String, Long> counts = countsBatch.getOrDefault(String.valueOf(r.getId()), Map.of());
-            Long likeCount = counts.getOrDefault("like", 0L);
-            Long favoriteCount = counts.getOrDefault("fav", 0L);
             boolean liked = Boolean.TRUE.equals(likedBatch.get(r.getId()));
             boolean faved = Boolean.TRUE.equals(favBatch.get(r.getId()));
 
-            items.add(new FeedItemResponse(
-                    String.valueOf(r.getId()),
-                    r.getSlug(),
-                    r.getTitle(),
-                    r.getDescription(),
-                    cover,
-                    tags,
-                    r.getAuthorAvatar(),
-                    r.getAuthorNickname(),
-                    r.getAuthorTagJson(),
-                    likeCount,
-                    favoriteCount,
+            items.add(FeedItemResponse.fromRow(
+                    r,
+                    FeedItemResponse.CounterSnapshot.from(counts),
                     liked,
-                    faved,
-                    null
-            ));
+                    faved).withTop(null));
         }
         return items;
     }

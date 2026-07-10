@@ -170,22 +170,7 @@ public class FeedCacheInvalidationListener {
                     Boolean liked = preserveUserFlags ? it.liked() : null;
                     Boolean faved = preserveUserFlags ? it.faved() : null;
 
-                    it = new FeedItemResponse(
-                            it.id(),
-                            it.slug(),
-                            it.title(),
-                            it.description(),
-                            it.coverImage(),
-                            it.tags(),
-                            it.authorAvatar(),
-                            it.authorNickname(),
-                            it.tagJson(),
-                            like,
-                            fav,
-                            liked,
-                            faved,
-                            it.isTop()
-                    );
+                    it = it.withCounts(like, fav).withUserFlags(liked, faved);
                 }
                 items.add(it);
             }

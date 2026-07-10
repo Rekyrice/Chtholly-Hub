@@ -185,38 +185,14 @@ public class SearchServiceImpl implements SearchService {
                 continue;
             }
             Long postId = asLong(source.get("content_id"));
-            String id = asString(source.get("content_id"));
-            String title = asString(source.get("title"));
             String descriptionFromDoc = asString(source.get("description"));
             String snippet = buildSnippet(hit);
             String description = (snippet != null && !snippet.isBlank()) ? snippet : descriptionFromDoc;
-            List<String> tagList = asStringList(source.get("tags"));
-            List<String> imgs = asStringList(source.get("img_urls"));
-            String cover = imgs.isEmpty() ? null : imgs.getFirst();
-            String authorAvatar = asString(source.get("author_avatar"));
-            String authorNickname = asString(source.get("author_nickname"));
-            String tagJson = asString(source.get("author_tag_json"));
-            Long likeCount = asLong(source.get("like_count"));
-            Long favoriteCount = asLong(source.get("favorite_count"));
             Boolean liked = postId != null && Boolean.TRUE.equals(likedMap.get(postId));
             Boolean faved = postId != null && Boolean.TRUE.equals(favedMap.get(postId));
-            String slug = asString(source.get("slug"));
-            items.add(new FeedItemResponse(
-                    id,
-                    slug,
-                    title,
-                    description,
-                    cover,
-                    tagList,
-                    authorAvatar,
-                    authorNickname,
-                    tagJson,
-                    likeCount,
-                    favoriteCount,
-                    liked,
-                    faved,
-                    null
-            ));
+            items.add(FeedItemResponse.fromEsHit(source, liked, faved)
+                    .withDescription(description)
+                    .withTop(null));
         }
 
         String nextCursor = null;
@@ -639,38 +615,14 @@ public class SearchServiceImpl implements SearchService {
             Map<Long, Boolean> favedMap) {
         Map<String, Object> source = hit.source();
         Long postId = asLong(source.get("content_id"));
-        String id = asString(source.get("content_id"));
-        String title = asString(source.get("title"));
         String descriptionFromDoc = asString(source.get("description"));
         String snippet = buildSnippet(hit);
         String description = (snippet != null && !snippet.isBlank()) ? snippet : descriptionFromDoc;
-        List<String> tagList = asStringList(source.get("tags"));
-        List<String> imgs = asStringList(source.get("img_urls"));
-        String cover = imgs.isEmpty() ? null : imgs.getFirst();
-        String authorAvatar = asString(source.get("author_avatar"));
-        String authorNickname = asString(source.get("author_nickname"));
-        String tagJson = asString(source.get("author_tag_json"));
-        Long likeCount = asLong(source.get("like_count"));
-        Long favoriteCount = asLong(source.get("favorite_count"));
         Boolean liked = postId != null && Boolean.TRUE.equals(likedMap.get(postId));
         Boolean faved = postId != null && Boolean.TRUE.equals(favedMap.get(postId));
-        String slug = asString(source.get("slug"));
-        return new FeedItemResponse(
-                id,
-                slug,
-                title,
-                description,
-                cover,
-                tagList,
-                authorAvatar,
-                authorNickname,
-                tagJson,
-                likeCount,
-                favoriteCount,
-                liked,
-                faved,
-                null
-        );
+        return FeedItemResponse.fromEsHit(source, liked, faved)
+                .withDescription(description)
+                .withTop(null);
     }
 
     /**
