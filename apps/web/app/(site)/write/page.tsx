@@ -1,9 +1,12 @@
 "use client";
 
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import MarkdownToolbar from "@/components/write/MarkdownToolbar";
+import TagAutocomplete from "@/components/write/TagAutocomplete";
+import WriteStats from "@/components/write/WriteStats";
 import { Button } from "@/components/ui/Button";
 import { getAccessToken } from "@/lib/auth/tokens";
 import { ApiError } from "@/lib/services/apiClient";
@@ -22,6 +25,8 @@ const PLACEHOLDERS = [
 ];
 
 const DRAFT_KEY = "chtholly-write-draft";
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 type SaveStatus = "saved" | "saving" | "unsaved";
 
@@ -30,16 +35,20 @@ type WriteDraft = {
   tags: string;
   description: string;
   markdown: string;
+  draftPostId?: string | null;
 };
 
 export default function WritePage() {
   const router = useRouter();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [title, setTitle] = useState("");
-  const [tags, setTags] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [markdown, setMarkdown] = useState("");
+  const [draftPostId, setDraftPostId] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [descriptionLoading, setDescriptionLoading] = useState(false);
   const [error, setError] = useState("");
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -47,8 +56,14 @@ export default function WritePage() {
   const [draftHydrated, setDraftHydrated] = useState(false);
 
   const draft = useMemo<WriteDraft>(
-    () => ({ title, tags, description, markdown }),
-    [title, tags, description, markdown],
+    () => ({
+      title,
+      tags: tags.join(","),
+      description,
+      markdown,
+      draftPostId,
+    }),
+    [title, tags, description, markdown, draftPostId],
   );
 
   useEffect(() => {
@@ -63,9 +78,10 @@ export default function WritePage() {
       if (raw) {
         const saved = JSON.parse(raw) as Partial<WriteDraft>;
         setTitle(saved.title ?? "");
-        setTags(saved.tags ?? "");
+        setTags(parseTags(saved.tags ?? ""));
         setDescription(saved.description ?? "");
         setMarkdown(saved.markdown ?? "");
+        setDraftPostId(saved.draftPostId ?? null);
       }
     } catch {
       // 本地草稿损坏时直接忽略，避免影响写作入口。
@@ -96,6 +112,13 @@ export default function WritePage() {
     return () => window.clearTimeout(timer);
   }, [draft, draftHydrated]);
 
+  const ensureDraftPostId = async () => {
+    if (draftPostId) return draftPostId;
+    const { id } = await postService.createDraft();
+    setDraftPostId(id);
+    return id;
+  };
+
   const onPublish = async (e: FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !markdown.trim()) {
@@ -105,7 +128,7 @@ export default function WritePage() {
     setLoading(true);
     setError("");
     try {
-      const { id } = await postService.createDraft();
+      const id = await ensureDraftPostId();
       const presign = await storageService.presign({
         scene: "post_content",
         postId: id,
@@ -121,11 +144,7 @@ export default function WritePage() {
         sha256,
         size,
       });
-      const tagList = tags
-        .split(/[,，]/)
-        .map((t) => t.trim())
-        .filter(Boolean)
-        .slice(0, 20);
+      const tagList = tags.map((t) => t.trim()).filter(Boolean).slice(0, 20);
       await postService.patchMetadata(id, {
         title: title.trim(),
         tags: tagList,
@@ -134,6 +153,7 @@ export default function WritePage() {
       });
       await postService.publish(id);
       window.localStorage.removeItem(DRAFT_KEY);
+      setDraftPostId(null);
       setSaveStatus("saved");
       router.push("/hub");
       router.refresh();
@@ -161,6 +181,54 @@ export default function WritePage() {
     }
   };
 
+  const onImageUpload = async (file: File) => {
+    if (!IMAGE_TYPES.has(file.type)) {
+      setError("仅支持 PNG / JPEG / GIF / WebP 图片");
+      return;
+    }
+    if (file.size > IMAGE_MAX_BYTES) {
+      setError("图片不能超过 5MB");
+      return;
+    }
+
+    setUploadingImage(true);
+    setError("");
+    try {
+      const postId = await ensureDraftPostId();
+      const ext = extensionForImage(file);
+      const presign = await storageService.presign({
+        scene: "post_image",
+        postId,
+        contentType: file.type,
+        ext,
+      });
+      await storageService.uploadPut(presign, file);
+      const publicUrl =
+        presign.publicUrl ||
+        (presign.method?.toUpperCase() === "POST"
+          ? `/uploads/${presign.objectKey}`
+          : stripQuery(presign.putUrl));
+      const alt = file.name.replace(/\.[^.]+$/, "") || "图片";
+      const el = textareaRef.current;
+      const start = el?.selectionStart ?? markdown.length;
+      const end = el?.selectionEnd ?? markdown.length;
+      const inserted = `![${alt}](${publicUrl})`;
+      const next = markdown.slice(0, start) + inserted + markdown.slice(end);
+      setMarkdown(next);
+      requestAnimationFrame(() => {
+        const target = textareaRef.current;
+        if (!target) return;
+        const cursor = start + inserted.length;
+        target.focus();
+        target.setSelectionRange(cursor, cursor);
+      });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "图片上传失败");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   return (
     <div className="write-container" data-testid="write-page">
       <form onSubmit={onPublish} className="write-editor-wrapper">
@@ -179,14 +247,8 @@ export default function WritePage() {
           required
         />
 
-        <div className="write-meta-row">
-          <input
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            placeholder="标签，用逗号分隔"
-            className="write-meta-input"
-            aria-label="标签"
-          />
+        <div className="write-meta-row write-meta-row--tags">
+          <TagAutocomplete value={tags} onChange={setTags} />
           <input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -229,6 +291,17 @@ export default function WritePage() {
           </Button>
         </div>
 
+        {!preview && (
+          <MarkdownToolbar
+            textareaRef={textareaRef}
+            value={markdown}
+            onChange={setMarkdown}
+            onImageUpload={onImageUpload}
+            uploading={uploadingImage}
+            disabled={loading}
+          />
+        )}
+
         {preview ? (
           <div className="write-preview prose-anime">
             {markdown ? (
@@ -239,6 +312,7 @@ export default function WritePage() {
           </div>
         ) : (
           <textarea
+            ref={textareaRef}
             className={cn("write-editor", "write-placeholder-fade")}
             placeholder={PLACEHOLDERS[placeholderIndex]}
             value={markdown}
@@ -247,8 +321,42 @@ export default function WritePage() {
           />
         )}
 
+        {!preview && <WriteStats markdown={markdown} />}
+
         {error && <p className="write-error">{error}</p>}
       </form>
     </div>
   );
+}
+
+function parseTags(raw: string) {
+  return raw
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
+function extensionForImage(file: File) {
+  switch (file.type) {
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/gif":
+      return ".gif";
+    case "image/webp":
+      return ".webp";
+    default:
+      return undefined;
+  }
+}
+
+function stripQuery(url: string) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return url.split("?")[0] ?? url;
+  }
 }
