@@ -10,9 +10,15 @@ import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.service.PostService;
+import com.chtholly.recommendation.UserInterestProfile;
+import com.chtholly.recommendation.UserSimilarityService;
+import com.chtholly.recommendation.model.InterestProfile;
+import com.chtholly.recommendation.model.SimilarUser;
 import com.chtholly.search.service.SearchService;
 import com.chtholly.seed.CuratedPost;
 import com.chtholly.seed.SeedCuration;
+import com.chtholly.user.domain.User;
+import com.chtholly.user.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,15 +29,18 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,6 +56,9 @@ class ProactiveTriggerEngineTest {
     private SeedCurationReader curationReader;
     private StringRedisTemplate redis;
     private ValueOperations<String, String> valueOps;
+    private UserSimilarityService userSimilarityService;
+    private UserInterestProfile userInterestProfile;
+    private UserService userService;
 
     @BeforeEach
     void setUp() {
@@ -60,6 +72,9 @@ class ProactiveTriggerEngineTest {
         curationReader = mock(SeedCurationReader.class);
         redis = mock(StringRedisTemplate.class);
         valueOps = mock(ValueOperations.class);
+        userSimilarityService = mock(UserSimilarityService.class);
+        userInterestProfile = mock(UserInterestProfile.class);
+        userService = mock(UserService.class);
         when(redis.opsForValue()).thenReturn(valueOps);
         when(dispatcher.totalSentToday(anyLong())).thenReturn(0);
         when(dispatcher.send(anyLong(), any(Notification.class), any(Category.class))).thenReturn(true);
@@ -108,7 +123,10 @@ class ProactiveTriggerEngineTest {
                 characterProvider,
                 prompt -> prompt.contains("回归简报")
                         ? "你不在的这几天，仓库来了 3 篇新文章。热门话题：Rust 笔记"
-                        : "I kept your seat by the window.");
+                        : "I kept your seat by the window.",
+                userSimilarityService,
+                userInterestProfile,
+                userService);
         when(experienceService.getRecentExperiences(3)).thenReturn(List.of());
         when(postService.countSince(ProactiveTriggerEngine.RETURN_BRIEFING_THRESHOLD)).thenReturn(3L);
         when(searchService.recommendHot(Set.of(), 3, 8L)).thenReturn(List.of(
@@ -201,6 +219,110 @@ class ProactiveTriggerEngineTest {
         verify(dispatcher, never()).send(eq(7L), any(), any());
     }
 
+    @Test
+    void detectInterestMatchesNotifiesBothSidesAndDedups() {
+        // Sakura / Chinatsu 风格：手动设高相似度时应搭桥
+        CharacterStateUserActivityProvider characterProvider = mock(CharacterStateUserActivityProvider.class);
+        when(characterProvider.findActiveUserIds()).thenReturn(List.of(101L, 102L));
+        when(userSimilarityService.listProfileUserIds()).thenReturn(List.of(101L, 102L));
+        when(userSimilarityService.findSimilarUsers(101L, ProactiveTriggerEngine.INTEREST_MATCH_TOP_K))
+                .thenReturn(List.of(new SimilarUser(102L, 0.85)));
+        when(userSimilarityService.findSimilarUsers(102L, ProactiveTriggerEngine.INTEREST_MATCH_TOP_K))
+                .thenReturn(List.of(new SimilarUser(101L, 0.85)));
+        when(userSimilarityService.commonInterestTags(eq(101L), eq(102L), anyDouble()))
+                .thenReturn(List.of("治愈", "读书"));
+        when(redis.hasKey("agent:interest-match:101:102")).thenReturn(false);
+        when(userService.findById(101L)).thenReturn(Optional.of(user(101L, "Sakura")));
+        when(userService.findById(102L)).thenReturn(Optional.of(user(102L, "Yukino")));
+
+        ProactiveTriggerEngine engine = socialEngine(characterProvider, prompt -> {
+            if (prompt.contains("搭桥")) {
+                return "好像也有人喜欢治愈和读书呢。";
+            }
+            return "fallback";
+        });
+
+        engine.detectInterestMatches();
+
+        ArgumentCaptor<Long> userCaptor = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<Notification> notificationCaptor = ArgumentCaptor.forClass(Notification.class);
+        verify(dispatcher, times(2)).send(userCaptor.capture(), notificationCaptor.capture(), eq(Category.RECOMMEND));
+        assertThat(userCaptor.getAllValues()).containsExactlyInAnyOrder(101L, 102L);
+        assertThat(notificationCaptor.getAllValues())
+                .allMatch(n -> "interest-match".equals(n.type()))
+                .allMatch(n -> n.channel() == NotificationChannel.FLOATING);
+        verify(valueOps).set(eq("agent:interest-match:101:102"), any(), eq(Duration.ofDays(30)));
+    }
+
+    @Test
+    void detectInterestMatchesSkipsLowSimilarityLikeSakuraAndChinatsu() {
+        CharacterStateUserActivityProvider characterProvider = mock(CharacterStateUserActivityProvider.class);
+        when(characterProvider.findActiveUserIds()).thenReturn(List.of(201L, 202L));
+        when(userSimilarityService.listProfileUserIds()).thenReturn(List.of(201L, 202L));
+        // 治愈/生活 vs 热门/趣事 → 低相似度
+        when(userSimilarityService.findSimilarUsers(201L, ProactiveTriggerEngine.INTEREST_MATCH_TOP_K))
+                .thenReturn(List.of(new SimilarUser(202L, 0.12)));
+        when(userSimilarityService.findSimilarUsers(202L, ProactiveTriggerEngine.INTEREST_MATCH_TOP_K))
+                .thenReturn(List.of(new SimilarUser(201L, 0.12)));
+
+        ProactiveTriggerEngine engine = socialEngine(characterProvider, prompt -> "unused");
+        engine.detectInterestMatches();
+
+        verify(dispatcher, never()).send(anyLong(), any(), any());
+        verify(valueOps, never()).set(org.mockito.ArgumentMatchers.startsWith("agent:interest-match:"), any(), any());
+    }
+
+    @Test
+    void introduceNewResidentsNotifiesActiveUsersAndMarksRedis() {
+        CharacterStateUserActivityProvider characterProvider = mock(CharacterStateUserActivityProvider.class);
+        when(characterProvider.findActiveUserIds()).thenReturn(List.of(10L, 11L));
+        when(postService.listFirstTimePublisherIds(ProactiveTriggerEngine.NEW_RESIDENT_WINDOW))
+                .thenReturn(List.of(99L));
+        when(redis.hasKey("agent:new-resident-intro:99")).thenReturn(false);
+        when(userService.findById(99L)).thenReturn(Optional.of(user(99L, "Kazahana")));
+        when(userInterestProfile.buildProfile(99L)).thenReturn(new InterestProfile(
+                99L,
+                Map.of("番剧", 0.7, "日常", 0.3),
+                List.of(),
+                Instant.now()));
+
+        ProactiveTriggerEngine engine = socialEngine(characterProvider, prompt -> {
+            if (prompt.contains("新居民")) {
+                return "仓库来了新朋友 Kazahana，好像很喜欢番剧呢。";
+            }
+            return "fallback";
+        });
+
+        engine.introduceNewResidents();
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(dispatcher).send(eq(10L), captor.capture(), eq(Category.GREET));
+        verify(dispatcher).send(eq(11L), any(Notification.class), eq(Category.GREET));
+        assertThat(captor.getValue().type()).isEqualTo("new-resident");
+        assertThat(captor.getValue().message()).contains("Kazahana");
+        verify(dispatcher, never()).send(eq(99L), any(), any());
+        verify(valueOps).set(eq("agent:new-resident-intro:99"), any(), eq(Duration.ofDays(7)));
+    }
+
+    @Test
+    void introduceNewResidentsFallsBackToTemplateWhenLlmBlank() {
+        CharacterStateUserActivityProvider characterProvider = mock(CharacterStateUserActivityProvider.class);
+        when(characterProvider.findActiveUserIds()).thenReturn(List.of(10L));
+        when(postService.listFirstTimePublisherIds(ProactiveTriggerEngine.NEW_RESIDENT_WINDOW))
+                .thenReturn(List.of(88L));
+        when(redis.hasKey("agent:new-resident-intro:88")).thenReturn(false);
+        when(userService.findById(88L)).thenReturn(Optional.of(user(88L, "Chinatsu")));
+        when(userInterestProfile.buildProfile(88L)).thenReturn(new InterestProfile(
+                88L, Map.of("趣事", 1.0), List.of(), Instant.now()));
+
+        ProactiveTriggerEngine engine = socialEngine(characterProvider, prompt -> "  ");
+        engine.introduceNewResidents();
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(dispatcher).send(eq(10L), captor.capture(), eq(Category.GREET));
+        assertThat(captor.getValue().message()).contains("Chinatsu").contains("趣事");
+    }
+
     private ProactiveTriggerEngine engine(
             ProactiveTriggerEngine.UserActivityProvider activityProvider,
             CharacterStateUserActivityProvider characterProvider) {
@@ -216,7 +338,35 @@ class ProactiveTriggerEngineTest {
                 redis,
                 activityProvider,
                 characterProvider,
-                prompt -> "I kept your seat by the window.");
+                prompt -> "I kept your seat by the window.",
+                userSimilarityService,
+                userInterestProfile,
+                userService);
+    }
+
+    private ProactiveTriggerEngine socialEngine(
+            CharacterStateUserActivityProvider characterProvider,
+            ProactiveTriggerEngine.TextGenerator textGenerator) {
+        return new ProactiveTriggerEngine(
+                characterStateService,
+                postService,
+                notificationService,
+                dispatcher,
+                experienceService,
+                searchService,
+                counterService,
+                curationReader,
+                redis,
+                new StubActivityProvider(List.of(), List.of()),
+                characterProvider,
+                textGenerator,
+                userSimilarityService,
+                userInterestProfile,
+                userService);
+    }
+
+    private static User user(long id, String nickname) {
+        return User.builder().id(id).nickname(nickname).build();
     }
 
     private static FeedItemResponse feedItem(String id, String title) {

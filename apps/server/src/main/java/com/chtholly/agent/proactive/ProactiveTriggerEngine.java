@@ -10,8 +10,14 @@ import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.service.PostService;
+import com.chtholly.recommendation.UserInterestProfile;
+import com.chtholly.recommendation.UserSimilarityService;
+import com.chtholly.recommendation.model.InterestProfile;
+import com.chtholly.recommendation.model.SimilarUser;
 import com.chtholly.search.service.SearchService;
 import com.chtholly.seed.SeedCuration;
+import com.chtholly.user.domain.User;
+import com.chtholly.user.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
@@ -22,15 +28,17 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 珂朵莉主动触发引擎：信息主动 + 编辑主动 + 情感主动。
+ * 珂朵莉主动触发引擎：信息主动 + 编辑主动 + 情感主动 + 社交主动。
  */
 @Slf4j
 @Service
@@ -39,13 +47,19 @@ public class ProactiveTriggerEngine {
     static final Duration ABSENT_THRESHOLD = Duration.ofDays(3);
     static final Duration RETURN_BRIEFING_THRESHOLD = Duration.ofDays(7);
     static final Duration ACTIVE_USER_WINDOW = Duration.ofDays(7);
+    static final Duration NEW_RESIDENT_WINDOW = Duration.ofDays(7);
     static final int UNREAD_POST_THRESHOLD = 2;
     static final int HOT_DIGEST_SIZE = 3;
+    static final int INTEREST_MATCH_TOP_K = 20;
     static final double RISING_STAR_MULTIPLIER = 3.0;
     static final long RISING_STAR_MIN_LIKES = 3L;
 
     private static final String CURATION_PUSH_KEY = "agent:curation:last-push";
     private static final String RISING_STAR_KEY_PREFIX = "agent:rising-star:";
+    private static final String INTEREST_MATCH_KEY_PREFIX = "agent:interest-match:";
+    private static final String NEW_RESIDENT_INTRO_KEY_PREFIX = "agent:new-resident-intro:";
+    private static final Duration INTEREST_MATCH_TTL = Duration.ofDays(30);
+    private static final Duration NEW_RESIDENT_INTRO_TTL = Duration.ofDays(7);
 
     private final CharacterStateService characterStateService;
     private final PostService postService;
@@ -59,6 +73,9 @@ public class ProactiveTriggerEngine {
     private final UserActivityProvider activityProvider;
     private final CharacterStateUserActivityProvider characterActivityProvider;
     private final TextGenerator textGenerator;
+    private final UserSimilarityService userSimilarityService;
+    private final UserInterestProfile userInterestProfile;
+    private final UserService userService;
 
     @Autowired
     public ProactiveTriggerEngine(CharacterStateService characterStateService,
@@ -72,7 +89,10 @@ public class ProactiveTriggerEngine {
                                   StringRedisTemplate redis,
                                   ObjectProvider<UserActivityProvider> activityProviderProvider,
                                   ObjectProvider<CharacterStateUserActivityProvider> characterActivityProvider,
-                                  ObjectProvider<ChatClient> chatClientProvider) {
+                                  ObjectProvider<ChatClient> chatClientProvider,
+                                  ObjectProvider<UserSimilarityService> userSimilarityServiceProvider,
+                                  ObjectProvider<UserInterestProfile> userInterestProfileProvider,
+                                  ObjectProvider<UserService> userServiceProvider) {
         this(characterStateService,
                 postService,
                 notificationService,
@@ -84,7 +104,10 @@ public class ProactiveTriggerEngine {
                 redis,
                 activityProviderProvider.getIfAvailable(NoopUserActivityProvider::new),
                 characterActivityProvider.getIfAvailable(),
-                prompt -> generateWithChatClient(chatClientProvider.getIfAvailable(), prompt));
+                prompt -> generateWithChatClient(chatClientProvider.getIfAvailable(), prompt),
+                userSimilarityServiceProvider.getIfAvailable(),
+                userInterestProfileProvider.getIfAvailable(),
+                userServiceProvider.getIfAvailable());
     }
 
     ProactiveTriggerEngine(CharacterStateService characterStateService,
@@ -98,7 +121,10 @@ public class ProactiveTriggerEngine {
                            StringRedisTemplate redis,
                            UserActivityProvider activityProvider,
                            CharacterStateUserActivityProvider characterActivityProvider,
-                           TextGenerator textGenerator) {
+                           TextGenerator textGenerator,
+                           UserSimilarityService userSimilarityService,
+                           UserInterestProfile userInterestProfile,
+                           UserService userService) {
         this.characterStateService = characterStateService;
         this.postService = postService;
         this.notificationService = notificationService;
@@ -111,6 +137,9 @@ public class ProactiveTriggerEngine {
         this.activityProvider = activityProvider == null ? new NoopUserActivityProvider() : activityProvider;
         this.characterActivityProvider = characterActivityProvider;
         this.textGenerator = textGenerator;
+        this.userSimilarityService = userSimilarityService;
+        this.userInterestProfile = userInterestProfile;
+        this.userService = userService;
     }
 
     /**
@@ -169,8 +198,8 @@ public class ProactiveTriggerEngine {
                 if (!curation.curatedAt().isAfter(pushedAt)) {
                     return;
                 }
-            } catch (Exception ignored) {
-                // 继续推送
+            } catch (Exception e) {
+                log.debug("解析精选推送时间失败，继续推送: {}", e.getMessage());
             }
         }
         String message = "本周珂朵莉精选：" + curation.collectionNote();
@@ -226,6 +255,224 @@ public class ProactiveTriggerEngine {
                         ProactiveNotificationDispatcher.Category.OBSERVATION);
             }
         }
+    }
+
+    /**
+     * 每天 10:00 / 18:00：兴趣高度重叠的活跃用户对，珂朵莉分别搭桥介绍。
+     */
+    @Scheduled(cron = "0 0 10,18 * * *")
+    public void detectInterestMatches() {
+        if (userSimilarityService == null) {
+            return;
+        }
+        Set<Long> active = new HashSet<>(activeUserIds());
+        if (active.size() < 2) {
+            return;
+        }
+        List<Long> profileUsers = userSimilarityService.listProfileUserIds().stream()
+                .filter(active::contains)
+                .sorted()
+                .toList();
+        if (profileUsers.size() < 2) {
+            return;
+        }
+
+        int matchedPairs = 0;
+        for (Long userId : profileUsers) {
+            List<SimilarUser> similar = userSimilarityService.findSimilarUsers(userId, INTEREST_MATCH_TOP_K);
+            for (SimilarUser candidate : similar) {
+                if (candidate == null || candidate.similarity() <= UserSimilarityService.INTEREST_MATCH_THRESHOLD) {
+                    continue;
+                }
+                long otherId = candidate.userId();
+                // 只处理有序对，避免 A↔B 重复推送
+                if (userId >= otherId || !active.contains(otherId)) {
+                    continue;
+                }
+                if (isInterestMatchMarked(userId, otherId)) {
+                    continue;
+                }
+
+                List<String> commonTags = userSimilarityService.commonInterestTags(
+                        userId, otherId, UserSimilarityService.COMMON_TAG_MIN_WEIGHT);
+                if (commonTags.isEmpty()) {
+                    continue;
+                }
+                String tagPhrase = formatTagPhrase(commonTags);
+                String nicknameA = resolveNickname(userId);
+                String nicknameB = resolveNickname(otherId);
+
+                boolean sentA = sendInterestMatch(userId, nicknameB, tagPhrase);
+                boolean sentB = sendInterestMatch(otherId, nicknameA, tagPhrase);
+                if (sentA || sentB) {
+                    markInterestMatch(userId, otherId);
+                    matchedPairs++;
+                    log.info("interest-match 搭桥 userA={} userB={} similarity={} tags={}",
+                            userId, otherId, candidate.similarity(), tagPhrase);
+                }
+            }
+        }
+        if (matchedPairs > 0) {
+            log.info("interest-match 本轮完成 pairs={}", matchedPairs);
+        }
+    }
+
+    /**
+     * 每天 12:00：向活跃用户介绍近 7 天首次发文的新居民。
+     */
+    @Scheduled(cron = "0 0 12 * * *")
+    public void introduceNewResidents() {
+        List<Long> newcomers = postService.listFirstTimePublisherIds(NEW_RESIDENT_WINDOW);
+        if (newcomers == null || newcomers.isEmpty()) {
+            return;
+        }
+        List<Long> active = activeUserIds();
+        if (active.isEmpty()) {
+            return;
+        }
+
+        int introduced = 0;
+        for (Long newUserId : newcomers) {
+            if (newUserId == null || isNewResidentIntroduced(newUserId)) {
+                continue;
+            }
+            String nickname = resolveNickname(newUserId);
+            String tagPhrase = resolveInterestTagPhrase(newUserId);
+            String message = buildNewResidentMessage(nickname, tagPhrase);
+
+            boolean anySent = false;
+            for (Long recipientId : active) {
+                if (recipientId == null || recipientId.equals(newUserId)) {
+                    continue;
+                }
+                if (dispatcher.totalSentToday(recipientId) >= ProactiveRateLimiter.DAILY_LIMIT) {
+                    continue;
+                }
+                boolean sent = dispatcher.send(
+                        recipientId,
+                        new Notification("new-resident", message, NotificationChannel.FLOATING),
+                        ProactiveNotificationDispatcher.Category.GREET);
+                anySent = anySent || sent;
+            }
+            // 无论门控是否挡住，都记一次介绍，避免每天反复轰炸同一新居民
+            markNewResidentIntroduced(newUserId);
+            if (anySent) {
+                introduced++;
+            }
+        }
+        if (introduced > 0) {
+            log.info("new-resident 本轮介绍人数={}", introduced);
+        }
+    }
+
+    private boolean sendInterestMatch(long recipientId, String otherNickname, String tagPhrase) {
+        if (dispatcher.totalSentToday(recipientId) >= ProactiveRateLimiter.DAILY_LIMIT) {
+            return false;
+        }
+        String message = buildInterestMatchMessage(otherNickname, tagPhrase);
+        return dispatcher.send(
+                recipientId,
+                new Notification("interest-match", message, NotificationChannel.FLOATING),
+                ProactiveNotificationDispatcher.Category.RECOMMEND);
+    }
+
+    private String buildInterestMatchMessage(String otherNickname, String tagPhrase) {
+        String prompt = """
+                你是珂朵莉。请告诉用户：仓库里有一位也喜欢「%s」的人（对方昵称：%s）。
+                用第一人称写一句温柔但不刻意的搭桥话，不要催促对方去认识，不要夸张。
+                只输出这一句话，不要引号。
+                """.formatted(tagPhrase, otherNickname == null || otherNickname.isBlank() ? "一位朋友" : otherNickname);
+        String generated = textGenerator == null ? null : textGenerator.generate(prompt);
+        if (generated != null && !generated.isBlank()) {
+            return generated.trim();
+        }
+        String who = otherNickname == null || otherNickname.isBlank() ? "有个人" : otherNickname;
+        return "悄悄告诉你，" + who + " 好像也喜欢「" + tagPhrase + "」呢。";
+    }
+
+    private String buildNewResidentMessage(String nickname, String tagPhrase) {
+        String who = nickname == null || nickname.isBlank() ? "一位新朋友" : nickname;
+        String prompt = """
+                你是珂朵莉。仓库来了新居民「%s」，TA 好像很喜欢「%s」。
+                用第一人称写一句温柔的介绍，像轻轻提起一件小事，不要推销。
+                只输出这一句话，不要引号。
+                """.formatted(who, tagPhrase);
+        String generated = textGenerator == null ? null : textGenerator.generate(prompt);
+        if (generated != null && !generated.isBlank()) {
+            return generated.trim();
+        }
+        return "仓库来了新朋友，" + who + " 好像很喜欢「" + tagPhrase + "」呢。";
+    }
+
+    private String resolveInterestTagPhrase(long userId) {
+        if (userInterestProfile != null) {
+            InterestProfile profile = userInterestProfile.buildProfile(userId);
+            if (profile != null && profile.tagWeights() != null && !profile.tagWeights().isEmpty()) {
+                List<String> top = profile.tagWeights().entrySet().stream()
+                        .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                        .limit(3)
+                        .map(Map.Entry::getKey)
+                        .toList();
+                if (!top.isEmpty()) {
+                    return formatTagPhrase(top);
+                }
+            }
+        }
+        return "写点什么";
+    }
+
+    private String resolveNickname(long userId) {
+        if (userService == null) {
+            return "一位朋友";
+        }
+        return userService.findById(userId)
+                .map(User::getNickname)
+                .filter(name -> name != null && !name.isBlank())
+                .orElse("一位朋友");
+    }
+
+    private static String formatTagPhrase(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return "一些相似的东西";
+        }
+        List<String> trimmed = new ArrayList<>();
+        for (String tag : tags) {
+            if (tag != null && !tag.isBlank()) {
+                trimmed.add(tag.trim());
+            }
+            if (trimmed.size() >= 3) {
+                break;
+            }
+        }
+        if (trimmed.isEmpty()) {
+            return "一些相似的东西";
+        }
+        return String.join("、", trimmed);
+    }
+
+    private boolean isInterestMatchMarked(long userA, long userB) {
+        return Boolean.TRUE.equals(redis.hasKey(interestMatchKey(userA, userB)));
+    }
+
+    private void markInterestMatch(long userA, long userB) {
+        redis.opsForValue().set(interestMatchKey(userA, userB), Instant.now().toString(), INTEREST_MATCH_TTL);
+    }
+
+    static String interestMatchKey(long userA, long userB) {
+        long min = Math.min(userA, userB);
+        long max = Math.max(userA, userB);
+        return INTEREST_MATCH_KEY_PREFIX + min + ":" + max;
+    }
+
+    private boolean isNewResidentIntroduced(long userId) {
+        return Boolean.TRUE.equals(redis.hasKey(NEW_RESIDENT_INTRO_KEY_PREFIX + userId));
+    }
+
+    private void markNewResidentIntroduced(long userId) {
+        redis.opsForValue().set(
+                NEW_RESIDENT_INTRO_KEY_PREFIX + userId,
+                Instant.now().toString(),
+                NEW_RESIDENT_INTRO_TTL);
     }
 
     private void generateMissingYouNotifications() {
