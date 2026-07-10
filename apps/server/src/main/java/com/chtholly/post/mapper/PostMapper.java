@@ -110,6 +110,11 @@ public interface PostMapper {
     /** Count public posts after a timestamp for community quietness checks. */
     long countPublicSince(@Param("since") Instant since);
 
+    /**
+     * Creators whose first (and only) public published post appeared after {@code since}.
+     */
+    List<Long> listFirstTimePublisherIdsSince(@Param("since") Instant since);
+
     /** Published public posts whose content understanding is missing or stale. */
     List<Post> listPostsNeedingUnderstanding(@Param("limit") int limit);
 

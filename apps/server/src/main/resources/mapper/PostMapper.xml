@@ -210,6 +210,17 @@
           AND publish_time &gt;= #{since}
     </select>
 
+    <!-- 近窗口内首次公开发文的用户：全站仅 1 篇公开文，且该文在 since 之后 -->
+    <select id="listFirstTimePublisherIdsSince" resultType="long">
+        SELECT creator_id
+        FROM posts
+        WHERE status = 'published'
+          AND visible = 'public'
+        GROUP BY creator_id
+        HAVING COUNT(*) = 1
+           AND MIN(publish_time) &gt;= #{since}
+    </select>
+
     <select id="listPostsNeedingUnderstanding" resultMap="PostResultMap">
         SELECT *
         FROM posts

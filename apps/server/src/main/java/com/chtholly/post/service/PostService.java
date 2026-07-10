@@ -58,6 +58,14 @@ public interface PostService {
 
     long countSince(Duration window);
 
+    /**
+     * Users whose first (and only) public published post appeared within {@code window}.
+     *
+     * @param window lookback window for first publish time
+     * @return creator IDs of first-time publishers
+     */
+    List<Long> listFirstTimePublisherIds(Duration window);
+
     List<Post> getPostsNeedingUnderstanding();
 
     void saveContentAnalysis(Long postId, ContentAnalysis analysis);

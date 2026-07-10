@@ -223,6 +223,15 @@ public class PostServiceImpl implements PostService {
         return mapper.countPublicSince(Instant.now().minus(safeWindow));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<Long> listFirstTimePublisherIds(Duration window) {
+        Duration safeWindow = window == null || window.isNegative() || window.isZero()
+                ? Duration.ofDays(7)
+                : window;
+        return mapper.listFirstTimePublisherIdsSince(Instant.now().minus(safeWindow));
+    }
+
     /**
      * Loads public posts whose Agent content understanding is missing or stale.
      *
