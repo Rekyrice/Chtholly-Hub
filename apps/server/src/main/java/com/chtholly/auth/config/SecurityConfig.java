@@ -73,6 +73,8 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search/hub-feed").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search/suggest").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/recommendations").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/topics").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/topics/**").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/relation/following").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/relation/followers").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/relation/counter").permitAll()
