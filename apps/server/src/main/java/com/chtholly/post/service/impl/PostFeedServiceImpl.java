@@ -1,6 +1,7 @@
 package com.chtholly.post.service.impl;
 
 import com.chtholly.post.service.PostFeedService;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.common.api.pagination.PageResponse;

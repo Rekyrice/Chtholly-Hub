@@ -122,8 +122,8 @@ public class ChthollyAgent {
         try {
             if (question == null || question.isBlank()) {
                 trace.terminateError();
-                trace.setErrorMessage(agentDomainConfig.getErrors().getQuestionEmpty());
-                emitError(sink, agentDomainConfig.getErrors().getQuestionEmpty());
+                trace.setErrorMessage(agentDomainConfig.errors().questionEmpty());
+                emitError(sink, agentDomainConfig.errors().questionEmpty());
                 return;
             }
 
@@ -144,8 +144,8 @@ public class ChthollyAgent {
             if (!historyBlock.isBlank()) {
                 transcript.add(historyBlock);
             }
-            transcript.add(agentDomainConfig.getContext().getCurrentQuestionHeading()
-                    + "\n" + agentDomainConfig.getContext().getUserLabel() + " " + question.trim());
+            transcript.add(agentDomainConfig.context().currentQuestionHeading()
+                    + "\n" + agentDomainConfig.context().userLabel() + " " + question.trim());
 
             for (int step = 0; step < maxSteps; step++) {
                 String userPrompt = String.join("\n\n", transcript);
@@ -161,8 +161,8 @@ public class ChthollyAgent {
                             llmSpanAttributes(stepLlmMs, inputChars, 0, "timeout"));
                     log.warn("Agent LLM call timed out (>{}s)", properties.getLlmTimeoutSeconds());
                     trace.terminateTimeout();
-                    trace.setErrorMessage(agentDomainConfig.getErrors().getModelResponseTimeout());
-                    emitError(sink, agentDomainConfig.getErrors().getModelResponseTimeout());
+                    trace.setErrorMessage(agentDomainConfig.errors().modelResponseTimeout());
+                    emitError(sink, agentDomainConfig.errors().modelResponseTimeout());
                     return;
                 } catch (Exception e) {
                     long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
@@ -170,8 +170,8 @@ public class ChthollyAgent {
                             llmSpanAttributes(stepLlmMs, inputChars, 0, "error"));
                     log.warn("Agent LLM call failed: {}", e.getMessage());
                     trace.terminateError();
-                    trace.setErrorMessage(agentDomainConfig.getErrors().getModelCallFailed());
-                    emitError(sink, agentDomainConfig.getErrors().getModelCallFailed());
+                    trace.setErrorMessage(agentDomainConfig.errors().modelCallFailed());
+                    emitError(sink, agentDomainConfig.errors().modelCallFailed());
                     return;
                 }
                 long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
@@ -184,13 +184,13 @@ public class ChthollyAgent {
                     action = parseAction(llmOut);
                 } catch (Exception e) {
                     log.warn("Agent JSON parse failed (step {}): {}", step + 1, abbreviate(llmOut, 240));
-                    String observation = agentDomainConfig.getSystemPrompt().getParseErrorObservation();
+                    String observation = agentDomainConfig.systemPrompt().parseErrorObservation();
                     ObjectNode thinkData = objectMapper.createObjectNode();
-                    thinkData.put("content", agentDomainConfig.getSystemPrompt().getParseErrorThink());
+                    thinkData.put("content", agentDomainConfig.systemPrompt().parseErrorThink());
                     AgentEvent.send(sink, "think", thinkData);
                     emitObserve(sink, observation);
-                    transcript.add(agentDomainConfig.getContext().getAssistantLabel() + " " + llmOut);
-                    transcript.add(agentDomainConfig.getContext().getObservationLabel() + " " + observation);
+                    transcript.add(agentDomainConfig.context().assistantLabel() + " " + llmOut);
+                    transcript.add(agentDomainConfig.context().observationLabel() + " " + observation);
                     trace.recordStep(step, "parse_error", stepLlmMs, 0);
                     continue;
                 }
@@ -206,12 +206,12 @@ public class ChthollyAgent {
                 AgentTool tool = toolMap.get(action.action());
                 if (tool == null) {
                     String observation = agentDomainConfig.render(
-                            agentDomainConfig.getErrors().getUnknownTool(),
+                            agentDomainConfig.errors().unknownTool(),
                             "toolName", action.action());
                     emitAct(sink, action.action(), action.input());
                     emitObserve(sink, observation);
-                    transcript.add(agentDomainConfig.getContext().getAssistantLabel() + " " + llmOut);
-                    transcript.add(agentDomainConfig.getContext().getObservationLabel() + " " + observation);
+                    transcript.add(agentDomainConfig.context().assistantLabel() + " " + llmOut);
+                    transcript.add(agentDomainConfig.context().observationLabel() + " " + observation);
                     trace.recordStep(step, action.action(), stepLlmMs, 0);
                     continue;
                 }
@@ -230,14 +230,14 @@ public class ChthollyAgent {
                 trace.recordToolCall(tool.name(), stepToolMs, summarizeToolInput(action.input()), observation);
                 observation = augmentObservation(tool.name(), observation);
                 emitObserve(sink, observation);
-                transcript.add(agentDomainConfig.getContext().getAssistantLabel() + " " + llmOut);
-                transcript.add(agentDomainConfig.getContext().getObservationLabel() + " " + observation);
+                transcript.add(agentDomainConfig.context().assistantLabel() + " " + llmOut);
+                transcript.add(agentDomainConfig.context().observationLabel() + " " + observation);
                 trace.recordStep(step, tool.name(), stepLlmMs, stepToolMs);
             }
 
             trace.terminateMaxSteps();
             String maxStepsMessage = agentDomainConfig.render(
-                    agentDomainConfig.getErrors().getMaxSteps(),
+                    agentDomainConfig.errors().maxSteps(),
                     "maxSteps", maxSteps);
             trace.setErrorMessage(maxStepsMessage);
             emitError(sink, maxStepsMessage);
@@ -262,9 +262,9 @@ public class ChthollyAgent {
             Observation agentSpan) {
         String context = String.join("\n\n", transcript);
         String system = agentDomainConfig.render(
-                agentDomainConfig.getSystemPrompt().getFinalAnswerSystem(),
+                agentDomainConfig.systemPrompt().finalAnswerSystem(),
                 "soul", characterSoulService.getSoulContent());
-        String userPrompt = context + "\n\n" + agentDomainConfig.getSystemPrompt().getFinalAnswerPrompt();
+        String userPrompt = context + "\n\n" + agentDomainConfig.systemPrompt().finalAnswerPrompt();
         int inputChars = system.length() + userPrompt.length();
 
         int timeoutSec = Math.max(1, properties.getLlmTimeoutSeconds());
@@ -311,16 +311,16 @@ public class ChthollyAgent {
                         llmSpanAttributes(streamMs, inputChars, 0, "timeout"));
                 log.warn("Agent streaming answer timed out (>{}s)", timeoutSec);
                 trace.terminateTimeout();
-                trace.setErrorMessage(agentDomainConfig.getErrors().getResponseTimeout());
-                emitError(sink, agentDomainConfig.getErrors().getResponseTimeout());
+                trace.setErrorMessage(agentDomainConfig.errors().responseTimeout());
+                emitError(sink, agentDomainConfig.errors().responseTimeout());
                 return streamMs;
             }
             agentObservationService.finishSpanError(llmSpan, "stream_error",
                     llmSpanAttributes(streamMs, inputChars, 0, "error"));
             log.warn("Agent streaming answer failed: {}", e.getMessage());
             trace.terminateError();
-            trace.setErrorMessage(agentDomainConfig.getErrors().getResponseFailed());
-            emitError(sink, agentDomainConfig.getErrors().getResponseFailed());
+            trace.setErrorMessage(agentDomainConfig.errors().responseFailed());
+            emitError(sink, agentDomainConfig.errors().responseFailed());
             return streamMs;
         }
     }
@@ -345,10 +345,10 @@ public class ChthollyAgent {
         } catch (ExecutionException e) {
             String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
             log.warn("Tool {} execution failed: {}", tool.name(), message);
-            return agentDomainConfig.render(agentDomainConfig.getErrors().getToolFailed(), "message", message);
+            return agentDomainConfig.render(agentDomainConfig.errors().toolFailed(), "message", message);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return agentDomainConfig.getErrors().getToolInterrupted();
+            return agentDomainConfig.errors().toolInterrupted();
         }
     }
 
@@ -457,7 +457,7 @@ public class ChthollyAgent {
         if (observation == null) {
             return true;
         }
-        return agentDomainConfig.getSystemPrompt().getEmptySiteResultMarkers()
+        return agentDomainConfig.systemPrompt().emptySiteResultMarkers()
                 .stream()
                 .anyMatch(observation::contains);
     }
@@ -470,10 +470,10 @@ public class ChthollyAgent {
     private String augmentObservation(String toolName, String observation) {
         String result = observation == null ? "" : observation;
         if (isEmptySiteResult(result) && isSiteTool(toolName)) {
-            result = result + "\n\n" + agentDomainConfig.getSystemPrompt().getSiteEmptyGuidance();
+            result = result + "\n\n" + agentDomainConfig.systemPrompt().siteEmptyGuidance();
         }
         if (isToolTimeout(result) && isBangumiTool(toolName)) {
-            result = result + "\n\n" + agentDomainConfig.getSystemPrompt().getBangumiTimeoutGuidance();
+            result = result + "\n\n" + agentDomainConfig.systemPrompt().bangumiTimeoutGuidance();
         }
         return result;
     }
@@ -512,10 +512,10 @@ public class ChthollyAgent {
     private void emitThink(Consumer<AgentEvent> sink, AgentAction action) {
         ObjectNode data = objectMapper.createObjectNode();
         if (action.isFinal()) {
-            data.put("content", agentDomainConfig.getSystemPrompt().getFinalThinking());
+            data.put("content", agentDomainConfig.systemPrompt().finalThinking());
         } else {
             data.put("content", agentDomainConfig.render(
-                    agentDomainConfig.getSystemPrompt().getToolThinking(),
+                    agentDomainConfig.systemPrompt().toolThinking(),
                     "toolName", action.action()));
             if (action.input() != null && !action.input().isMissingNode()) {
                 data.set("input", action.input());

@@ -36,13 +36,13 @@ public class BangumiSearchTool implements AgentTool {
 
     @Override
     public String description() {
-        return agentDomainConfig.getBangumi().getDescription();
+        return agentDomainConfig.bangumi().description();
     }
 
     @Override
     public Map<String, ParamDef> parameterSchema() {
         return Map.of(
-                "keyword", new ParamDef(agentDomainConfig.getBangumi().getKeywordParam(), String.class, true)
+                "keyword", new ParamDef(agentDomainConfig.bangumi().keywordParam(), String.class, true)
         );
     }
 
@@ -50,7 +50,7 @@ public class BangumiSearchTool implements AgentTool {
     public String execute(Map<String, Object> input, long userId) {
         List<String> keywords = buildKeywordCandidates(input);
         if (keywords.isEmpty()) {
-            return agentDomainConfig.getBangumi().getMissingKeyword();
+            return agentDomainConfig.bangumi().missingKeyword();
         }
 
         if (isSeasonQuestion(input)) {
@@ -73,7 +73,7 @@ public class BangumiSearchTool implements AgentTool {
             return lastApiError.getMessage();
         }
         return agentDomainConfig.render(
-                agentDomainConfig.getBangumi().getNoSubjectResult(),
+                agentDomainConfig.bangumi().noSubjectResult(),
                 "keyword", keywords.get(0));
     }
 
@@ -96,13 +96,13 @@ public class BangumiSearchTool implements AgentTool {
                 return lastApiError.getMessage();
             }
             return agentDomainConfig.render(
-                    agentDomainConfig.getBangumi().getNoAnimeResult(),
+                    agentDomainConfig.bangumi().noAnimeResult(),
                     "keyword", keywords.get(0));
         }
 
         List<BangumiSubjectRow> rows = new ArrayList<>(merged.values());
         String header = agentDomainConfig.render(
-                agentDomainConfig.getBangumi().getSeriesResultTemplate(),
+                agentDomainConfig.bangumi().seriesResultTemplate(),
                 "count", rows.size());
         String body = rows.stream().map(this::formatSubject).collect(Collectors.joining("\n\n"));
         return header + "\n\n" + body;
@@ -113,7 +113,7 @@ public class BangumiSearchTool implements AgentTool {
         if (q == null) {
             return false;
         }
-        return Pattern.compile(agentDomainConfig.getBangumi().getSeasonQuestionRegex())
+        return Pattern.compile(agentDomainConfig.bangumi().seasonQuestionRegex())
                 .matcher(String.valueOf(q))
                 .find();
     }
@@ -161,8 +161,8 @@ public class BangumiSearchTool implements AgentTool {
             return keyword;
         }
         String s = keyword.trim();
-        s = s.replaceAll(agentDomainConfig.getBangumi().getShortSeriesRegex(), "");
-        s = s.replaceAll(agentDomainConfig.getBangumi().getShortSeriesSuffixRegex(), "");
+        s = s.replaceAll(agentDomainConfig.bangumi().shortSeriesRegex(), "");
+        s = s.replaceAll(agentDomainConfig.bangumi().shortSeriesSuffixRegex(), "");
         if (s.length() >= 2 && s.length() < keyword.length()) {
             return s;
         }
@@ -174,58 +174,58 @@ public class BangumiSearchTool implements AgentTool {
             return "";
         }
         return question.trim()
-                .replaceAll(agentDomainConfig.getBangumi().getTitleStopRegex(), "")
-                .replaceAll(agentDomainConfig.getBangumi().getTitlePrefixRegex(), "")
-                .replaceAll(agentDomainConfig.getBangumi().getTitleSuffixRegex(), "")
+                .replaceAll(agentDomainConfig.bangumi().titleStopRegex(), "")
+                .replaceAll(agentDomainConfig.bangumi().titlePrefixRegex(), "")
+                .replaceAll(agentDomainConfig.bangumi().titleSuffixRegex(), "")
                 .trim();
     }
 
     private String formatSubject(BangumiSubjectRow row) {
         String displayName = row.getNameCn() != null && !row.getNameCn().isBlank()
                 ? agentDomainConfig.render(
-                agentDomainConfig.getBangumi().getDisplayNameTemplate(),
+                agentDomainConfig.bangumi().displayNameTemplate(),
                 "nameCn", row.getNameCn(),
                 "name", row.getName())
                 : row.getName();
         StringBuilder sb = new StringBuilder();
         sb.append(agentDomainConfig.render(
-                agentDomainConfig.getBangumi().getItemPrefix(),
+                agentDomainConfig.bangumi().itemPrefix(),
                 "displayName", displayName));
         sb.append(" [Bangumi ").append(row.getId()).append("]");
-        sb.append("\n  ").append(agentDomainConfig.getBangumi().getTypeLabel()).append(typeLabel(row.getType()));
+        sb.append("\n  ").append(agentDomainConfig.bangumi().typeLabel()).append(typeLabel(row.getType()));
         if (row.getScore() != null) {
-            sb.append(" | ").append(agentDomainConfig.getBangumi().getScoreLabel()).append(row.getScore());
+            sb.append(" | ").append(agentDomainConfig.bangumi().scoreLabel()).append(row.getScore());
         }
         if (row.getRank() != null && row.getRank() > 0) {
-            sb.append(" | ").append(agentDomainConfig.getBangumi().getRankLabel()).append(row.getRank());
+            sb.append(" | ").append(agentDomainConfig.bangumi().rankLabel()).append(row.getRank());
         }
         if (row.getEpsCount() != null) {
-            sb.append(" | ").append(agentDomainConfig.getBangumi().getEpisodesLabel()).append(row.getEpsCount());
+            sb.append(" | ").append(agentDomainConfig.bangumi().episodesLabel()).append(row.getEpsCount());
         }
         if (row.getAirDate() != null) {
-            sb.append(" | ").append(agentDomainConfig.getBangumi().getAirDateLabel()).append(row.getAirDate());
+            sb.append(" | ").append(agentDomainConfig.bangumi().airDateLabel()).append(row.getAirDate());
         }
         if (row.getSummary() != null && !row.getSummary().isBlank()) {
             String summary = row.getSummary().strip();
             if (summary.length() > 180) {
-                summary = summary.substring(0, 180) + agentDomainConfig.getBangumi().getTruncatedSuffix();
+                summary = summary.substring(0, 180) + agentDomainConfig.bangumi().truncatedSuffix();
             }
-            sb.append("\n  ").append(agentDomainConfig.getBangumi().getSummaryLabel()).append(summary);
+            sb.append("\n  ").append(agentDomainConfig.bangumi().summaryLabel()).append(summary);
         }
         return sb.toString();
     }
 
     private String typeLabel(Integer type) {
         if (type == null) {
-            return agentDomainConfig.getBangumi().getUnknownType();
+            return agentDomainConfig.bangumi().unknownType();
         }
         return switch (type) {
-            case 1 -> agentDomainConfig.getBangumi().getBookType();
-            case 2 -> agentDomainConfig.getBangumi().getAnimeType();
-            case 3 -> agentDomainConfig.getBangumi().getMusicType();
-            case 4 -> agentDomainConfig.getBangumi().getGameType();
-            case 6 -> agentDomainConfig.getBangumi().getRealType();
-            default -> agentDomainConfig.getBangumi().getFallbackTypePrefix() + type;
+            case 1 -> agentDomainConfig.bangumi().bookType();
+            case 2 -> agentDomainConfig.bangumi().animeType();
+            case 3 -> agentDomainConfig.bangumi().musicType();
+            case 4 -> agentDomainConfig.bangumi().gameType();
+            case 6 -> agentDomainConfig.bangumi().realType();
+            default -> agentDomainConfig.bangumi().fallbackTypePrefix() + type;
         };
     }
 }

@@ -22,9 +22,11 @@ class AgentDomainConfigTest {
                 .bind("agent.domain", AgentDomainConfig.class)
                 .get();
 
-        assertThat(config.getSystemPrompt().getErrorFallback()).contains("稍后再试");
-        assertThat(config.getErrors().getQuestionEmpty()).isEqualTo("问题不能为空");
-        assertThat(config.getBangumi().getSearchKeywords()).contains("番剧", "动画");
-        assertThat(config.getContext().getUserLabel()).isEqualTo("User:");
+        assertThat(config.systemPrompt().errorFallback()).contains("稍后再试");
+        assertThat(config.errors().questionEmpty()).isEqualTo("问题不能为空");
+        assertThat(config.bangumi().searchKeywords()).contains("番剧", "动画");
+        assertThat(config.context().userLabel()).isEqualTo("User:");
+        assertThat(AgentDomainConfig.class.isRecord()).isTrue();
+        assertThat(config.bangumi().getClass().isRecord()).isTrue();
     }
 }

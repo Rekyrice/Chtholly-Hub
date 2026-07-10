@@ -25,9 +25,9 @@ public final class AgentContextUtil {
         if (StringUtils.hasText(history)) {
             addQuotedTitles(candidates, history, agentDomainConfig);
             for (String line : history.split("\n")) {
-                if (line.startsWith(agentDomainConfig.getContext().getUserLabel())) {
+                if (line.startsWith(agentDomainConfig.context().userLabel())) {
                     addTopicFromQuestion(candidates,
-                            line.substring(agentDomainConfig.getContext().getUserLabel().length()).trim(),
+                            line.substring(agentDomainConfig.context().userLabel().length()).trim(),
                             agentDomainConfig);
                 }
             }
@@ -48,9 +48,9 @@ public final class AgentContextUtil {
             return;
         }
         String topic = question.trim()
-                .replaceAll(agentDomainConfig.getContext().getTitleStopRegex(), "")
-                .replaceAll(agentDomainConfig.getContext().getTopicPrefixRegex(), "")
-                .replaceAll(agentDomainConfig.getContext().getTopicSuffixRegex(), "")
+                .replaceAll(agentDomainConfig.context().titleStopRegex(), "")
+                .replaceAll(agentDomainConfig.context().topicPrefixRegex(), "")
+                .replaceAll(agentDomainConfig.context().topicSuffixRegex(), "")
                 .trim();
         if (topic.length() >= 2 && topic.length() <= 30) {
             candidates.add(topic);
@@ -61,7 +61,7 @@ public final class AgentContextUtil {
             Set<String> candidates,
             String text,
             AgentDomainConfig agentDomainConfig) {
-        Matcher m = Pattern.compile(agentDomainConfig.getContext().getQuotedTitleRegex()).matcher(text);
+        Matcher m = Pattern.compile(agentDomainConfig.context().quotedTitleRegex()).matcher(text);
         while (m.find()) {
             for (int i = 1; i <= m.groupCount(); i++) {
                 if (StringUtils.hasText(m.group(i))) {
@@ -78,23 +78,23 @@ public final class AgentContextUtil {
             AgentDomainConfig agentDomainConfig) {
         for (String line : text.split("\n")) {
             String trimmed = line.trim();
-            if (trimmed.startsWith(agentDomainConfig.getContext().getAssistantLabel())) {
-                trimmed = trimmed.substring(agentDomainConfig.getContext().getAssistantLabel().length()).trim();
-            } else if (trimmed.startsWith(agentDomainConfig.getContext().getUserLabel())) {
-                trimmed = trimmed.substring(agentDomainConfig.getContext().getUserLabel().length()).trim();
+            if (trimmed.startsWith(agentDomainConfig.context().assistantLabel())) {
+                trimmed = trimmed.substring(agentDomainConfig.context().assistantLabel().length()).trim();
+            } else if (trimmed.startsWith(agentDomainConfig.context().userLabel())) {
+                trimmed = trimmed.substring(agentDomainConfig.context().userLabel().length()).trim();
             }
-            if (trimmed.contains(agentDomainConfig.getContext().getCommaMarker())
+            if (trimmed.contains(agentDomainConfig.context().commaMarker())
                     && trimmed.length() >= 4
                     && trimmed.length() <= 40) {
-                int comma = trimmed.indexOf(agentDomainConfig.getContext().getCommaMarker());
+                int comma = trimmed.indexOf(agentDomainConfig.context().commaMarker());
                 if (comma > 1) {
                     candidates.add(trimmed.substring(0, comma + 1)
                             + trimmed.substring(comma + 1)
-                            .split(agentDomainConfig.getContext().getClauseSplitRegex())[0]);
+                            .split(agentDomainConfig.context().clauseSplitRegex())[0]);
                 }
             }
             if (trimmed.length() >= 3 && trimmed.length() <= 24) {
-                String firstClause = trimmed.split(agentDomainConfig.getContext().getClauseSplitRegex())[0].trim();
+                String firstClause = trimmed.split(agentDomainConfig.context().clauseSplitRegex())[0].trim();
                 if (firstClause.length() >= 3) {
                     candidates.add(firstClause);
                 }
