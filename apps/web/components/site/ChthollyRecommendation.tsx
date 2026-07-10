@@ -3,17 +3,30 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Flame } from "lucide-react";
+import { ChevronLeft, ChevronRight, Flame, Sparkles } from "lucide-react";
+import type { RecommendedFeedItem } from "@/lib/services/recommendationService";
 import type { FeedItem } from "@/lib/types/post";
 import { cn } from "@/lib/utils";
 
 type ChthollyRecommendationProps = {
-  posts: FeedItem[];
+  posts: Array<FeedItem | RecommendedFeedItem>;
+  /** true 时标题为「为你推荐」，并优先展示 reason */
+  personalized?: boolean;
+  /** 推荐与 fallback 皆空时的兴趣引导空状态 */
+  emptyInterest?: boolean;
 };
 
-export default function ChthollyRecommendation({ posts }: ChthollyRecommendationProps) {
+export default function ChthollyRecommendation({
+  posts,
+  personalized = false,
+  emptyInterest = false,
+}: ChthollyRecommendationProps) {
   const slides = useMemo(() => posts.slice(0, 5), [posts]);
   const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    setIndex(0);
+  }, [slides]);
 
   useEffect(() => {
     if (slides.length <= 1) return;
@@ -24,31 +37,43 @@ export default function ChthollyRecommendation({ posts }: ChthollyRecommendation
     return () => window.clearInterval(timer);
   }, [slides.length]);
 
-  if (slides.length === 0) {
+  const headingEyebrow = personalized ? "For You" : "Chtholly Picks";
+  const headingTitle = personalized ? "为你推荐" : "热门推荐";
+  const HeadingIcon = personalized ? Sparkles : Flame;
+
+  if (emptyInterest || slides.length === 0) {
     return (
       <section className="hub-recommendation hub-recommendation--empty">
         <div className="hub-section-heading">
-          <p>Chtholly Picks</p>
-          <h2>珂朵莉推荐</h2>
+          <p>{headingEyebrow}</p>
+          <h2>
+            <HeadingIcon size={20} />
+            {headingTitle}
+          </h2>
         </div>
-        <p>推荐暂时还没准备好呢。等仓库里多一点新故事吧。</p>
+        <p>
+          {emptyInterest
+            ? "还没有发现你的兴趣呢，多逛逛告诉珂朵莉你喜欢什么吧~"
+            : "推荐暂时还没准备好呢。等仓库里多一点新故事吧。"}
+        </p>
       </section>
     );
   }
 
   const active = slides[index] ?? slides[0];
+  const reason = getReason(active);
 
   const go = (direction: -1 | 1) => {
     setIndex((current) => (current + direction + slides.length) % slides.length);
   };
 
   return (
-    <section className="hub-recommendation" aria-label="珂朵莉推荐">
+    <section className="hub-recommendation" aria-label={headingTitle}>
       <div className="hub-section-heading">
-        <p>Chtholly Picks</p>
+        <p>{headingEyebrow}</p>
         <h2>
-          <Flame size={20} />
-          珂朵莉推荐
+          <HeadingIcon size={20} />
+          {headingTitle}
         </h2>
       </div>
 
@@ -67,6 +92,9 @@ export default function ChthollyRecommendation({ posts }: ChthollyRecommendation
           )}
         </div>
         <div className="hub-recommendation__content">
+          {reason ? (
+            <span className="hub-recommendation__reason">{reason}</span>
+          ) : null}
           <p className="hub-recommendation__meta">
             {active.authorNickname || "仓库居民"}
             {active.tags[0] ? ` · ${active.tags[0]}` : ""}
@@ -82,7 +110,9 @@ export default function ChthollyRecommendation({ posts }: ChthollyRecommendation
         <button type="button" onClick={() => go(-1)} aria-label="上一条推荐">
           <ChevronLeft size={18} />
         </button>
-        <span>{index + 1}/{slides.length}</span>
+        <span>
+          {index + 1}/{slides.length}
+        </span>
         <button type="button" onClick={() => go(1)} aria-label="下一条推荐">
           <ChevronRight size={18} />
         </button>
@@ -98,6 +128,13 @@ export default function ChthollyRecommendation({ posts }: ChthollyRecommendation
       </div>
     </section>
   );
+}
+
+function getReason(post: FeedItem | RecommendedFeedItem) {
+  if ("reason" in post && typeof post.reason === "string" && post.reason.trim()) {
+    return post.reason.trim();
+  }
+  return null;
 }
 
 function buildChthollyComment(post: FeedItem) {
