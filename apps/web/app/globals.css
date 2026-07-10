@@ -4358,6 +4358,22 @@
     font-size: 0.86rem;
   }
 
+  .hub-recommendation__reason {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    max-width: 100%;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-sky) 14%, transparent);
+    color: var(--color-sky-deep);
+    font-size: 0.78rem;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .hub-recommendation__content h3 {
     margin: 0;
     color: var(--color-text);
@@ -5643,6 +5659,46 @@
   .hub-sidebar .widget-title::after {
     width: 28px;
     height: 2px;
+  }
+
+  .sidebar-recommendations__item {
+    border-bottom: 1px solid var(--color-border);
+    padding: 10px 0;
+  }
+
+  .sidebar-recommendations__item:last-child {
+    border-bottom: none;
+  }
+
+  .sidebar-recommendations__link {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--color-text);
+    text-decoration: none;
+    transition: color 0.15s ease;
+  }
+
+  .sidebar-recommendations__link:hover {
+    color: var(--color-sky);
+  }
+
+  .sidebar-recommendations__title {
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+
+  .sidebar-recommendations__reason {
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.35;
+  }
+
+  .sidebar-recommendations__empty {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 0.86rem;
+    line-height: 1.7;
   }
 
   .hub-profile-widget {

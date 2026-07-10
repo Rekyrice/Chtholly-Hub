@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
 import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
+import SidebarRecommendations from "@/components/site/SidebarRecommendations";
 import { postService } from "@/lib/services/postService";
 import { tagService } from "@/lib/services/tagService";
 import { siteConfig } from "@/lib/site.config";
@@ -127,11 +128,9 @@ export default async function Sidebar({
         degradedText="暂时无法获取，稍后再试试。"
       />
 
-      <SidebarPostList
-        title="推荐内容"
-        posts={recommendations.slice(0, 5)}
+      <SidebarRecommendations
+        fallback={recommendations.slice(0, 5)}
         degraded={recommendationsStatus === "degraded"}
-        degradedText="推荐暂时走丢了，等一下就好。"
       />
     </aside>
   );
