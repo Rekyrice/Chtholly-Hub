@@ -1,5 +1,7 @@
 package com.chtholly.seed;
 
+import com.chtholly.agent.content.TopicCluster;
+import com.chtholly.agent.content.TopicClusteringService;
 import com.chtholly.agent.quality.QualityCriteria;
 import com.chtholly.agent.quality.QualityEvaluationService;
 import com.chtholly.agent.quality.QualityResult;
@@ -59,6 +61,7 @@ public class SeedContentAuditor {
     private final TextGenerator textGenerator;
     private final Clock clock;
     private final PostContentLoader contentLoader;
+    private final TopicClusteringService topicClusteringService;
 
     @Autowired
     public SeedContentAuditor(PostService postService,
@@ -67,7 +70,8 @@ public class SeedContentAuditor {
                               ObjectMapper objectMapper,
                               DistributedLockService lockService,
                               QualityEvaluationService qualityEvaluationService,
-                              ObjectProvider<ChatClient> chatClientProvider) {
+                              ObjectProvider<ChatClient> chatClientProvider,
+                              ObjectProvider<TopicClusteringService> topicClusteringServiceProvider) {
         this(postService,
                 seedMapper,
                 redis,
@@ -76,7 +80,8 @@ public class SeedContentAuditor {
                 qualityEvaluationService,
                 new ChatClientTextGenerator(chatClientProvider),
                 Clock.systemUTC(),
-                SeedContentAuditor::defaultLoadPostContent);
+                SeedContentAuditor::defaultLoadPostContent,
+                topicClusteringServiceProvider.getIfAvailable());
     }
 
     SeedContentAuditor(PostService postService,
@@ -88,6 +93,20 @@ public class SeedContentAuditor {
                        TextGenerator textGenerator,
                        Clock clock,
                        PostContentLoader contentLoader) {
+        this(postService, seedMapper, redis, objectMapper, lockService, qualityEvaluationService,
+                textGenerator, clock, contentLoader, null);
+    }
+
+    SeedContentAuditor(PostService postService,
+                       SeedMapper seedMapper,
+                       StringRedisTemplate redis,
+                       ObjectMapper objectMapper,
+                       DistributedLockService lockService,
+                       QualityEvaluationService qualityEvaluationService,
+                       TextGenerator textGenerator,
+                       Clock clock,
+                       PostContentLoader contentLoader,
+                       TopicClusteringService topicClusteringService) {
         this.postService = postService;
         this.seedMapper = seedMapper;
         this.redis = redis;
@@ -97,6 +116,7 @@ public class SeedContentAuditor {
         this.textGenerator = textGenerator;
         this.clock = clock;
         this.contentLoader = contentLoader;
+        this.topicClusteringService = topicClusteringService;
     }
 
     /**
@@ -190,12 +210,14 @@ public class SeedContentAuditor {
         if (posts.isEmpty()) {
             return;
         }
+        String topicHint = formatTopicClusters();
         String prompt = """
                 你是珂朵莉。这是本周社区发布的文章列表：
                 %s
 
+                %s
                 请选出 3-5 篇最值得推荐的，并给每篇写一句推荐语。
-                选的标准：内容有深度、有趣、或对读者有帮助。
+                选的标准：内容有深度、有趣、或对读者有帮助；优先覆盖不同热门话题，避免同质化。
                 另写一句本周合集导语。
                 只输出 JSON：
                 {
@@ -204,7 +226,7 @@ public class SeedContentAuditor {
                     { "postId": 123, "title": "...", "comment": "这篇写得真好..." }
                   ]
                 }
-                """.formatted(formatPosts(posts));
+                """.formatted(formatPosts(posts), topicHint);
         try {
             String raw = textGenerator.generate(prompt);
             if (raw == null || raw.isBlank()) {
@@ -342,6 +364,35 @@ public class SeedContentAuditor {
             return "";
         }
         return new RestTemplate().getForObject(url, String.class);
+    }
+
+    private String formatTopicClusters() {
+        if (topicClusteringService == null) {
+            return "本周热门话题：暂无聚类数据。";
+        }
+        try {
+            List<TopicCluster> clusters = topicClusteringService.getStoredClusters();
+            if (clusters == null || clusters.isEmpty()) {
+                return "本周热门话题：暂无聚类数据。";
+            }
+            String body = clusters.stream()
+                    .limit(5)
+                    .map(c -> "- %s（%d 篇）：%s；代表文章 ID=%s".formatted(
+                            nullToBlank(c.topicName()),
+                            c.size(),
+                            nullToBlank(c.summary()),
+                            c.postIds() == null ? "" : c.postIds().stream()
+                                    .limit(5)
+                                    .map(String::valueOf)
+                                    .reduce((a, b) -> a + "," + b)
+                                    .orElse("")))
+                    .reduce((left, right) -> left + "\n" + right)
+                    .orElse("");
+            return "本周热门话题（请尽量从不同话题中各选一些）：\n" + body;
+        } catch (Exception e) {
+            log.debug("Load topic clusters for curation failed: {}", e.getMessage());
+            return "本周热门话题：暂无聚类数据。";
+        }
     }
 
     private static String formatPosts(List<PostSummary> posts) {
