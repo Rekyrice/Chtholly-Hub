@@ -27,4 +27,12 @@ public interface StorageService {
      * 删除指定 objectKey 对应的对象。
      */
     void deleteObject(String objectKey);
+
+    /**
+     * Resolves a publicly accessible URL for an object key.
+     *
+     * @param objectKey storage object key
+     * @return absolute or site-relative public URL
+     */
+    String resolvePublicUrl(String objectKey);
 }

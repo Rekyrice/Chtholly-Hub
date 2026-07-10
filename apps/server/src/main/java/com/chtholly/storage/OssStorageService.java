@@ -114,6 +114,12 @@ public class OssStorageService implements StorageService {
         return "https://" + props.getBucket() + "." + props.getEndpoint() + "/" + objectKey;
     }
 
+    @Override
+    public String resolvePublicUrl(String objectKey) {
+        StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
+        return publicUrl(objectKey);
+    }
+
     private OSS newClient() {
         return new OSSClientBuilder().build(props.getEndpoint(), props.getAccessKeyId(), props.getAccessKeySecret());
     }

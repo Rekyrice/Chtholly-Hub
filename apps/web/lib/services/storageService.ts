@@ -7,6 +7,8 @@ export type PresignResponse = {
   expiresIn: number;
   /** PUT：OSS 预签名；POST：本地 multipart 上传 */
   method: string;
+  /** 上传完成后可公开访问的 URL（用于 Markdown 插图） */
+  publicUrl?: string;
 };
 
 export const storageService = {

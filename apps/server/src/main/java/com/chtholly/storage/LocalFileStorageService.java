@@ -100,6 +100,12 @@ public class LocalFileStorageService implements StorageService {
         return prefix + "/" + objectKey;
     }
 
+    @Override
+    public String resolvePublicUrl(String objectKey) {
+        StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
+        return publicUrl(objectKey);
+    }
+
     private static String normalizeContentType(String contentType) {
         if (contentType == null || contentType.isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Content-Type 不能为空");

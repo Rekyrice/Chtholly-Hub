@@ -90,7 +90,8 @@ public class StorageController {
                 presigned.url(),
                 presigned.headers(),
                 presigned.expiresInSeconds(),
-                presigned.method());
+                presigned.method(),
+                storageService.resolvePublicUrl(objectKey));
     }
 
     /**

@@ -10,5 +10,6 @@ public record StoragePresignResponse(
         String putUrl,
         Map<String, String> headers,
         int expiresIn,
-        String method
+        String method,
+        String publicUrl
 ) {}
