@@ -1,7 +1,9 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useAsyncAction } from "@/lib/hooks/useAsyncAction";
+import { extractErrorMessage } from "@/lib/hooks/useErrorMessage";
 import { adminService } from "@/lib/services/adminService";
 import type { AdminUser, PageResponse } from "@/lib/types/admin";
 import { cn, formatDate } from "@/lib/utils";
@@ -28,22 +30,16 @@ export default function AdminUsersTable() {
   const [keyword, setKeyword] = useState("");
   const [appliedKeyword, setAppliedKeyword] = useState("");
   const [data, setData] = useState<PageResponse<AdminUser>>(emptyPage);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busyUserId, setBusyUserId] = useState<number | null>(null);
 
-  const load = useCallback(async (nextPage: number, nextKeyword: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await adminService.getUsers(nextPage, PAGE_SIZE, nextKeyword);
-      setData(response);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "用户列表加载失败");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { execute: load, loading, error, setError } = useAsyncAction(
+    (nextPage: number, nextKeyword: string) =>
+      adminService.getUsers(nextPage, PAGE_SIZE, nextKeyword),
+    {
+      fallbackError: "用户列表加载失败",
+      onSuccess: setData,
+    },
+  );
 
   useEffect(() => {
     void load(page, appliedKeyword);
@@ -74,7 +70,7 @@ export default function AdminUsersTable() {
       await adminService.setUserRole(user.id, role);
       updateUser(user.id, { role });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "角色修改失败");
+      setError(extractErrorMessage(err, "角色修改失败"));
     } finally {
       setBusyUserId(null);
     }
@@ -91,7 +87,7 @@ export default function AdminUsersTable() {
         updateUser(user.id, { banned: true, bannedAt: new Date().toISOString() });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : user.banned ? "解封失败" : "封禁失败");
+      setError(extractErrorMessage(err, user.banned ? "解封失败" : "封禁失败"));
     } finally {
       setBusyUserId(null);
     }

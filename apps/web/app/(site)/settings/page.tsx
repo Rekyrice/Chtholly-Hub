@@ -1,23 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ChevronRight, House, UserRound } from "lucide-react";
-import { getAccessToken, getStoredAuth } from "@/lib/auth/tokens";
+import { getStoredAuth } from "@/lib/auth/tokens";
+import { useRequireAuth } from "@/lib/hooks/useRequireAuth";
 import type { AuthUser } from "@/lib/types/auth";
 
 export default function SettingsPage() {
-  const router = useRouter();
+  const authorized = useRequireAuth();
   const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
+    if (authorized) {
+      setUser(getStoredAuth()?.user ?? null);
     }
-    setUser(getStoredAuth()?.user ?? null);
-  }, [router]);
+  }, [authorized]);
+
+  if (!authorized) return null;
 
   return (
     <main className="settings-page" data-testid="settings-page">

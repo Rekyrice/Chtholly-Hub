@@ -1,7 +1,9 @@
 "use client";
 
 import { RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAsyncAction } from "@/lib/hooks/useAsyncAction";
+import { extractErrorMessage } from "@/lib/hooks/useErrorMessage";
 import { deadLetterService } from "@/lib/services/deadLetterService";
 import type { DeadLetterMessage, DeadLetterPageResponse } from "@/lib/types/deadLetter";
 import { cn, formatDate } from "@/lib/utils";
@@ -34,22 +36,15 @@ function statusTone(status?: string) {
 export default function DeadLetterTable() {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<DeadLetterPageResponse>(emptyPage);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const load = useCallback(async (nextPage: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await deadLetterService.list(nextPage, PAGE_SIZE);
-      setData(response);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "死信列表加载失败");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { execute: load, loading, error, setError } = useAsyncAction(
+    (nextPage: number) => deadLetterService.list(nextPage, PAGE_SIZE),
+    {
+      fallbackError: "死信列表加载失败",
+      onSuccess: setData,
+    },
+  );
 
   useEffect(() => {
     void load(page);
@@ -74,7 +69,7 @@ export default function DeadLetterTable() {
       await deadLetterService.replay(message.id);
       updateMessage(message.id, { status: "PENDING" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "死信重放失败");
+      setError(extractErrorMessage(err, "死信重放失败"));
     } finally {
       setBusyId(null);
     }

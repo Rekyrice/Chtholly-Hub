@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { AvatarUpload } from "@/components/site/AvatarUpload";
-import { getAccessToken, getStoredAuth, saveAuth } from "@/lib/auth/tokens";
+import { getStoredAuth, saveAuth } from "@/lib/auth/tokens";
+import { useRequireAuth } from "@/lib/hooks/useRequireAuth";
 import { ApiError } from "@/lib/services/apiClient";
 import {
   profileResponseToForm,
@@ -45,6 +46,7 @@ const genderOptions: Array<{ value: ProfileGender; label: string }> = [
 
 export default function ProfileEditForm() {
   const router = useRouter();
+  const authorized = useRequireAuth();
   const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
   const [tagInput, setTagInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -58,10 +60,7 @@ export default function ProfileEditForm() {
   const bioCount = useMemo(() => form.bio?.length ?? 0, [form.bio]);
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
+    if (!authorized) return;
 
     let active = true;
     const loadProfile = async () => {
@@ -88,7 +87,7 @@ export default function ProfileEditForm() {
     return () => {
       active = false;
     };
-  }, [router]);
+  }, [authorized, router]);
 
   const updateForm = <K extends keyof ProfileForm>(key: K, value: ProfileForm[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -174,7 +173,7 @@ export default function ProfileEditForm() {
     }
   };
 
-  if (loading) {
+  if (!authorized || loading) {
     return <div className="settings-loading">资料读取中...</div>;
   }
 

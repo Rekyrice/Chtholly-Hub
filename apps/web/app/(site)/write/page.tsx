@@ -8,7 +8,7 @@ import MarkdownToolbar from "@/components/write/MarkdownToolbar";
 import TagAutocomplete from "@/components/write/TagAutocomplete";
 import WriteStats from "@/components/write/WriteStats";
 import { Button } from "@/components/ui/Button";
-import { getAccessToken } from "@/lib/auth/tokens";
+import { useRequireAuth } from "@/lib/hooks/useRequireAuth";
 import { ApiError } from "@/lib/services/apiClient";
 import { postAiService } from "@/lib/services/postAiService";
 import { postService } from "@/lib/services/postService";
@@ -40,6 +40,7 @@ type WriteDraft = {
 
 export default function WritePage() {
   const router = useRouter();
+  const authorized = useRequireAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -65,12 +66,6 @@ export default function WritePage() {
     }),
     [title, tags, description, markdown, draftPostId],
   );
-
-  useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-    }
-  }, [router]);
 
   useEffect(() => {
     try {
@@ -228,6 +223,8 @@ export default function WritePage() {
       setUploadingImage(false);
     }
   };
+
+  if (!authorized) return null;
 
   return (
     <div className="write-container" data-testid="write-page">

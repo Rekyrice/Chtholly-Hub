@@ -2,6 +2,7 @@
 
 import { Camera, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { extractErrorMessage } from "@/lib/hooks/useErrorMessage";
 import { profileService } from "@/lib/services/profileService";
 import type { ProfileResponse } from "@/lib/types/profile";
 import { cn } from "@/lib/utils";
@@ -53,7 +54,7 @@ export function AvatarUpload({ value, nickname, onUploaded, onError }: AvatarUpl
         });
       }
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : "头像上传失败");
+      onError?.(extractErrorMessage(err, "头像上传失败"));
     } finally {
       setUploading(false);
     }

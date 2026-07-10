@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { extractErrorMessage } from "@/lib/hooks/useErrorMessage";
 import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import { Button } from "@/components/ui/Button";
 import { isLoggedIn } from "@/lib/auth/tokens";
@@ -38,7 +39,7 @@ function CommentForm({
       await onSubmit(text);
       setContent("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "发送失败");
+      setError(extractErrorMessage(err, "发送失败"));
     } finally {
       setSubmitting(false);
     }

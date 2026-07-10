@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useAsyncAction } from "@/lib/hooks/useAsyncAction";
+import { extractErrorMessage } from "@/lib/hooks/useErrorMessage";
 import { adminService } from "@/lib/services/adminService";
 import { postService } from "@/lib/services/postService";
 import type { AdminPost } from "@/lib/types/admin";
@@ -19,15 +21,13 @@ export default function AdminPostsTable() {
   const [page, setPage] = useState(1);
   const [posts, setPosts] = useState<AdminPost[]>([]);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busyPostId, setBusyPostId] = useState<string | null>(null);
 
-  const load = useCallback(async (nextPage: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await postService.feed(nextPage, PAGE_SIZE);
+  const { execute: load, loading, error, setError } = useAsyncAction(
+    (nextPage: number) => postService.feed(nextPage, PAGE_SIZE),
+    {
+      fallbackError: "文章列表加载失败",
+      onSuccess: (response) => {
       setPosts(
         response.items.map((post) => ({
           ...post,
@@ -35,12 +35,9 @@ export default function AdminPostsTable() {
         })),
       );
       setHasMore(response.hasMore);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "文章列表加载失败");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      },
+    },
+  );
 
   useEffect(() => {
     void load(page);
@@ -57,7 +54,7 @@ export default function AdminPostsTable() {
       await adminService.setPostVisibility(post.id, visibility);
       updatePost(post.id, { visible: visibility });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "可见性修改失败");
+      setError(extractErrorMessage(err, "可见性修改失败"));
     } finally {
       setBusyPostId(null);
     }
@@ -71,7 +68,7 @@ export default function AdminPostsTable() {
       await adminService.deletePost(post.id);
       setPosts((current) => current.filter((item) => item.id !== post.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除文章失败");
+      setError(extractErrorMessage(err, "删除文章失败"));
     } finally {
       setBusyPostId(null);
     }
