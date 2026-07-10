@@ -1,0 +1,47 @@
+@media (prefers-color-scheme: dark) {
+  .admin-loading-card,
+  .admin-sidebar,
+  .admin-panel,
+  .admin-stat-card,
+  .admin-alert {
+    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  }
+}
+
+@media (max-width: 960px) {
+  .admin-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-sidebar {
+    position: static;
+  }
+
+  .admin-sidebar__nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-shell {
+    width: min(100% - 20px, 100%);
+    padding-top: 16px;
+  }
+
+  .admin-page__header,
+  .admin-toolbar,
+  .admin-panel__header,
+  .admin-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-sidebar__nav,
+  .admin-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
