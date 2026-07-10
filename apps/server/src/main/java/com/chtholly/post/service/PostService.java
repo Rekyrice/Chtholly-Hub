@@ -37,6 +37,23 @@ public interface PostService {
 
     List<PostSummary> getRecentPosts(Duration window);
 
+    /**
+     * Recent public posts with an explicit fetch limit (for clustering / cognition).
+     *
+     * @param window lookback window
+     * @param limit  max rows (clamped server-side)
+     * @return recent post summaries including tags when available
+     */
+    List<PostSummary> getRecentPosts(Duration window, int limit);
+
+    /**
+     * Loads published post summaries by IDs (order follows the input list).
+     *
+     * @param ids post IDs
+     * @return summaries for found published posts
+     */
+    List<PostSummary> getPostSummariesByIds(List<Long> ids);
+
     List<Post> getRecentSeedPosts(Duration window);
 
     long countSince(Duration window);

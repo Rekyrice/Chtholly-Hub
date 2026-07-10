@@ -151,13 +151,53 @@ public class PostServiceImpl implements PostService {
      */
     @Override
     public List<PostSummary> getRecentPosts(Duration window) {
+        return getRecentPosts(window, 20);
+    }
+
+    @Override
+    public List<PostSummary> getRecentPosts(Duration window, int limit) {
         Duration safeWindow = window == null || window.isNegative() || window.isZero()
                 ? Duration.ofHours(6)
                 : window;
+        int safeLimit = Math.clamp(limit, 1, 500);
         Instant since = Instant.now().minus(safeWindow);
-        return mapper.listRecentPublicSince(since, 20).stream()
-                .map(row -> new PostSummary(row.getId(), row.getTitle(), row.getDescription(), row.getPublishTime()))
+        return mapper.listRecentPublicSince(since, safeLimit).stream()
+                .map(row -> new PostSummary(
+                        row.getId(),
+                        row.getTitle(),
+                        row.getDescription(),
+                        row.getPublishTime(),
+                        parseStringArray(row.getTags())))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PostSummary> getPostSummariesByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<Post> posts = mapper.findByIds(ids);
+        if (posts == null || posts.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Post> byId = posts.stream()
+                .filter(p -> p.getId() != null && "published".equals(p.getStatus()))
+                .collect(java.util.stream.Collectors.toMap(Post::getId, p -> p, (a, b) -> a));
+        List<PostSummary> ordered = new java.util.ArrayList<>();
+        for (Long id : ids) {
+            Post post = byId.get(id);
+            if (post == null) {
+                continue;
+            }
+            ordered.add(new PostSummary(
+                    post.getId(),
+                    post.getTitle(),
+                    post.getDescription(),
+                    post.getPublishTime(),
+                    parseStringArray(post.getTags())));
+        }
+        return ordered;
     }
 
     /**
