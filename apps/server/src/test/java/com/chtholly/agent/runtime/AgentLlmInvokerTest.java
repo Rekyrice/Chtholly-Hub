@@ -21,6 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -102,6 +103,43 @@ class AgentLlmInvokerTest {
 
         assertThatThrownBy(() -> invoker.call("system", "user", 0.1, 1024))
                 .isSameAs(failure);
+    }
+
+    @Test
+    void callRestoresCallerInterruptAndCancelsWorkerWhenCallerIsInterrupted() throws Exception {
+        CountDownLatch workerStarted = new CountDownLatch(1);
+        AtomicBoolean workerInterrupted = new AtomicBoolean();
+        AtomicBoolean callerInterruptedInCatch = new AtomicBoolean();
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+                .thenAnswer(invocation -> {
+                    workerStarted.countDown();
+                    try {
+                        Thread.sleep(10_000);
+                        return "late";
+                    } catch (InterruptedException e) {
+                        workerInterrupted.set(true);
+                        throw e;
+                    }
+                });
+        Thread callerThread = new Thread(() -> {
+            try {
+                invoker.call("system", "user", 0.1, 1024);
+            } catch (Throwable failure) {
+                thrown.set(failure);
+                callerInterruptedInCatch.set(Thread.currentThread().isInterrupted());
+            }
+        });
+
+        callerThread.start();
+        assertThat(workerStarted.await(1, TimeUnit.SECONDS)).isTrue();
+        callerThread.interrupt();
+        callerThread.join(2_000);
+
+        assertThat(callerThread.isAlive()).isFalse();
+        assertThat(thrown.get()).isInstanceOf(InterruptedException.class);
+        assertThat(callerInterruptedInCatch).isTrue();
+        assertThat(waitUntilTrue(workerInterrupted, Duration.ofSeconds(1))).isTrue();
     }
 
     @Test
