@@ -9,27 +9,21 @@ import com.chtholly.post.service.PostService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.common.exception.BusinessException;
-import com.chtholly.common.exception.ResourceNotFoundException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
-import com.chtholly.common.web.HttpCacheHelper;
-import com.chtholly.post.model.PostDetailEtagRow;
-import com.chtholly.post.model.PostDetailRow;
 import com.chtholly.post.util.SlugUtils;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.api.dto.PostSummary;
 import com.github.benmanes.caffeine.cache.Cache;
-import com.chtholly.counter.service.CounterService;
 import com.chtholly.storage.config.OssProperties;
 import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.tag.service.TagService;
 import com.chtholly.search.index.SearchIndexService;
-import com.chtholly.cache.singleflight.SingleFlightLockRegistry;
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import jakarta.annotation.Resource;
 import org.slf4j.Logger;
@@ -46,7 +40,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Post lifecycle service: draft CRUD, publish, metadata, and detail retrieval.
@@ -65,7 +58,6 @@ public class PostServiceImpl implements PostService {
     private final SnowflakeIdGenerator idGen;
     private final ObjectMapper objectMapper;
     private final OssProperties ossProperties;
-    private final CounterService counterService;
     private final UserCounterService userCounterService;
     private final StringRedisTemplate redis;
     @Qualifier("feedPublicCache")
@@ -74,8 +66,7 @@ public class PostServiceImpl implements PostService {
     private final Cache<String, PostDetailResponse> postDetailCache;
     private final HotKeyDetector hotKey;
     private static final Logger log = LoggerFactory.getLogger(PostServiceImpl.class);
-    private static final int DETAIL_LAYOUT_VER = 2;
-    private final SingleFlightLockRegistry singleFlight = new SingleFlightLockRegistry();
+    private final PostDetailQueryService detailQueryService;
     private final PostRagIndexer ragIndexService;
     private final OutboxMapper outboxMapper;
     private final TagService tagService;
@@ -89,7 +80,6 @@ public class PostServiceImpl implements PostService {
             SnowflakeIdGenerator idGen,
             ObjectMapper objectMapper,
             OssProperties ossProperties,
-            CounterService counterService,
             UserCounterService userCounterService,
             StringRedisTemplate redis,
             @Qualifier("feedPublicCache") Cache<String, PageResponse<FeedItemResponse>> feedPublicCache,
@@ -100,13 +90,13 @@ public class PostServiceImpl implements PostService {
             TagService tagService,
             SearchIndexService searchIndexService,
             ApplicationEventPublisher eventPublisher,
-            PostFeedService postFeedService
+            PostFeedService postFeedService,
+            PostDetailQueryService detailQueryService
     ) {
         this.mapper = mapper;
         this.idGen = idGen;
         this.objectMapper = objectMapper;
         this.ossProperties = ossProperties;
-        this.counterService = counterService;
         this.userCounterService = userCounterService;
         this.redis = redis;
         this.feedPublicCache = feedPublicCache;
@@ -118,6 +108,7 @@ public class PostServiceImpl implements PostService {
         this.searchIndexService = searchIndexService;
         this.eventPublisher = eventPublisher;
         this.postFeedService = postFeedService;
+        this.detailQueryService = detailQueryService;
     }
     /**
      * Creates a new draft post and returns its snowflake ID.
@@ -631,266 +622,28 @@ public class PostServiceImpl implements PostService {
         return "https://" + ossProperties.getBucket() + "." + ossProperties.getEndpoint() + "/" + objectKey;
     }
 
-    /**
-     * Loads post detail by ID with multi-level cache and access control.
-     *
-     * @param id                    Post ID.
-     * @param currentUserIdNullable Current user (null = anonymous).
-     * @return Detail response with live counts and liked/faved state.
-     */
-    @Transactional(readOnly = true)
+    @Override
     public PostDetailResponse getDetail(long id, Long currentUserIdNullable) {
-        // 1. 构造缓存 Key：post:detail:{id}:v{version}
-        String pageKey = "post:detail:" + id + ":v" + DETAIL_LAYOUT_VER;
-        
-        // 0. L1 本地缓存（Caffeine）
-        PostDetailResponse local = postDetailCache.getIfPresent(pageKey);
-        if (local != null) {
-            recordHotKeyAndExtendTtl(id, pageKey);
-            log.info("detail source=local key={}", pageKey);
-            return enrichDetailResponse(local, currentUserIdNullable, true);
-        }
-
-        String cached = redis.opsForValue().get(pageKey);
-
-        // 2. 第一次尝试处理缓存命中
-        // 如果缓存中有数据（且不是 "NULL"），则解析并返回
-        PostDetailResponse resp = tryProcessCacheHit(cached, id, pageKey, currentUserIdNullable, "page");
-        if (resp != null) {
-            return resp;
-        }
-
-        // 3. L2 未命中 → SingleFlight：同一 pageKey 只有一个线程查 DB，其余等待复用结果
-        return singleFlight.runExclusive(pageKey, () -> {
-            // 4. 双重检查（Double Check）
-            String again = redis.opsForValue().get(pageKey);
-            PostDetailResponse flightResp = tryProcessCacheHit(again, id, pageKey, currentUserIdNullable, "page(after-flight)");
-            if (flightResp != null) {
-                return flightResp;
-            }
-
-            // 5. 数据库回源查询
-            PostDetailRow row = mapper.findDetailById(id);
-
-            // 6. 处理内容不存在或已删除的情况
-            if (row == null || "deleted".equals(row.getStatus())) {
-                // 空值缓存 30–60s：防止恶意刷不存在的 ID 击穿 DB
-                redis.opsForValue().set(pageKey, "NULL", java.time.Duration.ofSeconds(30 + java.util.concurrent.ThreadLocalRandom.current().nextInt(31)));
-                throw new ResourceNotFoundException("内容不存在");
-            }
-
-            // 7. 权限校验
-            boolean isPublic = "published".equals(row.getStatus()) && "public".equals(row.getVisible());
-            boolean isOwner = currentUserIdNullable != null && row.getCreatorId() != null && currentUserIdNullable.equals(row.getCreatorId());
-            if (!isPublic && !isOwner) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "无权限查看");
-            }
-
-            // 8. 组装响应对象
-            List<String> images = parseStringArray(row.getImgUrls());
-            List<String> tags = parseStringArray(row.getTags());
-
-            Map<String, Long> counts = counterService.getCounts("post", String.valueOf(row.getId()), List.of("like", "fav"));
-            Long likeCount = counts.getOrDefault("like", 0L);
-            Long favoriteCount = counts.getOrDefault("fav", 0L);
-
-            flightResp = new PostDetailResponse(
-                    String.valueOf(row.getId()),
-                    row.getSlug(),
-                    row.getTitle(),
-                    row.getDescription(),
-                    row.getContentUrl(),
-                    images,
-                    tags,
-                    String.valueOf(row.getCreatorId()),
-                    row.getAuthorAvatar(),
-                    row.getAuthorNickname(),
-                    row.getAuthorTagJson(),
-                    likeCount,
-                    favoriteCount,
-                    null,
-                    null,
-                    row.getIsTop(),
-                    row.getVisible(),
-                    row.getType(),
-                    row.getPublishTime()
-            );
-
-            // 9. 写入 Redis 缓存
-            try {
-                String json = objectMapper.writeValueAsString(flightResp);
-                int baseTtl = 60;
-                int jitter = ThreadLocalRandom.current().nextInt(30);
-                int target = hotKey.ttlForPublic(baseTtl, pageKey);
-                redis.opsForValue().set(pageKey, json, Duration.ofSeconds(Math.max(target, baseTtl + jitter)));
-                postDetailCache.put(pageKey, flightResp);
-                log.info("detail source=db key={}", pageKey);
-            } catch (Exception e) {
-                log.warn("Failed to cache post detail, key={}: {}", pageKey, e.getMessage());
-            }
-
-            return enrichDetailResponse(flightResp, currentUserIdNullable, false);
-        });
+        return detailQueryService.getDetail(id, currentUserIdNullable);
     }
 
-    /** Resolves post detail by URL slug (delegates to {@link #getDetail(long, Long)}). */
-    @Transactional(readOnly = true)
+    @Override
     public PostDetailResponse getDetailBySlug(String slug, Long currentUserIdNullable) {
-        Long id = mapper.findIdBySlug(slug);
-        if (id == null) {
-            throw new ResourceNotFoundException("内容不存在");
-        }
-        return getDetail(id, currentUserIdNullable);
+        return detailQueryService.getDetailBySlug(slug, currentUserIdNullable);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public String computeDetailEtag(long id) {
-        return computeDetailEtagRow(mapper.findDetailEtagById(id));
+        return detailQueryService.computeEtag(id);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public String computeDetailEtagBySlug(String slug) {
-        return computeDetailEtagRow(mapper.findDetailEtagBySlug(slug));
-    }
-
-    private String computeDetailEtagRow(PostDetailEtagRow row) {
-        if (row == null || "deleted".equals(row.getStatus())) {
-            throw new ResourceNotFoundException("内容不存在");
-        }
-        Instant updateTime = row.getUpdateTime();
-        return HttpCacheHelper.hashEtag(
-                row.getStatus(),
-                String.valueOf(DETAIL_LAYOUT_VER),
-                updateTime != null ? updateTime.toString() : "");
-    }
-
-    /**
-     * 尝试处理缓存命中逻辑。
-     *
-     * @param cached Redis 中读取的缓存字符串
-     * @param id 内容 ID
-     * @param pageKey 页面缓存 Key
-     * @param uid 当前用户 ID
-     * @param sourceLog 日志来源标识
-     * @return 若成功处理命中则返回响应对象，否则返回 null
-     */
-    private PostDetailResponse tryProcessCacheHit(String cached, long id, String pageKey, Long uid, String sourceLog) {
-        // 1. 缓存为空，未命中
-        if (cached == null) {
-            return null;
-        }
-        
-        // 2. 命中空值缓存（防止穿透）
-        if ("NULL".equals(cached)) {
-            throw new ResourceNotFoundException("内容不存在");
-        }
-        
-        try {
-            // 3. 反序列化缓存数据
-            PostDetailResponse base = objectMapper.readValue(cached, PostDetailResponse.class);
-
-            // L1 填充
-            postDetailCache.put(pageKey, base);
-            
-            // 4. 记录热度并尝试续期
-            // 如果该内容正在被高频访问，自动延长其缓存 TTL
-            recordHotKeyAndExtendTtl(id, pageKey);
-            log.info("detail source={} key={}", sourceLog, pageKey);
-            
-            // 5. 叠加实时数据（计数与用户状态）并返回
-            return enrichDetailResponse(base, uid, true);
-        } catch (Exception e) {
-            log.warn("Post detail cache deserialize failed, key={}: {}", pageKey, e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * 丰富详情响应：叠加实时计数与用户状态。
-     *
-     * @param base 基础响应对象（来自缓存或 DB）
-     * @param uid 当前用户 ID
-     * @param refreshCounts 是否需要从 CounterService 刷新计数（缓存命中时需要，DB 回源时不需要）
-     * @return 叠加了最新状态的响应对象
-     */
-    private PostDetailResponse enrichDetailResponse(PostDetailResponse base, Long uid, boolean refreshCounts) {
-        Long likeCount = base.likeCount();
-        Long favoriteCount = base.favoriteCount();
-
-        // 1. 刷新计数（仅在走缓存时执行）
-        // 因为缓存中的计数可能是旧的，权威计数在 CounterService (Redis SDS)
-        if (refreshCounts) {
-            Map<String, Long> counts = counterService.getCounts("post", base.id(), List.of("like", "fav"));
-            if (counts != null) {
-                likeCount = counts.getOrDefault("like", likeCount == null ? 0L : likeCount);
-                favoriteCount = counts.getOrDefault("fav", favoriteCount == null ? 0L : favoriteCount);
-            }
-        }
-
-        // 2. 获取用户维度的状态（是否已点赞/收藏）
-        // 这部分数据是个性化的，不能存入公共缓存
-        Boolean liked = uid != null && counterService.isLiked("post", base.id(), uid);
-        Boolean faved = uid != null && counterService.isFaved("post", base.id(), uid);
-
-        // 3. 构造新的 Record 对象返回
-        return new PostDetailResponse(
-                base.id(),
-                base.slug(),
-                base.title(),
-                base.description(),
-                base.contentUrl(),
-                base.images(),
-                base.tags(),
-                base.authorId(),
-                base.authorAvatar(),
-                base.authorNickname(),
-                base.authorTagJson(),
-                likeCount,
-                favoriteCount,
-                liked,
-                faved,
-                base.isTop(),
-                base.visible(),
-                base.type(),
-                base.publishTime()
-        );
-    }
-
-    /**
-     * 记录内容热度，并根据热度等级延长相关缓存的 TTL。
-     * 延长的缓存包括：
-     * 1. 详情页整页缓存 (post:detail:{id})
-     * 2. Feed 流内容片段缓存 (feed:item:{id})
-     * 这样可以确保热点内容在 Feed 流中也不会轻易过期，避免 Feed 流回源。
-     * @param id 内容 ID
-     * @param detailPageKey 详情页缓存 Key
-     */
-    private void recordHotKeyAndExtendTtl(long id, String detailPageKey) {
-        // 统一使用 post:{id} 作为热度统计 Key
-        String hotKeyId = "post:" + id;
-        hotKey.record(hotKeyId);
-        
-        int baseTtl = 60;
-        int target = hotKey.ttlForPublic(baseTtl, hotKeyId);
-        
-        // 1. 延长详情页缓存
-        Long detailTtl = redis.getExpire(detailPageKey);
-        if (detailTtl < target) {
-            redis.expire(detailPageKey, java.time.Duration.ofSeconds(target));
-        }
-        
-        // 2. 延长 Feed 流内容片段缓存
-        String itemKey = "feed:item:" + id;
-        Long itemTtl = redis.getExpire(itemKey);
-        if (itemTtl < target) {
-            redis.expire(itemKey, java.time.Duration.ofSeconds(target));
-        }
+        return detailQueryService.computeEtagBySlug(slug);
     }
 
     private void invalidateCache(long id) {
-        String pageKey = "post:detail:" + id + ":v" + DETAIL_LAYOUT_VER;
+        String pageKey = PostDetailQueryService.cacheKey(id);
 
         try {
             redis.delete(pageKey);

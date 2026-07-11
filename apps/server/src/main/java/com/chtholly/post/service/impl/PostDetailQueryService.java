@@ -1,0 +1,211 @@
+package com.chtholly.post.service.impl;
+
+import com.chtholly.cache.hotkey.HotKeyDetector;
+import com.chtholly.cache.singleflight.SingleFlightLockRegistry;
+import com.chtholly.common.exception.BusinessException;
+import com.chtholly.common.exception.ErrorCode;
+import com.chtholly.common.exception.ResourceNotFoundException;
+import com.chtholly.common.web.HttpCacheHelper;
+import com.chtholly.counter.service.CounterService;
+import com.chtholly.post.api.dto.PostDetailResponse;
+import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.PostDetailEtagRow;
+import com.chtholly.post.model.PostDetailRow;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
+
+/**
+ * Read model for post details, including access checks and multi-level caching.
+ *
+ * <p>Keeps the latency-sensitive detail query path independent from post mutation workflows.
+ */
+@Service
+public class PostDetailQueryService {
+
+    static final int LAYOUT_VERSION = 2;
+    private static final Logger log = LoggerFactory.getLogger(PostDetailQueryService.class);
+
+    private final PostMapper mapper;
+    private final ObjectMapper objectMapper;
+    private final CounterService counterService;
+    private final StringRedisTemplate redis;
+    private final Cache<String, PostDetailResponse> localCache;
+    private final HotKeyDetector hotKey;
+    private final SingleFlightLockRegistry singleFlight = new SingleFlightLockRegistry();
+
+    public PostDetailQueryService(
+            PostMapper mapper,
+            ObjectMapper objectMapper,
+            CounterService counterService,
+            StringRedisTemplate redis,
+            @Qualifier("postDetailCache") Cache<String, PostDetailResponse> localCache,
+            HotKeyDetector hotKey
+    ) {
+        this.mapper = mapper;
+        this.objectMapper = objectMapper;
+        this.counterService = counterService;
+        this.redis = redis;
+        this.localCache = localCache;
+        this.hotKey = hotKey;
+    }
+
+    static String cacheKey(long id) {
+        return "post:detail:" + id + ":v" + LAYOUT_VERSION;
+    }
+
+    /** Loads post detail by ID with access control and live user counters. */
+    @Transactional(readOnly = true)
+    public PostDetailResponse getDetail(long id, Long currentUserId) {
+        String pageKey = cacheKey(id);
+        PostDetailResponse local = localCache.getIfPresent(pageKey);
+        if (local != null) {
+            recordHotKeyAndExtendTtl(id, pageKey);
+            return enrich(local, currentUserId, true);
+        }
+
+        PostDetailResponse cached = processCacheHit(redis.opsForValue().get(pageKey), id, pageKey, currentUserId);
+        if (cached != null) return cached;
+
+        return singleFlight.runExclusive(pageKey, () -> {
+            PostDetailResponse afterFlight = processCacheHit(
+                    redis.opsForValue().get(pageKey), id, pageKey, currentUserId);
+            if (afterFlight != null) return afterFlight;
+
+            PostDetailRow row = mapper.findDetailById(id);
+            if (row == null || "deleted".equals(row.getStatus())) {
+                redis.opsForValue().set(pageKey, "NULL", Duration.ofSeconds(30 + ThreadLocalRandom.current().nextInt(31)));
+                throw new ResourceNotFoundException("内容不存在");
+            }
+            assertReadable(row, currentUserId);
+
+            Map<String, Long> counts = counterService.getCounts(
+                    "post", String.valueOf(row.getId()), List.of("like", "fav"));
+            PostDetailResponse response = mapRow(row, counts);
+            cache(pageKey, response);
+            return enrich(response, currentUserId, false);
+        });
+    }
+
+    /** Resolves a post slug before using the same detail query path. */
+    @Transactional(readOnly = true)
+    public PostDetailResponse getDetailBySlug(String slug, Long currentUserId) {
+        Long id = mapper.findIdBySlug(slug);
+        if (id == null) throw new ResourceNotFoundException("内容不存在");
+        return getDetail(id, currentUserId);
+    }
+
+    @Transactional(readOnly = true)
+    public String computeEtag(long id) {
+        return computeEtag(mapper.findDetailEtagById(id));
+    }
+
+    @Transactional(readOnly = true)
+    public String computeEtagBySlug(String slug) {
+        return computeEtag(mapper.findDetailEtagBySlug(slug));
+    }
+
+    private void assertReadable(PostDetailRow row, Long currentUserId) {
+        boolean isPublic = "published".equals(row.getStatus()) && "public".equals(row.getVisible());
+        boolean isOwner = currentUserId != null && currentUserId.equals(row.getCreatorId());
+        if (!isPublic && !isOwner) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "无权限查看");
+        }
+    }
+
+    private PostDetailResponse mapRow(PostDetailRow row, Map<String, Long> counts) {
+        return new PostDetailResponse(
+                String.valueOf(row.getId()), row.getSlug(), row.getTitle(), row.getDescription(),
+                row.getContentUrl(), parseArray(row.getImgUrls()), parseArray(row.getTags()),
+                String.valueOf(row.getCreatorId()), row.getAuthorAvatar(), row.getAuthorNickname(),
+                row.getAuthorTagJson(), counts.getOrDefault("like", 0L), counts.getOrDefault("fav", 0L),
+                null, null, row.getIsTop(), row.getVisible(), row.getType(), row.getPublishTime());
+    }
+
+    private PostDetailResponse processCacheHit(String cached, long id, String pageKey, Long userId) {
+        if (cached == null) return null;
+        if ("NULL".equals(cached)) throw new ResourceNotFoundException("内容不存在");
+        try {
+            PostDetailResponse base = objectMapper.readValue(cached, PostDetailResponse.class);
+            localCache.put(pageKey, base);
+            recordHotKeyAndExtendTtl(id, pageKey);
+            return enrich(base, userId, true);
+        } catch (Exception e) {
+            log.warn("Post detail cache deserialize failed, key={}", pageKey, e);
+            return null;
+        }
+    }
+
+    private PostDetailResponse enrich(PostDetailResponse base, Long userId, boolean refreshCounts) {
+        Long likes = base.likeCount();
+        Long favorites = base.favoriteCount();
+        if (refreshCounts) {
+            Map<String, Long> counts = counterService.getCounts("post", base.id(), List.of("like", "fav"));
+            likes = counts.getOrDefault("like", likes == null ? 0L : likes);
+            favorites = counts.getOrDefault("fav", favorites == null ? 0L : favorites);
+        }
+        return new PostDetailResponse(
+                base.id(), base.slug(), base.title(), base.description(), base.contentUrl(), base.images(), base.tags(),
+                base.authorId(), base.authorAvatar(), base.authorNickname(), base.authorTagJson(), likes, favorites,
+                userId != null && counterService.isLiked("post", base.id(), userId),
+                userId != null && counterService.isFaved("post", base.id(), userId),
+                base.isTop(), base.visible(), base.type(), base.publishTime());
+    }
+
+    private void cache(String pageKey, PostDetailResponse response) {
+        try {
+            int baseTtl = 60;
+            int target = hotKey.ttlForPublic(baseTtl, pageKey);
+            redis.opsForValue().set(pageKey, objectMapper.writeValueAsString(response),
+                    Duration.ofSeconds(Math.max(target, baseTtl + ThreadLocalRandom.current().nextInt(30))));
+            localCache.put(pageKey, response);
+        } catch (Exception e) {
+            log.warn("Failed to cache post detail, key={}", pageKey, e);
+        }
+    }
+
+    private String computeEtag(PostDetailEtagRow row) {
+        if (row == null || "deleted".equals(row.getStatus())) {
+            throw new ResourceNotFoundException("内容不存在");
+        }
+        Instant updatedAt = row.getUpdateTime();
+        return HttpCacheHelper.hashEtag(row.getStatus(), String.valueOf(LAYOUT_VERSION),
+                updatedAt != null ? updatedAt.toString() : "");
+    }
+
+    private void recordHotKeyAndExtendTtl(long id, String pageKey) {
+        String hotKeyId = "post:" + id;
+        hotKey.record(hotKeyId);
+        int target = hotKey.ttlForPublic(60, hotKeyId);
+        extendTtl(pageKey, target);
+        extendTtl("feed:item:" + id, target);
+    }
+
+    private void extendTtl(String key, int targetSeconds) {
+        Long ttl = redis.getExpire(key);
+        if (ttl != null && ttl < targetSeconds) redis.expire(key, Duration.ofSeconds(targetSeconds));
+    }
+
+    private List<String> parseArray(String json) {
+        if (json == null || json.isBlank()) return Collections.emptyList();
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {});
+        } catch (Exception e) {
+            log.debug("Invalid post detail JSON array", e);
+            return Collections.emptyList();
+        }
+    }
+}

@@ -5,7 +5,6 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import com.chtholly.cache.config.CacheProperties;
-import com.chtholly.counter.service.CounterService;
 import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
@@ -50,8 +49,6 @@ class PostServiceImplTest {
     @Mock
     private PostMapper mapper;
     @Mock
-    private CounterService counterService;
-    @Mock
     private UserCounterService userCounterService;
     @Mock
     private StringRedisTemplate redis;
@@ -71,6 +68,8 @@ class PostServiceImplTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private PostFeedService postFeedService;
+    @Mock
+    private PostDetailQueryService detailQueryService;
 
     private Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     private Cache<String, PostDetailResponse> postDetailCache;
@@ -81,7 +80,7 @@ class PostServiceImplTest {
         feedPublicCache = Caffeine.newBuilder().build();
         postDetailCache = Caffeine.newBuilder().build();
 
-        when(redis.opsForSet()).thenReturn(setOperations);
+        lenient().when(redis.opsForSet()).thenReturn(setOperations);
 
         CacheProperties cacheProperties = new CacheProperties();
         HotKeyDetector hotKeyDetector = new HotKeyDetector(cacheProperties);
@@ -93,7 +92,6 @@ class PostServiceImplTest {
                 new SnowflakeIdGenerator(),
                 new ObjectMapper(),
                 ossProperties,
-                counterService,
                 userCounterService,
                 redis,
                 feedPublicCache,
@@ -104,7 +102,8 @@ class PostServiceImplTest {
                 tagService,
                 searchIndexService,
                 eventPublisher,
-                postFeedService);
+                postFeedService,
+                detailQueryService);
     }
 
     private Post draftOwnedBy(long postId, long creatorId) {
@@ -114,6 +113,15 @@ class PostServiceImplTest {
                 .status("draft")
                 .tags("[]")
                 .build();
+    }
+
+    @Test
+    void detailReadsAreDelegatedToDedicatedQueryService() {
+        PostDetailResponse detail = org.mockito.Mockito.mock(PostDetailResponse.class);
+        when(detailQueryService.getDetail(42L, 9L)).thenReturn(detail);
+
+        assertThat(service.getDetail(42L, 9L)).isSameAs(detail);
+        verify(detailQueryService).getDetail(42L, 9L);
     }
 
     @Test
