@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -30,6 +31,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -38,6 +40,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -96,8 +99,13 @@ class AgentWebSocketHandlerTest {
                 return cognitiveEngine;
             }
         };
+        StaticListableBeanFactory extensionFactory = new StaticListableBeanFactory();
+        extensionFactory.addBean("insightService", insightService);
+        extensionFactory.addBean("notificationService", notificationService);
         handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
-                agentMetrics, characterStateService, insightService, cognitiveProvider, notificationService,
+                agentMetrics, characterStateService,
+                extensionFactory.getBeanProvider(InsightService.class), cognitiveProvider,
+                extensionFactory.getBeanProvider(NotificationService.class),
                 Runnable::run);
     }
 
@@ -293,5 +301,31 @@ class AgentWebSocketHandlerTest {
         handler.afterConnectionClosed(rawSession, org.springframework.web.socket.CloseStatus.NORMAL);
 
         verify(cognitiveEngine).triggerIfDue();
+    }
+
+    @Test
+    void chatLifecycleWorksWhenOptionalLearningAndNotificationExtensionsAreDisabled() {
+        StaticListableBeanFactory emptyFactory = new StaticListableBeanFactory();
+        AgentWebSocketHandler coreOnlyHandler = new AgentWebSocketHandler(
+                agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
+                agentMetrics, characterStateService,
+                emptyFactory.getBeanProvider(InsightService.class),
+                emptyFactory.getBeanProvider(CognitiveEngine.class),
+                emptyFactory.getBeanProvider(NotificationService.class),
+                Runnable::run);
+        when(rawSession.getId()).thenReturn("sess-core-only");
+        when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=core-only"));
+        when(ticketStore.consume("core-only")).thenReturn(201L);
+        when(memoryStore.getOrCreateMemory(201L, "chat-core-only")).thenReturn(memory);
+
+        assertDoesNotThrow(() -> {
+            coreOnlyHandler.afterConnectionEstablished(rawSession);
+            coreOnlyHandler.handleTextMessage(rawSession,
+                    new TextMessage("{\"type\":\"chat\",\"sessionId\":\"chat-core-only\",\"message\":\"hello\"}"));
+            coreOnlyHandler.afterConnectionClosed(rawSession, org.springframework.web.socket.CloseStatus.NORMAL);
+        });
+
+        verify(agent).run(any(), eq(201L), eq(memory), eq("sess-core-only"), any(), any());
+        verifyNoInteractions(insightService, notificationService);
     }
 }

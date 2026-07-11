@@ -1,5 +1,7 @@
 package com.chtholly.agent.learning;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskExecutor;
@@ -11,6 +13,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  * Async executor for low-priority agent learning jobs.
  */
 @Configuration
+@ConditionalOnProperty(prefix = "agent.extensions.learning", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class AgentLearningAsyncConfig {
 
     @Bean(name = "agentExecutor")

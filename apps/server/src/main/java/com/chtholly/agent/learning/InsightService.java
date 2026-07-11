@@ -1,5 +1,7 @@
 package com.chtholly.agent.learning;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import com.chtholly.agent.memory.AgentTurn;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,6 +37,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(prefix = "agent.extensions.learning", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class InsightService {
 
     private static final String PERSONAL_KEY_PREFIX = "insights:personal:";

@@ -1,5 +1,7 @@
 package com.chtholly.agent.proactive;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+
 import com.chtholly.agent.state.CharacterStateService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +12,7 @@ import java.util.List;
 
 /** Resolves the active audience shared by proactive domains. */
 @Service
+@ConditionalOnExpression("${agent.extensions.proactive.enabled:true} && ${agent.extensions.experience.enabled:true} && ${agent.extensions.community-actions.enabled:true}")
 class ProactiveAudienceService {
     private final CharacterStateService characterStateService;
     private final CharacterStateUserActivityProvider activityProvider;

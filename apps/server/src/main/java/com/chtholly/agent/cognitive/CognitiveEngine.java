@@ -1,5 +1,7 @@
 package com.chtholly.agent.cognitive;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+
 import com.chtholly.agent.comment.CommentGenerationService;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.post.api.dto.PostSummary;
@@ -25,6 +27,7 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 @Slf4j
 @Service
+@ConditionalOnExpression("${agent.extensions.learning.enabled:true} && ${agent.extensions.experience.enabled:true}")
 public class CognitiveEngine {
 
     private static final Duration RECENT_POST_WINDOW = Duration.ofHours(6);

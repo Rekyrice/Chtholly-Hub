@@ -54,9 +54,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final AgentWebSocketHeartbeat heartbeat;
     private final AgentMetrics agentMetrics;
     private final CharacterStateService characterStateService;
-    private final InsightService insightService;
+    private final ObjectProvider<InsightService> insightServiceProvider;
     private final ObjectProvider<CognitiveEngine> cognitiveEngineProvider;
-    private final NotificationService proactiveNotificationService;
+    private final ObjectProvider<NotificationService> proactiveNotificationServiceProvider;
     private final Executor executor;
 
     /** 原始 sessionId -> 线程安全装饰 session（并发 send 串行化）。 */
@@ -76,9 +76,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
      * @param heartbeat WebSocket heartbeat coordinator.
      * @param agentMetrics Agent metrics recorder.
      * @param characterStateService Character state service.
-     * @param insightService Conversation reflection service.
+     * @param insightServiceProvider Optional conversation reflection service provider.
      * @param cognitiveEngineProvider Optional cognitive engine provider.
-     * @param proactiveNotificationService Proactive notification service.
+     * @param proactiveNotificationServiceProvider Optional proactive notification service provider.
      */
     @Autowired
     public AgentWebSocketHandler(ChthollyAgent agent,
@@ -89,12 +89,13 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                                  AgentWebSocketHeartbeat heartbeat,
                                  AgentMetrics agentMetrics,
                                  CharacterStateService characterStateService,
-                                 InsightService insightService,
+                                 ObjectProvider<InsightService> insightServiceProvider,
                                  ObjectProvider<CognitiveEngine> cognitiveEngineProvider,
-                                 NotificationService proactiveNotificationService) {
+                                 ObjectProvider<NotificationService> proactiveNotificationServiceProvider) {
         // 生产环境继续使用虚拟线程，避免长耗时 Agent 调用阻塞 WebSocket 处理线程。
         this(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat, agentMetrics,
-                characterStateService, insightService, cognitiveEngineProvider, proactiveNotificationService,
+                characterStateService, insightServiceProvider, cognitiveEngineProvider,
+                proactiveNotificationServiceProvider,
                 Executors.newVirtualThreadPerTaskExecutor());
     }
 
@@ -106,9 +107,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                           AgentWebSocketHeartbeat heartbeat,
                           AgentMetrics agentMetrics,
                           CharacterStateService characterStateService,
-                          InsightService insightService,
+                          ObjectProvider<InsightService> insightServiceProvider,
                           ObjectProvider<CognitiveEngine> cognitiveEngineProvider,
-                          NotificationService proactiveNotificationService,
+                          ObjectProvider<NotificationService> proactiveNotificationServiceProvider,
                           Executor executor) {
         this.agent = agent;
         this.objectMapper = objectMapper;
@@ -118,9 +119,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         this.heartbeat = heartbeat;
         this.agentMetrics = agentMetrics;
         this.characterStateService = characterStateService;
-        this.insightService = insightService;
+        this.insightServiceProvider = insightServiceProvider;
         this.cognitiveEngineProvider = cognitiveEngineProvider;
-        this.proactiveNotificationService = proactiveNotificationService;
+        this.proactiveNotificationServiceProvider = proactiveNotificationServiceProvider;
         this.executor = executor;
     }
 
@@ -139,8 +140,12 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         safeSessions.put(session.getId(), safe);
         sessionUsers.put(session.getId(), userId);
         sessionConnectedAt.put(session.getId(), System.currentTimeMillis());
-        proactiveNotificationService.registerSession(userId, session.getId(), notification -> sendProactiveNotification(safe, notification));
-        sendPendingProactiveNotifications(userId, safe);
+        NotificationService proactiveNotificationService = proactiveNotificationServiceProvider.getIfAvailable();
+        if (proactiveNotificationService != null) {
+            proactiveNotificationService.registerSession(
+                    userId, session.getId(), notification -> sendProactiveNotification(safe, notification));
+            sendPendingProactiveNotifications(proactiveNotificationService, userId, safe);
+        }
         heartbeat.start(safe);
         agentMetrics.wsConnected();
         log.info("[{}] [AgentWS] Connected: userId={}, sessionId={}", correlationId, userId, session.getId());
@@ -173,7 +178,10 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         String chatSessionId = sessionChatSessionIds.remove(session.getId());
         reflectOnConversation(userId, chatSessionId);
         triggerCognitiveCycleIfDue();
-        proactiveNotificationService.unregisterSession(userId, session.getId());
+        NotificationService proactiveNotificationService = proactiveNotificationServiceProvider.getIfAvailable();
+        if (proactiveNotificationService != null) {
+            proactiveNotificationService.unregisterSession(userId, session.getId());
+        }
         safeSessions.remove(session.getId());
         rateLimiter.removeSession(session.getId());
         heartbeat.stop(session.getId());
@@ -282,6 +290,10 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (userId == null || !AgentChatSessionSupport.isValid(chatSessionId)) {
             return;
         }
+        InsightService insightService = insightServiceProvider.getIfAvailable();
+        if (insightService == null) {
+            return;
+        }
         try {
             List<AgentTurn> conversation = memoryStore.getTurns(userId, chatSessionId);
             insightService.reflectOnConversation(userId, conversation);
@@ -312,7 +324,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void sendPendingProactiveNotifications(Long userId, WebSocketSession session) {
+    private void sendPendingProactiveNotifications(
+            NotificationService proactiveNotificationService, Long userId, WebSocketSession session) {
         for (Notification notification : proactiveNotificationService.getPendingNotifications(userId)) {
             sendProactiveNotification(session, notification);
         }

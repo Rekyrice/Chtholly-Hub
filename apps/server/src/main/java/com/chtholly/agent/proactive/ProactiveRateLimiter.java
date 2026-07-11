@@ -1,5 +1,7 @@
 package com.chtholly.agent.proactive;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -12,6 +14,7 @@ import java.time.LocalDate;
  * 限制每位用户每日最多接收的主动推送条数。
  */
 @Component
+@ConditionalOnExpression("${agent.extensions.proactive.enabled:true} && ${agent.extensions.experience.enabled:true} && ${agent.extensions.community-actions.enabled:true}")
 public class ProactiveRateLimiter {
 
     static final int DAILY_LIMIT = 3;

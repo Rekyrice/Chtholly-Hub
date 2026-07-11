@@ -1,5 +1,7 @@
 package com.chtholly.agent.graph;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import com.chtholly.content.ContentAnalysis;
 import com.chtholly.content.Entity;
 import com.chtholly.post.id.SnowflakeIdGenerator;
@@ -32,6 +34,7 @@ import java.util.function.Supplier;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(prefix = "agent.extensions.graph", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class KnowledgeGraphService {
 
     private static final int PATH_MAX_DEPTH = 4;

@@ -30,13 +30,23 @@ public class AnchorManager {
     private final InsightService insightService;
     private final CharacterStateService stateService;
 
+    /**
+     * Creates the production anchor manager with optional extension-backed anchors.
+     *
+     * @param soulService identity anchor source
+     * @param memoryStoreProvider optional episodic memory provider
+     * @param knowledgeService semantic knowledge source
+     * @param insightServiceProvider optional procedural learning provider
+     * @param stateService relational state source
+     */
     @Autowired
     public AnchorManager(CharacterSoulService soulService,
                          ObjectProvider<AgentMemoryStore> memoryStoreProvider,
                          KnowledgeService knowledgeService,
-                         InsightService insightService,
+                         ObjectProvider<InsightService> insightServiceProvider,
                          CharacterStateService stateService) {
-        this(soulService, memoryStoreProvider.getIfAvailable(), knowledgeService, insightService, stateService);
+        this(soulService, memoryStoreProvider.getIfAvailable(), knowledgeService,
+                insightServiceProvider.getIfAvailable(), stateService);
     }
 
     AnchorManager(CharacterSoulService soulService,
@@ -82,11 +92,15 @@ public class AnchorManager {
             builder.semantic(List.of());
         }
 
-        try {
-            builder.procedural(insightService.getInsightTextsForUser(userId, 5, 500));
-        } catch (Exception e) {
-            log.warn("Procedural anchor failed userId={}", userId, e);
+        if (insightService == null) {
             builder.procedural(List.of());
+        } else {
+            try {
+                builder.procedural(insightService.getInsightTextsForUser(userId, 5, 500));
+            } catch (Exception e) {
+                log.warn("Procedural anchor failed userId={}", userId, e);
+                builder.procedural(List.of());
+            }
         }
 
         try {

@@ -1,5 +1,7 @@
 package com.chtholly.agent.experience;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import com.chtholly.agent.cognitive.ExperienceService;
 import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.auth.event.UserRegisteredEvent;
@@ -23,6 +25,7 @@ import java.time.Duration;
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "agent.extensions.experience", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ExperienceGenerator {
 
     private final ExperienceService experienceService;

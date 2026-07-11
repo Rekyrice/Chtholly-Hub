@@ -1,5 +1,7 @@
 package com.chtholly.agent.cognitive;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import com.chtholly.agent.experience.ArchivedExperience;
 import com.chtholly.agent.experience.ArchivedExperienceMapper;
 import com.chtholly.agent.experience.Experience;
@@ -31,6 +33,7 @@ import java.util.Map;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(prefix = "agent.extensions.experience", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ExperienceService {
 
     private static final String KEY_PREFIX = "agent:experiences:";

@@ -1,5 +1,7 @@
 package com.chtholly.agent.graph;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.mapping.KeywordProperty;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(prefix = "agent.extensions.graph", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class KnowledgeGraphIndexInitializer {
 
     public static final String INDEX = "knowledge_entities_index";
