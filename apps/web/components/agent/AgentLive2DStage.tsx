@@ -54,8 +54,10 @@ export default function AgentLive2DStage() {
   const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
   const [phase, setPhase] = useState<"loading" | "entering" | "breathing">("loading");
 
-  busyRef.current = busy;
-  streamingRef.current = streaming;
+  useEffect(() => {
+    busyRef.current = busy;
+    streamingRef.current = streaming;
+  }, [busy, streaming]);
 
   const onTapLineStart = useCallback((line: ChthollyTapLine) => {
     setTapLineSession({

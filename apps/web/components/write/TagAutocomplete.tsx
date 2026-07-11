@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { tagService } from "@/lib/services/tagService";
 import type { TagItem } from "@/lib/types/tag";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ export default function TagAutocomplete({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
 
   useEffect(() => {
     let alive = true;
@@ -63,9 +64,13 @@ export default function TagAutocomplete({
     return [...prefix, ...contains].slice(0, 5);
   }, [catalog, input, value]);
 
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [suggestions]);
+  const safeActiveIndex = suggestions.length
+    ? Math.min(activeIndex, suggestions.length - 1)
+    : 0;
+  const activeOptionId =
+    open && suggestions[safeActiveIndex]
+      ? `${listboxId}-option-${suggestions[safeActiveIndex].id}`
+      : undefined;
 
   const addTag = (raw: string) => {
     const tag = raw.trim();
@@ -98,9 +103,13 @@ export default function TagAutocomplete({
       setActiveIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
       return;
     }
-    if ((event.key === "Tab" || event.key === "Enter") && open && suggestions[activeIndex]) {
+    if (
+      (event.key === "Tab" || event.key === "Enter") &&
+      open &&
+      suggestions[safeActiveIndex]
+    ) {
       event.preventDefault();
-      addTag(suggestions[activeIndex].name);
+      addTag(suggestions[safeActiveIndex].name);
       return;
     }
     if (event.key === "Enter" || event.key === "," || event.key === "，") {
@@ -132,28 +141,33 @@ export default function TagAutocomplete({
           onChange={(event) => {
             setInput(event.target.value);
             setOpen(true);
+            setActiveIndex(0);
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
           className="write-tag-input"
           placeholder={value.length ? "" : "标签，回车或 Tab 补全"}
           aria-label="标签"
+          role="combobox"
           aria-autocomplete="list"
           aria-expanded={open && suggestions.length > 0}
+          aria-controls={listboxId}
+          aria-activedescendant={activeOptionId}
         />
       </div>
 
       {open && suggestions.length > 0 && (
-        <ul className="write-tag-suggestions" role="listbox">
+        <ul id={listboxId} className="write-tag-suggestions" role="listbox">
           {suggestions.map((tag, index) => (
             <li key={tag.id}>
               <button
+                id={`${listboxId}-option-${tag.id}`}
                 type="button"
                 role="option"
-                aria-selected={index === activeIndex}
+                aria-selected={index === safeActiveIndex}
                 className={cn(
                   "write-tag-suggestion",
-                  index === activeIndex && "write-tag-suggestion--active",
+                  index === safeActiveIndex && "write-tag-suggestion--active",
                 )}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => addTag(tag.name)}

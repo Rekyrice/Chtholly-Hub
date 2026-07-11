@@ -1,27 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef } from "react";
 
-export function useInView(options?: IntersectionObserverInit) {
-  const ref = useRef<HTMLElement>(null);
-  const [isInView, setIsInView] = useState(false);
+export function useInView<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = ref.current;
-    if (!element) return;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setIsInView(true);
+          element.classList.add("animate-in--visible");
           observer.unobserve(element);
         }
       },
-      { threshold: 0.1, ...options },
+      { threshold: 0.1 },
     );
+
     observer.observe(element);
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 页面进入动画只在挂载时观察一次。
+
+    return () => {
+      observer.disconnect();
+      element.classList.remove("animate-in--visible");
+    };
   }, []);
 
-  return { ref, isInView };
+  return ref;
 }

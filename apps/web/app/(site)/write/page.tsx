@@ -1,9 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import "../../styles/write.css";
 import MarkdownToolbar from "@/components/write/MarkdownToolbar";
 import TagAutocomplete from "@/components/write/TagAutocomplete";
 import WriteStats from "@/components/write/WriteStats";
@@ -38,15 +39,58 @@ type WriteDraft = {
   draftPostId?: string | null;
 };
 
+const EMPTY_DRAFT: WriteDraft = {
+  title: "",
+  tags: "",
+  description: "",
+  markdown: "",
+  draftPostId: null,
+};
+
+function subscribeBrowserReady() {
+  return () => undefined;
+}
+
+function readDraft(): WriteDraft {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return EMPTY_DRAFT;
+    const saved = JSON.parse(raw) as Partial<WriteDraft>;
+    return {
+      title: saved.title ?? "",
+      tags: saved.tags ?? "",
+      description: saved.description ?? "",
+      markdown: saved.markdown ?? "",
+      draftPostId: saved.draftPostId ?? null,
+    };
+  } catch {
+    // 本地草稿损坏时直接忽略，避免影响写作入口。
+    return EMPTY_DRAFT;
+  }
+}
+
 export default function WritePage() {
-  const router = useRouter();
   const authorized = useRequireAuth();
+  const browserReady = useSyncExternalStore(subscribeBrowserReady, () => true, () => false);
+
+  if (!authorized) return null;
+
+  return (
+    <WriteEditor
+      key={browserReady ? "browser-draft" : "server-draft"}
+      initialDraft={browserReady ? readDraft() : EMPTY_DRAFT}
+    />
+  );
+}
+
+function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
+  const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [title, setTitle] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [description, setDescription] = useState("");
-  const [markdown, setMarkdown] = useState("");
-  const [draftPostId, setDraftPostId] = useState<string | null>(null);
+  const [title, setTitle] = useState(initialDraft.title);
+  const [tags, setTags] = useState(() => parseTags(initialDraft.tags));
+  const [description, setDescription] = useState(initialDraft.description);
+  const [markdown, setMarkdown] = useState(initialDraft.markdown);
+  const [draftPostId, setDraftPostId] = useState<string | null>(initialDraft.draftPostId ?? null);
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -54,7 +98,15 @@ export default function WritePage() {
   const [error, setError] = useState("");
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
-  const [draftHydrated, setDraftHydrated] = useState(false);
+  const saveCompletionTimerRef = useRef<number | null>(null);
+
+  const markDirty = () => {
+    if (saveCompletionTimerRef.current !== null) {
+      window.clearTimeout(saveCompletionTimerRef.current);
+      saveCompletionTimerRef.current = null;
+    }
+    setSaveStatus("unsaved");
+  };
 
   const draft = useMemo<WriteDraft>(
     () => ({
@@ -68,24 +120,6 @@ export default function WritePage() {
   );
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(DRAFT_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as Partial<WriteDraft>;
-        setTitle(saved.title ?? "");
-        setTags(parseTags(saved.tags ?? ""));
-        setDescription(saved.description ?? "");
-        setMarkdown(saved.markdown ?? "");
-        setDraftPostId(saved.draftPostId ?? null);
-      }
-    } catch {
-      // 本地草稿损坏时直接忽略，避免影响写作入口。
-    } finally {
-      setDraftHydrated(true);
-    }
-  }, []);
-
-  useEffect(() => {
     const timer = window.setInterval(() => {
       setPlaceholderIndex((prev) => (prev + 1) % PLACEHOLDERS.length);
     }, 8000);
@@ -93,19 +127,26 @@ export default function WritePage() {
   }, []);
 
   useEffect(() => {
-    if (!draftHydrated) return undefined;
-    setSaveStatus("unsaved");
     const timer = window.setTimeout(() => {
       setSaveStatus("saving");
       try {
         window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-        window.setTimeout(() => setSaveStatus("saved"), 180);
+        saveCompletionTimerRef.current = window.setTimeout(() => {
+          saveCompletionTimerRef.current = null;
+          setSaveStatus("saved");
+        }, 180);
       } catch {
         setSaveStatus("unsaved");
       }
     }, 700);
-    return () => window.clearTimeout(timer);
-  }, [draft, draftHydrated]);
+    return () => {
+      window.clearTimeout(timer);
+      if (saveCompletionTimerRef.current !== null) {
+        window.clearTimeout(saveCompletionTimerRef.current);
+        saveCompletionTimerRef.current = null;
+      }
+    };
+  }, [draft]);
 
   const ensureDraftPostId = async () => {
     if (draftPostId) return draftPostId;
@@ -169,6 +210,7 @@ export default function WritePage() {
     try {
       const result = await postAiService.suggestDescription(markdown);
       setDescription(result.description);
+      markDirty();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI 生成描述失败");
     } finally {
@@ -210,6 +252,7 @@ export default function WritePage() {
       const inserted = `![${alt}](${publicUrl})`;
       const next = markdown.slice(0, start) + inserted + markdown.slice(end);
       setMarkdown(next);
+      markDirty();
       requestAnimationFrame(() => {
         const target = textareaRef.current;
         if (!target) return;
@@ -224,8 +267,6 @@ export default function WritePage() {
     }
   };
 
-  if (!authorized) return null;
-
   return (
     <div className="write-container" data-testid="write-page">
       <form onSubmit={onPublish} className="write-editor-wrapper">
@@ -237,7 +278,10 @@ export default function WritePage() {
 
         <input
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            markDirty();
+          }}
           className="write-title-input"
           placeholder="标题"
           aria-label="标题"
@@ -245,10 +289,19 @@ export default function WritePage() {
         />
 
         <div className="write-meta-row write-meta-row--tags">
-          <TagAutocomplete value={tags} onChange={setTags} />
+          <TagAutocomplete
+            value={tags}
+            onChange={(nextTags) => {
+              setTags(nextTags);
+              markDirty();
+            }}
+          />
           <input
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              markDirty();
+            }}
             placeholder="一句话摘要"
             className="write-meta-input"
             aria-label="摘要"
@@ -292,7 +345,10 @@ export default function WritePage() {
           <MarkdownToolbar
             textareaRef={textareaRef}
             value={markdown}
-            onChange={setMarkdown}
+            onChange={(nextMarkdown) => {
+              setMarkdown(nextMarkdown);
+              markDirty();
+            }}
             onImageUpload={onImageUpload}
             uploading={uploadingImage}
             disabled={loading}
@@ -313,7 +369,10 @@ export default function WritePage() {
             className={cn("write-editor", "write-placeholder-fade")}
             placeholder={PLACEHOLDERS[placeholderIndex]}
             value={markdown}
-            onChange={(e) => setMarkdown(e.target.value)}
+            onChange={(e) => {
+              setMarkdown(e.target.value);
+              markDirty();
+            }}
             required
           />
         )}

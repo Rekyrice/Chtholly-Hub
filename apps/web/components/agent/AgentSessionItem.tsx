@@ -15,6 +15,13 @@ type AgentSessionItemProps = {
 
 export default function AgentSessionItem({
   session,
+  ...props
+}: AgentSessionItemProps) {
+  return <AgentSessionItemState key={`${session.id}:${session.title}`} session={session} {...props} />;
+}
+
+function AgentSessionItemState({
+  session,
   active,
   onSelect,
   onRename,
@@ -25,10 +32,6 @@ export default function AgentSessionItem({
   const [draftTitle, setDraftTitle] = useState(session.title);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setDraftTitle(session.title);
-  }, [session.title]);
 
   useEffect(() => {
     if (!renaming) return;

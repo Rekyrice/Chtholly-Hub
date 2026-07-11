@@ -1,3 +1,4 @@
+import "../../styles/admin.css";
 import AdminShell from "@/components/site/AdminShell";
 import type { ReactNode } from "react";
 

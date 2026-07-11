@@ -152,6 +152,12 @@
     }
   }
 
+  @media (max-width: 767px) {
+    .site-shell {
+      padding-bottom: calc(56px + env(safe-area-inset-bottom));
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .article-action-button--pulse {
       animation: none;
@@ -177,24 +183,6 @@
       animation: none;
     }
 
-    .landing-background__image {
-      animation: none;
-      transform: none;
-    }
-
-    .landing-typewriter,
-    .landing-enter-btn {
-      transition: none;
-    }
-
-    .landing-typewriter__cursor {
-      animation: none;
-    }
-
-    .not-found-illustration {
-      animation: none;
-    }
-
     .chtholly-illustration {
       animation: none;
     }
@@ -203,10 +191,7 @@
       animation: none;
     }
 
-    .not-found-btn {
-      transition: none;
-    }
-
+    html[data-motion-ready="true"] .animate-in--ready:not(.animate-in--visible),
     .animate-in {
       opacity: 1;
       transform: none;
@@ -217,13 +202,5 @@
       animation: none;
     }
 
-    .agent-message-row--assistant-enter,
-    .agent-message-row--user-enter {
-      animation: none;
-    }
-
-    .proactive-notification {
-      animation: none;
-    }
   }
 }

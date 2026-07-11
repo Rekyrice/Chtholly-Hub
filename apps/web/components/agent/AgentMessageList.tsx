@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { AgentRichMessage, AgentSteps, stepTone } from "@/components/agent/AgentRichMessage";
 import { useMangaMessageScroll } from "@/lib/hooks/useMangaMessageScroll";
 import { cn } from "@/lib/utils";
@@ -29,7 +29,6 @@ function MessageBubble({
   showSteps,
   rich,
   isSpeaking,
-  isNew,
   bubbleRef,
   showAssistantAvatar,
 }: {
@@ -37,17 +36,22 @@ function MessageBubble({
   showSteps: boolean;
   rich?: boolean;
   isSpeaking?: boolean;
-  isNew?: boolean;
   bubbleRef?: RefObject<HTMLDivElement | null>;
   showAssistantAvatar?: boolean;
 }) {
+  const [isEntering, setIsEntering] = useState(true);
+  const finishEntering = (event: React.AnimationEvent<HTMLDivElement>) => {
+    if (event.currentTarget === event.target) setIsEntering(false);
+  };
+
   if (msg.role === "user") {
     return (
       <div
         className={cn(
           "agent-message-row agent-message-row--user",
-          isNew && "agent-message-row--user-enter",
+          isEntering && "agent-message-row--user-enter",
         )}
+        onAnimationEnd={finishEntering}
       >
         <div className="agent-bubble-user max-w-full text-sm leading-relaxed whitespace-pre-wrap">
           {msg.content}
@@ -69,8 +73,9 @@ function MessageBubble({
       className={cn(
         "agent-message-row agent-message-row--assistant",
         showAssistantAvatar && "agent-message-row--with-avatar",
-        isNew && "agent-message-row--assistant-enter",
+        isEntering && "agent-message-row--assistant-enter",
       )}
+      onAnimationEnd={finishEntering}
     >
       {showAssistantAvatar && (
         <div className="agent-msg-avatar flex-none" aria-hidden="true">
@@ -109,7 +114,6 @@ export default function AgentMessageList({
 }: AgentMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const speakingBubbleRef = useRef<HTMLDivElement>(null);
-  const seenIdsRef = useRef(new Set<string>());
   const empty = messages.length === 0 && !busy;
 
   const lastAssistantIndex = useMemo(() => {
@@ -168,8 +172,6 @@ export default function AgentMessageList({
 
       {messages.map((msg, index) => {
         const isSpeaking = index === lastAssistantIndex;
-        const isNew = !seenIdsRef.current.has(msg.id);
-        if (isNew) seenIdsRef.current.add(msg.id);
 
         return (
           <MessageBubble
@@ -178,7 +180,6 @@ export default function AgentMessageList({
             showSteps={showSteps}
             rich={rich}
             isSpeaking={isSpeaking}
-            isNew={isNew}
             bubbleRef={speakingBubbleRef}
             showAssistantAvatar={showAssistantAvatar}
           />

@@ -1,21 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { ChevronRight, House, UserRound } from "lucide-react";
-import { getStoredAuth } from "@/lib/auth/tokens";
+import { useAuthUser } from "@/lib/auth/auth-store";
 import { useRequireAuth } from "@/lib/hooks/useRequireAuth";
-import type { AuthUser } from "@/lib/types/auth";
 
 export default function SettingsPage() {
   const authorized = useRequireAuth();
-  const [user, setUser] = useState<AuthUser | null>(null);
-
-  useEffect(() => {
-    if (authorized) {
-      setUser(getStoredAuth()?.user ?? null);
-    }
-  }, [authorized]);
+  const user = useAuthUser();
 
   if (!authorized) return null;
 

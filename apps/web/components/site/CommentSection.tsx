@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { extractErrorMessage } from "@/lib/hooks/useErrorMessage";
 import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import { Button } from "@/components/ui/Button";
-import { isLoggedIn } from "@/lib/auth/tokens";
+import { useStoredAuth } from "@/lib/auth/auth-store";
 import { commentService } from "@/lib/services/commentService";
 import type { CommentItem } from "@/lib/types/comment";
 import { cn, formatDate } from "@/lib/utils";
@@ -119,27 +119,30 @@ export default function CommentSection({ postId }: Props) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [replyTarget, setReplyTarget] = useState<string | null>(null);
-  const [loggedIn, setLoggedIn] = useState(false);
+  const loggedIn = useStoredAuth() !== null;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isAlive: () => boolean = () => true) => {
     try {
       const res = await commentService.list(postId);
+      if (!isAlive()) return;
       setItems(res.items);
       setTotal(res.total);
     } catch {
+      if (!isAlive()) return;
       setItems([]);
       setTotal(0);
     } finally {
-      setLoading(false);
+      if (isAlive()) setLoading(false);
     }
   }, [postId]);
 
   useEffect(() => {
-    void load();
-    setLoggedIn(isLoggedIn());
-    const sync = () => setLoggedIn(isLoggedIn());
-    window.addEventListener("chtholly-auth-change", sync);
-    return () => window.removeEventListener("chtholly-auth-change", sync);
+    let alive = true;
+    const timer = window.setTimeout(() => void load(() => alive), 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
   }, [load]);
 
   const handleCreate = async (content: string, parentId?: string) => {

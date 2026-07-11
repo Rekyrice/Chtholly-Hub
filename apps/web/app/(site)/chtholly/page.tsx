@@ -1,4 +1,5 @@
 import Link from "next/link";
+import "../../styles/agent.css";
 import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import { agentService } from "@/lib/services/agentService";
 import { postService } from "@/lib/services/postService";

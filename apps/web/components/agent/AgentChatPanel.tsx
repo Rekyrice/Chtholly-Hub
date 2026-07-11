@@ -30,6 +30,7 @@ export default function AgentChatPanel({
     setInput,
     connected,
     busy,
+    streaming,
     showSteps,
     setShowSteps,
     richMarkdown,
@@ -44,6 +45,7 @@ export default function AgentChatPanel({
   const workspacePlaceholder = useAgentPlaceholder();
   const showAssistantAvatar = !isWorkspace || !isDesktopLayout;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const expansionBlocked = busy || streaming;
 
   return (
     <div
@@ -79,7 +81,14 @@ export default function AgentChatPanel({
               className="floating-agent-icon-btn"
               aria-label="展开完整页面"
               title="展开完整页面"
-              onClick={onExpand}
+              aria-disabled={expansionBlocked}
+              onClick={(event) => {
+                if (expansionBlocked) {
+                  event.preventDefault();
+                  return;
+                }
+                onExpand?.();
+              }}
             >
               <ExternalLink size={16} />
             </Link>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import AgentChatPanel from "@/components/agent/AgentChatPanel";
 import AgentLive2DStage from "@/components/agent/AgentLive2DStage";
 import AgentSessionSidebar from "@/components/agent/AgentSessionSidebar";
@@ -24,6 +24,13 @@ type AgentThought = {
   timestamp: string;
 };
 
+const SESSIONS_COLLAPSED_EVENT = "chtholly-agent-sessions-collapsed-change";
+
+function subscribeSessionsCollapsed(onStoreChange: () => void) {
+  window.addEventListener(SESSIONS_COLLAPSED_EVENT, onStoreChange);
+  return () => window.removeEventListener(SESSIONS_COLLAPSED_EVENT, onStoreChange);
+}
+
 export default function AgentWorkspace() {
   const {
     loggedIn,
@@ -38,16 +45,14 @@ export default function AgentWorkspace() {
   const sessionParam = searchParams.get("session");
   const contextParam = searchParams.get("context");
   const appliedUrlSessionRef = useRef(false);
-  const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
-  const [panelsHydrated, setPanelsHydrated] = useState(false);
+  const sessionsCollapsed = useSyncExternalStore(
+    subscribeSessionsCollapsed,
+    loadSessionsCollapsedPreference,
+    () => false,
+  );
   const [recentThoughts, setRecentThoughts] = useState<AgentThought[]>([]);
   const isDesktopLayout = useMinWidth(992);
   const sessionsCollapsedEffective = sessionsCollapsed && isDesktopLayout;
-
-  useEffect(() => {
-    setSessionsCollapsed(loadSessionsCollapsedPreference());
-    setPanelsHydrated(true);
-  }, []);
 
   useEffect(() => {
     if (!loggedIn) return;
@@ -67,12 +72,9 @@ export default function AgentWorkspace() {
   }, [loggedIn]);
 
   const toggleSessions = useCallback(() => {
-    setSessionsCollapsed((prev) => {
-      const next = !prev;
-      saveSessionsCollapsedPreference(next);
-      return next;
-    });
-  }, []);
+    saveSessionsCollapsedPreference(!sessionsCollapsed);
+    window.dispatchEvent(new Event(SESSIONS_COLLAPSED_EVENT));
+  }, [sessionsCollapsed]);
 
   useEffect(() => {
     if (appliedUrlSessionRef.current || !sessionParam || sessions.length === 0) return;
@@ -122,7 +124,7 @@ export default function AgentWorkspace() {
       className={cn(
         "agent-workspace",
         workspaceDark && "agent-workspace--dark",
-        panelsHydrated && sessionsCollapsedEffective && "agent-workspace--sessions-collapsed",
+        sessionsCollapsedEffective && "agent-workspace--sessions-collapsed",
       )}
       data-testid="agent-workspace"
     >

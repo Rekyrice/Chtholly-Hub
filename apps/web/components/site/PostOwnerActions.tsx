@@ -34,6 +34,24 @@ function isSameUser(a?: string | number | null, b?: string | number | null) {
 
 export default function PostOwnerActions({
   postId,
+  initialTop = false,
+  initialVisibility = "public",
+  ...props
+}: PostOwnerActionsProps) {
+  const stateKey = `${postId}:${initialTop}:${initialVisibility ?? "public"}`;
+  return (
+    <PostOwnerActionsState
+      key={stateKey}
+      postId={postId}
+      initialTop={initialTop}
+      initialVisibility={initialVisibility}
+      {...props}
+    />
+  );
+}
+
+function PostOwnerActionsState({
+  postId,
   authorId,
   title = "这篇文章",
   initialTop = false,
@@ -63,14 +81,6 @@ export default function PostOwnerActions({
     window.addEventListener("chtholly-auth-change", syncOwner);
     return () => window.removeEventListener("chtholly-auth-change", syncOwner);
   }, [authorId]);
-
-  useEffect(() => {
-    setTop(Boolean(initialTop));
-  }, [initialTop]);
-
-  useEffect(() => {
-    setVisibility(initialVisibility ?? "public");
-  }, [initialVisibility]);
 
   useEffect(() => {
     if (!open) return;
