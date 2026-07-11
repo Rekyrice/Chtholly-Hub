@@ -1,7 +1,6 @@
 package com.chtholly.agent.context;
 
 import com.chtholly.agent.AgentTool;
-import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.anchor.KnowledgeService;
@@ -51,6 +50,7 @@ public class ContextEngine {
     private final ContentUnderstandingService contentUnderstandingService;
     private final SeasonService seasonService;
     private final KnowledgeGraphService knowledgeGraphService;
+    private final PromptTailRenderer promptTailRenderer = new PromptTailRenderer();
 
     @Autowired
     public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
@@ -147,9 +147,7 @@ public class ContextEngine {
         appendKnownFacts(sb, userQuestion);
         appendRelevantKnowledge(sb, anchors.semantic(), userQuestion);
         appendProceduralRules(sb, anchors.procedural());
-        appendTools(sb, tools);
-        appendConversationHistory(sb, conversationHistory, anchors.episodic());
-        appendCurrentQuestion(sb, userQuestion);
+        promptTailRenderer.append(sb, tools, conversationHistory, anchors.episodic(), userQuestion);
 
         return sb.toString();
     }
@@ -349,42 +347,6 @@ public class ContextEngine {
         sb.append('\n');
     }
 
-    private void appendTools(StringBuilder sb, Iterable<AgentTool> tools) {
-        sb.append("## 可用工具\n\n");
-        if (tools != null) {
-            for (AgentTool tool : tools) {
-                sb.append("### ").append(tool.name()).append('\n');
-                sb.append(tool.description());
-                appendParameterSchema(sb, tool.parameterSchema());
-                sb.append("\n\n");
-            }
-        }
-
-        sb.append("## 工具使用准则\n\n");
-        sb.append("1. 优先用工具获取事实，不确定时查一下再回答\n");
-        sb.append("2. 每次只调用一个工具，等结果返回后再决定下一步\n");
-        sb.append("3. 如果站内搜索无结果，尝试 Bangumi 工具搜索动漫相关内容\n");
-        sb.append("4. 不要编造工具返回的数据，如实告诉用户查询结果\n\n");
-        sb.append("输出格式：只输出单个 JSON 对象；调用工具用 {\"action\":\"工具名\",\"input\":{...}}，可以回答时用 {\"action\":\"final\",\"answer\":\"占位\"}\n\n");
-    }
-
-    private void appendConversationHistory(StringBuilder sb, String conversationHistory, List<AgentTurn> episodic) {
-        sb.append("## 对话历史\n\n");
-        if (conversationHistory != null && !conversationHistory.isBlank()) {
-            sb.append(conversationHistory.trim());
-        } else if (episodic != null && !episodic.isEmpty()) {
-            sb.append(formatEpisodicTurns(episodic));
-        } else {
-            sb.append("（暂无）");
-        }
-        sb.append("\n\n");
-    }
-
-    private void appendCurrentQuestion(StringBuilder sb, String userQuestion) {
-        sb.append("## 用户的问题\n\n");
-        sb.append(userQuestion == null ? "" : userQuestion.trim());
-    }
-
     private static String formatSearchResult(SearchResult result) {
         if (result == null) {
             return "";
@@ -515,19 +477,6 @@ public class ContextEngine {
                 .collect(java.util.stream.Collectors.joining("、"));
     }
 
-    private static String formatEpisodicTurns(List<AgentTurn> turns) {
-        StringBuilder sb = new StringBuilder();
-        for (AgentTurn turn : turns) {
-            if (turn == null || turn.content() == null || turn.content().isBlank()) {
-                continue;
-            }
-            sb.append(turn.role() == AgentTurn.Role.USER ? "User: " : "Assistant: ")
-                    .append(turn.content().trim())
-                    .append('\n');
-        }
-        return sb.toString().trim();
-    }
-
     private static String timePeriodLabel() {
         return timePeriodLabel(LocalTime.now().getHour());
     }
@@ -623,31 +572,4 @@ public class ContextEngine {
         };
     }
 
-    private void appendParameterSchema(StringBuilder sb, Map<String, ParamDef> schema) {
-        if (schema == null || schema.isEmpty()) {
-            return;
-        }
-        sb.append("\n  参数：");
-        for (Map.Entry<String, ParamDef> entry : schema.entrySet()) {
-            ParamDef def = entry.getValue();
-            sb.append("\n    - ").append(entry.getKey())
-                    .append(" (").append(schemaTypeLabel(def.type()))
-                    .append(def.required() ? ", 必填" : ", 可选")
-                    .append("): ")
-                    .append(def.description());
-        }
-    }
-
-    private static String schemaTypeLabel(Class<?> type) {
-        if (type == String.class) {
-            return "string";
-        }
-        if (type == Integer.class || type == int.class) {
-            return "integer";
-        }
-        if (type == Boolean.class || type == boolean.class) {
-            return "boolean";
-        }
-        return type.getSimpleName();
-    }
 }
