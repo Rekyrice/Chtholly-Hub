@@ -1,0 +1,13 @@
+- seedKey: bad-handle
+  nickname: 坏句柄
+  handle: x-
+  bio: 用来验证句柄格式的测试账号。
+  avatarAsset: cover
+  tags: []
+  voice:
+    sentenceLength: concise
+    commonPhrases: []
+    interests: []
+    biases: []
+    knowledgeBoundaries: []
+    forbiddenExpressions: []

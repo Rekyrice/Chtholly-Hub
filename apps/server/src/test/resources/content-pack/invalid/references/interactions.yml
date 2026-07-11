@@ -1,0 +1,20 @@
+comments:
+  - seedKey: comment-01
+    postSeedKey: absent-post
+    authorSeedKey: bad-handle
+    content: 不存在文章的评论。
+    createdAt: 2026-07-11T09:00:00Z
+  - seedKey: comment-02
+    postSeedKey: post-01
+    authorSeedKey: bad-handle
+    content: 时间早于文章。
+    createdAt: 2026-07-11T07:00:00Z
+follows: []
+reactions: []
+views:
+  - seedKey: view-01
+    postSeedKey: absent-post
+    minimumCount: 1
+  - seedKey: view-02
+    postSeedKey: post-01
+    minimumCount: -1

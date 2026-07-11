@@ -1,0 +1,12 @@
+comments: []
+follows:
+  - seedKey: follow-01
+    fromAccountSeedKey: account-01
+    toAccountSeedKey: account-01
+    createdAt: 2026-07-11T09:00:00Z
+reactions:
+  - seedKey: reaction-01
+    postSeedKey: post-01
+    accountSeedKey: account-01
+    type: CLAP
+views: []

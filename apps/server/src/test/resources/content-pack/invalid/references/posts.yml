@@ -1,0 +1,35 @@
+- seedKey: post-01
+  authorSeedKey: bad-handle
+  title: 描述太短
+  slug: post-01
+  description: 太短
+  category: TECH
+  tags: []
+  publishTime: 2026-07-11T08:00:00Z
+  markdownFile: markdown/content.md
+  coverAsset: cover
+  inlineAssets: []
+  brief:
+    factAnchors: [事实]
+    voice: test
+    position: test
+    format: article
+    mediaPlan: []
+    sources: []
+- seedKey: post-02
+  authorSeedKey: bad-handle
+  title: 缺少时间
+  slug: post-02
+  description: 这是一段满足长度要求的文章描述。
+  category: TECH
+  tags: []
+  markdownFile: markdown/content.md
+  coverAsset: cover
+  inlineAssets: []
+  brief:
+    factAnchors: [事实]
+    voice: test
+    position: test
+    format: article
+    mediaPlan: []
+    sources: []

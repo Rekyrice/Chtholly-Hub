@@ -1,0 +1,26 @@
+- seedKey: account-01
+  nickname: 账号甲
+  handle: repeated_handle
+  bio: 用于结构校验的测试账号。
+  avatarAsset: avatar-01
+  tags: []
+  voice:
+    sentenceLength: concise
+    commonPhrases: []
+    interests: []
+    biases: []
+    knowledgeBoundaries: []
+    forbiddenExpressions: []
+- seedKey: account-02
+  nickname: 账号乙
+  handle: repeated_handle
+  bio: 用于结构校验的另一账号。
+  avatarAsset: avatar-01
+  tags: []
+  voice:
+    sentenceLength: concise
+    commonPhrases: []
+    interests: []
+    biases: []
+    knowledgeBoundaries: []
+    forbiddenExpressions: []

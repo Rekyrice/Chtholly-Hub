@@ -1,0 +1,9 @@
+- key: avatar-01
+  source: local
+  file: avatars/avatar-01.png
+  objectKey: seed/test/avatar-01.png
+  sha256: fixture
+  contentType: image/png
+  width: 512
+  height: 512
+  usage: avatar

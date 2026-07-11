@@ -1,0 +1,9 @@
+- key: cover
+  source: local
+  file: covers/cover.png
+  objectKey: seed/test/cover.png
+  sha256: fixture
+  contentType: image/png
+  width: 1200
+  height: 630
+  usage: cover
