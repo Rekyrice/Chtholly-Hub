@@ -67,6 +67,7 @@ public class PostServiceImpl implements PostService {
     private final HotKeyDetector hotKey;
     private static final Logger log = LoggerFactory.getLogger(PostServiceImpl.class);
     private final PostDetailQueryService detailQueryService;
+    private final PostBackgroundQueryService backgroundQueryService;
     private final PostRagIndexer ragIndexService;
     private final OutboxMapper outboxMapper;
     private final TagService tagService;
@@ -91,7 +92,8 @@ public class PostServiceImpl implements PostService {
             SearchIndexService searchIndexService,
             ApplicationEventPublisher eventPublisher,
             PostFeedService postFeedService,
-            PostDetailQueryService detailQueryService
+            PostDetailQueryService detailQueryService,
+            PostBackgroundQueryService backgroundQueryService
     ) {
         this.mapper = mapper;
         this.idGen = idGen;
@@ -109,6 +111,7 @@ public class PostServiceImpl implements PostService {
         this.eventPublisher = eventPublisher;
         this.postFeedService = postFeedService;
         this.detailQueryService = detailQueryService;
+        this.backgroundQueryService = backgroundQueryService;
     }
     /**
      * Creates a new draft post and returns its snowflake ID.
@@ -134,170 +137,54 @@ public class PostServiceImpl implements PostService {
         return id;
     }
 
-    /**
-     * Returns recently published public posts for background agent cognition.
-     *
-     * @param window Lookback window.
-     * @return Recent post summaries.
-     */
     @Override
     public List<PostSummary> getRecentPosts(Duration window) {
-        return getRecentPosts(window, 20);
+        return backgroundQueryService.getRecentPosts(window);
     }
 
     @Override
     public List<PostSummary> getRecentPosts(Duration window, int limit) {
-        Duration safeWindow = window == null || window.isNegative() || window.isZero()
-                ? Duration.ofHours(6)
-                : window;
-        int safeLimit = Math.clamp(limit, 1, 500);
-        Instant since = Instant.now().minus(safeWindow);
-        return mapper.listRecentPublicSince(since, safeLimit).stream()
-                .map(row -> new PostSummary(
-                        row.getId(),
-                        row.getTitle(),
-                        row.getDescription(),
-                        row.getPublishTime(),
-                        parseStringArray(row.getTags())))
-                .toList();
+        return backgroundQueryService.getRecentPosts(window, limit);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<PostSummary> getPostSummariesByIds(List<Long> ids) {
-        if (ids == null || ids.isEmpty()) {
-            return List.of();
-        }
-        List<Post> posts = mapper.findByIds(ids);
-        if (posts == null || posts.isEmpty()) {
-            return List.of();
-        }
-        Map<Long, Post> byId = posts.stream()
-                .filter(p -> p.getId() != null && "published".equals(p.getStatus()))
-                .collect(java.util.stream.Collectors.toMap(Post::getId, p -> p, (a, b) -> a));
-        List<PostSummary> ordered = new java.util.ArrayList<>();
-        for (Long id : ids) {
-            Post post = byId.get(id);
-            if (post == null) {
-                continue;
-            }
-            ordered.add(new PostSummary(
-                    post.getId(),
-                    post.getTitle(),
-                    post.getDescription(),
-                    post.getPublishTime(),
-                    parseStringArray(post.getTags())));
-        }
-        return ordered;
+        return backgroundQueryService.getPostSummariesByIds(ids);
     }
 
-    /**
-     * Returns recently published public seed posts for Chtholly audit jobs.
-     *
-     * @param window Lookback window.
-     * @return Recent seed posts.
-     */
     @Override
-    @Transactional(readOnly = true)
     public List<Post> getRecentSeedPosts(Duration window) {
-        Duration safeWindow = window == null || window.isNegative() || window.isZero()
-                ? Duration.ofHours(24)
-                : window;
-        return mapper.listRecentSeedPosts(Instant.now().minus(safeWindow), 50);
+        return backgroundQueryService.getRecentSeedPosts(window);
     }
 
     @Override
     public long countSince(Duration window) {
-        Duration safeWindow = window == null || window.isNegative() || window.isZero()
-                ? Duration.ofDays(3)
-                : window;
-        return mapper.countPublicSince(Instant.now().minus(safeWindow));
+        return backgroundQueryService.countSince(window);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<Long> listFirstTimePublisherIds(Duration window) {
-        Duration safeWindow = window == null || window.isNegative() || window.isZero()
-                ? Duration.ofDays(7)
-                : window;
-        return mapper.listFirstTimePublisherIdsSince(Instant.now().minus(safeWindow));
+        return backgroundQueryService.listFirstTimePublisherIds(window);
     }
 
-    /**
-     * Loads public posts whose Agent content understanding is missing or stale.
-     *
-     * @return posts to analyze in the scheduled understanding job.
-     */
     @Override
-    @Transactional(readOnly = true)
     public List<Post> getPostsNeedingUnderstanding() {
-        return mapper.listPostsNeedingUnderstanding(20);
+        return backgroundQueryService.getPostsNeedingUnderstanding();
     }
 
-    /**
-     * Stores Agent content understanding JSON on the post row.
-     *
-     * @param postId   post ID.
-     * @param analysis content understanding result.
-     */
     @Override
-    @Transactional
     public void saveContentAnalysis(Long postId, ContentAnalysis analysis) {
-        if (postId == null || analysis == null) {
-            return;
-        }
-        try {
-            mapper.updateContentAnalysis(
-                    postId,
-                    objectMapper.writeValueAsString(analysis),
-                    analysis.analyzedAt() == null ? Instant.now() : analysis.analyzedAt());
-        } catch (JsonProcessingException e) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "内容理解结果序列化失败");
-        }
+        backgroundQueryService.saveContentAnalysis(postId, analysis);
     }
 
-    /**
-     * Loads stored Agent content understanding for a post.
-     *
-     * @param postId post ID.
-     * @return content analysis, or null when absent.
-     */
     @Override
-    @Transactional(readOnly = true)
     public ContentAnalysis getContentAnalysis(Long postId) {
-        if (postId == null) {
-            return null;
-        }
-        String json = mapper.findContentAnalysisById(postId);
-        return parseContentAnalysisJson(postId, json);
+        return backgroundQueryService.getContentAnalysis(postId);
     }
 
-    /**
-     * Loads stored Agent content understanding for a public post slug.
-     *
-     * @param slug post URL slug.
-     * @return content analysis, or null when absent.
-     */
     @Override
-    @Transactional(readOnly = true)
     public ContentAnalysis getContentAnalysisBySlug(String slug) {
-        if (slug == null || slug.isBlank()) {
-            return null;
-        }
-        String json = mapper.findContentAnalysisBySlug(slug.trim());
-        return parseContentAnalysisJson(slug, json);
-    }
-
-    private ContentAnalysis parseContentAnalysisJson(Object source, String json) {
-        if (json == null || json.isBlank()) {
-            return null;
-        }
-        try {
-            return objectMapper.readValue(json, ContentAnalysis.class);
-        } catch (Exception e) {
-            log.warn("Post content analysis deserialize failed, source={}: {}", source, e.getMessage());
-            return null;
-        }
+        return backgroundQueryService.getContentAnalysisBySlug(slug);
     }
 
     /**

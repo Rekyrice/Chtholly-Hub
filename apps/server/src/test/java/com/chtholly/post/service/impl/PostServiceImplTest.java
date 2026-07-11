@@ -70,6 +70,8 @@ class PostServiceImplTest {
     private PostFeedService postFeedService;
     @Mock
     private PostDetailQueryService detailQueryService;
+    @Mock
+    private PostBackgroundQueryService backgroundQueryService;
 
     private Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     private Cache<String, PostDetailResponse> postDetailCache;
@@ -103,7 +105,8 @@ class PostServiceImplTest {
                 searchIndexService,
                 eventPublisher,
                 postFeedService,
-                detailQueryService);
+                detailQueryService,
+                backgroundQueryService);
     }
 
     private Post draftOwnedBy(long postId, long creatorId) {
@@ -122,6 +125,15 @@ class PostServiceImplTest {
 
         assertThat(service.getDetail(42L, 9L)).isSameAs(detail);
         verify(detailQueryService).getDetail(42L, 9L);
+    }
+
+    @Test
+    void backgroundQueriesAreDelegatedWithoutEnteringWritePath() {
+        when(backgroundQueryService.getRecentPosts(java.time.Duration.ofHours(6)))
+                .thenReturn(List.of());
+
+        assertThat(service.getRecentPosts(java.time.Duration.ofHours(6))).isEmpty();
+        verify(backgroundQueryService).getRecentPosts(java.time.Duration.ofHours(6));
     }
 
     @Test
