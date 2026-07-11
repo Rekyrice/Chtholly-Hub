@@ -6,6 +6,7 @@ import com.chtholly.seed.contentpack.model.SeedAccountDefinition;
 import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
 import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
+import com.chtholly.seed.contentpack.model.SeedViewDefinition;
 import org.junit.jupiter.api.Test;
 
 import java.net.URISyntaxException;
@@ -167,6 +168,40 @@ class ContentPackValidatorTest {
         ContentPackValidator.ValidationResult result = validator.validate(pack);
 
         assertEquals(java.util.List.of(), result.warnings());
+    }
+
+    @Test
+    void rejectsCrossPostParentCycleAndReplyBeforeParent() throws Exception {
+        ContentPack loaded = loader.load(fixtureRoot("valid"));
+        SeedCommentDefinition first = new SeedCommentDefinition(
+                "first", null, "post-a", loaded.accounts().getFirst().seedKey(), "second", "one",
+                java.time.Instant.parse("2026-06-03T00:00:00Z"));
+        SeedCommentDefinition second = new SeedCommentDefinition(
+                "second", null, "post-b", loaded.accounts().getFirst().seedKey(), "first", "two",
+                java.time.Instant.parse("2026-06-04T00:00:00Z"));
+        ContentPack pack = new ContentPack(loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(),
+                loaded.posts(), java.util.List.of(first, second), loaded.follows(), loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("comment parent post mismatch: first -> second"));
+        assertTrue(exception.getMessage().contains("comment parent cycle:"));
+        assertTrue(exception.getMessage().contains("comment precedes parent: first -> second"));
+    }
+
+    @Test
+    void rejectsViewBaselineAboveInt32StorageRange() throws Exception {
+        ContentPack loaded = loader.load(fixtureRoot("valid"));
+        SeedViewDefinition overflow = new SeedViewDefinition(
+                "view-overflow", loaded.posts().getFirst().seedKey(), (long) Integer.MAX_VALUE + 1L);
+        ContentPack pack = new ContentPack(loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(),
+                loaded.posts(), loaded.comments(), loaded.follows(), loaded.reactions(), java.util.List.of(overflow));
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("view baseline exceeds Int32: view-overflow"));
     }
 
     private Path fixtureRoot(String name) throws URISyntaxException {

@@ -29,6 +29,7 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> incrScript;
+    private final DefaultRedisScript<Long> dedupeIncrScript;
 
     public CounterRebuildConsumer(ObjectMapper objectMapper,
                                   StringRedisTemplate redis,
@@ -39,6 +40,9 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
         this.incrScript = new DefaultRedisScript<>();
         this.incrScript.setResultType(Long.class);
         this.incrScript.setScriptText(INCR_FIELD_LUA);
+        this.dedupeIncrScript = new DefaultRedisScript<>();
+        this.dedupeIncrScript.setResultType(Long.class);
+        this.dedupeIncrScript.setScriptText(DEDUPE_INCR_FIELD_LUA);
     }
 
     @KafkaListener(
@@ -58,12 +62,26 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
     @Override
     protected void process(String sourceTopic, String messageKey, String payload, int retryCount) throws Exception {
         CounterEvent evt = objectMapper.readValue(payload, CounterEvent.class);
+        applyRebuildEvent(evt);
+    }
+
+    boolean applyRebuildEvent(CounterEvent evt) {
         String cntKey = CounterKeys.sdsKey(evt.getEntityType(), evt.getEntityId());
-        redis.execute(incrScript, List.of(cntKey),
-                String.valueOf(CounterSchema.SCHEMA_LEN),
-                String.valueOf(CounterSchema.FIELD_SIZE),
-                String.valueOf(evt.getIdx()),
-                String.valueOf(evt.getDelta()));
+        List<String> keys;
+        DefaultRedisScript<Long> script;
+        if (evt.getEventId() == null || evt.getEventId().isBlank()) {
+            keys = List.of(cntKey);
+            script = incrScript;
+        } else {
+            keys = List.of(cntKey, CounterKeys.eventDedupeKey(evt.getEventId()));
+            script = dedupeIncrScript;
+        }
+        Long applied = redis.execute(script, keys,
+            String.valueOf(CounterSchema.SCHEMA_LEN),
+            String.valueOf(CounterSchema.FIELD_SIZE),
+            String.valueOf(evt.getIdx()),
+            String.valueOf(evt.getDelta()));
+        return Long.valueOf(1L).equals(applied);
     }
 
     @Override
@@ -78,6 +96,40 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
             local fieldSize = tonumber(ARGV[2]) -- 固定为4
             local idx = tonumber(ARGV[3])
             local delta = tonumber(ARGV[4])
+
+            local function read32be(s, off)
+              local b = {string.byte(s, off+1, off+4)}
+              local n = 0
+              for i=1,4 do n = n * 256 + b[i] end
+              return n
+            end
+
+            local function write32be(n)
+              local t = {}
+              for i=4,1,-1 do t[i] = n % 256; n = math.floor(n/256) end
+              return string.char(unpack(t))
+            end
+
+            local cnt = redis.call('GET', cntKey)
+            if not cnt then cnt = string.rep(string.char(0), schemaLen * fieldSize) end
+            local off = idx * fieldSize
+            local v = read32be(cnt, off) + delta
+            if v < 0 then v = 0 end
+            local seg = write32be(v)
+            cnt = string.sub(cnt, 1, off) .. seg .. string.sub(cnt, off+fieldSize+1)
+            redis.call('SET', cntKey, cnt)
+            return 1
+            """;
+
+    private static final String DEDUPE_INCR_FIELD_LUA = """
+            local cntKey = KEYS[1]
+            local dedupeKey = KEYS[2]
+            local schemaLen = tonumber(ARGV[1])
+            local fieldSize = tonumber(ARGV[2])
+            local idx = tonumber(ARGV[3])
+            local delta = tonumber(ARGV[4])
+
+            if redis.call('SETNX', dedupeKey, '1') == 0 then return 0 end
 
             local function read32be(s, off)
               local b = {string.byte(s, off+1, off+4)}

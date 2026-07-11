@@ -23,30 +23,44 @@ public class CounterAggregationProcessor {
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> aggIncrScript;
-    private final DefaultRedisScript<Long> incrScript;
-    private final DefaultRedisScript<Long> decrScript;
+    private final DefaultRedisScript<Long> dedupeAggIncrScript;
+    private final DefaultRedisScript<Long> transferFieldScript;
+    private final DefaultRedisScript<Long> cleanupEmptyAggScript;
 
     public CounterAggregationProcessor(StringRedisTemplate redis) {
         this.redis = redis;
         this.aggIncrScript = new DefaultRedisScript<>();
         this.aggIncrScript.setResultType(Long.class);
         this.aggIncrScript.setScriptText(AGG_INCR_LUA);
+        this.dedupeAggIncrScript = new DefaultRedisScript<>();
+        this.dedupeAggIncrScript.setResultType(Long.class);
+        this.dedupeAggIncrScript.setScriptText(DEDUPE_AGG_INCR_LUA);
 
-        this.incrScript = new DefaultRedisScript<>();
-        this.incrScript.setResultType(Long.class);
-        this.incrScript.setScriptText(INCR_FIELD_LUA);
-
-        this.decrScript = new DefaultRedisScript<>();
-        this.decrScript.setResultType(Long.class);
-        this.decrScript.setScriptText(DECR_FIELD_LUA);
+        this.transferFieldScript = new DefaultRedisScript<>();
+        this.transferFieldScript.setResultType(Long.class);
+        this.transferFieldScript.setScriptText(TRANSFER_FIELD_LUA);
+        this.cleanupEmptyAggScript = new DefaultRedisScript<>();
+        this.cleanupEmptyAggScript.setResultType(Long.class);
+        this.cleanupEmptyAggScript.setScriptText(CLEANUP_EMPTY_AGG_LUA);
     }
 
     /** 将单条计数增量写入 Redis 聚合桶。 */
-    public void applyEvent(CounterEvent evt) {
+    public boolean applyEvent(CounterEvent evt) {
         String aggKey = CounterKeys.aggKey(evt.getEntityType(), evt.getEntityId());
         String indexKey = CounterKeys.aggIndexKey();
         String field = String.valueOf(evt.getIdx());
-        redis.execute(aggIncrScript, List.of(aggKey, indexKey), field, String.valueOf(evt.getDelta()));
+        Long applied;
+        if (evt.getEventId() == null || evt.getEventId().isBlank()) {
+            applied = redis.execute(
+                    aggIncrScript, List.of(aggKey, indexKey), field, String.valueOf(evt.getDelta()));
+        } else {
+            applied = redis.execute(
+                    dedupeAggIncrScript,
+                    List.of(aggKey, indexKey, CounterKeys.eventDedupeKey(evt.getEventId())),
+                    field,
+                    String.valueOf(evt.getDelta()));
+        }
+        return Long.valueOf(1L).equals(applied);
     }
 
     /** 将聚合增量刷写到 SDS 固定结构计数，固定延迟 1s。 */
@@ -69,8 +83,7 @@ public class CounterAggregationProcessor {
     private void flushAggKey(String indexKey, String aggKey) {
         Map<Object, Object> entries = redis.opsForHash().entries(aggKey);
         if (entries.isEmpty()) {
-            redis.opsForSet().remove(indexKey, aggKey);
-            redis.delete(aggKey);
+            redis.execute(cleanupEmptyAggScript, List.of(aggKey, indexKey));
             return;
         }
 
@@ -84,39 +97,21 @@ public class CounterAggregationProcessor {
 
         for (Map.Entry<Object, Object> e : entries.entrySet()) {
             String field = String.valueOf(e.getKey());
-            long delta;
             try {
-                delta = Long.parseLong(String.valueOf(e.getValue()));
-            } catch (NumberFormatException nfe) {
-                continue;
-            }
-            if (delta == 0) {
-                continue;
-            }
-            int idx;
-            try {
-                idx = Integer.parseInt(field);
+                Integer.parseInt(field);
             } catch (NumberFormatException nfe) {
                 continue;
             }
 
             try {
-                redis.execute(incrScript, List.of(cntKey),
+                redis.execute(transferFieldScript, List.of(cntKey, aggKey, indexKey),
                         String.valueOf(CounterSchema.SCHEMA_LEN),
                         String.valueOf(CounterSchema.FIELD_SIZE),
-                        String.valueOf(idx),
-                        String.valueOf(delta));
-                redis.execute(decrScript, List.of(aggKey), field, String.valueOf(delta));
+                        field);
             } catch (Exception ex) {
-                log.warn("counter.agg flush failed aggKey={} field={} delta={}: {}",
-                        aggKey, field, delta, ex.getMessage(), ex);
+                log.warn("counter.agg flush failed aggKey={} field={}: {}",
+                        aggKey, field, ex.getMessage(), ex);
             }
-        }
-
-        Long size = redis.opsForHash().size(aggKey);
-        if (size != null && size == 0L) {
-            redis.delete(aggKey);
-            redis.opsForSet().remove(indexKey, aggKey);
         }
     }
 
@@ -130,13 +125,36 @@ public class CounterAggregationProcessor {
             return 1
             """;
 
-    private static final String INCR_FIELD_LUA = """
+    private static final String DEDUPE_AGG_INCR_LUA = """
+            local aggKey = KEYS[1]
+            local indexKey = KEYS[2]
+            local dedupeKey = KEYS[3]
+            local field = ARGV[1]
+            local delta = tonumber(ARGV[2])
+            if redis.call('SETNX', dedupeKey, '1') == 0 then return 0 end
+            redis.call('HINCRBY', aggKey, field, delta)
+            redis.call('SADD', indexKey, aggKey)
+            return 1
+            """;
+
+    private static final String TRANSFER_FIELD_LUA = """
 
             local cntKey = KEYS[1]
+            local aggKey = KEYS[2]
+            local indexKey = KEYS[3]
             local schemaLen = tonumber(ARGV[1])
             local fieldSize = tonumber(ARGV[2]) -- 固定为4
-            local idx = tonumber(ARGV[3])
-            local delta = tonumber(ARGV[4])
+            local field = ARGV[3]
+            local idx = tonumber(field)
+            local rawDelta = redis.call('HGET', aggKey, field)
+            if not rawDelta then
+              if redis.call('HLEN', aggKey) == 0 then
+                redis.call('DEL', aggKey)
+                redis.call('SREM', indexKey, aggKey)
+              end
+              return 0
+            end
+            local delta = tonumber(rawDelta)
 
             local function read32be(s, off)
               local b = {string.byte(s, off+1, off+4)}
@@ -159,17 +177,22 @@ public class CounterAggregationProcessor {
             local seg = write32be(v)
             cnt = string.sub(cnt, 1, off) .. seg .. string.sub(cnt, off+fieldSize+1)
             redis.call('SET', cntKey, cnt)
-            return 1
+            redis.call('HDEL', aggKey, field)
+            if redis.call('HLEN', aggKey) == 0 then
+              redis.call('DEL', aggKey)
+              redis.call('SREM', indexKey, aggKey)
+            end
+            return delta
             """;
 
-    private static final String DECR_FIELD_LUA = """
-            local key = KEYS[1]
-            local field = ARGV[1]
-            local delta = tonumber(ARGV[2])
-            local v = redis.call('HINCRBY', key, field, -delta)
-            if v == 0 then
-                redis.call('HDEL', key, field)
+    private static final String CLEANUP_EMPTY_AGG_LUA = """
+            local aggKey = KEYS[1]
+            local indexKey = KEYS[2]
+            if redis.call('HLEN', aggKey) == 0 then
+                redis.call('DEL', aggKey)
+                redis.call('SREM', indexKey, aggKey)
+                return 1
             end
-            return v
+            return 0
             """;
 }

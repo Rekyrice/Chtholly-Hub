@@ -160,6 +160,49 @@ public final class ContentPackValidator {
                 errors.add("interaction does not follow publication: " + comment.seedKey());
             }
         }
+        validateCommentTopology(pack.comments(), errors);
+    }
+
+    static void requireValidCommentGraph(List<SeedCommentDefinition> comments) {
+        List<String> errors = new ArrayList<>();
+        validateCommentTopology(comments, errors);
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException("Invalid comment graph: " + String.join("; ", errors));
+        }
+    }
+
+    private static void validateCommentTopology(
+            List<SeedCommentDefinition> comments, List<String> errors) {
+        Map<String, SeedCommentDefinition> indexed = new LinkedHashMap<>();
+        comments.forEach(comment -> indexed.putIfAbsent(comment.seedKey(), comment));
+        for (SeedCommentDefinition comment : comments) {
+            if (comment.seedKey().equals(comment.parentSeedKey())) {
+                errors.add("self parent comment: " + comment.seedKey());
+                continue;
+            }
+            SeedCommentDefinition parent = indexed.get(comment.parentSeedKey());
+            if (parent == null) {
+                continue;
+            }
+            if (!java.util.Objects.equals(comment.postSeedKey(), parent.postSeedKey())) {
+                errors.add("comment parent post mismatch: " + comment.seedKey() + " -> " + parent.seedKey());
+            }
+            if (comment.createdAt() != null && parent.createdAt() != null
+                    && comment.createdAt().isBefore(parent.createdAt())) {
+                errors.add("comment precedes parent: " + comment.seedKey() + " -> " + parent.seedKey());
+            }
+        }
+        for (SeedCommentDefinition start : comments) {
+            Set<String> path = new HashSet<>();
+            SeedCommentDefinition current = start;
+            while (current != null && current.parentSeedKey() != null) {
+                if (!path.add(current.seedKey())) {
+                    errors.add("comment parent cycle: " + start.seedKey());
+                    break;
+                }
+                current = indexed.get(current.parentSeedKey());
+            }
+        }
     }
 
     private void validateReactions(ContentPack pack, List<String> errors) {
@@ -205,6 +248,8 @@ public final class ContentPackValidator {
             }
             if (view.minimumCount() < 0) {
                 errors.add("negative view baseline: " + view.seedKey() + " -> " + view.minimumCount());
+            } else if (view.minimumCount() > Integer.MAX_VALUE) {
+                errors.add("view baseline exceeds Int32: " + view.seedKey() + " -> " + view.minimumCount());
             }
         }
     }

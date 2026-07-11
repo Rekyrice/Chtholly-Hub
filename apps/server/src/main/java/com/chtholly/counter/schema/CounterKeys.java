@@ -1,5 +1,10 @@
 package com.chtholly.counter.schema;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+
 /**
  * Redis Key 生成工具。
  */
@@ -23,5 +28,16 @@ public final class CounterKeys {
     /** 活跃聚合桶索引（Set）：flush 时 O(1) 枚举，避免 KEYS 阻塞 Redis。 */
     public static String aggIndexKey() {
         return String.format("agg:%s:__keys", CounterSchema.SCHEMA_ID);
+    }
+
+    /** Persistent dedupe fact for events that explicitly opt into idempotent aggregation. */
+    public static String eventDedupeKey(String eventId) {
+        try {
+            String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(eventId.getBytes(StandardCharsets.UTF_8)));
+            return "counter:dedupe:" + CounterSchema.SCHEMA_ID + ":" + digest;
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 }

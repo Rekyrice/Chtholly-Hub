@@ -19,7 +19,7 @@ import lombok.NoArgsConstructor;
 public class CounterEvent {
     private String entityType;
     private String entityId;
-    private String metric; // like | fav
+    private String metric; // like | fav | view
     private int idx;
     private long userId;
     private int delta; // +1 / -1
@@ -31,6 +31,8 @@ public class CounterEvent {
     /** 操作用户展示信息（点赞通知用，事件源填充） */
     private String actorNickname;
     private String actorAvatar;
+    /** Optional persistent idempotency key; absent in legacy Kafka JSON. */
+    private String eventId;
 
     public CounterEvent(String entityType, String entityId, String metric, int idx, long userId, int delta) {
         this.entityType = entityType;
@@ -43,5 +45,12 @@ public class CounterEvent {
 
     public static CounterEvent of(String entityType, String entityId, String metric, int idx, long userId, int delta) {
         return new CounterEvent(entityType, entityId, metric, idx, userId, delta);
+    }
+
+    public static CounterEvent of(
+            String entityType, String entityId, String metric, int idx, long userId, int delta, String eventId) {
+        CounterEvent event = new CounterEvent(entityType, entityId, metric, idx, userId, delta);
+        event.setEventId(eventId);
+        return event;
     }
 }
