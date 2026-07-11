@@ -8,6 +8,7 @@ import {
 } from "next/font/google";
 import { siteConfig } from "@/lib/site.config";
 import { siteUrl } from "@/lib/site-url";
+import { MOTION_BOOTSTRAP_SCRIPT } from "@/lib/motion-bootstrap";
 import "./globals.css";
 
 const notoSansSc = Noto_Sans_SC({
@@ -67,6 +68,9 @@ export default function RootLayout({
       className={`${notoSansSc.variable} ${sourceSans.variable} ${playfair.variable} ${notoSansJp.variable} ${jetbrainsMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: MOTION_BOOTSTRAP_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <style>{`:root { ${cssVars} }`}</style>
         {children}

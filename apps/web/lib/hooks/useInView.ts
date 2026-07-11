@@ -19,12 +19,11 @@ export function useInView<T extends HTMLElement>() {
       { threshold: 0.1 },
     );
 
-    element.classList.add("animate-in--ready");
     observer.observe(element);
 
     return () => {
       observer.disconnect();
-      element.classList.remove("animate-in--ready", "animate-in--visible");
+      element.classList.remove("animate-in--visible");
     };
   }, []);
 

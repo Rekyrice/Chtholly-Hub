@@ -16,7 +16,7 @@ export function AnimateIn({ children, delay = 0, className }: AnimateInProps) {
   return (
     <div
       ref={ref}
-      className={cn("animate-in", className)}
+      className={cn("animate-in", "animate-in--ready", className)}
       style={{ "--animate-delay": `${delay}ms` } as CSSProperties}
     >
       {children}

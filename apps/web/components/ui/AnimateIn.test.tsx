@@ -20,7 +20,7 @@ describe("AnimateIn", () => {
     const content = screen.getByText("渐进增强内容");
     expect(content).toBeInTheDocument();
     expect(content).toHaveClass("animate-in");
-    expect(content).not.toHaveClass("animate-in--ready");
+    expect(content).toHaveClass("animate-in--ready");
   });
 
   it("hydrates without a state-driven visible-to-hidden render", async () => {
@@ -64,7 +64,7 @@ describe("AnimateIn", () => {
     container.remove();
 
     expect(hydrationCommitCount).toBe(1);
-    expect(serverClassName).toBe("animate-in");
+    expect(serverClassName).toBe("animate-in animate-in--ready");
     expect(observe).toHaveBeenCalledWith(content);
     expect(hydratedClassName).toContain("animate-in--ready");
   });
@@ -78,7 +78,7 @@ describe("AnimateIn", () => {
       responsiveCss.indexOf("@media (prefers-reduced-motion: reduce)"),
     );
     const reducedMotionAnimateRule = reducedMotionCss.match(
-      /\.animate-in--ready:not\(\.animate-in--visible\),\s*\.animate-in\s*\{([^}]*)\}/,
+      /html\[data-motion-ready=["']true["']\]\s+\.animate-in--ready:not\(\.animate-in--visible\),\s*\.animate-in\s*\{([^}]*)\}/,
     );
 
     expect(reducedMotionAnimateRule).not.toBeNull();
@@ -112,7 +112,7 @@ describe("AnimateIn", () => {
 
     const content = screen.getByText("可观察内容");
     await waitFor(() => expect(observe).toHaveBeenCalledWith(content));
-    await waitFor(() => expect(content).toHaveClass("animate-in--ready"));
+    expect(content).toHaveClass("animate-in--ready");
     expect(content).not.toHaveClass("animate-in--visible");
 
     act(() => {

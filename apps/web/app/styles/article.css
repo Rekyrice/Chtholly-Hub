@@ -1028,7 +1028,7 @@
     transform: none;
   }
 
-  .animate-in--ready:not(.animate-in--visible) {
+  html[data-motion-ready="true"] .animate-in--ready:not(.animate-in--visible) {
     opacity: 0;
     transform: translateY(20px);
     transition:
