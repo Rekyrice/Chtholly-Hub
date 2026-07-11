@@ -181,7 +181,7 @@ function StatCard({
 }
 
 export default function TraceDashboardPage() {
-  const [range, setRange] = useState<DateRange | null>(null);
+  const [range, setRange] = useState<DateRange>(readInitialRange);
   const [stats, setStats] = useState<TraceStats | null>(null);
   const [patterns, setPatterns] = useState<FailurePattern[]>([]);
   const [tokenTrends, setTokenTrends] = useState<TraceTokenTrendRow[]>([]);
@@ -190,12 +190,10 @@ export default function TraceDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const initial = readInitialRange();
-    setRange(initial);
-    updateRangeUrl(initial);
-  }, []);
+    updateRangeUrl(range);
+  }, [range]);
 
-  const load = useCallback(async (nextRange: DateRange) => {
+  const load = useCallback(async (nextRange: DateRange, isAlive: () => boolean) => {
     setLoading(true);
     setError(null);
     try {
@@ -205,27 +203,34 @@ export default function TraceDashboardPage() {
         traceService.getTokenTrends(nextRange.from, nextRange.to),
         traceService.list({ page: 0, size: 20 }),
       ]);
+      if (!isAlive()) return;
       setStats(statsResp);
       setPatterns(patternsResp);
       setTokenTrends(tokenResp);
       setTraces(listResp.items);
     } catch (e) {
+      if (!isAlive()) return;
       setError(e instanceof Error ? e.message : "加载 Trace 数据失败");
     } finally {
-      setLoading(false);
+      if (isAlive()) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (range) void load(range);
+    let alive = true;
+    const timer = window.setTimeout(() => void load(range, () => alive), 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
   }, [load, range]);
 
   const executionTrend = useMemo(
-    () => (range ? mergeExecutionTrend(range, stats?.executionTrend) : []),
+    () => mergeExecutionTrend(range, stats?.executionTrend),
     [range, stats?.executionTrend],
   );
   const tokenTrend = useMemo(
-    () => (range ? mergeTokenTrend(range, tokenTrends.length ? tokenTrends : stats?.tokenTrend) : []),
+    () => mergeTokenTrend(range, tokenTrends.length ? tokenTrends : stats?.tokenTrend),
     [range, stats?.tokenTrend, tokenTrends],
   );
   const patternBars = useMemo(
@@ -242,11 +247,9 @@ export default function TraceDashboardPage() {
 
   const applyRange = (nextRange: DateRange) => {
     setRange(nextRange);
-    updateRangeUrl(nextRange);
   };
 
   const updateCustomRange = (field: "from" | "to", value: string) => {
-    if (!range) return;
     applyRange({ ...range, [field]: value, preset: "custom" });
   };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Heart, Home, Pen, Search, User } from "lucide-react";
 import { useAuthUser } from "@/lib/auth/auth-store";
@@ -17,7 +18,7 @@ const navItems = [
 function NavUserAvatar({ user, size = 24 }: { user: AuthUser | null; size?: number }) {
   if (user?.avatar) {
     return (
-      <img
+      <Image
         src={user.avatar}
         alt=""
         width={size}

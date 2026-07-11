@@ -75,7 +75,6 @@ export default function AdminOverview() {
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
     void adminService
       .getStats()
       .then((data) => {

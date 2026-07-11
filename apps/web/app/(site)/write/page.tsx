@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -38,15 +38,58 @@ type WriteDraft = {
   draftPostId?: string | null;
 };
 
+const EMPTY_DRAFT: WriteDraft = {
+  title: "",
+  tags: "",
+  description: "",
+  markdown: "",
+  draftPostId: null,
+};
+
+function subscribeBrowserReady() {
+  return () => undefined;
+}
+
+function readDraft(): WriteDraft {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return EMPTY_DRAFT;
+    const saved = JSON.parse(raw) as Partial<WriteDraft>;
+    return {
+      title: saved.title ?? "",
+      tags: saved.tags ?? "",
+      description: saved.description ?? "",
+      markdown: saved.markdown ?? "",
+      draftPostId: saved.draftPostId ?? null,
+    };
+  } catch {
+    // 本地草稿损坏时直接忽略，避免影响写作入口。
+    return EMPTY_DRAFT;
+  }
+}
+
 export default function WritePage() {
-  const router = useRouter();
   const authorized = useRequireAuth();
+  const browserReady = useSyncExternalStore(subscribeBrowserReady, () => true, () => false);
+
+  if (!authorized) return null;
+
+  return (
+    <WriteEditor
+      key={browserReady ? "browser-draft" : "server-draft"}
+      initialDraft={browserReady ? readDraft() : EMPTY_DRAFT}
+    />
+  );
+}
+
+function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
+  const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [title, setTitle] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [description, setDescription] = useState("");
-  const [markdown, setMarkdown] = useState("");
-  const [draftPostId, setDraftPostId] = useState<string | null>(null);
+  const [title, setTitle] = useState(initialDraft.title);
+  const [tags, setTags] = useState(() => parseTags(initialDraft.tags));
+  const [description, setDescription] = useState(initialDraft.description);
+  const [markdown, setMarkdown] = useState(initialDraft.markdown);
+  const [draftPostId, setDraftPostId] = useState<string | null>(initialDraft.draftPostId ?? null);
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -54,7 +97,6 @@ export default function WritePage() {
   const [error, setError] = useState("");
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
-  const [draftHydrated, setDraftHydrated] = useState(false);
 
   const draft = useMemo<WriteDraft>(
     () => ({
@@ -68,24 +110,6 @@ export default function WritePage() {
   );
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(DRAFT_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as Partial<WriteDraft>;
-        setTitle(saved.title ?? "");
-        setTags(parseTags(saved.tags ?? ""));
-        setDescription(saved.description ?? "");
-        setMarkdown(saved.markdown ?? "");
-        setDraftPostId(saved.draftPostId ?? null);
-      }
-    } catch {
-      // 本地草稿损坏时直接忽略，避免影响写作入口。
-    } finally {
-      setDraftHydrated(true);
-    }
-  }, []);
-
-  useEffect(() => {
     const timer = window.setInterval(() => {
       setPlaceholderIndex((prev) => (prev + 1) % PLACEHOLDERS.length);
     }, 8000);
@@ -93,8 +117,6 @@ export default function WritePage() {
   }, []);
 
   useEffect(() => {
-    if (!draftHydrated) return undefined;
-    setSaveStatus("unsaved");
     const timer = window.setTimeout(() => {
       setSaveStatus("saving");
       try {
@@ -105,7 +127,7 @@ export default function WritePage() {
       }
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [draft, draftHydrated]);
+  }, [draft]);
 
   const ensureDraftPostId = async () => {
     if (draftPostId) return draftPostId;
@@ -223,8 +245,6 @@ export default function WritePage() {
       setUploadingImage(false);
     }
   };
-
-  if (!authorized) return null;
 
   return (
     <div className="write-container" data-testid="write-page">

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Menu } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -109,9 +110,11 @@ export default function Navbar() {
           aria-expanded={userMenuOpen}
         >
           {user.avatar ? (
-            <img
+            <Image
               src={user.avatar}
               alt={user.nickname || user.phone || "User avatar"}
+              width={32}
+              height={32}
               className="navbar-user-menu__avatar"
             />
           ) : (

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, HeartHandshake, Loader2, UserPlus, UserX } from "lucide-react";
-import { getStoredAuth, isLoggedIn } from "@/lib/auth/tokens";
+import { useStoredAuth } from "@/lib/auth/auth-store";
+import { isLoggedIn } from "@/lib/auth/tokens";
 import { relationService } from "@/lib/services/relationService";
 import type { RelationStatus, UserCounter, UserId } from "@/lib/types/relation";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,34 @@ export default function FollowButton({
   userId,
   initialStatus,
   initialCounter,
+  ...props
+}: FollowButtonProps) {
+  const stateKey = [
+    String(userId),
+    initialStatus?.following,
+    initialStatus?.followedBy,
+    initialStatus?.mutual,
+    initialCounter?.followings,
+    initialCounter?.followers,
+    initialCounter?.posts,
+    initialCounter?.likedPosts,
+    initialCounter?.favedPosts,
+  ].join(":");
+  return (
+    <FollowButtonState
+      key={stateKey}
+      userId={userId}
+      initialStatus={initialStatus}
+      initialCounter={initialCounter}
+      {...props}
+    />
+  );
+}
+
+function FollowButtonState({
+  userId,
+  initialStatus,
+  initialCounter,
   size = "md",
   showCounter = true,
   className,
@@ -44,34 +73,35 @@ export default function FollowButton({
   const [counter, setCounter] = useState<UserCounter | undefined>(initialCounter);
   const [loading, setLoading] = useState(false);
   const [hovering, setHovering] = useState(false);
-  const [self, setSelf] = useState(false);
+  const auth = useStoredAuth();
+  const self = isSameUser(auth?.user?.id, userId);
 
   useEffect(() => {
-    const sync = () => {
-      const auth = getStoredAuth();
-      const currentUserId = auth?.user?.id;
-      setSelf(isSameUser(currentUserId, userId));
-      if (!isLoggedIn() || isSameUser(currentUserId, userId)) {
-        return;
-      }
-      void relationService.status(userId)
-        .then((nextStatus) => setStatus(nextStatus))
-        .catch(() => setStatus(initialStatus ?? DEFAULT_STATUS));
+    if (!auth || self) return;
+    let alive = true;
+    void relationService.status(userId)
+      .then((nextStatus) => {
+        if (alive) setStatus(nextStatus);
+      })
+      .catch(() => {
+        if (alive) setStatus(initialStatus ?? DEFAULT_STATUS);
+      });
+    return () => {
+      alive = false;
     };
-
-    sync();
-    window.addEventListener("chtholly-auth-change", sync);
-    return () => window.removeEventListener("chtholly-auth-change", sync);
-  }, [initialStatus, userId]);
+  }, [auth, initialStatus, self, userId]);
 
   useEffect(() => {
-    if (initialCounter) {
-      setCounter(initialCounter);
-      return;
-    }
+    if (initialCounter) return;
+    let alive = true;
     void relationService.counter(userId)
-      .then(setCounter)
+      .then((nextCounter) => {
+        if (alive) setCounter(nextCounter);
+      })
       .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
   }, [initialCounter, userId]);
 
   const label = useMemo(() => {

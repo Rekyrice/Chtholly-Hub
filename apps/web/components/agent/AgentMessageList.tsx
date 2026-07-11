@@ -109,7 +109,6 @@ export default function AgentMessageList({
 }: AgentMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const speakingBubbleRef = useRef<HTMLDivElement>(null);
-  const seenIdsRef = useRef(new Set<string>());
   const empty = messages.length === 0 && !busy;
 
   const lastAssistantIndex = useMemo(() => {
@@ -168,8 +167,6 @@ export default function AgentMessageList({
 
       {messages.map((msg, index) => {
         const isSpeaking = index === lastAssistantIndex;
-        const isNew = !seenIdsRef.current.has(msg.id);
-        if (isNew) seenIdsRef.current.add(msg.id);
 
         return (
           <MessageBubble
@@ -178,7 +175,7 @@ export default function AgentMessageList({
             showSteps={showSteps}
             rich={rich}
             isSpeaking={isSpeaking}
-            isNew={isNew}
+            isNew
             bubbleRef={speakingBubbleRef}
             showAssistantAvatar={showAssistantAvatar}
           />

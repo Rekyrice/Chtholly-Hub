@@ -17,34 +17,27 @@ type AgentLive2DTypewriterProps = {
  * 语音播放期间持续打字；语音结束后再擦除。
  */
 export default function AgentLive2DTypewriter({
+  sessionKey,
+  ...props
+}: AgentLive2DTypewriterProps) {
+  return <AgentLive2DTypewriterSession key={sessionKey} {...props} />;
+}
+
+function AgentLive2DTypewriterSession({
   segments,
   durationSec,
-  sessionKey,
   erasing,
   onFinished,
-}: AgentLive2DTypewriterProps) {
+}: Omit<AgentLive2DTypewriterProps, "sessionKey">) {
   const { typeMs, eraseMs, pauseMs } = useMemo(
     () => computeTypewriterTiming(durationSec, segments),
-    [durationSec, segments, sessionKey],
+    [durationSec, segments],
   );
 
   const [index, setIndex] = useState(0);
   const [text, setText] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const finishedRef = useRef(false);
-
-  useEffect(() => {
-    setIndex(0);
-    setText("");
-    setIsDeleting(false);
-    finishedRef.current = false;
-  }, [sessionKey]);
-
-  useEffect(() => {
-    if (erasing && text !== "" && !isDeleting) {
-      setIsDeleting(true);
-    }
-  }, [erasing, text, isDeleting]);
 
   useEffect(() => {
     if (segments.length === 0) return;
@@ -63,11 +56,8 @@ export default function AgentLive2DTypewriter({
         notifyFinished();
         return;
       }
-      if (!isDeleting) {
-        setIsDeleting(true);
-        return;
-      }
       timeout = setTimeout(() => {
+        if (!isDeleting) setIsDeleting(true);
         setText(full.slice(0, Math.max(0, text.length - 1)));
       }, eraseMs);
       return () => clearTimeout(timeout);
@@ -77,15 +67,16 @@ export default function AgentLive2DTypewriter({
       const isLast = index >= segments.length - 1;
       if (isLast) return;
       timeout = setTimeout(() => setIsDeleting(true), pauseMs);
-    } else if (isDeleting && text === "") {
-      setIsDeleting(false);
-      if (index < segments.length - 1) {
-        setIndex((current) => current + 1);
-      }
     } else {
       const nextLength = isDeleting ? text.length - 1 : text.length + 1;
       timeout = setTimeout(() => {
         setText(full.slice(0, nextLength));
+        if (isDeleting && nextLength <= 0) {
+          setIsDeleting(false);
+          if (index < segments.length - 1) {
+            setIndex((current) => current + 1);
+          }
+        }
       }, isDeleting ? eraseMs : typeMs);
     }
 
