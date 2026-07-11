@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.seed.contentpack.ContentPackMapper">
+
+    <resultMap id="SeedContentIdentityMap" type="com.chtholly.seed.contentpack.model.SeedContentIdentity">
+        <constructor>
+            <arg column="namespace" javaType="java.lang.String"/>
+            <arg column="entity_type" javaType="java.lang.String"/>
+            <arg column="seed_key" javaType="java.lang.String"/>
+            <arg column="entity_id" javaType="long"/>
+            <arg column="pack_version" javaType="java.lang.String"/>
+            <arg column="content_hash" javaType="java.lang.String"/>
+            <arg column="metadata" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findIdentity" resultMap="SeedContentIdentityMap">
+        SELECT namespace, entity_type, seed_key, entity_id, pack_version, content_hash, metadata
+        FROM seed_content_identity
+        WHERE namespace = #{namespace}
+          AND entity_type = #{entityType}
+          AND seed_key = #{seedKey}
+        LIMIT 1
+    </select>
+
+    <select id="findLegacyUserId" resultType="java.lang.Long">
+        SELECT id
+        FROM users
+        WHERE email = #{email}
+        LIMIT 1
+    </select>
+
+    <select id="findLegacyPostId" resultType="java.lang.Long">
+        SELECT id
+        FROM posts
+        WHERE slug = #{slug}
+        LIMIT 1
+    </select>
+
+    <insert id="upsertIdentity">
+        INSERT INTO seed_content_identity (
+            namespace, entity_type, seed_key, entity_id, pack_version,
+            content_hash, metadata, created_at, updated_at
+        ) VALUES (
+            #{namespace}, #{entityType}, #{seedKey}, #{entityId}, #{packVersion},
+            #{contentHash}, #{metadataJson}, NOW(3), NOW(3)
+        )
+        ON DUPLICATE KEY UPDATE
+            entity_id = IF(
+                namespace = VALUES(namespace)
+                    AND entity_type = VALUES(entity_type)
+                    AND seed_key = VALUES(seed_key)
+                    AND entity_id = VALUES(entity_id),
+                entity_id,
+                NULL
+            ),
+            updated_at = NOW(3)
+    </insert>
+
+    <update id="updateIdentityHash">
+        UPDATE seed_content_identity
+        SET pack_version = #{packVersion},
+            content_hash = #{contentHash},
+            metadata = #{metadataJson},
+            updated_at = NOW(3)
+        WHERE namespace = #{namespace}
+          AND entity_type = #{entityType}
+          AND seed_key = #{seedKey}
+    </update>
+
+</mapper>
