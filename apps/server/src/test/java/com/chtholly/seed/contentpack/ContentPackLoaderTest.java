@@ -1,0 +1,131 @@
+package com.chtholly.seed.contentpack;
+
+import com.chtholly.seed.contentpack.model.ContentPack;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+class ContentPackLoaderTest {
+
+    private final ContentPackLoader loader = new ContentPackLoader();
+
+    @Test
+    void loadsVersionedContentPackFromRealFiles() throws Exception {
+        ContentPack pack = loader.load(fixtureRoot());
+
+        assertEquals("content-v2", pack.manifest().version());
+        assertEquals("night-coder", pack.accounts().getFirst().seedKey());
+        assertTrue(pack.accounts().getFirst().voice().interests().contains("可观测性"));
+        assertTrue(pack.accounts().getFirst().voice().knowledgeBoundaries()
+                .contains("不推测未采集的运行时状态"));
+        assertTrue(pack.posts().getFirst().markdown().contains("一次真实排障"));
+        assertTrue(pack.posts().getFirst().brief().factAnchors().contains("JVM 指标"));
+        assertTrue(pack.posts().getFirst().brief().mediaPlan().contains("告警曲线截图"));
+        assertTrue(pack.posts().getFirst().brief().sources().contains("应用日志"));
+        assertTrue(pack.assets().containsKey("avatar-night-coder"));
+        assertEquals(1, pack.comments().size());
+        assertEquals(1, pack.follows().size());
+        assertEquals(1, pack.reactions().size());
+        assertEquals(1, pack.views().size());
+    }
+
+    @Test
+    void rejectsMarkdownPathEscapingContentPackRoot(@TempDir Path tempDir) throws Exception {
+        copyFixture(fixtureRoot(), tempDir);
+        Path postsFile = tempDir.resolve("posts.yml");
+        String posts = Files.readString(postsFile, StandardCharsets.UTF_8)
+                .replace("markdown/real-debugging.md", "../outside.md");
+        Files.writeString(postsFile, posts, StandardCharsets.UTF_8);
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> loader.load(tempDir));
+
+        assertTrue(exception.getMessage().contains("Content pack path escapes root: ../outside.md"));
+    }
+
+    @Test
+    void loadedNestedCollectionsAreImmutable() throws Exception {
+        ContentPack pack = loader.load(fixtureRoot());
+        var account = pack.accounts().getFirst();
+        var voice = account.voice();
+        var post = pack.posts().getFirst();
+        var brief = post.brief();
+
+        assertThrows(UnsupportedOperationException.class, () -> pack.manifest().expectedCategories().put("OTHER", 1));
+        assertThrows(UnsupportedOperationException.class, () -> account.tags().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> voice.commonPhrases().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> voice.interests().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> voice.biases().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> voice.knowledgeBoundaries().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> voice.forbiddenExpressions().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> post.tags().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> post.inlineAssets().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> brief.factAnchors().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> brief.mediaPlan().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> brief.sources().add("mutable"));
+        assertThrows(UnsupportedOperationException.class, () -> pack.accounts().add(account));
+        assertThrows(UnsupportedOperationException.class, () -> pack.assets().put("mutable", pack.assets().values().iterator().next()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"manifest.yml", "accounts.yml", "assets.yml", "posts.yml", "interactions.yml"})
+    void rejectsNullYamlRootWithFileContext(String fileName, @TempDir Path tempDir) throws Exception {
+        copyFixture(fixtureRoot(), tempDir);
+        Files.writeString(tempDir.resolve(fileName), "null\n", StandardCharsets.UTF_8);
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> loader.load(tempDir));
+
+        assertTrue(exception.getMessage().contains(fileName));
+    }
+
+    @Test
+    void rejectsMarkdownSymlinkEscapingContentPackRoot(@TempDir Path tempDir) throws Exception {
+        Path root = tempDir.resolve("pack");
+        copyFixture(fixtureRoot(), root);
+        Path outside = tempDir.resolve("outside.md");
+        Files.writeString(outside, "outside", StandardCharsets.UTF_8);
+        Path link = root.resolve("markdown/linked.md");
+        try {
+            Files.createSymbolicLink(link, outside);
+        } catch (IOException | UnsupportedOperationException | SecurityException exception) {
+            assumeTrue(false, "Symbolic links are unavailable: " + exception.getMessage());
+        }
+        String posts = Files.readString(root.resolve("posts.yml"), StandardCharsets.UTF_8)
+                .replace("markdown/real-debugging.md", "markdown/linked.md");
+        Files.writeString(root.resolve("posts.yml"), posts, StandardCharsets.UTF_8);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> loader.load(root));
+
+        assertTrue(exception.getMessage().contains("Content pack path escapes root: markdown/linked.md"));
+    }
+
+    private Path fixtureRoot() throws URISyntaxException {
+        return Path.of(getClass().getResource("/content-pack/valid").toURI());
+    }
+
+    private void copyFixture(Path source, Path target) throws IOException {
+        try (var paths = Files.walk(source)) {
+            for (Path path : paths.toList()) {
+                Path destination = target.resolve(source.relativize(path).toString());
+                if (Files.isDirectory(path)) {
+                    Files.createDirectories(destination);
+                } else {
+                    Files.copy(path, destination);
+                }
+            }
+        }
+    }
+}

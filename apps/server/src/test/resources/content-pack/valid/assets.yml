@@ -1,0 +1,11 @@
+- key: avatar-night-coder
+  source: local
+  sourceUrl: null
+  sourceFile: avatar-source.png
+  file: avatars/night-coder.png
+  objectKey: seed/content-v2/avatars/night-coder.png
+  sha256: fixture-sha256
+  contentType: image/png
+  width: 512
+  height: 512
+  usage: avatar

@@ -61,6 +61,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- YAML content-pack manifests, version managed by Spring Boot. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+
         <!-- HTML 解析与 XSS 过滤 -->
         <dependency>
             <groupId>org.jsoup</groupId>
