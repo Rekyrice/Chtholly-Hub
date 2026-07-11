@@ -37,12 +37,9 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.timeout;
 
 @ExtendWith(MockitoExtension.class)
 class AgentWebSocketHandlerTest {
-
-    private static final long ASYNC_VERIFY_TIMEOUT_MS = 3_000;
 
     @Mock
     private ChthollyAgent agent;
@@ -98,7 +95,8 @@ class AgentWebSocketHandlerTest {
             }
         };
         handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
-                agentMetrics, characterStateService, insightService, cognitiveProvider, notificationService);
+                agentMetrics, characterStateService, insightService, cognitiveProvider, notificationService,
+                Runnable::run);
     }
 
     @Test
@@ -180,8 +178,8 @@ class AgentWebSocketHandlerTest {
         handler.handleTextMessage(rawSession,
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-c\",\"message\":\"hi\"}"));
 
-        verify(characterStateService, timeout(ASYNC_VERIFY_TIMEOUT_MS)).recordInteraction(66L);
-        verify(characterStateService, timeout(ASYNC_VERIFY_TIMEOUT_MS)).updateEmotion(66L, "hi");
+        verify(characterStateService).recordInteraction(66L);
+        verify(characterStateService).updateEmotion(66L, "hi");
     }
 
     @Test
@@ -240,7 +238,7 @@ class AgentWebSocketHandlerTest {
                 """));
 
         ArgumentCaptor<String> contextCaptor = ArgumentCaptor.forClass(String.class);
-        verify(agent, timeout(ASYNC_VERIFY_TIMEOUT_MS)).run(
+        verify(agent).run(
                 eq("hi"),
                 eq(88L),
                 eq(memory),
@@ -267,7 +265,7 @@ class AgentWebSocketHandlerTest {
         doNothing().when(agent).run(any(), anyLong(), any(), any(), any(), any());
         handler.handleTextMessage(rawSession,
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-e\",\"message\":\"hi\"}"));
-        verify(agent, timeout(ASYNC_VERIFY_TIMEOUT_MS)).run(any(), anyLong(), any(), any(), any(), any());
+        verify(agent).run(any(), anyLong(), any(), any(), any(), any());
 
         List<AgentTurn> turns = List.of(
                 AgentTurn.user("角色有哪些？"),
@@ -293,6 +291,6 @@ class AgentWebSocketHandlerTest {
         handler.afterConnectionEstablished(rawSession);
         handler.afterConnectionClosed(rawSession, org.springframework.web.socket.CloseStatus.NORMAL);
 
-        verify(cognitiveEngine, timeout(ASYNC_VERIFY_TIMEOUT_MS)).triggerIfDue();
+        verify(cognitiveEngine).triggerIfDue();
     }
 }
