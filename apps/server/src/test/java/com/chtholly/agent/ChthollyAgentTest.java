@@ -27,6 +27,8 @@ import reactor.core.publisher.Flux;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -241,15 +243,22 @@ class ChthollyAgentTest {
     @Test
     void given_llmSlow_when_run_then_timeoutHandled() {
         properties.setLlmTimeoutSeconds(1);
+        CountDownLatch releaseLlm = new CountDownLatch(1);
         ChatClient.CallResponseSpec callSpec = org.mockito.Mockito.mock(ChatClient.CallResponseSpec.class);
         when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call())
                 .thenReturn(callSpec);
         when(callSpec.content()).thenAnswer(inv -> {
-            Thread.sleep(1500);
+            if (!releaseLlm.await(3, TimeUnit.SECONDS)) {
+                throw new AssertionError("LLM timeout guard did not release blocked call");
+            }
             return "{\"action\":\"final\",\"answer\":\"late\"}";
         });
 
-        agent.run("超时测试", 1L, null, events::add);
+        try {
+            agent.run("超时测试", 1L, null, events::add);
+        } finally {
+            releaseLlm.countDown();
+        }
 
         assertThat(eventTypes()).contains("error");
         assertThat(findFirst("error").path("message").asText()).contains("超时");
