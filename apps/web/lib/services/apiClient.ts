@@ -28,6 +28,47 @@ type ApiFetchInternalOptions = ApiFetchOptions & {
   _retriedWithoutAuth?: boolean;
 };
 
+const MAX_ERROR_MESSAGE_LENGTH = 240;
+
+function safeErrorMessageText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (!normalized) return null;
+  if (normalized.length <= MAX_ERROR_MESSAGE_LENGTH) return normalized;
+
+  return `${normalized.slice(0, MAX_ERROR_MESSAGE_LENGTH - 1)}…`;
+}
+
+function isHtmlErrorBody(contentType: string | null, rawText: string): boolean {
+  if (contentType?.toLowerCase().includes("text/html")) return true;
+  return /^\s*(?:<!doctype\s+html\b|<html\b|<head\b|<body\b)/iu.test(rawText);
+}
+
+function resolveApiErrorMessage(
+  status: number,
+  hasAccessToken: boolean,
+  contentType: string | null,
+  rawText: string,
+  errorData: unknown,
+  parsedJson: boolean,
+): string {
+  if (status === 401 && hasAccessToken) {
+    return "登录已过期，请重新登录";
+  }
+
+  if (!isHtmlErrorBody(contentType, rawText)) {
+    const dataMessage =
+      typeof errorData === "object" && errorData !== null && "message" in errorData
+        ? safeErrorMessageText((errorData as { message?: unknown }).message)
+        : null;
+    const message = dataMessage ?? (parsedJson ? null : safeErrorMessageText(rawText));
+    if (message) return message;
+  }
+
+  return `请求失败（${status}）`;
+}
+
 let refreshPromise: Promise<string | null> | null = null;
 
 async function refreshAccessTokenOnce(): Promise<string | null> {
@@ -139,6 +180,7 @@ async function apiFetchInternal<TResponse>(
   }
 
   if (!response.ok) {
+    const contentType = response.headers.get("content-type");
     let rawText = "";
     try {
       rawText = await response.text();
@@ -146,21 +188,23 @@ async function apiFetchInternal<TResponse>(
       rawText = "";
     }
     let errorData: unknown = rawText;
+    let parsedJson = false;
     if (rawText) {
       try {
         errorData = JSON.parse(rawText);
+        parsedJson = true;
       } catch {
         // 保留原始文本
       }
     }
-    const message =
-      response.status === 401 && token
-        ? "登录已过期，请重新登录"
-        : typeof errorData === "object" &&
-            errorData !== null &&
-            "message" in errorData
-          ? (errorData as { message: string }).message
-          : rawText || `请求失败：${response.status}`;
+    const message = resolveApiErrorMessage(
+      response.status,
+      Boolean(token),
+      contentType,
+      rawText,
+      errorData,
+      parsedJson,
+    );
     throw new ApiError(response.status, message, errorData);
   }
 
