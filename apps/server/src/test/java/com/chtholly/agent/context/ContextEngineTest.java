@@ -149,6 +149,43 @@ class ContextEngineTest {
     }
 
     @Test
+    void preservesCompleteToolsHistoryAndQuestionTailExactly() {
+        String prompt = contextEngine.buildSystemPrompt(
+                7L,
+                "ws-1",
+                "页面：/post/frieren-review",
+                List.of(mockTool()),
+                "User: 上一次的问题\nAssistant: 上一次的回答",
+                "你怎么看这篇文章？");
+
+        assertThat(prompt.substring(prompt.indexOf("## 可用工具"))).isEqualTo("""
+                ## 可用工具
+
+                ### test_tool
+                测试工具
+                  参数：
+                    - keyword (string, 必填): 关键词
+
+                ## 工具使用准则
+
+                1. 优先用工具获取事实，不确定时查一下再回答
+                2. 每次只调用一个工具，等结果返回后再决定下一步
+                3. 如果站内搜索无结果，尝试 Bangumi 工具搜索动漫相关内容
+                4. 不要编造工具返回的数据，如实告诉用户查询结果
+
+                输出格式：只输出单个 JSON 对象；调用工具用 {"action":"工具名","input":{...}}，可以回答时用 {"action":"final","answer":"占位"}
+
+                ## 对话历史
+
+                User: 上一次的问题
+                Assistant: 上一次的回答
+
+                ## 用户的问题
+
+                你怎么看这篇文章？""");
+    }
+
+    @Test
     void usesEpisodicAnchorWhenFormattedHistoryIsBlank() {
         String prompt = contextEngine.buildSystemPrompt(
                 7L,

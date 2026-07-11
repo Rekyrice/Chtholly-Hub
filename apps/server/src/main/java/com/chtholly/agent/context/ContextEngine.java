@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /** Assembles the system prompt from an anchor snapshot and ordered contributors. */
@@ -72,12 +73,26 @@ public class ContextEngine {
                 .collect(java.util.stream.Collectors.joining("\n\n"));
     }
 
-    private ContextContribution safeContribution(ContextContributor contributor, ContextRequest request) {
+    ContextContribution safeContribution(ContextContributor contributor, ContextRequest request) {
         try {
             ContextContribution contribution = contributor.contribute(request);
-            return contribution == null
-                    ? ContextContribution.empty(contributor.name(), contributor.order(), true)
-                    : contribution;
+            if (contribution == null) {
+                log.warn("Context contributor returned null: {}", contributor.name());
+                return ContextContribution.empty(contributor.name(), contributor.order(), true);
+            }
+            boolean metadataMismatch = !Objects.equals(contributor.name(), contribution.name())
+                    || contributor.order() != contribution.order();
+            if (metadataMismatch) {
+                log.warn("Context contributor metadata mismatch: expected name={}, order={}, actual name={}, order={}",
+                        contributor.name(), contributor.order(), contribution.name(), contribution.order());
+            }
+            boolean degraded = contribution.degraded() || metadataMismatch;
+            ContextContribution normalized = new ContextContribution(
+                    contributor.name(), contributor.order(), contribution.content(), degraded);
+            if (normalized.degraded()) {
+                log.warn("Context contribution degraded: {}", contributor.name());
+            }
+            return normalized;
         } catch (RuntimeException e) {
             log.warn("Context contributor failed: {}", contributor.name(), e);
             return ContextContribution.empty(contributor.name(), contributor.order(), true);

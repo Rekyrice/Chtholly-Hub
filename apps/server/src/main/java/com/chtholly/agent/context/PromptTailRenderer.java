@@ -3,11 +3,13 @@ package com.chtholly.agent.context;
 import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.memory.AgentTurn;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.Map;
 
 /** Renders the stable ReAct tool contract and recent conversation. */
+@Slf4j
 public final class PromptTailRenderer {
 
     /**
@@ -19,11 +21,12 @@ public final class PromptTailRenderer {
     public String renderTools(Iterable<AgentTool> tools) {
         StringBuilder prompt = new StringBuilder("## 可用工具\n\n");
         if (tools != null) {
-            for (AgentTool tool : tools) {
-                prompt.append("### ").append(tool.name()).append('\n')
-                        .append(tool.description());
-                appendSchema(prompt, tool.parameterSchema());
-                prompt.append("\n\n");
+            try {
+                for (AgentTool tool : tools) {
+                    appendToolSafely(prompt, tool);
+                }
+            } catch (RuntimeException e) {
+                log.warn("Tool iterable context failed", e);
             }
         }
         prompt.append("## 工具使用准则\n\n")
@@ -34,6 +37,23 @@ public final class PromptTailRenderer {
                 .append("输出格式：只输出单个 JSON 对象；调用工具用 {\"action\":\"工具名\",\"input\":{...}}，")
                 .append("可以回答时用 {\"action\":\"final\",\"answer\":\"占位\"}");
         return prompt.toString();
+    }
+
+    private void appendToolSafely(StringBuilder prompt, AgentTool tool) {
+        if (tool == null) {
+            log.warn("Skipping null tool in prompt context");
+            return;
+        }
+        try {
+            StringBuilder renderedTool = new StringBuilder();
+            renderedTool.append("### ").append(tool.name()).append('\n')
+                    .append(tool.description());
+            appendSchema(renderedTool, tool.parameterSchema());
+            renderedTool.append("\n\n");
+            prompt.append(renderedTool);
+        } catch (RuntimeException e) {
+            log.warn("Tool context rendering failed", e);
+        }
     }
 
     /**
