@@ -6,6 +6,13 @@ spring:
   kafka:
     consumer:
       auto-offset-reset: earliest
+  data:
+    redis:
+      connect-timeout: 2s
+      timeout: 2s
+  elasticsearch:
+    connection-timeout: 2s
+    socket-timeout: 2s
   task:
     scheduling:
       pool:

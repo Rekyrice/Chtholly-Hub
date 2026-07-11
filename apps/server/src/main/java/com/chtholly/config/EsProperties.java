@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.List;
+import java.time.Duration;
 
 @Data
 @ConfigurationProperties(prefix = "spring.elasticsearch")
@@ -17,6 +18,8 @@ public class EsProperties {
 
     /** 搜索索引副本数，开发默认 0，生产建议 1。 */
     private String replicas = "0";
+    private Duration connectionTimeout = Duration.ofSeconds(5);
+    private Duration socketTimeout = Duration.ofSeconds(30);
 
     // RAG 索引名来自 Spring AI 的配置
     @Value("${spring.ai.vectorstore.elasticsearch.index-name:}")
