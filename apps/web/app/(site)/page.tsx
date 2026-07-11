@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import LandingTypewriter from "@/components/site/LandingTypewriter";
+import { siteUrl } from "@/lib/site-url";
 
 const landingDescription = "一个有灵魂的内容空间——灵魂是珂朵莉";
 const landingImage = "/images/landing/default.jpg";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://yourdomain.com"),
-  title: "Chtholly Hub",
+  metadataBase: siteUrl,
+  title: { absolute: "Chtholly Hub" },
   description: landingDescription,
   openGraph: {
     title: "Chtholly Hub",
@@ -27,7 +28,7 @@ const jsonLd = {
   "@type": "WebSite",
   name: "Chtholly Hub",
   description: landingDescription,
-  url: "https://yourdomain.com",
+  url: siteUrl.href,
 };
 
 export default function LandingPage() {

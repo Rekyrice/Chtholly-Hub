@@ -7,6 +7,7 @@ import {
   Source_Sans_3,
 } from "next/font/google";
 import { siteConfig } from "@/lib/site.config";
+import { siteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 const notoSansSc = Noto_Sans_SC({
@@ -41,8 +42,15 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: siteConfig.name,
+  metadataBase: siteUrl,
+  title: {
+    default: siteConfig.name,
+    template: `%s | ${siteConfig.name}`,
+  },
   description: siteConfig.description,
+  alternates: {
+    canonical: "/",
+  },
 };
 
 export default function RootLayout({
