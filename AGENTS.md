@@ -130,6 +130,25 @@ docker compose -f docker-compose.prod.yml up -d
 1. **Commit 格式**: Conventional Commits — `feat:`、`fix:`、`refactor:`、`chore:`、`docs:`、`test:`
 2. **Commit 语言**: 中文
 3. **分支命名**: `feat/{description}`、`fix/{description}`
+4. **提交节奏**: 每个可独立验证的改动完成后及时提交；较长任务按真实职责边界拆成多个小提交
+5. **推送规则**: Coding Agent 只提交、不推送，远端推送由项目维护者执行
+
+### 常用验证命令
+
+```bash
+# 后端全量测试
+cd apps/server && mvn test
+
+# 后端单测（PowerShell 中多个类名参数需要整体加引号）
+cd apps/server && mvn -q '-Dtest=ClassATest,ClassBTest' test
+
+# 前端生产构建
+cd apps/web && npm run build
+
+# 提交前检查
+git diff --check
+git status --short
+```
 
 ## 架构决策
 
