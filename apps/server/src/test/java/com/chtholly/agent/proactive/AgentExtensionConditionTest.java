@@ -1,33 +1,27 @@
 package com.chtholly.agent.proactive;
 
-import com.chtholly.agent.api.AgentExperienceController;
-import com.chtholly.agent.api.TopicController;
 import com.chtholly.agent.cognitive.CognitiveEngine;
 import com.chtholly.agent.cognitive.ExperienceService;
 import com.chtholly.agent.comment.CommentGenerationService;
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.AgentExtensionScanTestConfiguration;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
 import com.chtholly.agent.config.ContentContractConfiguration;
 import com.chtholly.agent.content.ContentUnderstandingService;
-import com.chtholly.agent.content.TopicClusteringService;
-import com.chtholly.agent.experience.ExperienceGenerator;
 import com.chtholly.agent.experience.ArchivedExperienceMapper;
-import com.chtholly.agent.graph.KnowledgeGraphExtractionService;
-import com.chtholly.agent.graph.KnowledgeGraphIndexInitializer;
-import com.chtholly.agent.graph.KnowledgeGraphService;
-import com.chtholly.agent.graph.MyBatisKnowledgeGraphRepository;
 import com.chtholly.agent.learning.AgentLearningAsyncConfig;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.ProceduralMemoryService;
-import com.chtholly.agent.mood.DefaultInteractionService;
-import com.chtholly.agent.mood.MoodEngine;
-import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.notification.NotificationService;
 import com.chtholly.content.ContentIntelligenceReader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -45,23 +39,26 @@ class AgentExtensionConditionTest {
     };
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withUserConfiguration(AllExtensionEntries.class);
+            .withUserConfiguration(AgentExtensionScanTestConfiguration.class);
 
     @Test
     void allExtensionsCanBeDisabledWithoutLoadingTheirEntryBeans() {
         contextRunner.withPropertyValues(ALL_EXTENSIONS_DISABLED).run(context -> {
             assertThat(context).hasNotFailed();
-            assertAbsent(context,
-                    ContentUnderstandingService.class, TopicClusteringService.class, TopicController.class,
-                    KnowledgeGraphExtractionService.class, KnowledgeGraphIndexInitializer.class,
-                    KnowledgeGraphService.class, MyBatisKnowledgeGraphRepository.class,
-                    AgentLearningAsyncConfig.class, InsightService.class, ProceduralMemoryService.class,
-                    ExperienceService.class, ExperienceGenerator.class, AgentExperienceController.class,
-                    DefaultInteractionService.class, MoodEngine.class, SeasonService.class,
-                    CommentGenerationService.class, NotificationService.class,
-                    CognitiveEngine.class);
-            assertProactiveAbsent(context);
+            Set<Class<?>> extensionTypes = AgentExtensionScanTestConfiguration.extensionComponentTypes();
+            assertThat(extensionTypes).hasSizeGreaterThan(20);
+            extensionTypes.forEach(type -> assertThat(context).doesNotHaveBean(type));
         });
+    }
+
+    @Test
+    void combinationConditionDefaultsToEnabledWhenPropertiesAreMissing() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(DefaultCombinationConditions.class)
+                .run(context -> assertThat(context)
+                        .hasNotFailed()
+                        .hasBean("cognitiveCombinationProbe")
+                        .hasBean("proactiveCombinationProbe"));
     }
 
     @Test
@@ -169,25 +166,6 @@ class AgentExtensionConditionTest {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @Import({
-            ContentContractConfiguration.class,
-            ContentUnderstandingService.class, TopicClusteringService.class, TopicController.class,
-            KnowledgeGraphExtractionService.class, KnowledgeGraphIndexInitializer.class,
-            KnowledgeGraphService.class, MyBatisKnowledgeGraphRepository.class,
-            AgentLearningAsyncConfig.class, InsightService.class, ProceduralMemoryService.class,
-            ExperienceService.class, ExperienceGenerator.class, AgentExperienceController.class,
-            DefaultInteractionService.class, MoodEngine.class, SeasonService.class,
-            CommentGenerationService.class, NotificationService.class,
-            CharacterStateUserActivityProvider.class, ContentProactiveService.class,
-            EmotionalProactiveService.class, PostPublishedProactiveListener.class,
-            ProactiveAudienceService.class, ProactiveNotificationDispatcher.class,
-            ProactiveRateLimiter.class, ProactiveTriggerEngine.class,
-            SeedCurationReader.class, SocialProactiveService.class, CognitiveEngine.class
-    })
-    static class AllExtensionEntries {
-    }
-
-    @Configuration(proxyBeanMethods = false)
     @Import({ContentContractConfiguration.class, ContentUnderstandingService.class})
     static class ContentEntries {
     }
@@ -224,5 +202,34 @@ class AgentExtensionConditionTest {
     @Import({CognitiveEngine.class, AgentLearningAsyncConfig.class, InsightService.class,
             ProceduralMemoryService.class, ExperienceService.class})
     static class LearningAndExperienceEntries {
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnAgentExtensions({AgentExtensionGroup.LEARNING, AgentExtensionGroup.EXPERIENCE})
+    static class DefaultCognitiveCondition {
+
+        @Bean
+        String cognitiveCombinationProbe() {
+            return "cognitive";
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnAgentExtensions({
+            AgentExtensionGroup.PROACTIVE,
+            AgentExtensionGroup.EXPERIENCE,
+            AgentExtensionGroup.COMMUNITY_ACTIONS
+    })
+    static class DefaultProactiveCondition {
+
+        @Bean
+        String proactiveCombinationProbe() {
+            return "proactive";
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @Import({DefaultCognitiveCondition.class, DefaultProactiveCondition.class})
+    static class DefaultCombinationConditions {
     }
 }

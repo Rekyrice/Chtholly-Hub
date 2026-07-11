@@ -1,6 +1,7 @@
 package com.chtholly.agent.proactive;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
 
 import com.chtholly.agent.notification.Notification;
 import com.chtholly.agent.notification.NotificationChannel;
@@ -18,7 +19,8 @@ import java.util.List;
  * 新文章发布时，向兴趣标签匹配的用户推送「信息主动」通知。
  */
 @Component
-@ConditionalOnExpression("${agent.extensions.proactive.enabled:true} && ${agent.extensions.experience.enabled:true} && ${agent.extensions.community-actions.enabled:true}")
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 @RequiredArgsConstructor
 @Slf4j
 public class PostPublishedProactiveListener {

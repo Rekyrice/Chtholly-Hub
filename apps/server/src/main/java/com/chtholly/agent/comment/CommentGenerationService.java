@@ -1,5 +1,7 @@
 package com.chtholly.agent.comment;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+
 import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.comment.mapper.CommentMapper;
 import com.chtholly.comment.model.CommentRow;
@@ -34,6 +36,7 @@ import java.util.List;
  */
 @Slf4j
 @Service
+@AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.community-actions", name = "enabled", havingValue = "true", matchIfMissing = true)
 @ConditionalOnExpression("${llm.enabled:false}")
 public class CommentGenerationService {

@@ -1,6 +1,7 @@
 package com.chtholly.agent.proactive;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
 
 import com.chtholly.agent.cognitive.ExperienceService;
 import com.chtholly.agent.notification.NotificationService;
@@ -27,7 +28,8 @@ import java.util.List;
  * cron entrypoints so task monitoring and distributed-lock names remain stable.
  */
 @Service
-@ConditionalOnExpression("${agent.extensions.proactive.enabled:true} && ${agent.extensions.experience.enabled:true} && ${agent.extensions.community-actions.enabled:true}")
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 public class ProactiveTriggerEngine {
     static final Duration ABSENT_THRESHOLD = Duration.ofDays(3);
     static final Duration RETURN_BRIEFING_THRESHOLD = Duration.ofDays(7);

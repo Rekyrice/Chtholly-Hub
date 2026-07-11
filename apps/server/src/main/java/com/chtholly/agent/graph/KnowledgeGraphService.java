@@ -1,5 +1,6 @@
 package com.chtholly.agent.graph;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.chtholly.content.ContentAnalysis;
@@ -34,6 +35,7 @@ import java.util.function.Supplier;
  */
 @Slf4j
 @Service
+@AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.graph", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class KnowledgeGraphService {
 

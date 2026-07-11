@@ -3,11 +3,8 @@ package com.chtholly.agent.context;
 import com.chtholly.agent.CharacterSoulService;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.anchor.KnowledgeService;
-import com.chtholly.agent.cognitive.CognitiveEngine;
-import com.chtholly.agent.cognitive.ExperienceService;
-import com.chtholly.agent.comment.CommentGenerationService;
 import com.chtholly.agent.config.ContentContractConfiguration;
-import com.chtholly.agent.content.ContentUnderstandingService;
+import com.chtholly.agent.config.AgentExtensionScanTestConfiguration;
 import com.chtholly.agent.context.contributor.HistoryContextContributor;
 import com.chtholly.agent.context.contributor.IdentityContextContributor;
 import com.chtholly.agent.context.contributor.KnowledgeContextContributor;
@@ -16,8 +13,6 @@ import com.chtholly.agent.context.contributor.ProceduralContextContributor;
 import com.chtholly.agent.context.contributor.QuestionContextContributor;
 import com.chtholly.agent.context.contributor.RelationshipContextContributor;
 import com.chtholly.agent.context.contributor.ToolsContextContributor;
-import com.chtholly.agent.learning.InsightService;
-import com.chtholly.agent.notification.NotificationService;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
 import org.junit.jupiter.api.Test;
@@ -58,12 +53,8 @@ class AgentCoreOnlyContextTest {
                     .contains("fixed identity")
                     .contains("\"action\":\"final\"")
                     .contains("current question");
-            assertThat(context).doesNotHaveBean(ContentUnderstandingService.class);
-            assertThat(context).doesNotHaveBean(InsightService.class);
-            assertThat(context).doesNotHaveBean(ExperienceService.class);
-            assertThat(context).doesNotHaveBean(CommentGenerationService.class);
-            assertThat(context).doesNotHaveBean(NotificationService.class);
-            assertThat(context).doesNotHaveBean(CognitiveEngine.class);
+            AgentExtensionScanTestConfiguration.extensionComponentTypes()
+                    .forEach(type -> assertThat(context).doesNotHaveBean(type));
         });
     }
 
@@ -74,7 +65,7 @@ class AgentCoreOnlyContextTest {
             ProceduralContextContributor.class, KnowledgeContextContributor.class,
             PageContextContributor.class, ToolsContextContributor.class,
             HistoryContextContributor.class, QuestionContextContributor.class,
-            ContentContractConfiguration.class
+            ContentContractConfiguration.class, AgentExtensionScanTestConfiguration.class
     })
     static class CoreConfiguration {
 

@@ -1,5 +1,6 @@
 package com.chtholly.agent.api;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.chtholly.agent.api.dto.AgentExperienceResponse;
@@ -20,6 +21,7 @@ import java.util.List;
  * Public read API for Chtholly's recent cognitive experiences.
  */
 @RestController
+@AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.experience", name = "enabled", havingValue = "true", matchIfMissing = true)
 @RequestMapping(path = "/api/v1/agent/experiences", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor

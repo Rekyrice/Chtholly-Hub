@@ -1,5 +1,6 @@
 package com.chtholly.agent.learning;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.chtholly.agent.memory.AgentTurn;
@@ -37,6 +38,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
+@AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.learning", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class InsightService {
 

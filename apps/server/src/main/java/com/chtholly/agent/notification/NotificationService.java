@@ -1,5 +1,6 @@
 package com.chtholly.agent.notification;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,6 +26,7 @@ import java.util.function.Consumer;
  */
 @Slf4j
 @Service
+@AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.community-actions", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class NotificationService {
 

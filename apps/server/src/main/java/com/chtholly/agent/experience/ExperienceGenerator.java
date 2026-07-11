@@ -1,5 +1,6 @@
 package com.chtholly.agent.experience;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.chtholly.agent.cognitive.ExperienceService;
@@ -25,6 +26,7 @@ import java.time.Duration;
  */
 @Slf4j
 @Component
+@AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.experience", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ExperienceGenerator {
 

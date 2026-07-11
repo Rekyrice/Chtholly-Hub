@@ -1,5 +1,6 @@
 package com.chtholly.agent.content;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.chtholly.common.scheduler.DistributedLockService;
@@ -41,6 +42,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
+@AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.content", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class TopicClusteringService {
 

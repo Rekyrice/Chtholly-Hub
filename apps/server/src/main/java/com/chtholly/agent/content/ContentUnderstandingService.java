@@ -1,5 +1,7 @@
 package com.chtholly.agent.content;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
@@ -43,6 +45,7 @@ import java.util.Set;
  */
 @Slf4j
 @Service
+@AgentExtensionComponent
 @ConditionalOnProperty(
         prefix = "agent.extensions.content",
         name = "enabled",

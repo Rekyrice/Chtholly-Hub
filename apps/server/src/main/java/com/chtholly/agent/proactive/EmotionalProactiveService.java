@@ -1,6 +1,7 @@
 package com.chtholly.agent.proactive;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
 
 import com.chtholly.agent.cognitive.ExperienceService;
 import com.chtholly.agent.cognitive.Observation;
@@ -19,7 +20,8 @@ import java.util.List;
 
 /** Handles emotionally motivated proactive messages and ambient thoughts. */
 @Service
-@ConditionalOnExpression("${agent.extensions.proactive.enabled:true} && ${agent.extensions.experience.enabled:true} && ${agent.extensions.community-actions.enabled:true}")
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 public class EmotionalProactiveService {
     private final CharacterStateService characterStateService;
     private final NotificationService notificationService;

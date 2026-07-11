@@ -1,5 +1,6 @@
 package com.chtholly.agent.graph;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -22,6 +23,7 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Service
+@AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.graph", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class KnowledgeGraphExtractionService {
 

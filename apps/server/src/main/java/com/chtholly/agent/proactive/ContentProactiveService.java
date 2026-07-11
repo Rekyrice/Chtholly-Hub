@@ -1,6 +1,7 @@
 package com.chtholly.agent.proactive;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
 
 import com.chtholly.agent.notification.Notification;
 import com.chtholly.agent.notification.NotificationChannel;
@@ -28,7 +29,8 @@ import java.util.stream.Collectors;
 /** Handles proactive article digests, curation, unread content and rising posts. */
 @Slf4j
 @Service
-@ConditionalOnExpression("${agent.extensions.proactive.enabled:true} && ${agent.extensions.experience.enabled:true} && ${agent.extensions.community-actions.enabled:true}")
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 public class ContentProactiveService {
     private static final String CURATION_PUSH_KEY = "agent:curation:last-push";
     private static final String RISING_STAR_KEY_PREFIX = "agent:rising-star:";

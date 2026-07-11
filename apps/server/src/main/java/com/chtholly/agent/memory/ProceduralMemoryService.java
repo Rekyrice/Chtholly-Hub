@@ -1,5 +1,6 @@
 package com.chtholly.agent.memory;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.chtholly.agent.learning.InsightService;
@@ -14,6 +15,7 @@ import java.util.List;
  * original API available without maintaining a second Redis namespace.
  */
 @Service
+@AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.learning", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ProceduralMemoryService {
 

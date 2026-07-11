@@ -1,6 +1,7 @@
 package com.chtholly.agent.proactive;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
 
 import com.chtholly.agent.state.CharacterStateService;
 import com.chtholly.post.service.PostService;
@@ -27,7 +28,8 @@ import java.util.Set;
  * 基于 CharacterState Redis 索引与兴趣画像的用户活动数据源。
  */
 @Component
-@ConditionalOnExpression("${agent.extensions.proactive.enabled:true} && ${agent.extensions.experience.enabled:true} && ${agent.extensions.community-actions.enabled:true}")
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 @RequiredArgsConstructor
 public class CharacterStateUserActivityProvider implements ProactiveTriggerEngine.UserActivityProvider {
 
