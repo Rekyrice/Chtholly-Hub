@@ -3,13 +3,17 @@ package com.chtholly.agent;
 import java.util.Map;
 import java.util.Optional;
 
-/** 根据 {@link AgentTool#parameterSchema()} 校验 LLM 传入的工具参数。 */
+/** Validates LLM-provided tool input against {@link AgentTool#parameterSchema()}. */
 public final class AgentToolParamValidator {
 
     private AgentToolParamValidator() {}
 
     /**
-     * @return 校验失败时的 observation 文本；通过则 empty
+     * Validates tool input values against the declared parameter schema.
+     *
+     * @param input tool input values; {@code null} is treated as an empty map
+     * @param schema declared parameter schema; {@code null} or empty skips validation
+     * @return an optional validation error observation, or empty when validation succeeds
      */
     public static Optional<String> validate(Map<String, Object> input, Map<String, ParamDef> schema) {
         if (schema == null || schema.isEmpty()) {
