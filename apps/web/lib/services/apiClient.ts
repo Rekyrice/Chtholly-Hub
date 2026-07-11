@@ -29,6 +29,7 @@ type ApiFetchInternalOptions = ApiFetchOptions & {
 };
 
 const MAX_ERROR_MESSAGE_LENGTH = 240;
+const HTML_SNIFF_PREFIX_LENGTH = 1024;
 
 function safeErrorMessageText(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -37,12 +38,33 @@ function safeErrorMessageText(value: unknown): string | null {
   if (!normalized) return null;
   if (normalized.length <= MAX_ERROR_MESSAGE_LENGTH) return normalized;
 
-  return `${normalized.slice(0, MAX_ERROR_MESSAGE_LENGTH - 1)}…`;
+  let end = MAX_ERROR_MESSAGE_LENGTH - 1;
+  const endsWithHighSurrogate = /[\uD800-\uDBFF]/u.test(normalized.charAt(end - 1));
+  const continuesWithLowSurrogate = /[\uDC00-\uDFFF]/u.test(normalized.charAt(end));
+  if (endsWithHighSurrogate && continuesWithLowSurrogate) {
+    end -= 1;
+  }
+
+  return `${normalized.slice(0, end)}…`;
 }
 
 function isHtmlErrorBody(contentType: string | null, rawText: string): boolean {
-  if (contentType?.toLowerCase().includes("text/html")) return true;
-  return /^\s*(?:<!doctype\s+html\b|<html\b|<head\b|<body\b)/iu.test(rawText);
+  const mediaType = contentType?.split(";", 1)[0].trim().toLowerCase();
+  if (mediaType === "text/html" || mediaType === "application/xhtml+xml") {
+    return true;
+  }
+
+  let prefix = rawText.slice(0, HTML_SNIFF_PREFIX_LENGTH).trimStart();
+  while (prefix) {
+    const withoutLeadingMetadata = prefix.replace(
+      /^(?:<\?xml\b[^>]*\?>|<!--[\s\S]*?-->)\s*/iu,
+      "",
+    );
+    if (withoutLeadingMetadata === prefix) break;
+    prefix = withoutLeadingMetadata;
+  }
+
+  return /^(?:<!doctype\s+html\b|<(?:html|head|body|title)\b)/iu.test(prefix);
 }
 
 function resolveApiErrorMessage(

@@ -85,12 +85,72 @@ describe("apiFetch error messages", () => {
     expect(error.message).not.toMatch(/\s{2,}/u);
   });
 
+  it("does not split an emoji surrogate pair at the truncation boundary", async () => {
+    const message = `${"a".repeat(238)}😀tail`;
+    stubResponse(JSON.stringify({ message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
+
+    expect(error.message).toBe(`${"a".repeat(238)}…`);
+    expect(() => encodeURIComponent(error.message)).not.toThrow();
+  });
+
   it("rejects an HTML-looking body even without a content type", async () => {
     stubResponse("  <!DOCTYPE html><html><body>Not Found</body></html>", { status: 404 });
 
     const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
 
     expect(error.message).toBe("请求失败（404）");
+  });
+
+  it("rejects XHTML responses based on their content type", async () => {
+    stubResponse("Gateway error", {
+      status: 502,
+      headers: { "Content-Type": "application/xhtml+xml; charset=utf-8" },
+    });
+
+    const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
+
+    expect(error.message).toBe("请求失败（502）");
+  });
+
+  it.each([
+    "<!-- proxy error --><html><body>Not Found</body></html>",
+    '<?xml version="1.0"?><html><body>Not Found</body></html>',
+    "<title>502 Bad Gateway</title>",
+  ])("rejects an HTML error page after a safe leading prefix: %s", async (body) => {
+    stubResponse(body, { status: 502 });
+
+    const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
+
+    expect(error.message).toBe("请求失败（502）");
+  });
+
+  it("preserves ordinary text that only mentions an HTML tag later", async () => {
+    const body = "上游返回提示：<title> 字段缺失";
+    stubResponse(body, {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+
+    const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
+
+    expect(error.message).toBe(body);
+  });
+
+  it("does not reject plain text for a content type that only contains the HTML token", async () => {
+    const body = "普通安全错误消息";
+    stubResponse(body, {
+      status: 400,
+      headers: { "Content-Type": "text/htmlish; charset=utf-8" },
+    });
+
+    const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
+
+    expect(error.message).toBe(body);
   });
 
   it("keeps the token-specific message for authenticated 401 responses", async () => {
