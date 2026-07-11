@@ -61,6 +61,46 @@ jobs:
           path: apps/server/target/site/jacoco/
           retention-days: 14
 
+  integration-test:
+    name: integration-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('apps/server/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Run golden-path integration tests
+        working-directory: apps/server
+        run: mvn verify -Pintegration-test
+        timeout-minutes: 25
+
+      - name: Upload integration-test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports
+          path: |
+            apps/server/target/failsafe-reports/
+            apps/server/target/surefire-reports/
+            apps/server/target/site/jacoco/
+          if-no-files-found: ignore
+          retention-days: 14
+
   frontend-build:
     name: frontend-build
     runs-on: ubuntu-latest
