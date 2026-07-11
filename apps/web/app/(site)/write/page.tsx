@@ -98,6 +98,8 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
 
+  const markDirty = () => setSaveStatus("unsaved");
+
   const draft = useMemo<WriteDraft>(
     () => ({
       title,
@@ -191,6 +193,7 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
     try {
       const result = await postAiService.suggestDescription(markdown);
       setDescription(result.description);
+      markDirty();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "AI 生成描述失败");
     } finally {
@@ -232,6 +235,7 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
       const inserted = `![${alt}](${publicUrl})`;
       const next = markdown.slice(0, start) + inserted + markdown.slice(end);
       setMarkdown(next);
+      markDirty();
       requestAnimationFrame(() => {
         const target = textareaRef.current;
         if (!target) return;
@@ -257,7 +261,10 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
 
         <input
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            markDirty();
+          }}
           className="write-title-input"
           placeholder="标题"
           aria-label="标题"
@@ -265,10 +272,19 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
         />
 
         <div className="write-meta-row write-meta-row--tags">
-          <TagAutocomplete value={tags} onChange={setTags} />
+          <TagAutocomplete
+            value={tags}
+            onChange={(nextTags) => {
+              setTags(nextTags);
+              markDirty();
+            }}
+          />
           <input
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              markDirty();
+            }}
             placeholder="一句话摘要"
             className="write-meta-input"
             aria-label="摘要"
@@ -312,7 +328,10 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
           <MarkdownToolbar
             textareaRef={textareaRef}
             value={markdown}
-            onChange={setMarkdown}
+            onChange={(nextMarkdown) => {
+              setMarkdown(nextMarkdown);
+              markDirty();
+            }}
             onImageUpload={onImageUpload}
             uploading={uploadingImage}
             disabled={loading}
@@ -333,7 +352,10 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
             className={cn("write-editor", "write-placeholder-fade")}
             placeholder={PLACEHOLDERS[placeholderIndex]}
             value={markdown}
-            onChange={(e) => setMarkdown(e.target.value)}
+            onChange={(e) => {
+              setMarkdown(e.target.value);
+              markDirty();
+            }}
             required
           />
         )}

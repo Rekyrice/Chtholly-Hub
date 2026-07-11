@@ -51,9 +51,23 @@ function FollowListModalContent({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const mountedRef = useRef(false);
+  const requestVersionRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestVersionRef.current += 1;
+    };
+  }, []);
 
   const loadPage = useCallback(
     async (nextCursor?: string | null, replace = false, isAlive: () => boolean = () => true) => {
+      const requestVersion = requestVersionRef.current + 1;
+      requestVersionRef.current = requestVersion;
+      const isCurrentRequest = () =>
+        mountedRef.current && requestVersionRef.current === requestVersion && isAlive();
       setLoading(true);
       setError(null);
       try {
@@ -62,17 +76,17 @@ function FollowListModalContent({
             ? relationService.following(userId, 20, nextCursor)
             : relationService.followers(userId, 20, nextCursor);
         const page: PageResponse<ProfileResponse> = await request;
-        if (!isAlive()) return;
+        if (!isCurrentRequest()) return;
         setItems((current) => (replace ? page.items : [...current, ...page.items]));
         setCursor(page.nextCursor);
         setHasMore(page.hasMore);
       } catch {
-        if (!isAlive()) return;
+        if (!isCurrentRequest()) return;
         if (replace) setItems([]);
         setError("列表暂时没有加载出来，稍后再试试。");
         setHasMore(false);
       } finally {
-        if (isAlive()) setLoading(false);
+        if (isCurrentRequest()) setLoading(false);
       }
     },
     [tab, userId],
@@ -89,6 +103,7 @@ function FollowListModalContent({
 
   const selectTab = (nextTab: FollowListTab) => {
     if (nextTab === tab) return;
+    requestVersionRef.current += 1;
     setItems([]);
     setCursor(null);
     setHasMore(false);
