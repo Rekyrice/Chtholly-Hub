@@ -8,6 +8,7 @@ import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.observability.AgentObservationService;
+import com.chtholly.agent.runtime.AgentLlmInvoker;
 import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,22 +16,19 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.micrometer.observation.Observation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
@@ -39,9 +37,9 @@ import java.util.function.Consumer;
 /**
  * Custom ReAct agent engine: Think -> Act -> Observe loop until final answer or step limit.
  *
- * <p>Design: LLM calls run on virtual threads with configurable timeout; tool execution
- * is isolated with per-tool timeout. Final answers stream over WebSocket with optional
- * character throttling. Observability via {@link AgentExecutionTrace} and {@link AgentMetrics}.
+ * <p>Design: model calls are delegated to {@link AgentLlmInvoker}; tool execution is isolated
+ * with per-tool timeout. Final answers stream over WebSocket with optional character throttling.
+ * Observability is provided by {@link AgentExecutionTrace} and {@link AgentMetrics}.
  *
  * @see AgentTool
  * @see AgentConversationMemory
@@ -52,10 +50,10 @@ import java.util.function.Consumer;
 @RequiredArgsConstructor
 public class ChthollyAgent {
 
-    private static final ExecutorService LLM_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+    private static final ExecutorService TOOL_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
     private static final String TOOL_TIMEOUT_MESSAGE = "Tool execution timed out";
 
-    private final ChatClient chatClient;
+    private final AgentLlmInvoker llmInvoker;
     private final AgentProperties properties;
     private final ObjectMapper objectMapper;
     private final List<AgentTool> tools;
@@ -154,7 +152,7 @@ public class ChthollyAgent {
                 long stepLlmStart = System.currentTimeMillis();
                 String llmOut;
                 try {
-                    llmOut = callLlm(system, userPrompt);
+                    llmOut = llmInvoker.call(system, userPrompt, 0.1, 1024);
                 } catch (TimeoutException e) {
                     long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
                     agentObservationService.finishSpanError(llmSpan, "llm_timeout",
@@ -272,13 +270,7 @@ public class ChthollyAgent {
         long streamStart = System.currentTimeMillis();
         AtomicLong firstTokenMs = new AtomicLong(-1);
         try {
-            Flux<String> flux = chatClient.prompt()
-                    .system(system)
-                    .user(userPrompt)
-                    .options(chatOptions(0.3, 1024))
-                    .stream()
-                    .content()
-                    .timeout(Duration.ofSeconds(timeoutSec));
+            Flux<String> flux = llmInvoker.stream(system, userPrompt, 0.3, 1024);
 
             StringBuilder full = new StringBuilder();
             flux.doOnNext(chunk -> {
@@ -333,9 +325,7 @@ public class ChthollyAgent {
         }
 
         int timeoutSec = Math.max(1, properties.getToolTimeoutSeconds());
-        CompletableFuture<String> future = CompletableFuture.supplyAsync(
-                () -> tool.execute(inputMap, userId),
-                LLM_EXECUTOR);
+        Future<String> future = TOOL_EXECUTOR.submit(() -> tool.execute(inputMap, userId));
         try {
             return future.get(timeoutSec, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
@@ -350,39 +340,6 @@ public class ChthollyAgent {
             Thread.currentThread().interrupt();
             return agentDomainConfig.errors().toolInterrupted();
         }
-    }
-
-    /** Blocking LLM call on virtual thread; used for ReAct JSON action parsing. */
-    private String callLlm(String system, String userPrompt) throws Exception {
-        int timeoutSec = Math.max(1, properties.getLlmTimeoutSeconds());
-        CompletableFuture<String> future = CompletableFuture.supplyAsync(
-                () -> chatClient.prompt()
-                        .system(system)
-                        .user(userPrompt)
-                        .options(chatOptions(0.1, 1024))
-                        .call()
-                        .content(),
-                LLM_EXECUTOR);
-        try {
-            return future.get(timeoutSec, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            throw e;
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            if (cause instanceof Exception ex) {
-                throw ex;
-            }
-            throw new RuntimeException(cause);
-        }
-    }
-
-    private DeepSeekChatOptions chatOptions(double temperature, int maxTokens) {
-        return DeepSeekChatOptions.builder()
-                .model(properties.getModel())
-                .temperature(temperature)
-                .maxTokens(maxTokens)
-                .build();
     }
 
     private String truncateAnswer(String answer) {

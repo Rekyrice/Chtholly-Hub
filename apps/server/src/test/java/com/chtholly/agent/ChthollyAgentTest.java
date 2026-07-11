@@ -5,6 +5,7 @@ import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.context.ContextEngine;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.observability.AgentObservationService;
+import com.chtholly.agent.runtime.AgentLlmInvoker;
 import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.observation.Observation;
@@ -13,26 +14,23 @@ import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.ClassPathResource;
-import reactor.core.publisher.Flux;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,8 +41,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ChthollyAgentTest {
 
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
-    private ChatClient chatClient;
+    @Mock
+    private AgentLlmInvoker llmInvoker;
     @Mock
     private AgentMetrics agentMetrics;
 
@@ -104,7 +102,7 @@ class ChthollyAgentTest {
                 anyString(),
                 anyString()
         )).thenReturn("## ContextEngine Prompt");
-        agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(mockTool()), jsonExtractor,
+        agent = new ChthollyAgent(llmInvoker, properties, objectMapper, List.of(mockTool()), jsonExtractor,
                 agentMetrics, agentObservationService, characterSoulService, contextEngine,
                 tracePersistenceService, agentDomainConfig);
         events = new ArrayList<>();
@@ -112,9 +110,9 @@ class ChthollyAgentTest {
     }
 
     @Test
-    void given_toolCall_when_run_then_createsAgentLlmAndToolObservationSpans() {
+    void given_toolCall_when_run_then_createsAgentLlmAndToolObservationSpans() throws Exception {
         AtomicInteger llmCalls = new AtomicInteger();
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenAnswer(inv -> {
                     if (llmCalls.getAndIncrement() == 0) {
                         return "{\"action\":\"test_tool\",\"input\":{\"keyword\":\"re0\"}}";
@@ -135,7 +133,7 @@ class ChthollyAgentTest {
     }
 
     @Test
-    void given_finalAction_when_run_then_completesInOneStep() {
+    void given_finalAction_when_run_then_completesInOneStep() throws Exception {
         stubLlmCall("{\"action\":\"final\",\"answer\":\"占位\"}");
         stubStream("一步完成的回答");
 
@@ -147,9 +145,9 @@ class ChthollyAgentTest {
     }
 
     @Test
-    void given_toolCall_when_run_then_toolExecutedAndObservationFed() {
+    void given_toolCall_when_run_then_toolExecutedAndObservationFed() throws Exception {
         AtomicInteger llmCalls = new AtomicInteger();
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenAnswer(inv -> {
                     if (llmCalls.getAndIncrement() == 0) {
                         return "{\"action\":\"test_tool\",\"input\":{\"keyword\":\"re0\"}}";
@@ -166,7 +164,7 @@ class ChthollyAgentTest {
     }
 
     @Test
-    void given_agentRuns_when_buildingPrompt_then_usesContextEnginePrompt() {
+    void given_agentRuns_when_buildingPrompt_then_usesContextEnginePrompt() throws Exception {
         stubLlmCall("{\"action\":\"final\",\"answer\":\"占位\"}");
         stubStream("嗯，还行吧");
 
@@ -179,13 +177,11 @@ class ChthollyAgentTest {
                 any(),
                 eq(""),
                 eq("你很厉害"));
-        org.mockito.ArgumentCaptor<String> systemCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
-        org.mockito.Mockito.verify(chatClient.prompt(), org.mockito.Mockito.atLeastOnce()).system(systemCaptor.capture());
-        assertThat(systemCaptor.getAllValues()).contains("## ContextEngine Prompt");
+        org.mockito.Mockito.verify(llmInvoker).call(eq("## ContextEngine Prompt"), anyString(), eq(0.1), eq(1024));
     }
 
     @Test
-    void given_toolThrows_when_run_then_errorBecomesObservation() {
+    void given_toolThrows_when_run_then_errorBecomesObservation() throws Exception {
         AgentTool failingTool = new AgentTool() {
             @Override
             public String name() {
@@ -202,12 +198,12 @@ class ChthollyAgentTest {
                 throw new RuntimeException("boom");
             }
         };
-        agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(failingTool), jsonExtractor,
+        agent = new ChthollyAgent(llmInvoker, properties, objectMapper, List.of(failingTool), jsonExtractor,
                 agentMetrics, agentObservationService, characterSoulService, contextEngine,
                 tracePersistenceService, agentDomainConfig);
 
         AtomicInteger llmCalls = new AtomicInteger();
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenAnswer(inv -> {
                     if (llmCalls.getAndIncrement() == 0) {
                         return "{\"action\":\"fail_tool\",\"input\":{}}";
@@ -223,9 +219,9 @@ class ChthollyAgentTest {
     }
 
     @Test
-    void given_unparseableLlmOutput_when_run_then_retriesInsteadOfError() {
+    void given_unparseableLlmOutput_when_run_then_retriesInsteadOfError() throws Exception {
         AtomicInteger llmCalls = new AtomicInteger();
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenAnswer(inv -> {
                     if (llmCalls.getAndIncrement() == 0) {
                         return "这不是合法 JSON";
@@ -241,33 +237,21 @@ class ChthollyAgentTest {
     }
 
     @Test
-    void given_llmSlow_when_run_then_timeoutHandled() {
+    void given_llmSlow_when_run_then_timeoutHandled() throws Exception {
         properties.setLlmTimeoutSeconds(1);
-        CountDownLatch releaseLlm = new CountDownLatch(1);
-        ChatClient.CallResponseSpec callSpec = org.mockito.Mockito.mock(ChatClient.CallResponseSpec.class);
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call())
-                .thenReturn(callSpec);
-        when(callSpec.content()).thenAnswer(inv -> {
-            if (!releaseLlm.await(3, TimeUnit.SECONDS)) {
-                throw new AssertionError("LLM timeout guard did not release blocked call");
-            }
-            return "{\"action\":\"final\",\"answer\":\"late\"}";
-        });
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenThrow(new TimeoutException("model timeout"));
 
-        try {
-            agent.run("超时测试", 1L, null, events::add);
-        } finally {
-            releaseLlm.countDown();
-        }
+        agent.run("超时测试", 1L, null, events::add);
 
         assertThat(eventTypes()).contains("error");
         assertThat(findFirst("error").path("message").asText()).contains("超时");
     }
 
     @Test
-    void given_alwaysToolCall_when_maxStepsReached_then_terminatesWithoutInfiniteLoop() {
+    void given_alwaysToolCall_when_maxStepsReached_then_terminatesWithoutInfiniteLoop() throws Exception {
         properties.setMaxSteps(2);
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("{\"action\":\"test_tool\",\"input\":{\"keyword\":\"x\"}}");
 
         agent.run("循环测试", 1L, null, events::add);
@@ -308,14 +292,14 @@ class ChthollyAgentTest {
         }
     }
 
-    private void stubLlmCall(String json) {
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+    private void stubLlmCall(String json) throws Exception {
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn(json);
     }
 
     private void stubStream(String text) {
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).stream().content())
-                .thenReturn(Flux.fromArray(text.split("")));
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(reactor.core.publisher.Flux.fromArray(text.split("")));
     }
 
     private List<String> eventTypes() {
