@@ -11,12 +11,17 @@ export type AnimateInProps = {
 };
 
 export function AnimateIn({ children, delay = 0, className }: AnimateInProps) {
-  const { ref, isInView } = useInView();
+  const { ref, isInView, canAnimate } = useInView();
 
   return (
     <div
       ref={ref as RefObject<HTMLDivElement>}
-      className={cn("animate-in", isInView && "animate-in--visible", className)}
+      className={cn(
+        "animate-in",
+        canAnimate && "animate-in--ready",
+        isInView && "animate-in--visible",
+        className,
+      )}
       style={{ "--animate-delay": `${delay}ms` } as CSSProperties}
     >
       {children}
