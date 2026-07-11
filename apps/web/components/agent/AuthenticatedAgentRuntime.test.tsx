@@ -1,8 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import AuthenticatedAgentRuntime, {
-  getAgentRuntimeVisibility,
-} from "@/components/agent/AuthenticatedAgentRuntime";
+import AuthenticatedAgentRuntime from "@/components/agent/AuthenticatedAgentRuntime";
 
 const navigation = vi.hoisted(() => ({ pathname: "/hub" }));
 
@@ -21,18 +19,6 @@ vi.mock("@/components/ProactiveNotification", () => ({
 vi.mock("@/components/agent/FloatingAgent", () => ({
   default: () => <div data-testid="floating-agent" />,
 }));
-
-describe("getAgentRuntimeVisibility", () => {
-  it.each([
-    ["/hub", { proactive: true, floating: true }],
-    ["/write", { proactive: true, floating: false }],
-    ["/", { proactive: true, floating: false }],
-    ["/agent", { proactive: false, floating: false }],
-    ["/agent/history", { proactive: false, floating: false }],
-  ])("maps %s to the expected runtime surfaces", (pathname, expected) => {
-    expect(getAgentRuntimeVisibility(pathname)).toEqual(expected);
-  });
-});
 
 describe("AuthenticatedAgentRuntime", () => {
   beforeEach(() => {

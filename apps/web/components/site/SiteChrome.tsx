@@ -6,17 +6,16 @@ import MobileBottomNav from "@/components/site/MobileBottomNav";
 import Navbar from "@/components/site/Navbar";
 import SiteHeader from "@/components/site/SiteHeader";
 import AgentPageBackground from "@/components/agent/AgentPageBackground";
+import { getAgentRuntimePolicy } from "@/components/agent/agentRuntimePolicy";
 import { cn } from "@/lib/utils";
 
 export default function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLandingPage = pathname === "/";
-  const isAgentWorkspace = pathname.startsWith("/agent");
+  const policy = getAgentRuntimePolicy(pathname);
   const isChthollyRoom = pathname === "/chtholly";
-  const isWritePage = pathname === "/write";
-  const isFocusedPage = isAgentWorkspace || isWritePage;
+  const isFocusedPage = policy.agentWorkspace || policy.writeWorkspace;
 
-  if (isLandingPage) {
+  if (policy.landing) {
     return <>{children}</>;
   }
 
@@ -25,23 +24,23 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
       <Navbar />
       <div className="h-[52px]" />
       {!isFocusedPage && !isChthollyRoom && <SiteHeader />}
-      <div className={cn("relative", isAgentWorkspace ? "h-[calc(100vh-52px)] min-h-0 overflow-hidden" : "flex-1")}>
-        {isAgentWorkspace && <AgentPageBackground />}
+      <div className={cn("relative", policy.agentWorkspace ? "h-[calc(100vh-52px)] min-h-0 overflow-hidden" : "flex-1")}>
+        {policy.agentWorkspace && <AgentPageBackground />}
         <main
           className={cn(
             "main-content relative z-10",
-            isAgentWorkspace
+            policy.agentWorkspace
               ? "flex h-full min-h-0 flex-col overflow-hidden py-0 px-0"
-              : isWritePage
+              : policy.writeWorkspace
                 ? "flex-1 py-0 px-0"
                 : "flex-1 py-8",
           )}
         >
           <div
             className={cn(
-              isAgentWorkspace
+              policy.agentWorkspace
                 ? "flex h-full min-h-0 w-full flex-col"
-                : isWritePage
+                : policy.writeWorkspace
                   ? "w-full"
                   : "max-w-6xl mx-auto px-4",
             )}
