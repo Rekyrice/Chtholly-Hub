@@ -1,9 +1,8 @@
 package com.chtholly.agent.memory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.chtholly.agent.learning.InsightService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.data.redis.core.StringRedisTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -11,8 +10,7 @@ import static org.mockito.Mockito.mock;
 class ProceduralMemoryServiceContextTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
-            .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(InsightService.class, () -> mock(InsightService.class))
             .withUserConfiguration(ProceduralMemoryService.class);
 
     @Test

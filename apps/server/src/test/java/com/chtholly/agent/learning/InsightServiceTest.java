@@ -174,6 +174,37 @@ class InsightServiceTest {
         verify(hashOps, org.mockito.Mockito.atLeast(5)).delete(eq("insights:personal:42"), org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void recordRuleUsageUpdatesCanonicalPersonalInsight() throws Exception {
+        InsightService service = service(prompt -> List.of());
+        when(hashOps.get("insights:personal:42", "rule-1"))
+                .thenReturn(json(insight("rule-1", "Useful rule", 0.5, NOW.minusSeconds(60))));
+        ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
+
+        service.recordRuleUsage(42L, "rule-1");
+
+        verify(hashOps).put(eq("insights:personal:42"), eq("rule-1"), jsonCaptor.capture());
+        Insight updated = objectMapper.readValue(jsonCaptor.getValue(), Insight.class);
+        assertThat(updated.useCount()).isEqualTo(1);
+        assertThat(updated.confidenceScore()).isEqualTo(0.6);
+        assertThat(updated.lastUsedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void negativeFeedbackMarksLowConfidenceRuleStale() throws Exception {
+        InsightService service = service(prompt -> List.of());
+        when(hashOps.get("insights:personal:42", "rule-1"))
+                .thenReturn(json(insight("rule-1", "Weak rule", 0.3, NOW)));
+        ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
+
+        service.recordNegativeFeedback(42L, "rule-1");
+
+        verify(hashOps).put(eq("insights:personal:42"), eq("rule-1"), jsonCaptor.capture());
+        Insight updated = objectMapper.readValue(jsonCaptor.getValue(), Insight.class);
+        assertThat(updated.confidenceScore()).isCloseTo(0.1, org.assertj.core.data.Offset.offset(0.0001));
+        assertThat(updated.state()).isEqualTo(Insight.InsightState.STALE);
+    }
+
     private InsightService service(Function<String, List<String>> generator) {
         return new InsightService(
                 objectMapper,

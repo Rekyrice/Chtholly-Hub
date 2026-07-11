@@ -225,6 +225,52 @@ public class InsightService {
         return List.copyOf(texts);
     }
 
+    /** Compatibility entry point for procedural-memory writers. */
+    public void storeRule(long userId, String ruleText) {
+        storePersonalInsight(userId, ruleText);
+    }
+
+    /** Returns prompt-ready procedural rules from the canonical two-level insight store. */
+    public List<String> getTopRules(long userId, int topN, int maxChars) {
+        return getInsightTextsForUser(userId, topN, maxChars);
+    }
+
+    /** Records successful use of a personal or global rule. */
+    public void recordRuleUsage(long userId, String ruleId) {
+        updateRule(userId, ruleId, insight -> new Insight(
+                insight.id(), insight.text(), insight.createdAt(), Instant.now(clock),
+                insight.useCount() + 1,
+                Math.min(1.0, insight.confidenceScore() + 0.1), insight.state()));
+    }
+
+    /** Lowers rule confidence and retires rules that repeatedly receive negative feedback. */
+    public void recordNegativeFeedback(long userId, String ruleId) {
+        updateRule(userId, ruleId, insight -> {
+            double confidence = Math.max(0.0, insight.confidenceScore() - 0.2);
+            Insight.InsightState state = confidence < 0.2
+                    ? Insight.InsightState.STALE
+                    : insight.state();
+            return new Insight(insight.id(), insight.text(), insight.createdAt(), insight.lastUsedAt(),
+                    insight.useCount(), confidence, state);
+        });
+    }
+
+    private void updateRule(long userId, String ruleId, java.util.function.UnaryOperator<Insight> updater) {
+        if (!StringUtils.hasText(ruleId)) return;
+        for (String key : List.of(personalKey(userId), GLOBAL_KEY)) {
+            Object raw = redis.opsForHash().get(key, ruleId);
+            if (raw == null) continue;
+            try {
+                Insight insight = objectMapper.readValue(raw.toString(), Insight.class);
+                saveInsight(key, updater.apply(insight));
+                return;
+            } catch (Exception e) {
+                log.warn("Insight usage update failed key={}, ruleId={}", key, ruleId, e);
+                return;
+            }
+        }
+    }
+
     /**
      * Curates candidates and promotes rules shared by at least five users.
      */
