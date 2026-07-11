@@ -9,7 +9,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostDetailRow;
+import com.chtholly.post.model.PostFeedRow;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,7 +22,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
@@ -28,7 +33,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import com.chtholly.post.model.PostFeedRow;
 
 /**
  * 搜索索引写入服务：负责 upsert/软删 以及首次启动的索引回灌。
@@ -43,18 +47,21 @@ public class SearchIndexService {
     private final CounterService counterService;
     private final ObjectMapper objectMapper;
     private final RestTemplate contentRestTemplate;
+    private final String contentBaseUrl;
 
     public SearchIndexService(
             ElasticsearchClient es,
             PostMapper postMapper,
             CounterService counterService,
             ObjectMapper objectMapper,
-            @Qualifier("searchContentRestTemplate") RestTemplate contentRestTemplate) {
+            @Qualifier("searchContentRestTemplate") RestTemplate contentRestTemplate,
+            @Value("${search.content-base-url:http://localhost:8888}") String contentBaseUrl) {
         this.es = es;
         this.postMapper = postMapper;
         this.counterService = counterService;
         this.objectMapper = objectMapper;
         this.contentRestTemplate = contentRestTemplate;
+        this.contentBaseUrl = contentBaseUrl == null ? "" : contentBaseUrl.replaceAll("/+$", "");
     }
 
     /**
@@ -110,61 +117,95 @@ public class SearchIndexService {
      */
     public void upsertPost(long id) {
         try {
-            PostDetailRow row = postMapper.findDetailById(id);
-            if (row == null) {
-                log.warn("Index upsert skipped: post {} not found", id);
-                return;
-            }
-            Map<String, Object> doc = new HashMap<>();
-            doc.put("content_id", row.getId());
-            doc.put("content_type", row.getType());
-            doc.put("slug", row.getSlug());
-            doc.put("title", row.getTitle());
-            doc.put("description", row.getDescription());
-            doc.put("author_id", row.getCreatorId());
-            doc.put("author_avatar", row.getAuthorAvatar());
-            doc.put("author_nickname", row.getAuthorNickname());
-            doc.put("author_tag_json", row.getAuthorTagJson());
-            if (row.getPublishTime() != null) {
-                doc.put("publish_time", row.getPublishTime().toEpochMilli());
-            }
-            doc.put("status", row.getStatus());
-            doc.put("tags", parseStringArray(row.getTags()));
-            doc.put("img_urls", parseStringArray(row.getImgUrls()));
-            if (row.getIsTop() != null) {
-                doc.put("is_top", row.getIsTop());
-            }
-
-            // 正文优先拉取 contentUrl，失败则使用描述
-            String body = fetchContentSafe(row.getContentUrl());
-            if (body == null || body.isBlank()) {
-                body = row.getDescription();
-            }
-            if (body != null) {
-                doc.put("body", truncate(body, 4000));
-            }
-
-            Map<String, Long> counts = counterService.getCounts("post", String.valueOf(id), List.of("like","fav"));
-            doc.put("like_count", counts.getOrDefault("like", 0L));
-            doc.put("favorite_count", counts.getOrDefault("fav", 0L));
-            doc.put("view_count", 0L);
-
-            if (row.getTitle() != null && !row.getTitle().isBlank()) {
-                doc.put("title_suggest", row.getTitle());
-            }
-
-            // 刷新策略：wait_for，保证写入后即刻可检索
-            IndexRequest<Map<String, Object>> req = IndexRequest.of(b -> b
-                    .index(INDEX)
-                    .id(String.valueOf(id))
-                    .document(doc)
-                    .refresh(Refresh.WaitFor)
-            );
-            IndexResponse resp = es.index(req);
-            log.info("Indexed post {} result={} version={}", id, resp.result(), resp.version());
+            upsertPostOrThrow(id, false);
         } catch (Exception e) {
-            log.error("Index upsert failed for post {}: {}", id, e.getMessage());
+            log.error("Index upsert failed for post {}: {}", id, e.getMessage(), e);
         }
+    }
+
+    /**
+     * Attempts one post upsert and exposes failure to batch import callers.
+     *
+     * @param id post ID
+     * @return {@code true} only when the post was indexed from a non-blank full body, or no longer exists
+     */
+    public boolean tryUpsertPost(long id) {
+        try {
+            upsertPostOrThrow(id, true);
+            return true;
+        } catch (Exception e) {
+            log.error("Index upsert failed for post {}: {}", id, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    private void upsertPostOrThrow(long id, boolean requireFullBody) throws Exception {
+        PostDetailRow row = postMapper.findDetailById(id);
+        if (row == null) {
+            log.warn("Index upsert skipped: post {} not found", id);
+            return;
+        }
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("content_id", row.getId());
+        doc.put("content_type", row.getType());
+        doc.put("slug", row.getSlug());
+        doc.put("title", row.getTitle());
+        doc.put("description", row.getDescription());
+        doc.put("author_id", row.getCreatorId());
+        doc.put("author_avatar", row.getAuthorAvatar());
+        doc.put("author_nickname", row.getAuthorNickname());
+        doc.put("author_tag_json", row.getAuthorTagJson());
+        if (row.getPublishTime() != null) {
+            doc.put("publish_time", row.getPublishTime().toEpochMilli());
+        }
+        doc.put("status", row.getStatus());
+        doc.put("tags", parseStringArray(row.getTags()));
+        doc.put("img_urls", parseStringArray(row.getImgUrls()));
+        if (row.getIsTop() != null) {
+            doc.put("is_top", row.getIsTop());
+        }
+
+        // 正文优先拉取 contentUrl，失败则使用描述
+        String absoluteUrl = absoluteContentUrl(row.getContentUrl());
+        String body = requireFullBody ? fetchContentStrict(absoluteUrl) : fetchContentSafe(absoluteUrl);
+        if (body == null || body.isBlank()) {
+            body = row.getDescription();
+        }
+        if (body != null) {
+            doc.put("body", truncate(body, 4000));
+        }
+
+        Map<String, Long> counts = counterService.getCounts("post", String.valueOf(id), List.of("like", "fav"));
+        doc.put("like_count", counts.getOrDefault("like", 0L));
+        doc.put("favorite_count", counts.getOrDefault("fav", 0L));
+        doc.put("view_count", 0L);
+
+        if (row.getTitle() != null && !row.getTitle().isBlank()) {
+            doc.put("title_suggest", row.getTitle());
+        }
+
+        // 刷新策略：wait_for，保证写入后即刻可检索
+        IndexRequest<Map<String, Object>> req = IndexRequest.of(b -> b
+                .index(INDEX)
+                .id(String.valueOf(id))
+                .document(doc)
+                .refresh(Refresh.WaitFor)
+        );
+        IndexResponse resp = es.index(req);
+        log.info("Indexed post {} result={} version={}", id, resp.result(), resp.version());
+    }
+
+    private String absoluteContentUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return url;
+        }
+        if (url.startsWith("/")) {
+            return contentBaseUrl + url;
+        }
+        throw new IllegalArgumentException("Unsupported content URL: " + url);
     }
 
     /**
@@ -212,6 +253,37 @@ public class SearchIndexService {
             log.warn("Failed to fetch post content from url={}: {}", url, e.getMessage());
             return null;
         }
+    }
+
+    private String fetchContentStrict(String url) {
+        if (url == null || url.isBlank()) {
+            throw new IllegalStateException("Post content URL is missing");
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(List.of(MediaType.TEXT_HTML, MediaType.TEXT_PLAIN, MediaType.APPLICATION_JSON));
+        ResponseEntity<byte[]> response = contentRestTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(headers), byte[].class);
+        byte[] bytes = response.getBody();
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalStateException("Post content is empty: " + url);
+        }
+        MediaType contentType = response.getHeaders().getContentType();
+        Charset headerCharset = contentType == null ? null : contentType.getCharset();
+        Charset charset = pickCharset(bytes, headerCharset, sniffHtmlCharset(bytes));
+        String body;
+        try {
+            body = charset.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+        } catch (CharacterCodingException exception) {
+            throw new IllegalStateException("Post content cannot be decoded as " + charset + ": " + url, exception);
+        }
+        if (body.isBlank()) {
+            throw new IllegalStateException("Post content is blank: " + url);
+        }
+        return body;
     }
 
     private Charset pickCharset(byte[] bytes, Charset headerCharset, Charset metaCharset) {

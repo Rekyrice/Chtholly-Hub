@@ -273,6 +273,26 @@ class ContentPackMediaPublisherTest {
     }
 
     @Test
+    void given_validLease_when_recoveryRequested_then_releasesAndAllowsNextPublication() throws Exception {
+        SeedAssetDefinition asset = writeAsset("cover-one", "media/cover.webp", WEBP);
+        SeedPostDefinition post = post("post-one", "正文");
+        ContentPack pack = pack(asset, post);
+        when(storage.resolvePublicUrl(asset.objectKey())).thenReturn("/uploads/" + asset.objectKey());
+        when(storage.resolvePublicUrl(markdownKey(post))).thenReturn("/uploads/" + markdownKey(post));
+        PublishedContent first = publisher.publishAll(pack);
+
+        publisher.ensurePublicationLeaseReleased(first);
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            PublishedContent second = executor.submit(() -> publisher.publishAll(pack)).get(2, TimeUnit.SECONDS);
+            publisher.commitPublishedObjects(second);
+        }
+        assertThatThrownBy(() -> publisher.commitPublishedObjects(first))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already released");
+    }
+
+    @Test
     void givenMismatchedLeaseToken_whenCommit_thenRejectsWithoutReleasingOwner() throws Exception {
         SeedAssetDefinition asset = writeAsset("cover-one", "media/cover.webp", WEBP);
         SeedPostDefinition post = post("post-one", "正文");
@@ -284,6 +304,9 @@ class ContentPackMediaPublisherTest {
                 owner.assets(), owner.markdownByPost(), owner.newObjectKeys(), owner.namespace(), "wrong-token");
 
         assertThatThrownBy(() -> publisher.commitPublishedObjects(forged))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("lease token mismatch");
+        assertThatThrownBy(() -> publisher.ensurePublicationLeaseReleased(forged))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("lease token mismatch");
 

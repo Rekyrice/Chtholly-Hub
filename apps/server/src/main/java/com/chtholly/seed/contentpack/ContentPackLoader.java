@@ -12,6 +12,7 @@ import com.chtholly.seed.contentpack.model.SeedViewDefinition;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -25,6 +26,7 @@ import java.util.Map;
 /**
  * Loads the five YAML documents and referenced Markdown files of a seed content pack.
  */
+@Component
 public final class ContentPackLoader {
 
     private static final TypeReference<List<SeedAccountDefinition>> ACCOUNTS_TYPE = new TypeReference<>() {

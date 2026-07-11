@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Semaphore;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
 
 /**
  * Publishes verified content-pack media and Markdown through the configured storage boundary.
@@ -41,6 +42,7 @@ import java.util.regex.Pattern;
  * same application process. A deployment running importers in multiple JVMs must additionally
  * serialize the import command at the infrastructure boundary.
  */
+@Component
 public final class ContentPackMediaPublisher {
 
     private static final String OBJECT_PREFIX = "seed/content-v2/";
@@ -140,6 +142,27 @@ public final class ContentPackMediaPublisher {
      */
     public void commitPublishedObjects(PublishedContent content) {
         Objects.requireNonNull(content, "content");
+        releaseLease(content.namespace(), content.leaseToken());
+    }
+
+    /**
+     * Best-effort recovery hook for an importer whose commit-release call threw unexpectedly.
+     *
+     * <p>An already released lease is accepted, while a live lease owned by another token remains
+     * protected. This method never deletes published objects because MySQL has already committed.
+     *
+     * @param content publication already accepted by the database
+     */
+    public void ensurePublicationLeaseReleased(PublishedContent content) {
+        Objects.requireNonNull(content, "content");
+        String activeToken = ACTIVE_LEASES.get(content.namespace());
+        if (activeToken == null) {
+            return;
+        }
+        if (!activeToken.equals(content.leaseToken())) {
+            throw new IllegalStateException(
+                    "publication lease token mismatch for namespace: " + content.namespace());
+        }
         releaseLease(content.namespace(), content.leaseToken());
     }
 

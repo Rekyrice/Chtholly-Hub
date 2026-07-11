@@ -22,10 +22,12 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
 
 /**
  * Validates a loaded content pack before any persistence boundary is entered.
  */
+@Component
 public final class ContentPackValidator {
 
     private static final Pattern HANDLE_PATTERN = Pattern.compile("[A-Za-z0-9_]{3,64}");

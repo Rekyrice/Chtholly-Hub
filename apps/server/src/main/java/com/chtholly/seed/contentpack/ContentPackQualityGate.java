@@ -9,10 +9,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
 
 /**
  * Performs deterministic prose-quality checks without an LLM or persistence dependency.
  */
+@Component
 public final class ContentPackQualityGate {
 
     private static final int MIN_BODY_CHINESE_CHARACTERS = 600;
