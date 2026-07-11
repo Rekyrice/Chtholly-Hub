@@ -19,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -42,6 +43,11 @@ import java.util.Set;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(
+        prefix = "agent.extensions.content",
+        name = "enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 public class ContentUnderstandingService implements ContentIntelligenceReader {
 
     private static final String INDEX = "chtholly_content_index";

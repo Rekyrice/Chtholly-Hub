@@ -1,5 +1,9 @@
-package com.chtholly.content;
+package com.chtholly.agent.config;
 
+import com.chtholly.content.ContentAnalysis;
+import com.chtholly.content.ContentIntelligenceReader;
+import com.chtholly.content.RelatedPostDto;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,6 +22,7 @@ public class ContentContractConfiguration {
      * @return reader returning no content intelligence results
      */
     @Bean
+    @ConditionalOnMissingBean(ContentIntelligenceReader.class)
     @ConditionalOnProperty(
             prefix = "agent.extensions.content",
             name = "enabled",
