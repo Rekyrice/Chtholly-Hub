@@ -233,4 +233,25 @@
     transform: translateY(-2px);
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .landing-background__image {
+      animation: none;
+      transform: none;
+    }
+
+    .landing-typewriter,
+    .landing-enter-btn {
+      transition: none;
+    }
+
+    .landing-typewriter__cursor,
+    .not-found-illustration {
+      animation: none;
+    }
+
+    .not-found-btn {
+      transition: none;
+    }
+  }
+
 }

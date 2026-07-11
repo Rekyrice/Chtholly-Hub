@@ -1888,48 +1888,6 @@
   }
 
   @media (max-width: 767px) {
-    .site-shell {
-      padding-bottom: calc(56px + env(safe-area-inset-bottom));
-    }
-
-    .write-container {
-      min-height: calc(100vh - 52px - 56px - env(safe-area-inset-bottom));
-      background-attachment: scroll;
-    }
-
-    .write-editor-wrapper {
-      min-height: calc(100vh - 52px - 56px - env(safe-area-inset-bottom));
-      padding: 48px 20px 64px;
-    }
-
-    .write-status {
-      top: 14px;
-      right: 20px;
-    }
-
-    .write-meta-row {
-      grid-template-columns: 1fr;
-      gap: 10px;
-    }
-
-    .write-toolbar {
-      align-items: stretch;
-    }
-
-    .write-mode-toggle {
-      flex: 1 1 auto;
-    }
-
-    .write-mode-btn {
-      flex: 1 1 0;
-    }
-
-    .write-editor {
-      min-height: 56vh;
-      font-size: 1rem;
-      line-height: 1.75;
-    }
-
     .proactive-notification {
       right: 16px;
       bottom: calc(72px + env(safe-area-inset-bottom));
@@ -1963,6 +1921,16 @@
       position: fixed;
       right: 16px;
       bottom: 16px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chtholly-illustration,
+    .chtholly-illustration__image,
+    .agent-message-row--assistant-enter,
+    .agent-message-row--user-enter,
+    .proactive-notification {
+      animation: none;
     }
   }
 

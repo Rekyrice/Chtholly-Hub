@@ -30,4 +30,76 @@ describe("route CSS import boundaries", () => {
       'import "../../app/styles/agent.css";',
     );
   });
+
+  it("keeps shared shell and write mobile rules with their owners", () => {
+    const agent = source("app/styles/agent.css");
+    const responsive = source("app/styles/responsive.css");
+    const write = source("app/styles/write.css");
+
+    expect(agent).not.toMatch(/^\s*\.site-shell\s*\{/m);
+    for (const selector of [
+      "write-container",
+      "write-editor-wrapper",
+      "write-status",
+      "write-meta-row",
+      "write-toolbar",
+      "write-mode-toggle",
+      "write-mode-btn",
+      "write-editor",
+    ]) {
+      expect(agent).not.toMatch(new RegExp(`^\\s*\\.${selector}\\s*\\{`, "m"));
+      expect(write).toMatch(new RegExp(`^\\s*\\.${selector}\\s*\\{`, "m"));
+    }
+
+    expect(responsive).toMatch(/@media \(max-width: 767px\) \{[\s\S]*\.site-shell \{/);
+    expect(write).toMatch(/@media \(max-width: 767px\) \{[\s\S]*\.write-container \{/);
+  });
+
+  it("keeps route reduced-motion overrides after route motion declarations", () => {
+    const responsive = source("app/styles/responsive.css");
+    const landing = source("app/styles/landing.css");
+    const agent = source("app/styles/agent.css");
+    const write = source("app/styles/write.css");
+    const admin = source("app/styles/admin.css");
+
+    const responsiveReducedMotion = responsive.slice(
+      responsive.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    for (const selector of [
+      "landing-background__image",
+      "landing-typewriter",
+      "landing-typewriter__cursor",
+      "not-found-illustration",
+      "not-found-btn",
+      "agent-message-row--assistant-enter",
+      "agent-message-row--user-enter",
+      "proactive-notification",
+    ]) {
+      expect(responsiveReducedMotion).not.toContain(`.${selector}`);
+    }
+    expect(responsiveReducedMotion).not.toMatch(/^\s*\.(?:write|admin)-/m);
+
+    const landingReducedMotion = landing.slice(
+      landing.lastIndexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    expect(landing.lastIndexOf("@media (prefers-reduced-motion: reduce)")).toBeGreaterThan(
+      landing.lastIndexOf("animation: landing-zoom"),
+    );
+    expect(landingReducedMotion).toContain(".landing-background__image");
+    expect(landingReducedMotion).toContain(".landing-typewriter__cursor");
+    expect(landingReducedMotion).toContain(".not-found-illustration");
+
+    const agentReducedMotion = agent.slice(
+      agent.lastIndexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    expect(agent.lastIndexOf("@media (prefers-reduced-motion: reduce)")).toBeGreaterThan(
+      agent.lastIndexOf("animation: proactive-slide-up"),
+    );
+    expect(agentReducedMotion).toContain(".chtholly-illustration");
+    expect(agentReducedMotion).toContain(".agent-message-row--assistant-enter");
+    expect(agentReducedMotion).toContain(".proactive-notification");
+
+    expect(write).not.toContain("@media (prefers-reduced-motion: reduce)");
+    expect(admin).not.toContain("@media (prefers-reduced-motion: reduce)");
+  });
 });
