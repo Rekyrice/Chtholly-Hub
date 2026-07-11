@@ -1,4 +1,4 @@
-package com.chtholly.agent.content;
+package com.chtholly.content;
 
 import java.time.Instant;
 import java.util.List;

@@ -1,6 +1,8 @@
 package com.chtholly.agent.content;
 
 import com.chtholly.common.scheduler.DistributedLockService;
+import com.chtholly.content.ContentAnalysis;
+import com.chtholly.content.Entity;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.service.PostService;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;

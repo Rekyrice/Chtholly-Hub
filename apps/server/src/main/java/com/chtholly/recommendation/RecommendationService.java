@@ -1,7 +1,7 @@
 package com.chtholly.recommendation;
 
-import com.chtholly.agent.content.ContentUnderstandingService;
-import com.chtholly.agent.content.RelatedPostDto;
+import com.chtholly.content.ContentIntelligenceReader;
+import com.chtholly.content.RelatedPostDto;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
@@ -35,7 +35,7 @@ public class RecommendationService {
     private final UserInterestProfile userInterestProfile;
     private final UserSimilarityService userSimilarityService;
     private final SearchService searchService;
-    private final ContentUnderstandingService contentUnderstandingService;
+    private final ContentIntelligenceReader contentUnderstandingService;
     private final PostMapper postMapper;
 
     /**

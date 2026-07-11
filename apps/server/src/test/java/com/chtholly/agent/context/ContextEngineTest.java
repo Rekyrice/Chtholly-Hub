@@ -6,9 +6,9 @@ import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.agent.memory.AgentTurn;
-import com.chtholly.agent.content.ContentAnalysis;
-import com.chtholly.agent.content.ContentUnderstandingService;
-import com.chtholly.agent.content.Entity;
+import com.chtholly.content.ContentAnalysis;
+import com.chtholly.content.ContentIntelligenceReader;
+import com.chtholly.content.Entity;
 import com.chtholly.agent.graph.KnowledgeGraphService;
 import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.search.HybridSearchService;
@@ -228,7 +228,7 @@ class ContextEngineTest {
 
     @Test
     void injectsCurrentPostAnalysisWhenPageContextContainsPostId() {
-        ContentUnderstandingService contentService = mock(ContentUnderstandingService.class);
+        ContentIntelligenceReader contentService = mock(ContentIntelligenceReader.class);
         ContextEngine engine = new ContextEngine(anchorManager, stateService, null, null, contentService);
         when(contentService.getAnalysis(42L)).thenReturn(new ContentAnalysis(
                 List.of(
@@ -256,7 +256,7 @@ class ContextEngineTest {
 
     @Test
     void injectsCurrentPostAnalysisWhenPageContextContainsPostSlug() {
-        ContentUnderstandingService contentService = mock(ContentUnderstandingService.class);
+        ContentIntelligenceReader contentService = mock(ContentIntelligenceReader.class);
         ContextEngine engine = new ContextEngine(anchorManager, stateService, null, null, contentService);
         when(contentService.getAnalysisBySlug("frieren-review")).thenReturn(new ContentAnalysis(
                 List.of(new Entity("Frieren", "work", 0.9)),

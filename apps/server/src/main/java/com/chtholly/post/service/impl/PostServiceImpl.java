@@ -1,6 +1,6 @@
 package com.chtholly.post.service.impl;
 
-import com.chtholly.agent.content.ContentAnalysis;
+import com.chtholly.content.ContentAnalysis;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.post.event.PostPublishedEvent;

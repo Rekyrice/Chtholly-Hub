@@ -1,6 +1,6 @@
 package com.chtholly.post.service.impl;
 
-import com.chtholly.agent.content.ContentAnalysis;
+import com.chtholly.content.ContentAnalysis;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.post.api.dto.PostSummary;

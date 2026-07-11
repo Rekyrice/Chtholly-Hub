@@ -1,7 +1,7 @@
 package com.chtholly.agent.graph;
 
-import com.chtholly.agent.content.ContentAnalysis;
-import com.chtholly.agent.content.Entity;
+import com.chtholly.content.ContentAnalysis;
+import com.chtholly.content.Entity;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;

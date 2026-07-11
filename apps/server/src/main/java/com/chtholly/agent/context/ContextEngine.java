@@ -4,10 +4,10 @@ import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.anchor.KnowledgeService;
-import com.chtholly.agent.content.ContentAnalysis;
-import com.chtholly.agent.content.ContentUnderstandingService;
-import com.chtholly.agent.content.Entity;
 import com.chtholly.agent.graph.KnowledgeGraphService;
+import com.chtholly.content.ContentAnalysis;
+import com.chtholly.content.ContentIntelligenceReader;
+import com.chtholly.content.Entity;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.search.HybridSearchService;
@@ -47,7 +47,7 @@ public class ContextEngine {
     private final CharacterStateService stateService;
     private final HybridSearchService hybridSearchService;
     private final KnowledgeService knowledgeService;
-    private final ContentUnderstandingService contentUnderstandingService;
+    private final ContentIntelligenceReader contentUnderstandingService;
     private final SeasonService seasonService;
     private final KnowledgeGraphService knowledgeGraphService;
     private final PromptTailRenderer promptTailRenderer = new PromptTailRenderer();
@@ -56,7 +56,7 @@ public class ContextEngine {
     public ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                          ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
                          ObjectProvider<KnowledgeService> knowledgeServiceProvider,
-                         ObjectProvider<ContentUnderstandingService> contentUnderstandingServiceProvider,
+                         ObjectProvider<ContentIntelligenceReader> contentUnderstandingServiceProvider,
                          ObjectProvider<SeasonService> seasonServiceProvider,
                          ObjectProvider<KnowledgeGraphService> knowledgeGraphServiceProvider) {
         this(anchorManager,
@@ -84,19 +84,19 @@ public class ContextEngine {
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService, KnowledgeService knowledgeService,
-                  ContentUnderstandingService contentUnderstandingService) {
+                  ContentIntelligenceReader contentUnderstandingService) {
         this(anchorManager, stateService, hybridSearchService, knowledgeService, contentUnderstandingService, null, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService, KnowledgeService knowledgeService,
-                  ContentUnderstandingService contentUnderstandingService, SeasonService seasonService) {
+                  ContentIntelligenceReader contentUnderstandingService, SeasonService seasonService) {
         this(anchorManager, stateService, hybridSearchService, knowledgeService, contentUnderstandingService, seasonService, null);
     }
 
     ContextEngine(AnchorManager anchorManager, CharacterStateService stateService,
                   HybridSearchService hybridSearchService, KnowledgeService knowledgeService,
-                  ContentUnderstandingService contentUnderstandingService, SeasonService seasonService,
+                  ContentIntelligenceReader contentUnderstandingService, SeasonService seasonService,
                   KnowledgeGraphService knowledgeGraphService) {
         this.anchorManager = anchorManager;
         this.stateService = stateService;
