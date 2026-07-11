@@ -10,13 +10,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "agent.extensions")
 public class AgentExtensionProperties {
 
-    private Toggle content = new Toggle();
-    private Toggle graph = new Toggle();
-    private Toggle learning = new Toggle();
-    private Toggle experience = new Toggle();
-    private Toggle mood = new Toggle();
-    private Toggle proactive = new Toggle();
-    private Toggle communityActions = new Toggle();
+    private final Toggle content = new Toggle();
+    private final Toggle graph = new Toggle();
+    private final Toggle learning = new Toggle();
+    private final Toggle experience = new Toggle();
+    private final Toggle mood = new Toggle();
+    private final Toggle proactive = new Toggle();
+    private final Toggle communityActions = new Toggle();
 
     /**
      * Reports whether every optional extension is disabled.
