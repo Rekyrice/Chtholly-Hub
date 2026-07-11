@@ -9,6 +9,7 @@ import com.chtholly.agent.config.ContentContractConfiguration;
 import com.chtholly.agent.content.ContentUnderstandingService;
 import com.chtholly.agent.content.TopicClusteringService;
 import com.chtholly.agent.experience.ExperienceGenerator;
+import com.chtholly.agent.experience.ArchivedExperienceMapper;
 import com.chtholly.agent.graph.KnowledgeGraphExtractionService;
 import com.chtholly.agent.graph.KnowledgeGraphIndexInitializer;
 import com.chtholly.agent.graph.KnowledgeGraphService;
@@ -21,12 +22,15 @@ import com.chtholly.agent.mood.MoodEngine;
 import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.notification.NotificationService;
 import com.chtholly.content.ContentIntelligenceReader;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class AgentExtensionConditionTest {
 
@@ -55,11 +59,8 @@ class AgentExtensionConditionTest {
                     ExperienceService.class, ExperienceGenerator.class, AgentExperienceController.class,
                     DefaultInteractionService.class, MoodEngine.class, SeasonService.class,
                     CommentGenerationService.class, NotificationService.class,
-                    CharacterStateUserActivityProvider.class, ContentProactiveService.class,
-                    EmotionalProactiveService.class, PostPublishedProactiveListener.class,
-                    ProactiveAudienceService.class, ProactiveNotificationDispatcher.class,
-                    ProactiveRateLimiter.class, ProactiveTriggerEngine.class,
-                    SeedCurationReader.class, SocialProactiveService.class, CognitiveEngine.class);
+                    CognitiveEngine.class);
+            assertProactiveAbsent(context);
         });
     }
 
@@ -85,12 +86,37 @@ class AgentExtensionConditionTest {
                         "agent.extensions.experience.enabled=false")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    assertAbsent(context,
-                            CharacterStateUserActivityProvider.class, ContentProactiveService.class,
-                            EmotionalProactiveService.class, PostPublishedProactiveListener.class,
-                            ProactiveAudienceService.class, ProactiveNotificationDispatcher.class,
-                            ProactiveRateLimiter.class, ProactiveTriggerEngine.class,
-                            SeedCurationReader.class, SocialProactiveService.class);
+                    assertProactiveAbsent(context);
+                });
+    }
+
+    @Test
+    void proactiveBeansRequireProactiveSwitchWhenDependenciesAreEnabled() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ProactiveEntries.class)
+                .withPropertyValues(
+                        "agent.extensions.proactive.enabled=false",
+                        "agent.extensions.experience.enabled=true",
+                        "agent.extensions.community-actions.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertProactiveAbsent(context);
+                });
+    }
+
+    @Test
+    void communityActionsSwitchDisablesProactiveAndCommunityBeans() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(CommunityAndProactiveEntries.class)
+                .withPropertyValues(
+                        "llm.enabled=true",
+                        "agent.extensions.proactive.enabled=true",
+                        "agent.extensions.experience.enabled=true",
+                        "agent.extensions.community-actions.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertProactiveAbsent(context);
+                    assertAbsent(context, NotificationService.class, CommentGenerationService.class);
                 });
     }
 
@@ -105,6 +131,33 @@ class AgentExtensionConditionTest {
                     assertThat(context).hasNotFailed();
                     assertThat(context).doesNotHaveBean(CognitiveEngine.class);
                 });
+    }
+
+    @Test
+    void learningSwitchDisablesLearningAndCognitiveBeansWithoutDisablingExperience() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(LearningAndExperienceEntries.class)
+                .withBean(StringRedisTemplate.class, () -> mock(StringRedisTemplate.class))
+                .withBean(ObjectMapper.class, ObjectMapper::new)
+                .withBean(ArchivedExperienceMapper.class, () -> mock(ArchivedExperienceMapper.class))
+                .withPropertyValues(
+                        "agent.extensions.learning.enabled=false",
+                        "agent.extensions.experience.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasNotFailed().hasSingleBean(ExperienceService.class);
+                    assertAbsent(context, CognitiveEngine.class, AgentLearningAsyncConfig.class,
+                            InsightService.class, ProceduralMemoryService.class);
+                });
+    }
+
+    private static void assertProactiveAbsent(
+            org.springframework.boot.test.context.assertj.AssertableApplicationContext context) {
+        assertAbsent(context,
+                CharacterStateUserActivityProvider.class, ContentProactiveService.class,
+                EmotionalProactiveService.class, PostPublishedProactiveListener.class,
+                ProactiveAudienceService.class, ProactiveNotificationDispatcher.class,
+                ProactiveRateLimiter.class, ProactiveTriggerEngine.class,
+                SeedCurationReader.class, SocialProactiveService.class);
     }
 
     private static void assertAbsent(
@@ -151,7 +204,25 @@ class AgentExtensionConditionTest {
     }
 
     @Configuration(proxyBeanMethods = false)
+    @Import({
+            NotificationService.class, CommentGenerationService.class,
+            CharacterStateUserActivityProvider.class, ContentProactiveService.class,
+            EmotionalProactiveService.class, PostPublishedProactiveListener.class,
+            ProactiveAudienceService.class, ProactiveNotificationDispatcher.class,
+            ProactiveRateLimiter.class, ProactiveTriggerEngine.class,
+            SeedCurationReader.class, SocialProactiveService.class
+    })
+    static class CommunityAndProactiveEntries {
+    }
+
+    @Configuration(proxyBeanMethods = false)
     @Import(CognitiveEngine.class)
     static class CognitiveEntry {
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @Import({CognitiveEngine.class, AgentLearningAsyncConfig.class, InsightService.class,
+            ProceduralMemoryService.class, ExperienceService.class})
+    static class LearningAndExperienceEntries {
     }
 }
