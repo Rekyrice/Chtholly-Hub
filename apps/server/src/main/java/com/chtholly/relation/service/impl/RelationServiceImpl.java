@@ -106,14 +106,9 @@ public class RelationServiceImpl implements RelationService {
         int inserted = mapper.insertFollowing(id, fromUserId, toUserId, 1);
 
         if (inserted > 0) {
-            try {
-                // Outbox 而非同步写粉丝表：关注接口只保证 following 事实，fan 侧由 CDC/Consumer 最终一致
-                Long outId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
-                String payload = objectMapper.writeValueAsString(new RelationEvent("FollowCreated", fromUserId, toUserId, id));
-                outboxMapper.insert(outId, "following", id, "FollowCreated", payload);
-            } catch (Exception e) {
-                log.warn("Follow outbox insert failed, from={}, to={}: {}", fromUserId, toUserId, e.getMessage());
-            }
+            // Outbox 与 following 使用同一本地事务，fan 侧再由 CDC/Consumer 最终一致更新。
+            writeRelationOutbox(id, "FollowCreated",
+                    new RelationEvent("FollowCreated", fromUserId, toUserId, id));
 
             User actor = userMapper.findById(fromUserId);
             eventPublisher.publishEvent(new FollowCreatedEvent(
@@ -139,13 +134,8 @@ public class RelationServiceImpl implements RelationService {
     public boolean unfollow(long fromUserId, long toUserId) {
         int updated = mapper.cancelFollowing(fromUserId, toUserId);
         if (updated > 0) {
-            try {
-                Long outId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
-                String payload = objectMapper.writeValueAsString(new RelationEvent("FollowCanceled", fromUserId, toUserId, null));
-                outboxMapper.insert(outId, "following", null, "FollowCanceled", payload);
-            } catch (Exception e) {
-                log.warn("Unfollow outbox insert failed, from={}, to={}: {}", fromUserId, toUserId, e.getMessage());
-            }
+            writeRelationOutbox(null, "FollowCanceled",
+                    new RelationEvent("FollowCanceled", fromUserId, toUserId, null));
             try {
                 eventPublisher.publishEvent(new FollowCanceledEvent(fromUserId, toUserId));
             } catch (Exception e) {
@@ -165,6 +155,18 @@ public class RelationServiceImpl implements RelationService {
     @Override
     public boolean isFollowing(long fromUserId, long toUserId) {
         return mapper.existsFollowing(fromUserId, toUserId) > 0;
+    }
+
+    /** Writes the relation event in the caller's local transaction. */
+    private void writeRelationOutbox(Long aggregateId, String eventType, RelationEvent event) {
+        final String payload;
+        try {
+            payload = objectMapper.writeValueAsString(event);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize relation Outbox event " + eventType, e);
+        }
+        long outboxId = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
+        outboxMapper.insert(outboxId, "following", aggregateId, eventType, payload);
     }
 
     /**

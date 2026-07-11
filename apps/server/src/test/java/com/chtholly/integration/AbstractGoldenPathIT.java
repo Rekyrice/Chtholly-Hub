@@ -39,6 +39,7 @@ public abstract class AbstractGoldenPathIT {
             .withDatabaseName("chtholly")
             .withUsername("chtholly")
             .withPassword("chtholly")
+            .withCommand("--log-bin-trust-function-creators=1")
             .withNetwork(NETWORK);
 
     protected static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine")

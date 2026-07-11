@@ -30,12 +30,14 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -129,6 +131,21 @@ class PostServiceImplTest {
 
         assertThat(service.getRecentPosts(java.time.Duration.ofHours(6))).isEmpty();
         verify(backgroundQueryService).getRecentPosts(java.time.Duration.ofHours(6));
+    }
+
+    @Test
+    void publishPropagatesOutboxFailure() {
+        long creatorId = 9L;
+        long postId = 42L;
+        when(mapper.publish(postId, creatorId)).thenReturn(1);
+        when(mapper.findById(postId)).thenReturn(null);
+        doThrow(new IllegalStateException("outbox down"))
+                .when(outboxMapper)
+                .insert(anyLong(), eq("post"), eq(postId), eq("PostPublished"), anyString());
+
+        assertThatThrownBy(() -> service.publish(creatorId, postId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("outbox down");
     }
 
     @Test
