@@ -113,6 +113,7 @@ class DegradationGoldenPathIT extends AbstractGoldenPathIT {
 
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
                 assertThat(redis.getConnectionFactory().getConnection().ping()).isEqualTo("PONG"));
-        assertThat(redis.hasKey("bm:like:post:9001:0")).isFalse();
+        // 连接中断可能发生在 Redis 执行 Lua 之后、响应返回之前；此时客户端只能得到未知结果，
+        // 因而契约只承诺无 MySQL/Outbox 副作用，Bitmap 仍由幂等写保证最多一个有效 bit。
     }
 }
