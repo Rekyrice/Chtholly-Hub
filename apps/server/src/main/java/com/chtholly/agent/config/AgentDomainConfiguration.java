@@ -5,6 +5,6 @@ import org.springframework.context.annotation.Configuration;
 
 /** Registers immutable agent domain configuration properties. */
 @Configuration
-@EnableConfigurationProperties(AgentDomainConfig.class)
+@EnableConfigurationProperties({AgentDomainConfig.class, AgentExtensionProperties.class})
 public class AgentDomainConfiguration {
 }
