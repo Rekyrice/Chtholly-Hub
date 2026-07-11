@@ -141,6 +141,18 @@ describe("apiFetch error messages", () => {
   });
 
   it.each([
+    ["HTML comment", `<!--${"x".repeat(1017)}-->`],
+    ["XML declaration", `<?xml ${"x".repeat(1016)}?>`],
+  ])("fails closed when leading %s consumes exactly the sniff window", async (_name, metadata) => {
+    expect(metadata).toHaveLength(1024);
+    stubResponse(`${metadata}<html><body>Bad Gateway</body></html>`, { status: 502 });
+
+    const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
+
+    expect(error.message).toBe("请求失败（502）");
+  });
+
+  it.each([
     "<h1>502 Bad Gateway</h1>",
     '<meta charset="utf-8"><title>502 Bad Gateway</title>',
   ])("rejects an error page beginning with a common HTML element: %s", async (body) => {
