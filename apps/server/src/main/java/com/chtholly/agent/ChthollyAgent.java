@@ -139,7 +139,18 @@ public class ChthollyAgent {
                     maxSteps);
             AgentLoopResult result = loopExecutor.execute(request, trace, agentSpan, sink);
             if (result.status() == AgentLoopResult.Status.FINAL_READY) {
-                streamFinalAnswer(sink, question, result.transcript(), memory, trace, agentSpan);
+                long streamLlmMs = streamFinalAnswer(
+                        sink,
+                        question,
+                        result.transcript(),
+                        memory,
+                        trace,
+                        agentSpan);
+                trace.recordStep(
+                        result.finalStepIndex(),
+                        "final_answer",
+                        result.finalDecisionLlmMs() + streamLlmMs,
+                        0);
             }
         } catch (RuntimeException e) {
             trace.terminateError();

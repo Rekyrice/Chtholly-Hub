@@ -99,7 +99,7 @@ class ChthollyAgentTest {
                 anyLong(), anyString(), anyString(), any(), anyString(), anyString()))
                 .thenReturn("assembled system");
         when(loopExecutor.execute(any(), any(), any(), any()))
-                .thenReturn(new AgentLoopResult(
+                .thenReturn(AgentLoopResult.terminal(
                         AgentLoopResult.Status.MAX_STEPS,
                         List.of("transcript"),
                         "stopped"));
@@ -124,14 +124,11 @@ class ChthollyAgentTest {
         when(memory.formatForPrompt()).thenReturn("history");
         when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
                 .thenReturn("assembled system");
-        when(loopExecutor.execute(any(), any(), any(), any())).thenAnswer(invocation -> {
-            AgentExecutionTrace trace = invocation.getArgument(1);
-            trace.recordStep(0, "final_answer", 2, 0);
-            return new AgentLoopResult(
-                    AgentLoopResult.Status.FINAL_READY,
-                    List.of("history", "current question"),
-                    null);
-        });
+        when(loopExecutor.execute(any(), any(), any(), any()))
+                .thenReturn(AgentLoopResult.finalReady(
+                        List.of("history", "current question"),
+                        2,
+                        123));
         when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
         when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn(Flux.just("final ", "answer"));
@@ -148,6 +145,12 @@ class ChthollyAgentTest {
         verify(tracePersistenceService).persist(traceCaptor.capture());
         assertThat(traceCaptor.getValue().getTerminatedBy()).isEqualTo("final_answer");
         assertThat(traceCaptor.getValue().getStatus()).isNotNull();
+        com.fasterxml.jackson.databind.JsonNode steps = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap().get("steps"));
+        assertThat(steps).hasSize(1);
+        assertThat(steps.path(0).path("action").asText()).isEqualTo("final_answer");
+        assertThat(steps.path(0).path("stepIndex").asInt()).isEqualTo(2);
+        assertThat(steps.path(0).path("llmMs").asLong()).isGreaterThanOrEqualTo(123);
     }
 
     @Test
@@ -159,7 +162,7 @@ class ChthollyAgentTest {
             AgentExecutionTrace trace = invocation.getArgument(1);
             trace.terminateMaxSteps();
             trace.setErrorMessage("stopped");
-            return new AgentLoopResult(
+            return AgentLoopResult.terminal(
                     AgentLoopResult.Status.MAX_STEPS,
                     List.of("transcript"),
                     "stopped");
@@ -192,7 +195,7 @@ class ChthollyAgentTest {
         when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
                 .thenReturn("system");
         when(loopExecutor.execute(any(), any(), any(), any()))
-                .thenReturn(new AgentLoopResult(
+                .thenReturn(AgentLoopResult.terminal(
                         AgentLoopResult.Status.LLM_ERROR,
                         List.of(),
                         "failed"));

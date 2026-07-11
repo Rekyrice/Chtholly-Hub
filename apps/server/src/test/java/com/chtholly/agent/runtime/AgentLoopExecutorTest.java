@@ -99,7 +99,9 @@ class AgentLoopExecutorTest {
         assertThat(events.getFirst().data().path("content").asText()).isEqualTo("Preparing final answer");
         verify(toolExecutor, never()).execute(any(), anyMap(), anyLong());
         verify(observationService).startLlmSpan(agentSpan, "test-model");
-        assertThat(trace.getStepActions()).containsExactly("final_answer");
+        assertThat(result.finalStepIndex()).isZero();
+        assertThat(result.finalDecisionLlmMs()).isGreaterThanOrEqualTo(0);
+        assertThat(trace.getStepActions()).isEmpty();
     }
 
     @Test
@@ -126,7 +128,7 @@ class AgentLoopExecutorTest {
         ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
         verify(llmInvoker, times(2)).call(anyString(), promptCaptor.capture(), anyDouble(), anyInt());
         assertThat(promptCaptor.getAllValues().get(1)).contains("Observation: tool result");
-        assertThat(trace.getStepActions()).containsExactly("search", "final_answer");
+        assertThat(trace.getStepActions()).containsExactly("search");
         assertThat(trace.getToolsCalled()).containsExactly("search");
         JsonNode toolCalls = objectMapper.valueToTree(trace.toPayloadMap().get("toolCalls"));
         assertThat(toolCalls.path(0).path("success").asBoolean()).isTrue();
@@ -149,7 +151,7 @@ class AgentLoopExecutorTest {
         ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
         verify(llmInvoker, times(2)).call(anyString(), promptCaptor.capture(), anyDouble(), anyInt());
         assertThat(promptCaptor.getAllValues().get(1)).contains("Observation: PARSE_ERROR_ORIGINAL");
-        assertThat(trace.getStepActions()).containsExactly("parse_error", "final_answer");
+        assertThat(trace.getStepActions()).containsExactly("parse_error");
     }
 
     @Test
@@ -166,7 +168,7 @@ class AgentLoopExecutorTest {
         assertThat(eventTypes()).containsExactly("think", "act", "observe", "think");
         assertThat(events.get(2).data().path("content").asText()).isEqualTo("Unknown tool: missing");
         verify(toolExecutor, never()).execute(any(), anyMap(), anyLong());
-        assertThat(trace.getStepActions()).containsExactly("missing", "final_answer");
+        assertThat(trace.getStepActions()).containsExactly("missing");
     }
 
     @Test

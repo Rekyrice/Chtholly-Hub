@@ -109,8 +109,7 @@ public class AgentLoopExecutor {
 
             emitThink(sink, action);
             if (action.isFinal()) {
-                trace.recordStep(step, "final_answer", stepLlmMs, 0);
-                return new AgentLoopResult(AgentLoopResult.Status.FINAL_READY, transcript, null);
+                return AgentLoopResult.finalReady(transcript, step, stepLlmMs);
             }
 
             AgentTool tool = request.tools().get(action.action());
@@ -190,7 +189,7 @@ public class AgentLoopExecutor {
         traceTerminator.run();
         trace.setErrorMessage(message);
         emitError(sink, message);
-        return new AgentLoopResult(status, transcript, message);
+        return AgentLoopResult.terminal(status, transcript, message);
     }
 
     private void appendExchange(List<String> transcript, String llmOut, String observation) {
