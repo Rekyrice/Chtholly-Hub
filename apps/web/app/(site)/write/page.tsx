@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore }
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import "../../styles/write.css";
 import MarkdownToolbar from "@/components/write/MarkdownToolbar";
 import TagAutocomplete from "@/components/write/TagAutocomplete";
 import WriteStats from "@/components/write/WriteStats";

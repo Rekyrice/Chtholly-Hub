@@ -1,3 +1,4 @@
+import "../../styles/agent.css";
 import { ProactiveNotification } from "@/components/ProactiveNotification";
 import { AgentChatProvider } from "@/components/agent/AgentChatProvider";
 

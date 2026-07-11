@@ -1,13 +1,9 @@
 @import "tailwindcss";
-@import "./styles/agent.css";
-@import "./styles/landing.css";
-@import "./styles/write.css";
 @import "./styles/navbar.css";
 @import "./styles/feed.css";
 @import "./styles/article.css";
 @import "./styles/community.css";
 @import "./styles/settings.css";
-@import "./styles/admin.css";
 @import "./styles/responsive.css";
 
 @view-transition {

@@ -1,5 +1,6 @@
 "use client";
 
+import "../../app/styles/agent.css";
 import { usePathname } from "next/navigation";
 import { ProactiveNotification } from "@/components/ProactiveNotification";
 import { AgentChatProvider } from "@/components/agent/AgentChatProvider";

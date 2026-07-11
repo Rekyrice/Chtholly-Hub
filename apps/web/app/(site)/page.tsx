@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import "../styles/landing.css";
 import LandingTypewriter from "@/components/site/LandingTypewriter";
 import { siteUrl } from "@/lib/site-url";
 
