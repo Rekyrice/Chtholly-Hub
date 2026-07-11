@@ -98,8 +98,15 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
   const [error, setError] = useState("");
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const saveCompletionTimerRef = useRef<number | null>(null);
 
-  const markDirty = () => setSaveStatus("unsaved");
+  const markDirty = () => {
+    if (saveCompletionTimerRef.current !== null) {
+      window.clearTimeout(saveCompletionTimerRef.current);
+      saveCompletionTimerRef.current = null;
+    }
+    setSaveStatus("unsaved");
+  };
 
   const draft = useMemo<WriteDraft>(
     () => ({
@@ -124,12 +131,21 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
       setSaveStatus("saving");
       try {
         window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-        window.setTimeout(() => setSaveStatus("saved"), 180);
+        saveCompletionTimerRef.current = window.setTimeout(() => {
+          saveCompletionTimerRef.current = null;
+          setSaveStatus("saved");
+        }, 180);
       } catch {
         setSaveStatus("unsaved");
       }
     }, 700);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (saveCompletionTimerRef.current !== null) {
+        window.clearTimeout(saveCompletionTimerRef.current);
+        saveCompletionTimerRef.current = null;
+      }
+    };
   }, [draft]);
 
   const ensureDraftPostId = async () => {

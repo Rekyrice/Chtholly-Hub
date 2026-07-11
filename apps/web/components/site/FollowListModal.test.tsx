@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import FollowListModal from "@/components/site/FollowListModal";
+import FollowListModal, * as followListModule from "@/components/site/FollowListModal";
 import { relationService } from "@/lib/services/relationService";
 import type { PageResponse, ProfileResponse } from "@/lib/types/relation";
 
@@ -82,33 +82,32 @@ describe("FollowListModal request races", () => {
     expect(screen.getByText("粉丝用户")).toBeInTheDocument();
   });
 
-  it("does not write back when an in-flight request resolves after unmount", async () => {
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor() {}
-        observe() {}
-        disconnect() {}
-        unobserve() {}
-        takeRecords() { return []; }
-        root = null;
-        rootMargin = "0px";
-        thresholds = [];
-      },
-    );
-    const request = deferred<PageResponse<ProfileResponse>>();
-    vi.mocked(relationService.following).mockReturnValueOnce(request.promise);
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("rejects stale commits after invalidation or unmount", () => {
+    const createGate = (
+      followListModule as typeof followListModule & {
+        createRequestCommitGate?: () => {
+          mount: () => void;
+          next: () => number;
+          invalidate: () => void;
+          unmount: () => void;
+          canCommit: (version: number) => boolean;
+        };
+      }
+    ).createRequestCommitGate;
 
-    const { unmount } = render(
-      <FollowListModal userId="owner" open initialTab="following" onClose={vi.fn()} />,
-    );
-    await waitFor(() => expect(relationService.following).toHaveBeenCalledTimes(1));
-    unmount();
-    request.resolve(page([followingUser]));
-    await act(async () => Promise.resolve());
+    expect(createGate).toBeTypeOf("function");
+    if (!createGate) return;
+    const gate = createGate();
+    gate.mount();
+    const firstVersion = gate.next();
+    expect(gate.canCommit(firstVersion)).toBe(true);
 
-    expect(consoleError).not.toHaveBeenCalled();
-    consoleError.mockRestore();
+    gate.invalidate();
+    expect(gate.canCommit(firstVersion)).toBe(false);
+    const secondVersion = gate.next();
+    expect(gate.canCommit(secondVersion)).toBe(true);
+
+    gate.unmount();
+    expect(gate.canCommit(secondVersion)).toBe(false);
   });
 });

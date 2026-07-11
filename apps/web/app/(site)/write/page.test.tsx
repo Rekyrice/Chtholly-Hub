@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WritePage from "@/app/(site)/write/page";
 
@@ -80,6 +80,7 @@ describe("WritePage draft status", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -112,5 +113,23 @@ describe("WritePage draft status", () => {
     fireEvent.click(screen.getByText("插入图片"));
     await act(async () => Promise.resolve());
     expect(screen.getByText("有未保存的更改")).toBeInTheDocument();
+  });
+
+  it("does not let an older save completion mark a newer draft saved", async () => {
+    render(<WritePage />);
+
+    fireEvent.change(screen.getByLabelText("标题"), { target: { value: "第一版" } });
+    await act(async () => vi.advanceTimersByTimeAsync(700));
+    expect(screen.getByText("保存中...")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("标题"), { target: { value: "第二版" } });
+    expect(screen.getByText("有未保存的更改")).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTimeAsync(180));
+    expect(screen.getByText("有未保存的更改")).toBeInTheDocument();
+
+    await act(async () => vi.advanceTimersByTimeAsync(520));
+    expect(screen.getByText("保存中...")).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTimeAsync(180));
+    expect(screen.getByText("已保存")).toBeInTheDocument();
   });
 });

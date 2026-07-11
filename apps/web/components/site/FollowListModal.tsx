@@ -18,6 +18,36 @@ type FollowListModalProps = {
   onClose: () => void;
 };
 
+export type RequestCommitGate = {
+  mount: () => void;
+  next: () => number;
+  invalidate: () => void;
+  unmount: () => void;
+  canCommit: (version: number) => boolean;
+};
+
+export function createRequestCommitGate(): RequestCommitGate {
+  let mounted = false;
+  let generation = 0;
+  return {
+    mount: () => {
+      mounted = true;
+    },
+    next: () => {
+      generation += 1;
+      return generation;
+    },
+    invalidate: () => {
+      generation += 1;
+    },
+    unmount: () => {
+      mounted = false;
+      generation += 1;
+    },
+    canCommit: (version) => mounted && generation === version,
+  };
+}
+
 function userInitial(user: ProfileResponse) {
   return (user.nickname || user.handle || "?").charAt(0);
 }
@@ -51,23 +81,18 @@ function FollowListModalContent({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const mountedRef = useRef(false);
-  const requestVersionRef = useRef(0);
+  const [requestCommitGate] = useState(createRequestCommitGate);
 
   useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      requestVersionRef.current += 1;
-    };
-  }, []);
+    requestCommitGate.mount();
+    return () => requestCommitGate.unmount();
+  }, [requestCommitGate]);
 
   const loadPage = useCallback(
     async (nextCursor?: string | null, replace = false, isAlive: () => boolean = () => true) => {
-      const requestVersion = requestVersionRef.current + 1;
-      requestVersionRef.current = requestVersion;
+      const requestVersion = requestCommitGate.next();
       const isCurrentRequest = () =>
-        mountedRef.current && requestVersionRef.current === requestVersion && isAlive();
+        requestCommitGate.canCommit(requestVersion) && isAlive();
       setLoading(true);
       setError(null);
       try {
@@ -89,7 +114,7 @@ function FollowListModalContent({
         if (isCurrentRequest()) setLoading(false);
       }
     },
-    [tab, userId],
+    [requestCommitGate, tab, userId],
   );
 
   useEffect(() => {
@@ -103,7 +128,7 @@ function FollowListModalContent({
 
   const selectTab = (nextTab: FollowListTab) => {
     if (nextTab === tab) return;
-    requestVersionRef.current += 1;
+    requestCommitGate.invalidate();
     setItems([]);
     setCursor(null);
     setHasMore(false);

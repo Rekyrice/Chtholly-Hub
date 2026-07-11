@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   Area,
   AreaChart,
@@ -57,22 +64,49 @@ function quickRange(days: 7 | 30): DateRange {
   };
 }
 
-function readInitialRange(): DateRange {
-  if (typeof window === "undefined") return quickRange(7);
-  const params = new URLSearchParams(window.location.search);
+const TRACE_RANGE_EVENT = "chtholly-trace-range-change";
+
+function parseRangeSearch(search: string): DateRange | null {
+  if (!search) return null;
+  if (search === "__default__") return quickRange(7);
+  const params = new URLSearchParams(search);
   const from = params.get("from");
   const to = params.get("to");
   if (from && to) {
-    return { from, to, preset: "custom" };
+    const preset = params.get("preset");
+    return {
+      from,
+      to,
+      preset: preset === "7d" || preset === "30d" ? preset : "custom",
+    };
   }
   return quickRange(7);
+}
+
+function subscribeRangeSearch(onStoreChange: () => void) {
+  window.addEventListener("popstate", onStoreChange);
+  window.addEventListener(TRACE_RANGE_EVENT, onStoreChange);
+  return () => {
+    window.removeEventListener("popstate", onStoreChange);
+    window.removeEventListener(TRACE_RANGE_EVENT, onStoreChange);
+  };
+}
+
+function getRangeSearchSnapshot() {
+  return window.location.search || "__default__";
+}
+
+function getServerRangeSearchSnapshot() {
+  return "";
 }
 
 function updateRangeUrl(range: DateRange) {
   const url = new URL(window.location.href);
   url.searchParams.set("from", range.from);
   url.searchParams.set("to", range.to);
+  url.searchParams.set("preset", range.preset);
   window.history.replaceState(null, "", url.toString());
+  window.dispatchEvent(new Event(TRACE_RANGE_EVENT));
 }
 
 function formatMs(ms: number | null | undefined) {
@@ -181,7 +215,12 @@ function StatCard({
 }
 
 export default function TraceDashboardPage() {
-  const [range, setRange] = useState<DateRange>(readInitialRange);
+  const rangeSearch = useSyncExternalStore(
+    subscribeRangeSearch,
+    getRangeSearchSnapshot,
+    getServerRangeSearchSnapshot,
+  );
+  const range = useMemo(() => parseRangeSearch(rangeSearch), [rangeSearch]);
   const [stats, setStats] = useState<TraceStats | null>(null);
   const [patterns, setPatterns] = useState<FailurePattern[]>([]);
   const [tokenTrends, setTokenTrends] = useState<TraceTokenTrendRow[]>([]);
@@ -190,7 +229,7 @@ export default function TraceDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    updateRangeUrl(range);
+    if (range) updateRangeUrl(range);
   }, [range]);
 
   const load = useCallback(async (nextRange: DateRange, isAlive: () => boolean) => {
@@ -217,6 +256,7 @@ export default function TraceDashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (!range) return;
     let alive = true;
     const timer = window.setTimeout(() => void load(range, () => alive), 0);
     return () => {
@@ -226,11 +266,12 @@ export default function TraceDashboardPage() {
   }, [load, range]);
 
   const executionTrend = useMemo(
-    () => mergeExecutionTrend(range, stats?.executionTrend),
+    () => (range ? mergeExecutionTrend(range, stats?.executionTrend) : []),
     [range, stats?.executionTrend],
   );
   const tokenTrend = useMemo(
-    () => mergeTokenTrend(range, tokenTrends.length ? tokenTrends : stats?.tokenTrend),
+    () =>
+      range ? mergeTokenTrend(range, tokenTrends.length ? tokenTrends : stats?.tokenTrend) : [],
     [range, stats?.tokenTrend, tokenTrends],
   );
   const patternBars = useMemo(
@@ -246,10 +287,11 @@ export default function TraceDashboardPage() {
   );
 
   const applyRange = (nextRange: DateRange) => {
-    setRange(nextRange);
+    updateRangeUrl(nextRange);
   };
 
   const updateCustomRange = (field: "from" | "to", value: string) => {
+    if (!range) return;
     applyRange({ ...range, [field]: value, preset: "custom" });
   };
 
