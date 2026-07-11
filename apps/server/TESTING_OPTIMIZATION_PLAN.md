@@ -4,7 +4,7 @@
 
 **Goal:** 在不修改生产代码、不删除业务场景的前提下，消除测试中的固定等待和已确认的日志噪声，使并发与异步测试更确定、更易维护。
 
-**Architecture:** 保持现有 Surefire/Failsafe 与 Testcontainers 分层不变，只在 `src/test` 内用未完成 Future、CountDownLatch、Awaitility 和 Mockito timeout 表达真实完成条件。日志配置只作用于测试 classpath，并仅压制已确认由测试主动制造的噪声类。
+**Architecture:** 保持现有 Surefire/Failsafe 与 Testcontainers 分层不变，只在 `src/test` 内用未完成 Future、CountDownLatch、Awaitility 和 Mockito timeout 表达真实完成条件。日志降噪仅在明确测试调用窗口内临时调整目标 logger 级别，并在 `finally` 恢复；不创建全局测试日志配置。
 
 **Tech Stack:** Java 21、JUnit 5、AssertJ、Mockito、Awaitility、Spring Boot Test、Logback。
 
@@ -88,7 +88,9 @@ Expected: 23 tests pass。
 ```java
 CountDownLatch releaseLlm = new CountDownLatch(1);
 when(callSpec.content()).thenAnswer(invocation -> {
-    releaseLlm.await();
+    if (!releaseLlm.await(3, TimeUnit.SECONDS)) {
+        throw new AssertionError("LLM timeout guard did not release blocked call");
+    }
     return "{\"action\":\"final\",\"answer\":\"late\"}";
 });
 
@@ -241,7 +243,9 @@ git commit -m "test: 强化 SingleFlight 并发语义验证"
 ### Task 4: 定向收敛测试日志噪声
 
 **Files:**
-- Create: `apps/server/src/test/resources/logback-test.xml`
+- Modify: `apps/server/src/test/java/com/chtholly/agent/anchor/AnchorManagerTest.java`
+- Modify: `apps/server/src/test/java/com/chtholly/seed/SeedOrchestratorTest.java`
+- Modify: `apps/server/TESTING_OPTIMIZATION_PLAN.md`
 
 - [ ] **Step 1: 复现已确认的预期日志**
 
@@ -254,48 +258,38 @@ $output | Select-String 'Identity anchor failed','Seed dry-run summary'
 
 Expected: 输出包含 AnchorManager 的预期失败堆栈和 SeedOrchestrator 的 dry-run INFO。
 
-- [ ] **Step 2: 添加测试专用 Logback 配置**
+- [ ] **Step 2: 仅对明确预期日志的调用局部调级**
 
-创建：
+不创建测试级 Logback 配置，避免 Spring Context 重载日志系统时产生全局覆盖和执行顺序耦合。
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<configuration>
-    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+- `AnchorManagerTest.buildContextFallsBackPerAnchorWithoutCascadeFailure`：仅在一次预期 fallback 调用期间将 `AnchorManager` logger 临时设为 `ERROR`。
+- `SeedOrchestratorTest`：仅两个 dry-run 测试通过私有辅助方法调用 `orchestrator.run(...)`，调用期间将 `SeedOrchestrator` logger 临时设为 `WARN`；其他七个测试继续直接调用。
 
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
-        </encoder>
-    </appender>
+两处均保存原 level，以 `try/finally` 包住目标调用并在 `finally` 恢复；断言在恢复后执行，异常路径也不会泄漏 logger 状态。
 
-    <logger name="com.chtholly.agent.anchor.AnchorManager" level="ERROR"/>
-    <logger name="com.chtholly.seed.SeedOrchestrator" level="WARN"/>
-
-    <root level="WARN">
-        <appender-ref ref="CONSOLE"/>
-    </root>
-</configuration>
-```
-
-Root 仍保留所有 WARN/ERROR；只有两个已确认由测试主动触发的类进一步收敛。
-
-- [ ] **Step 3: 验证目标噪声消失且测试通过**
+- [ ] **Step 3: 验证定向与全量测试均无目标噪声**
 
 Run:
 
 ```powershell
-$output = & mvn -q '-Dtest=AnchorManagerTest,SeedOrchestratorTest' test 2>&1
+$targetOutput = & mvn -q '-Dtest=AnchorManagerTest,SeedOrchestratorTest' test 2>&1
 if ($LASTEXITCODE -ne 0) { throw 'targeted tests failed' }
-if ($output -match 'Identity anchor failed|Seed dry-run summary') { throw 'expected test noise remains' }
+if ($targetOutput -match 'Identity anchor failed|Seed dry-run summary') { throw 'targeted test noise remains' }
+
+$fullOutput = & mvn -q '-Dspring.profiles.active=test' test 2>&1
+if ($LASTEXITCODE -ne 0) { throw 'full tests failed' }
+if ($fullOutput -match 'Identity anchor failed|Seed dry-run summary') { throw 'full test noise remains' }
+if ($fullOutput -notmatch ' WARN ') { throw 'non-target WARN logs were hidden' }
 ```
 
-Expected: 命令成功，两个目标字符串均不存在；其他 WARN/ERROR 仍可输出。
+Expected: 定向 12 tests 与全量 439 tests 均通过；两个目标字符串在全量输出中均为 0，Bangumi 等非目标 WARN 仍可见。
 
-- [ ] **Step 4: 提交测试日志配置**
+- [ ] **Step 4: 提交局部日志降噪改动**
 
 ```powershell
-git add apps/server/src/test/resources/logback-test.xml
+git add apps/server/src/test/java/com/chtholly/agent/anchor/AnchorManagerTest.java `
+        apps/server/src/test/java/com/chtholly/seed/SeedOrchestratorTest.java `
+        apps/server/TESTING_OPTIMIZATION_PLAN.md
 git commit -m "test: 收敛预期异常日志噪声"
 ```
 
