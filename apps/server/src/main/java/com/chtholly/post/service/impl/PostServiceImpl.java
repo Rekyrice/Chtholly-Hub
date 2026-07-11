@@ -14,23 +14,17 @@ import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
 import com.chtholly.post.util.SlugUtils;
-import com.chtholly.common.api.pagination.PageResponse;
-import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.api.dto.PostSummary;
-import com.github.benmanes.caffeine.cache.Cache;
 import com.chtholly.storage.config.OssProperties;
 import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.tag.service.TagService;
 import com.chtholly.search.index.SearchIndexService;
-import com.chtholly.cache.hotkey.HotKeyDetector;
 import jakarta.annotation.Resource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,12 +53,7 @@ public class PostServiceImpl implements PostService {
     private final ObjectMapper objectMapper;
     private final OssProperties ossProperties;
     private final UserCounterService userCounterService;
-    private final StringRedisTemplate redis;
-    @Qualifier("feedPublicCache")
-    private final Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
-    @Qualifier("postDetailCache")
-    private final Cache<String, PostDetailResponse> postDetailCache;
-    private final HotKeyDetector hotKey;
+    private final PostCacheInvalidator cacheInvalidator;
     private static final Logger log = LoggerFactory.getLogger(PostServiceImpl.class);
     private final PostDetailQueryService detailQueryService;
     private final PostBackgroundQueryService backgroundQueryService;
@@ -82,10 +71,7 @@ public class PostServiceImpl implements PostService {
             ObjectMapper objectMapper,
             OssProperties ossProperties,
             UserCounterService userCounterService,
-            StringRedisTemplate redis,
-            @Qualifier("feedPublicCache") Cache<String, PageResponse<FeedItemResponse>> feedPublicCache,
-            @Qualifier("postDetailCache") Cache<String, PostDetailResponse> postDetailCache,
-            HotKeyDetector hotKey,
+            PostCacheInvalidator cacheInvalidator,
             PostRagIndexer ragIndexService,
             OutboxMapper outboxMapper,
             TagService tagService,
@@ -100,10 +86,7 @@ public class PostServiceImpl implements PostService {
         this.objectMapper = objectMapper;
         this.ossProperties = ossProperties;
         this.userCounterService = userCounterService;
-        this.redis = redis;
-        this.feedPublicCache = feedPublicCache;
-        this.postDetailCache = postDetailCache; // 带@Qualifier的参数赋值
-        this.hotKey = hotKey;
+        this.cacheInvalidator = cacheInvalidator;
         this.ragIndexService = ragIndexService;
         this.outboxMapper = outboxMapper;
         this.tagService = tagService;
@@ -530,47 +513,7 @@ public class PostServiceImpl implements PostService {
     }
 
     private void invalidateCache(long id) {
-        String pageKey = PostDetailQueryService.cacheKey(id);
-
-        try {
-            redis.delete(pageKey);
-        } catch (Exception e) {
-            log.warn("Redis 详情缓存删除失败，key={}", pageKey, e);
-        }
-
-        try {
-            postDetailCache.invalidate(pageKey);
-        } catch (Exception e) {
-            log.warn("本地详情缓存删除失败，key={}", pageKey, e);
-        }
-
-        try {
-            invalidateFeedLocalCache(id);
-        } catch (Exception e) {
-            log.warn("Feed 本地缓存清理失败，id={}，将依赖 TTL 自动过期", id, e);
-        }
-    }
-
-    private void invalidateFeedLocalCache(long id) {
-        long hourSlot = System.currentTimeMillis() / 3600000L;
-        for (long slot : List.of(hourSlot, hourSlot - 1)) {
-            String indexKey = "feed:public:index:" + id + ":" + slot;
-            try {
-                Set<String> pageKeys = redis.opsForSet().members(indexKey);
-                if (pageKeys == null || pageKeys.isEmpty()) {
-                    continue;
-                }
-                for (String localPageKey : pageKeys) {
-                    if (localPageKey == null || localPageKey.isBlank()) {
-                        continue;
-                    }
-                    feedPublicCache.invalidate(localPageKey);
-                    redis.opsForSet().remove(indexKey, localPageKey);
-                }
-            } catch (Exception e) {
-                log.warn("Feed 缓存清理异常，indexKey={}", indexKey, e);
-            }
-        }
+        cacheInvalidator.invalidate(id);
     }
 
     private List<String> parseStringArray(String json) {

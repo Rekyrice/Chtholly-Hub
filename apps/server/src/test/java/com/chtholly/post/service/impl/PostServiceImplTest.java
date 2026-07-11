@@ -3,8 +3,6 @@ package com.chtholly.post.service.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.chtholly.cache.hotkey.HotKeyDetector;
-import com.chtholly.cache.config.CacheProperties;
 import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
@@ -84,9 +82,9 @@ class PostServiceImplTest {
 
         lenient().when(redis.opsForSet()).thenReturn(setOperations);
 
-        CacheProperties cacheProperties = new CacheProperties();
-        HotKeyDetector hotKeyDetector = new HotKeyDetector(cacheProperties);
         OssProperties ossProperties = new OssProperties();
+        PostCacheInvalidator cacheInvalidator =
+                new PostCacheInvalidator(redis, feedPublicCache, postDetailCache);
 
         // 构造参数顺序需与 PostServiceImpl 一致，末尾为 PostFeedService
         service = new PostServiceImpl(
@@ -95,10 +93,7 @@ class PostServiceImplTest {
                 new ObjectMapper(),
                 ossProperties,
                 userCounterService,
-                redis,
-                feedPublicCache,
-                postDetailCache,
-                hotKeyDetector,
+                cacheInvalidator,
                 ragIndexService,
                 outboxMapper,
                 tagService,
