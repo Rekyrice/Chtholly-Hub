@@ -14,19 +14,12 @@ class AgentLlmTimeoutTest {
 
     @Test
     void futureGetTimesOutAndCancels() {
-        CompletableFuture<String> slow = CompletableFuture.supplyAsync(() -> {
-            try {
-                Thread.sleep(3_000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            return "late";
-        });
+        CompletableFuture<String> pending = new CompletableFuture<>();
 
-        assertThatThrownBy(() -> slow.get(1, TimeUnit.SECONDS))
+        assertThatThrownBy(() -> pending.get(20, TimeUnit.MILLISECONDS))
                 .isInstanceOf(TimeoutException.class);
 
-        slow.cancel(true);
-        assertThat(slow.isCancelled() || slow.isDone()).isTrue();
+        pending.cancel(true);
+        assertThat(pending).isCancelled();
     }
 }

@@ -135,7 +135,6 @@ class BangumiServiceImplTest {
 
         when(bangumiClient.searchSubjects(anyString(), anyInt())).thenAnswer(inv -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            Thread.sleep(50);
             return Optional.empty();
         });
 

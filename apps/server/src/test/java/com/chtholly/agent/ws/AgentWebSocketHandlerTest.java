@@ -24,10 +24,11 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.net.URI;
-import java.util.ArrayList;
+import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CopyOnWriteArrayList;
 
+import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -35,6 +36,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -119,7 +121,7 @@ class AgentWebSocketHandlerTest {
         when(memoryStore.getOrCreateMemory(99L, "sess-chat-a")).thenReturn(memory);
         doNothing().when(agent).run(any(), anyLong(), any(), any(), any(), any());
 
-        List<String> payloads = new ArrayList<>();
+        List<String> payloads = new CopyOnWriteArrayList<>();
         doAnswer(inv -> {
             TextMessage msg = inv.getArgument(0);
             payloads.add(msg.getPayload());
@@ -131,13 +133,13 @@ class AgentWebSocketHandlerTest {
                     new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-a\",\"message\":\"hi\"}"));
         }
 
-        TimeUnit.MILLISECONDS.sleep(300);
-
-        long rateLimited = payloads.stream()
-                .filter(p -> p.contains("RATE_LIMITED"))
-                .count();
-        assertThat(rateLimited).isGreaterThanOrEqualTo(5);
-        verify(agent, atLeast(10)).run(any(), anyLong(), any(), any(), any(), any());
+        await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> {
+            long rateLimited = payloads.stream()
+                    .filter(p -> p.contains("RATE_LIMITED"))
+                    .count();
+            assertThat(rateLimited).isGreaterThanOrEqualTo(5);
+            verify(agent, atLeast(10)).run(any(), anyLong(), any(), any(), any(), any());
+        });
     }
 
     @Test
@@ -160,8 +162,7 @@ class AgentWebSocketHandlerTest {
         handler.handleTextMessage(rawSession,
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-b\",\"message\":\"ok\"}"));
 
-        TimeUnit.MILLISECONDS.sleep(200);
-        verify(agent).run(any(), anyLong(), any(), any(), any(), any());
+        verify(agent, timeout(2_000)).run(any(), anyLong(), any(), any(), any(), any());
     }
 
     @Test
@@ -195,7 +196,7 @@ class AgentWebSocketHandlerTest {
                         java.time.Instant.parse("2026-07-04T12:00:00Z"),
                         NotificationChannel.FLOATING)
         ));
-        List<String> payloads = new ArrayList<>();
+        List<String> payloads = new CopyOnWriteArrayList<>();
         doAnswer(inv -> {
             TextMessage msg = inv.getArgument(0);
             payloads.add(msg.getPayload());

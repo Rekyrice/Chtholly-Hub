@@ -11,7 +11,9 @@ import com.chtholly.agent.state.Mood;
 import com.chtholly.agent.state.Needs;
 import com.chtholly.agent.state.Personality;
 import com.chtholly.agent.state.Relationship;
+import ch.qos.logback.classic.Level;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.List;
@@ -65,12 +67,21 @@ class AnchorManagerTest {
         when(insightService.getInsightTextsForUser(7L, 5, 500)).thenThrow(new IllegalStateException("rules down"));
         when(stateService.load(7L)).thenThrow(new IllegalStateException("state down"));
 
-        AnchorContext context = new AnchorManager(
-                soulService,
-                memoryStore,
-                knowledgeService,
-                insightService,
-                stateService).buildContext(7L, "ws-1");
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(AnchorManager.class);
+        Level originalLevel = logger.getLevel();
+        AnchorContext context;
+        logger.setLevel(Level.ERROR);
+        try {
+            context = new AnchorManager(
+                    soulService,
+                    memoryStore,
+                    knowledgeService,
+                    insightService,
+                    stateService).buildContext(7L, "ws-1");
+        } finally {
+            logger.setLevel(originalLevel);
+        }
 
         assertThat(context.soul()).isNotBlank();
         assertThat(context.episodic()).isEmpty();
