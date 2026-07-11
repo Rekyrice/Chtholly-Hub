@@ -36,6 +36,22 @@ class ContextContributorIsolationTest {
     }
 
     @Test
+    void relationshipStateFailureKeepsSeasonalSection() {
+        CharacterStateService stateService = mock(CharacterStateService.class);
+        when(stateService.getMoodBaseline()).thenThrow(new IllegalStateException("state unavailable"));
+        SeasonService seasonService = mock(SeasonService.class);
+        when(seasonService.getSeasonalPrompt()).thenReturn("秋天了……适合感性一点的故事。");
+
+        ContextContribution contribution = new RelationshipContextContributor(stateService, seasonService)
+                .contribute(request("", "继续聊", AnchorContext.builder().build()));
+
+        assertThat(contribution.content())
+                .contains("## 季节感受", "秋天了……适合感性一点的故事。")
+                .doesNotContain("## 当前状态");
+        assertThat(contribution.degraded()).isTrue();
+    }
+
+    @Test
     void contentReaderFailureKeepsPlainPageSection() {
         ContentIntelligenceReader contentReader = mock(ContentIntelligenceReader.class);
         when(contentReader.getAnalysis(42L)).thenThrow(new IllegalStateException("content unavailable"));

@@ -48,9 +48,22 @@ public class RelationshipContextContributor implements ContextContributor {
     @Override
     public ContextContribution contribute(ContextRequest request) {
         StringBuilder prompt = new StringBuilder();
-        appendCharacterState(prompt, request.anchors().relational());
-        boolean degraded = appendSeasonalFeeling(prompt);
-        return new ContextContribution(name(), order(), prompt.toString(), degraded);
+        boolean degraded = false;
+        try {
+            appendCharacterState(prompt, request.anchors().relational());
+        } catch (RuntimeException e) {
+            log.warn("Relationship state context failed", e);
+            degraded = true;
+        }
+        try {
+            appendSeasonalFeeling(prompt);
+        } catch (RuntimeException e) {
+            log.warn("Seasonal context failed", e);
+            degraded = true;
+        }
+        return prompt.isEmpty()
+                ? ContextContribution.empty(name(), order(), degraded)
+                : new ContextContribution(name(), order(), prompt.toString(), degraded);
     }
 
     private void appendCharacterState(StringBuilder prompt, CharacterState state) {
@@ -74,21 +87,18 @@ public class RelationshipContextContributor implements ContextContributor {
                 .append("互动次数：").append(safeState.relationship().interactionCount());
     }
 
-    private boolean appendSeasonalFeeling(StringBuilder prompt) {
+    private void appendSeasonalFeeling(StringBuilder prompt) {
         if (seasonService == null) {
-            return false;
+            return;
         }
-        try {
-            String seasonalPrompt = seasonService.getSeasonalPrompt();
-            if (!hasText(seasonalPrompt)) {
-                return false;
-            }
-            prompt.append("\n\n## 季节感受\n\n").append(seasonalPrompt.trim());
-            return false;
-        } catch (RuntimeException e) {
-            log.warn("Seasonal context failed", e);
-            return true;
+        String seasonalPrompt = seasonService.getSeasonalPrompt();
+        if (!hasText(seasonalPrompt)) {
+            return;
         }
+        if (!prompt.isEmpty()) {
+            prompt.append("\n\n");
+        }
+        prompt.append("## 季节感受\n\n").append(seasonalPrompt.trim());
     }
 
     private static String timePeriodLabel() {
