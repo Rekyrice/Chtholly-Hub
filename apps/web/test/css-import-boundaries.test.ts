@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -87,7 +87,6 @@ describe("route CSS import boundaries", () => {
     );
     expect(landingReducedMotion).toContain(".landing-background__image");
     expect(landingReducedMotion).toContain(".landing-typewriter__cursor");
-    expect(landingReducedMotion).toContain(".not-found-illustration");
 
     const agentReducedMotion = agent.slice(
       agent.lastIndexOf("@media (prefers-reduced-motion: reduce)"),
@@ -101,5 +100,42 @@ describe("route CSS import boundaries", () => {
 
     expect(write).not.toContain("@media (prefers-reduced-motion: reduce)");
     expect(admin).not.toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
+  it("keeps not-found styles in a dedicated owner", () => {
+    const notFoundPath = resolve(process.cwd(), "app/styles/not-found.css");
+    expect(existsSync(notFoundPath)).toBe(true);
+    if (!existsSync(notFoundPath)) return;
+
+    const landing = source("app/styles/landing.css");
+    const notFound = readFileSync(notFoundPath, "utf8");
+    expect(landing).not.toMatch(/^\s*\.not-found-/m);
+    expect(landing).not.toContain("@keyframes not-found-float");
+    for (const selector of [
+      "not-found-page",
+      "not-found-background",
+      "not-found-background__image",
+      "not-found-background__scrim",
+      "not-found-content",
+      "not-found-illustration",
+      "not-found-title",
+      "not-found-message",
+      "not-found-submessage",
+      "not-found-btn",
+    ]) {
+      expect(notFound).toContain(`.${selector}`);
+    }
+    expect(notFound).toContain("@keyframes not-found-float");
+    expect(notFound).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*\.not-found-illustration/,
+    );
+  });
+
+  it("loads not-found styles through the shared not-found component", () => {
+    const rootNotFound = source("app/not-found.tsx");
+    const siteNotFound = source("app/(site)/not-found.tsx");
+
+    expect(rootNotFound).toContain('import SiteNotFound from "./(site)/not-found";');
+    expect(siteNotFound).toContain('import "../styles/not-found.css";');
   });
 });
