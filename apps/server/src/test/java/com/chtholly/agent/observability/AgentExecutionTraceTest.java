@@ -14,7 +14,7 @@ class AgentExecutionTraceTest {
     void finishAndLogProducesStructuredSummary() throws Exception {
         AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
         trace.recordLlmCall(100, 400, 800);
-        trace.recordToolCall("bangumi_search", 200, "{\"keyword\":\"re0\"}", "ok");
+        trace.recordToolCall("bangumi_search", 200, "{\"keyword\":\"re0\"}", "ok", true);
         trace.recordStep(0, "bangumi_search", 100, 200);
         trace.terminateFinalAnswer("hello answer");
         trace.finish();
@@ -37,5 +37,15 @@ class AgentExecutionTraceTest {
         summary.put("sessionId", "ws-test");
         JsonNode node = objectMapper.readTree(objectMapper.writeValueAsString(summary));
         assertThat(node.path("event").asText()).isEqualTo("agent_execution_complete");
+    }
+
+    @Test
+    void recordToolCallUsesExplicitFailureStatusInsteadOfObservationText() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+
+        trace.recordToolCall("failing_tool", 20, "{}", "Tool failed: boom", false);
+
+        JsonNode toolCalls = objectMapper.valueToTree(trace.toPayloadMap().get("toolCalls"));
+        assertThat(toolCalls.path(0).path("success").asBoolean()).isFalse();
     }
 }

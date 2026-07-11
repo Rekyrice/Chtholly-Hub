@@ -78,12 +78,16 @@ public class AgentExecutionTrace {
         llmCallDetails.add(new TraceLlmCallInfo(durationMs, inputChars, outputChars, firstTokenMs));
     }
 
-    public void recordToolCall(String toolName, long durationMs, String inputSummary, String observation) {
+    public void recordToolCall(
+            String toolName,
+            long durationMs,
+            String inputSummary,
+            String observation,
+            boolean success) {
         if (toolName != null && !toolName.isBlank()) {
             toolsCalled.add(toolName);
         }
         toolDurationMs += durationMs;
-        boolean success = !isFailureObservation(observation);
         toolCallDetails.add(new TraceToolCallInfo(
                 toolName,
                 truncate(inputSummary, 256),
@@ -210,18 +214,6 @@ public class AgentExecutionTrace {
             return 0;
         }
         return Math.max(1, chars / 4L);
-    }
-
-    private static boolean isFailureObservation(String observation) {
-        if (observation == null || observation.isBlank()) {
-            return false;
-        }
-        String lower = observation.toLowerCase();
-        return lower.contains("timed out")
-                || lower.contains("timeout")
-                || lower.contains("失败")
-                || lower.contains("无法")
-                || lower.contains("错误");
     }
 
     private static String truncate(String value, int maxLen) {

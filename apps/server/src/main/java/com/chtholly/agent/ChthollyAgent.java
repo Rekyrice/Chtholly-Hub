@@ -25,6 +25,7 @@ import reactor.core.publisher.Flux;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
@@ -219,14 +220,25 @@ public class ChthollyAgent {
                 AgentToolResult toolResult = agentToolExecutor.execute(tool, inputMap, userId);
                 String observation = toolResult.observation();
                 long stepToolMs = System.currentTimeMillis() - toolStart;
-                agentObservationService.finishSpan(toolSpan, toolSpanAttributes(
-                        tool.name(), stepToolMs, toolResult.status() == AgentToolResult.Status.TIMEOUT));
-                trace.recordToolCall(tool.name(), stepToolMs, summarizeToolInput(action.input()), observation);
+                finishToolSpan(toolSpan, tool.name(), stepToolMs, toolResult.status());
+                boolean toolSucceeded = toolResult.status() == AgentToolResult.Status.SUCCESS;
+                trace.recordToolCall(
+                        tool.name(),
+                        stepToolMs,
+                        summarizeToolInput(action.input()),
+                        observation,
+                        toolSucceeded);
                 observation = augmentObservation(tool.name(), observation, toolResult.status());
                 emitObserve(sink, observation);
+                trace.recordStep(step, tool.name(), stepLlmMs, stepToolMs);
+                if (toolResult.status() == AgentToolResult.Status.INTERRUPTED) {
+                    trace.terminateError();
+                    trace.setErrorMessage(agentDomainConfig.errors().toolInterrupted());
+                    emitError(sink, agentDomainConfig.errors().toolInterrupted());
+                    return;
+                }
                 transcript.add(agentDomainConfig.context().assistantLabel() + " " + llmOut);
                 transcript.add(agentDomainConfig.context().observationLabel() + " " + observation);
-                trace.recordStep(step, tool.name(), stepLlmMs, stepToolMs);
             }
 
             trace.terminateMaxSteps();
@@ -501,11 +513,29 @@ public class ChthollyAgent {
         return attrs;
     }
 
-    private static Map<String, String> toolSpanAttributes(String toolName, long durationMs, boolean timedOut) {
+    private void finishToolSpan(
+            Observation toolSpan,
+            String toolName,
+            long durationMs,
+            AgentToolResult.Status status) {
+        Map<String, String> attributes = toolSpanAttributes(toolName, durationMs, status);
+        switch (status) {
+            case TIMEOUT -> agentObservationService.finishSpanError(toolSpan, "tool_timeout", attributes);
+            case ERROR -> agentObservationService.finishSpanError(toolSpan, "tool_error", attributes);
+            case INTERRUPTED -> agentObservationService.finishSpanError(toolSpan, "tool_interrupted", attributes);
+            default -> agentObservationService.finishSpan(toolSpan, attributes);
+        }
+    }
+
+    private static Map<String, String> toolSpanAttributes(
+            String toolName,
+            long durationMs,
+            AgentToolResult.Status status) {
         Map<String, String> attrs = new LinkedHashMap<>();
         attrs.put("tool.name", toolName);
         attrs.put("tool.duration_ms", String.valueOf(durationMs));
-        attrs.put("tool.success", String.valueOf(!timedOut));
+        attrs.put("tool.success", String.valueOf(status == AgentToolResult.Status.SUCCESS));
+        attrs.put("tool.status", status.name().toLowerCase(Locale.ROOT));
         return attrs;
     }
 }

@@ -3,11 +3,15 @@ package com.chtholly.agent;
 import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.context.ContextEngine;
+import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.observability.AgentObservationService;
 import com.chtholly.agent.runtime.AgentLlmInvoker;
 import com.chtholly.agent.runtime.AgentToolExecutor;
+import com.chtholly.agent.runtime.AgentToolResult;
 import com.chtholly.agent.trace.TracePersistenceService;
+import com.chtholly.agent.trace.TraceStatus;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
@@ -15,6 +19,7 @@ import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -23,6 +28,7 @@ import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.ClassPathResource;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
@@ -33,11 +39,16 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class ChthollyAgentTest {
@@ -49,6 +60,7 @@ class ChthollyAgentTest {
 
     private AgentObservationService agentObservationService;
     private final List<String> observationEvents = new ArrayList<>();
+    private final Map<String, String> toolObservationAttributes = new LinkedHashMap<>();
 
     private AgentProperties properties;
     private ObjectMapper objectMapper;
@@ -87,6 +99,10 @@ class ChthollyAgentTest {
             @Override
             public void onStop(Observation.Context context) {
                 observationEvents.add("stop:" + context.getName());
+                if (AgentObservationService.SPAN_TOOL.equals(context.getName())) {
+                    context.getHighCardinalityKeyValues().forEach(keyValue ->
+                            toolObservationAttributes.put(keyValue.getKey(), keyValue.getValue()));
+                }
             }
 
             @Override
@@ -109,6 +125,7 @@ class ChthollyAgentTest {
                 tracePersistenceService, agentDomainConfig);
         events = new ArrayList<>();
         observationEvents.clear();
+        toolObservationAttributes.clear();
     }
 
     @Test
@@ -219,6 +236,13 @@ class ChthollyAgentTest {
 
         assertThat(findFirst("observe").path("content").asText()).contains("工具执行失败");
         assertThat(eventTypes()).contains("final");
+        assertThat(toolObservationAttributes)
+                .containsEntry("tool.success", "false")
+                .containsEntry("tool.status", "error");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        JsonNode toolCalls = objectMapper.valueToTree(traceCaptor.getValue().toPayloadMap().get("toolCalls"));
+        assertThat(toolCalls.path(0).path("success").asBoolean()).isFalse();
     }
 
     @Test
@@ -249,6 +273,43 @@ class ChthollyAgentTest {
 
         assertThat(eventTypes()).contains("error");
         assertThat(findFirst("error").path("message").asText()).contains("超时");
+    }
+
+    @Test
+    void given_toolExecutionInterrupted_when_run_then_stopsImmediatelyAndPreservesInterruptFlag() throws Exception {
+        AgentToolExecutor interruptedExecutor = mock(AgentToolExecutor.class);
+        when(interruptedExecutor.execute(any(AgentTool.class), anyMap(), anyLong()))
+                .thenAnswer(invocation -> {
+                    Thread.currentThread().interrupt();
+                    return new AgentToolResult(
+                            agentDomainConfig.errors().toolInterrupted(),
+                            AgentToolResult.Status.INTERRUPTED);
+                });
+        agent = new ChthollyAgent(llmInvoker, interruptedExecutor,
+                properties, objectMapper, List.of(mockTool()), jsonExtractor,
+                agentMetrics, agentObservationService, characterSoulService, contextEngine,
+                tracePersistenceService, agentDomainConfig);
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"test_tool\",\"input\":{}}");
+
+        try {
+            agent.run("interrupt", 1L, null, events::add);
+
+            assertThat(eventTypes()).containsExactly("think", "act", "observe", "error");
+            assertThat(findFirst("error").path("message").asText())
+                    .isEqualTo(agentDomainConfig.errors().toolInterrupted());
+            verify(llmInvoker, times(1)).call(anyString(), anyString(), anyDouble(), anyInt());
+            verify(llmInvoker, never()).stream(anyString(), anyString(), anyDouble(), anyInt());
+            ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+            verify(tracePersistenceService).persist(traceCaptor.capture());
+            assertThat(traceCaptor.getValue().getTerminatedBy()).isEqualTo("error");
+            assertThat(traceCaptor.getValue().getStatus()).isEqualTo(TraceStatus.FAILURE);
+            assertThat(traceCaptor.getValue().getErrorMessage())
+                    .isEqualTo(agentDomainConfig.errors().toolInterrupted());
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted();
+        }
     }
 
     @Test

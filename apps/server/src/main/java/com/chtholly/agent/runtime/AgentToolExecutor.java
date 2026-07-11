@@ -98,6 +98,7 @@ public class AgentToolExecutor {
             return new AgentToolResult(observation, AgentToolResult.Status.ERROR);
         } catch (InterruptedException e) {
             future.cancel(true);
+            log.warn("Tool {} execution interrupted", tool.name(), e);
             Thread.currentThread().interrupt();
             return new AgentToolResult(
                     agentDomainConfig.errors().toolInterrupted(),
