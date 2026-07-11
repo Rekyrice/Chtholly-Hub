@@ -133,6 +133,14 @@ public class AgentLlmInvoker {
         });
     }
 
+    String modelName() {
+        return properties.getModel();
+    }
+
+    int timeoutSeconds() {
+        return Math.max(1, properties.getLlmTimeoutSeconds());
+    }
+
     @PreDestroy
     void closeOwnedExecutor() {
         if (ownsExecutor) {
