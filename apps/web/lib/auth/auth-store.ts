@@ -2,9 +2,28 @@
 
 import { useMemo, useSyncExternalStore } from "react";
 import { AUTH_TOKENS_KEY, isAccessTokenValid } from "@/lib/auth/tokens";
+import { authService } from "@/lib/services/authService";
 import type { AuthUser, StoredAuth } from "@/lib/types/auth";
 
 export const AUTH_CHANGE_EVENT = "chtholly-auth-change";
+
+const currentUserRequests = new Map<string, Promise<AuthUser>>();
+
+export function loadCurrentUserOnce(
+  accessToken: string,
+  loader: () => Promise<AuthUser> = () => authService.me(),
+): Promise<AuthUser> {
+  const existing = currentUserRequests.get(accessToken);
+  if (existing) return existing;
+
+  const request = loader().finally(() => {
+    if (currentUserRequests.get(accessToken) === request) {
+      currentUserRequests.delete(accessToken);
+    }
+  });
+  currentUserRequests.set(accessToken, request);
+  return request;
+}
 
 export function getAuthSnapshot(): string | null {
   if (typeof window === "undefined") return null;

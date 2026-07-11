@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Menu } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import NotificationBell from "@/components/site/NotificationBell";
-import { emitAuthChange, useStoredAuth } from "@/lib/auth/auth-store";
+import { emitAuthChange, loadCurrentUserOnce, useStoredAuth } from "@/lib/auth/auth-store";
 import { authService } from "@/lib/services/authService";
 import { siteConfig } from "@/lib/site.config";
 import { cn } from "@/lib/utils";
@@ -25,20 +25,19 @@ export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLLIElement>(null);
-  const requestedRoleTokenRef = useRef<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const brandMain = siteConfig.name.replace(/ Hub$/, "");
   const brandAccent = siteConfig.name.endsWith(" Hub") ? "Hub" : "";
   const drawerLinks = [...siteConfig.nav, ...drawerExtraLinks];
   const isAdmin = user?.role?.toLowerCase() === "admin";
+  const roleLookupToken = auth?.accessToken && !user?.role ? auth.accessToken : null;
 
   useEffect(() => {
-    if (!auth?.accessToken || user?.role || requestedRoleTokenRef.current === auth.accessToken) return;
+    if (!roleLookupToken) return;
 
-    requestedRoleTokenRef.current = auth.accessToken;
-    void authService.me().then(emitAuthChange).catch(() => undefined);
-  }, [auth?.accessToken, user?.role]);
+    void loadCurrentUserOnce(roleLookupToken).then(emitAuthChange).catch(() => undefined);
+  }, [roleLookupToken]);
 
   useEffect(() => {
     const onScroll = () => {

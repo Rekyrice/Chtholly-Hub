@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, MailWarning, ScrollText, Shield, Users } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { emitAuthChange, useAuthUser } from "@/lib/auth/auth-store";
-import { authService } from "@/lib/services/authService";
+import { emitAuthChange, loadCurrentUserOnce, useStoredAuth } from "@/lib/auth/auth-store";
+import { getAccessToken } from "@/lib/auth/tokens";
 import { cn } from "@/lib/utils";
 
 type AdminShellProps = {
@@ -27,16 +27,22 @@ function isAdminRole(role?: string | null) {
 export default function AdminShell({ children }: AdminShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const user = useAuthUser();
+  const auth = useStoredAuth();
+  const user = auth?.user ?? null;
   const isAdmin = isAdminRole(user?.role);
   const [remoteAuthorized, setRemoteAuthorized] = useState<boolean | null>(null);
   const authorized = isAdmin ? true : remoteAuthorized;
 
   useEffect(() => {
     if (isAdmin) return;
+    const accessToken = auth?.accessToken ?? getAccessToken();
+    if (!accessToken) {
+      router.replace("/hub");
+      return;
+    }
 
     let alive = true;
-    void authService.me()
+    void loadCurrentUserOnce(accessToken)
       .then((user) => {
         if (!alive) return;
         emitAuthChange();
@@ -56,7 +62,7 @@ export default function AdminShell({ children }: AdminShellProps) {
     return () => {
       alive = false;
     };
-  }, [isAdmin, router]);
+  }, [auth?.accessToken, isAdmin, router]);
 
   const activePath = useMemo(() => {
     if (pathname === "/admin") return "/admin";
