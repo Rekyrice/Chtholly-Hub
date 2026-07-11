@@ -13,6 +13,11 @@ apps/web/out/
 apps/web/node_modules/
 scripts/oss/node_modules/
 
+# --- Agent 隔离工作区与临时产物 ---
+.worktrees/
+.codex-tmp/
+.superpowers/
+
 # --- 本地运行日志 ---
 logs/*.log
 *.log
