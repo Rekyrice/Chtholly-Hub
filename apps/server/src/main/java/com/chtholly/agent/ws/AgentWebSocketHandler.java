@@ -15,9 +15,9 @@ import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -33,13 +33,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /** Agent WebSocket：客户端发送 chat，服务端推送 ReAct 事件流。 */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 public class AgentWebSocketHandler extends TextWebSocketHandler {
 
@@ -58,13 +57,72 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final InsightService insightService;
     private final ObjectProvider<CognitiveEngine> cognitiveEngineProvider;
     private final NotificationService proactiveNotificationService;
-    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    private final Executor executor;
 
     /** 原始 sessionId -> 线程安全装饰 session（并发 send 串行化）。 */
     private final Map<String, WebSocketSession> safeSessions = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionUsers = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionConnectedAt = new ConcurrentHashMap<>();
     private final Map<String, String> sessionChatSessionIds = new ConcurrentHashMap<>();
+
+    /**
+     * Creates the production WebSocket handler with a virtual-thread executor.
+     *
+     * @param agent ReAct agent runtime.
+     * @param objectMapper JSON serializer.
+     * @param memoryStore Conversation memory store.
+     * @param ticketStore One-time WebSocket ticket store.
+     * @param rateLimiter Per-session rate limiter.
+     * @param heartbeat WebSocket heartbeat coordinator.
+     * @param agentMetrics Agent metrics recorder.
+     * @param characterStateService Character state service.
+     * @param insightService Conversation reflection service.
+     * @param cognitiveEngineProvider Optional cognitive engine provider.
+     * @param proactiveNotificationService Proactive notification service.
+     */
+    @Autowired
+    public AgentWebSocketHandler(ChthollyAgent agent,
+                                 ObjectMapper objectMapper,
+                                 AgentMemoryStore memoryStore,
+                                 AgentWsTicketStore ticketStore,
+                                 AgentSessionRateLimiter rateLimiter,
+                                 AgentWebSocketHeartbeat heartbeat,
+                                 AgentMetrics agentMetrics,
+                                 CharacterStateService characterStateService,
+                                 InsightService insightService,
+                                 ObjectProvider<CognitiveEngine> cognitiveEngineProvider,
+                                 NotificationService proactiveNotificationService) {
+        // 生产环境继续使用虚拟线程，避免长耗时 Agent 调用阻塞 WebSocket 处理线程。
+        this(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat, agentMetrics,
+                characterStateService, insightService, cognitiveEngineProvider, proactiveNotificationService,
+                Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    AgentWebSocketHandler(ChthollyAgent agent,
+                          ObjectMapper objectMapper,
+                          AgentMemoryStore memoryStore,
+                          AgentWsTicketStore ticketStore,
+                          AgentSessionRateLimiter rateLimiter,
+                          AgentWebSocketHeartbeat heartbeat,
+                          AgentMetrics agentMetrics,
+                          CharacterStateService characterStateService,
+                          InsightService insightService,
+                          ObjectProvider<CognitiveEngine> cognitiveEngineProvider,
+                          NotificationService proactiveNotificationService,
+                          Executor executor) {
+        this.agent = agent;
+        this.objectMapper = objectMapper;
+        this.memoryStore = memoryStore;
+        this.ticketStore = ticketStore;
+        this.rateLimiter = rateLimiter;
+        this.heartbeat = heartbeat;
+        this.agentMetrics = agentMetrics;
+        this.characterStateService = characterStateService;
+        this.insightService = insightService;
+        this.cognitiveEngineProvider = cognitiveEngineProvider;
+        this.proactiveNotificationService = proactiveNotificationService;
+        this.executor = executor;
+    }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -94,7 +152,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (userId == null) {
             return;
         }
-        executor.submit(() -> {
+        executor.execute(() -> {
             String correlationId = (String) session.getAttributes().get(CorrelationIdSupport.MDC_CORRELATION_ID);
             String path = session.getUri() == null ? "/api/v1/agent/ws" : session.getUri().getPath();
             CorrelationIdSupport.runWithContext(
@@ -238,7 +296,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (cognitiveEngine == null) {
             return;
         }
-        executor.submit(() -> {
+        executor.execute(() -> {
             try {
                 cognitiveEngine.triggerIfDue();
             } catch (Exception e) {
