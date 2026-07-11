@@ -6,7 +6,6 @@ import MobileBottomNav from "@/components/site/MobileBottomNav";
 import Navbar from "@/components/site/Navbar";
 import SiteHeader from "@/components/site/SiteHeader";
 import AgentPageBackground from "@/components/agent/AgentPageBackground";
-import FloatingAgent from "@/components/agent/FloatingAgent";
 import { cn } from "@/lib/utils";
 
 export default function SiteChrome({ children }: { children: React.ReactNode }) {
@@ -57,7 +56,6 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
         )}
       </div>
       <MobileBottomNav />
-      {!isFocusedPage && <FloatingAgent />}
     </div>
   );
 }
