@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   metadataBase: siteUrl,
   title: { absolute: "Chtholly Hub" },
   description: landingDescription,
+  alternates: {
+    canonical: "/",
+  },
   openGraph: {
     title: "Chtholly Hub",
     description: landingDescription,

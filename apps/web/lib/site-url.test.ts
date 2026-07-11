@@ -26,4 +26,11 @@ describe("site URL configuration", () => {
       pathname: "/**",
     });
   });
+
+  it.each([undefined, "", "not a URL", "ftp://cdn.example.com"])(
+    "rejects unsupported remote image origin %s",
+    (value) => {
+      expect(parseRemoteImageOrigin(value)).toBeNull();
+    },
+  );
 });
