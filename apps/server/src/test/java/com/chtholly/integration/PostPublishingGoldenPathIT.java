@@ -1,11 +1,17 @@
 package com.chtholly.integration;
 
 import com.chtholly.post.service.PostService;
+import com.chtholly.relation.outbox.OutboxTopics;
+import com.chtholly.search.service.SearchService;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.KafkaTemplate;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,6 +25,12 @@ class PostPublishingGoldenPathIT extends AbstractGoldenPathIT {
 
     @Autowired
     private PostService postService;
+
+    @Autowired
+    private SearchService searchService;
+
+    @Autowired
+    private KafkaTemplate<String, String> kafka;
 
     @BeforeEach
     void setUpData() {
@@ -51,5 +63,40 @@ class PostPublishingGoldenPathIT extends AbstractGoldenPathIT {
                 "SELECT status FROM posts WHERE id = ?", String.class, postId))
                 .isEqualTo("draft");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM outbox", Long.class)).isZero();
+    }
+
+    @Test
+    void committedPublishBecomesSearchableThroughOutboxAfterElasticsearchRecovers() throws Exception {
+        long postId = postService.createDraft(AUTHOR_ID);
+        postService.updateMetadata(
+                AUTHOR_ID, postId, "Golden Kafka Search", null,
+                List.of(), List.of(), "public", false, "outbox indexed description");
+        jdbc.update("DELETE FROM outbox");
+
+        ELASTICSEARCH_PROXY.setConnectionCut(true);
+        postService.publish(AUTHOR_ID, postId);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT status FROM posts WHERE id = ?", String.class, postId))
+                .isEqualTo("published");
+        Map<String, Object> outbox = jdbc.queryForMap("""
+                SELECT id, payload FROM outbox
+                WHERE aggregate_type = 'post' AND aggregate_id = ? AND type = 'PostPublished'
+                """, postId);
+        long eventId = ((Number) outbox.get("id")).longValue();
+        String payload = String.valueOf(outbox.get("payload"));
+
+        ELASTICSEARCH_PROXY.setConnectionCut(false);
+        kafka.send(OutboxTopics.CANAL_OUTBOX, canalEnvelope(eventId, payload)).get();
+
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            var result = searchService.search("Golden Kafka Search", 10, null, null, null);
+            assertThat(result.degraded()).isFalse();
+            assertThat(result.items()).anySatisfy(item -> {
+                assertThat(item.id()).isEqualTo(String.valueOf(postId));
+                assertThat(item.title()).isEqualTo("Golden Kafka Search");
+            });
+            assertThat(redis.hasKey("consumed:outbox:search:" + eventId)).isTrue();
+        });
     }
 }
