@@ -2,6 +2,7 @@ package com.chtholly.post.service.impl;
 
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.api.dto.FeedItemResponse;
+import com.chtholly.common.api.pagination.PageResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,12 +18,15 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 class PostFeedServiceImplEnrichTest {
 
     @Mock
     private CounterService counterService;
+    @Mock
+    private PersonalPostFeedService personalFeedService;
 
     private Method enrichMethod;
 
@@ -53,7 +57,21 @@ class PostFeedServiceImplEnrichTest {
         verify(counterService, times(1)).batchIsFaved(9L, List.of(1L, 2L, 3L));
     }
 
+    @Test
+    void followingFeedIsDelegatedToUserScopedService() {
+        PageResponse<FeedItemResponse> expected = mock(PageResponse.class);
+        when(personalFeedService.getFollowingFeed(9L, 2, 8)).thenReturn(expected);
+        PostFeedServiceImpl service = newService(personalFeedService);
+
+        assertThat(service.getFollowingFeed(9L, 2, 8)).isSameAs(expected);
+        verify(personalFeedService).getFollowingFeed(9L, 2, 8);
+    }
+
     private PostFeedServiceImpl newMinimalService() {
+        return newService(null);
+    }
+
+    private PostFeedServiceImpl newService(PersonalPostFeedService personalFeed) {
         return new PostFeedServiceImpl(
                 null,
                 null,
@@ -61,9 +79,7 @@ class PostFeedServiceImplEnrichTest {
                 counterService,
                 null,
                 null,
-                null,
-                null,
-                null
+                personalFeed
         );
     }
 
