@@ -5,7 +5,6 @@ import com.chtholly.agent.context.ContextContribution;
 import com.chtholly.agent.context.ContextContributor;
 import com.chtholly.agent.context.ContextOrder;
 import com.chtholly.agent.context.ContextRequest;
-import com.chtholly.agent.graph.KnowledgeGraphService;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
 import lombok.extern.slf4j.Slf4j;
@@ -16,31 +15,26 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Renders graph associations, known facts, semantic anchors, and hybrid search results. */
+/** Renders known facts, semantic anchors, and hybrid search results. */
 @Slf4j
 @Component
 public class KnowledgeContextContributor implements ContextContributor {
 
     private final HybridSearchService hybridSearchService;
     private final KnowledgeService knowledgeService;
-    private final KnowledgeGraphService knowledgeGraphService;
 
     @Autowired
     public KnowledgeContextContributor(
             ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
-            ObjectProvider<KnowledgeService> knowledgeServiceProvider,
-            ObjectProvider<KnowledgeGraphService> knowledgeGraphServiceProvider) {
+            ObjectProvider<KnowledgeService> knowledgeServiceProvider) {
         this(hybridSearchServiceProvider.getIfAvailable(),
-                knowledgeServiceProvider.getIfAvailable(),
-                knowledgeGraphServiceProvider.getIfAvailable());
+                knowledgeServiceProvider.getIfAvailable());
     }
 
     public KnowledgeContextContributor(HybridSearchService hybridSearchService,
-                                       KnowledgeService knowledgeService,
-                                       KnowledgeGraphService knowledgeGraphService) {
+                                       KnowledgeService knowledgeService) {
         this.hybridSearchService = hybridSearchService;
         this.knowledgeService = knowledgeService;
-        this.knowledgeGraphService = knowledgeGraphService;
     }
 
     @Override
@@ -56,29 +50,11 @@ public class KnowledgeContextContributor implements ContextContributor {
     @Override
     public ContextContribution contribute(ContextRequest request) {
         StringBuilder prompt = new StringBuilder();
-        boolean degraded = appendKnowledgeGraphContext(prompt, request.userQuestion());
-        degraded |= appendKnownFacts(prompt, request.userQuestion());
+        boolean degraded = appendKnownFacts(prompt, request.userQuestion());
         degraded |= appendRelevantKnowledge(prompt, request.anchors().semantic(), request.userQuestion());
         return prompt.isEmpty()
                 ? ContextContribution.empty(name(), order(), degraded)
                 : new ContextContribution(name(), order(), prompt.toString(), degraded);
-    }
-
-    private boolean appendKnowledgeGraphContext(StringBuilder prompt, String userQuestion) {
-        if (knowledgeGraphService == null || !hasText(userQuestion)) return false;
-        try {
-            List<String> graphContext = knowledgeGraphService.contextForQuestion(userQuestion, 5);
-            if (graphContext == null || graphContext.isEmpty()) return false;
-            appendSeparator(prompt);
-            prompt.append("## 话题关联\n\n");
-            for (String line : graphContext) {
-                if (hasText(line)) prompt.append("- ").append(line.trim()).append('\n');
-            }
-            return false;
-        } catch (RuntimeException e) {
-            log.warn("Knowledge graph context failed", e);
-            return true;
-        }
     }
 
     private boolean appendKnownFacts(StringBuilder prompt, String userQuestion) {

@@ -5,15 +5,15 @@ import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.agent.context.ContextContribution;
 import com.chtholly.agent.context.ContextRequest;
 import com.chtholly.agent.graph.KnowledgeGraphService;
+import com.chtholly.agent.graph.GraphContextContributor;
 import com.chtholly.agent.mood.SeasonService;
+import com.chtholly.agent.mood.SeasonalContextContributor;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.state.CharacterStateService;
-import com.chtholly.agent.state.EmotionState;
 import com.chtholly.content.ContentIntelligenceReader;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,32 +23,33 @@ import static org.mockito.Mockito.when;
 class ContextContributorIsolationTest {
 
     @Test
-    void seasonalFailureKeepsRelationshipSection() {
-        CharacterStateService stateService = stateService();
+    void seasonalFailureReturnsDegradedEmptyContribution() {
         SeasonService seasonService = mock(SeasonService.class);
         when(seasonService.getSeasonalPrompt()).thenThrow(new IllegalStateException("season unavailable"));
 
-        ContextContribution contribution = new RelationshipContextContributor(stateService, seasonService)
+        ContextContribution contribution = new SeasonalContextContributor(seasonService)
                 .contribute(request("", "继续聊", AnchorContext.builder().build()));
 
-        assertThat(contribution.content()).contains("## 当前状态");
+        assertThat(contribution.content()).isEmpty();
         assertThat(contribution.degraded()).isTrue();
     }
 
     @Test
-    void relationshipStateFailureKeepsSeasonalSection() {
+    void relationshipStateFailureIsIsolatedFromSeasonalContributor() {
         CharacterStateService stateService = mock(CharacterStateService.class);
         when(stateService.getMoodBaseline()).thenThrow(new IllegalStateException("state unavailable"));
         SeasonService seasonService = mock(SeasonService.class);
         when(seasonService.getSeasonalPrompt()).thenReturn("秋天了……适合感性一点的故事。");
 
-        ContextContribution contribution = new RelationshipContextContributor(stateService, seasonService)
+        ContextContribution relationship = new RelationshipContextContributor(stateService)
+                .contribute(request("", "继续聊", AnchorContext.builder().build()));
+        ContextContribution seasonal = new SeasonalContextContributor(seasonService)
                 .contribute(request("", "继续聊", AnchorContext.builder().build()));
 
-        assertThat(contribution.content())
-                .contains("## 季节感受", "秋天了……适合感性一点的故事。")
-                .doesNotContain("## 当前状态");
-        assertThat(contribution.degraded()).isTrue();
+        assertThat(relationship.content()).isEmpty();
+        assertThat(relationship.degraded()).isTrue();
+        assertThat(seasonal.content()).contains("## 季节感受", "秋天了……适合感性一点的故事。");
+        assertThat(seasonal.degraded()).isFalse();
     }
 
     @Test
@@ -66,7 +67,7 @@ class ContextContributorIsolationTest {
     }
 
     @Test
-    void oneKnowledgeSourceFailureKeepsOtherKnowledgeSources() {
+    void graphFailureIsIsolatedFromCoreKnowledgeSources() {
         KnowledgeGraphService graphService = mock(KnowledgeGraphService.class);
         KnowledgeService knowledgeService = mock(KnowledgeService.class);
         HybridSearchService hybridSearchService = mock(HybridSearchService.class);
@@ -78,23 +79,17 @@ class ContextContributorIsolationTest {
                 new SearchResult("post:1", "result title", "result snippet", "hybrid", 0.8)));
         AnchorContext anchors = AnchorContext.builder().semantic(List.of("anchor semantic")).build();
 
-        ContextContribution contribution = new KnowledgeContextContributor(
-                hybridSearchService, knowledgeService, graphService)
+        ContextContribution graph = new GraphContextContributor(graphService)
+                .contribute(request("", question, anchors));
+        ContextContribution knowledge = new KnowledgeContextContributor(hybridSearchService, knowledgeService)
                 .contribute(request("", question, anchors));
 
-        assertThat(contribution.content())
+        assertThat(graph.content()).isEmpty();
+        assertThat(graph.degraded()).isTrue();
+        assertThat(knowledge.content())
                 .contains("## 你知道的事", "known fact")
                 .contains("## 相关知识", "anchor semantic", "result title：result snippet");
-        assertThat(contribution.degraded()).isTrue();
-    }
-
-    private CharacterStateService stateService() {
-        CharacterStateService stateService = mock(CharacterStateService.class);
-        when(stateService.getMoodBaseline()).thenReturn(0.0);
-        when(stateService.getMoodValence()).thenReturn(0.0);
-        when(stateService.getCurrentEmotion()).thenReturn(new EmotionState(
-                "平静", 0.2, Instant.EPOCH, "test"));
-        return stateService;
+        assertThat(knowledge.degraded()).isFalse();
     }
 
     private ContextRequest request(String pageContext, String question, AnchorContext anchors) {

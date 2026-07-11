@@ -1,5 +1,8 @@
 package com.chtholly.agent.config;
 
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -8,6 +11,7 @@ import org.springframework.core.annotation.AnnotatedElementUtils;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 class AgentExtensionBoundaryArchitectureTest {
 
@@ -49,6 +53,28 @@ class AgentExtensionBoundaryArchitectureTest {
                 .filteredOn(this::usesExtensionStringExpression)
                 .as("extension components with string-based extension conditions")
                 .isEmpty();
+    }
+
+    @Test
+    void coreContextContributorsDoNotDependOnOptionalExtensionImplementations() {
+        JavaClasses classes = new ClassFileImporter()
+                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                .importPackages("com.chtholly.agent");
+
+        noClasses()
+                .that().resideInAPackage("com.chtholly.agent.context.contributor")
+                .and().areNotAnnotatedWith(AgentExtensionComponent.class)
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "com.chtholly.agent.content..",
+                        "com.chtholly.agent.graph..",
+                        "com.chtholly.agent.learning..",
+                        "com.chtholly.agent.experience..",
+                        "com.chtholly.agent.cognitive..",
+                        "com.chtholly.agent.mood..",
+                        "com.chtholly.agent.comment..",
+                        "com.chtholly.agent.notification..",
+                        "com.chtholly.agent.proactive..")
+                .check(classes);
     }
 
     private boolean hasSimpleExtensionCondition(Class<?> type) {

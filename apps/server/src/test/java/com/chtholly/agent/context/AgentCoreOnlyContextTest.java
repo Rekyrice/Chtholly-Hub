@@ -15,12 +15,14 @@ import com.chtholly.agent.context.contributor.RelationshipContextContributor;
 import com.chtholly.agent.context.contributor.ToolsContextContributor;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
+import com.chtholly.agent.state.EmotionState;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,8 +53,13 @@ class AgentCoreOnlyContextTest {
 
             assertThat(prompt)
                     .contains("fixed identity")
+                    .contains("## 当前状态")
+                    .contains("心境基线：0.0")
                     .contains("\"action\":\"final\"")
                     .contains("current question");
+            assertThat(prompt.indexOf("## 你的身份")).isLessThan(prompt.indexOf("## 当前状态"));
+            assertThat(prompt.indexOf("## 当前状态")).isLessThan(prompt.indexOf("## 用户当前在看"));
+            assertThat(prompt.indexOf("## 用户当前在看")).isLessThan(prompt.indexOf("## 用户的问题"));
             AgentExtensionScanTestConfiguration.extensionComponentTypes()
                     .forEach(type -> assertThat(context).doesNotHaveBean(type));
         });
@@ -87,6 +94,10 @@ class AgentCoreOnlyContextTest {
         CharacterStateService characterStateService() {
             CharacterStateService service = mock(CharacterStateService.class);
             when(service.load(7L)).thenReturn(CharacterState.defaultState());
+            when(service.getMoodBaseline()).thenReturn(0.0);
+            when(service.getMoodValence()).thenReturn(0.0);
+            when(service.getCurrentEmotion()).thenReturn(new EmotionState(
+                    "平静", 0.2, Instant.EPOCH, "core-test"));
             return service;
         }
     }

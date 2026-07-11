@@ -18,7 +18,9 @@ import com.chtholly.content.ContentAnalysis;
 import com.chtholly.content.ContentIntelligenceReader;
 import com.chtholly.content.Entity;
 import com.chtholly.agent.graph.KnowledgeGraphService;
+import com.chtholly.agent.graph.GraphContextContributor;
 import com.chtholly.agent.mood.SeasonService;
+import com.chtholly.agent.mood.SeasonalContextContributor;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.state.BehaviorProb;
@@ -203,7 +205,7 @@ class ContextEngineTest {
     @Test
     void injectsHybridSearchResultsForQueryIntent() {
         HybridSearchService hybridSearchService = mock(HybridSearchService.class);
-        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null, null));
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
         when(hybridSearchService.hybridSearch("帮我查一下芙莉莲的时间主题", 5)).thenReturn(List.of(
                 new SearchResult("post:9", "时间的重量", "芙莉莲文章片段", "hybrid", 0.2)
         ));
@@ -226,7 +228,7 @@ class ContextEngineTest {
     @Test
     void skipsHybridSearchWhenQuestionHasNoQueryIntent() {
         HybridSearchService hybridSearchService = mock(HybridSearchService.class);
-        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null, null));
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
 
         engine.buildSystemPrompt(
                 7L,
@@ -242,7 +244,7 @@ class ContextEngineTest {
     @Test
     void injectsKnowledgeBaseForAnimeQuestion() {
         KnowledgeService knowledgeService = mock(KnowledgeService.class);
-        ContextEngine engine = engineWith(new KnowledgeContextContributor(null, knowledgeService, null));
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(null, knowledgeService));
         when(knowledgeService.searchRelevantKnowledge("聊聊芙莉莲关于时间的主题", 3)).thenReturn(List.of(
                 "《葬送的芙莉莲》让我想到时间、记忆和迟来的理解。"
         ));
@@ -264,7 +266,7 @@ class ContextEngineTest {
     @Test
     void injectsKnowledgeGraphAssociationsWhenQuestionMentionsKnownTopic() {
         KnowledgeGraphService graphService = mock(KnowledgeGraphService.class);
-        ContextEngine engine = engineWith(new KnowledgeContextContributor(null, null, graphService));
+        ContextEngine engine = engineWith(new GraphContextContributor(graphService));
         when(graphService.contextForQuestion("聊聊葬送的芙莉莲和时间", 5)).thenReturn(List.of(
                 "Frieren -> time (RELATED_TO, weight=0.90): time and memory"
         ));
@@ -281,6 +283,24 @@ class ContextEngineTest {
                 .contains("## 话题关联")
                 .contains("Frieren -> time (RELATED_TO, weight=0.90): time and memory");
         verify(graphService).contextForQuestion("聊聊葬送的芙莉莲和时间", 5);
+    }
+
+    @Test
+    void preservesExtensionSectionsAtTheirHistoricalPromptPositions() {
+        KnowledgeGraphService graphService = mock(KnowledgeGraphService.class);
+        KnowledgeService knowledgeService = mock(KnowledgeService.class);
+        String question = "聊聊芙莉莲这部动漫";
+        when(graphService.contextForQuestion(question, 5)).thenReturn(List.of("graph association"));
+        when(knowledgeService.searchRelevantKnowledge(question, 3)).thenReturn(List.of("known fact"));
+        ContextEngine engine = fullEngine(null, knowledgeService, null, seasonService, graphService);
+
+        String prompt = engine.buildSystemPrompt(7L, "ws-1", "current page", List.of(), "", question);
+
+        assertThat(prompt.indexOf("## 当前状态")).isLessThan(prompt.indexOf("## 季节感受"));
+        assertThat(prompt.indexOf("## 季节感受")).isLessThan(prompt.indexOf("## 用户当前在看"));
+        assertThat(prompt.indexOf("## 用户当前在看")).isLessThan(prompt.indexOf("## 话题关联"));
+        assertThat(prompt.indexOf("## 话题关联")).isLessThan(prompt.indexOf("## 你知道的事"));
+        assertThat(prompt.indexOf("## 你知道的事")).isLessThan(prompt.indexOf("## 相关知识"));
     }
 
     @Test
@@ -342,9 +362,11 @@ class ContextEngineTest {
                                      KnowledgeGraphService graphService) {
         return engineWith(
                 new IdentityContextContributor(),
-                new RelationshipContextContributor(stateService, season),
+                new RelationshipContextContributor(stateService),
+                new SeasonalContextContributor(season),
                 new PageContextContributor(contentReader),
-                new KnowledgeContextContributor(hybridSearchService, knowledgeService, graphService),
+                graphService == null ? null : new GraphContextContributor(graphService),
+                new KnowledgeContextContributor(hybridSearchService, knowledgeService),
                 new ProceduralContextContributor(),
                 new ToolsContextContributor(),
                 new HistoryContextContributor(),
@@ -352,7 +374,9 @@ class ContextEngineTest {
     }
 
     private ContextEngine engineWith(ContextContributor... contributors) {
-        return new ContextEngine(anchorManager, List.of(contributors));
+        return new ContextEngine(anchorManager, java.util.Arrays.stream(contributors)
+                .filter(java.util.Objects::nonNull)
+                .toList());
     }
 
     private AgentTool mockTool() {

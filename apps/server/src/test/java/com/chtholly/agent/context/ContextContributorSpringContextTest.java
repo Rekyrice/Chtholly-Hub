@@ -9,6 +9,10 @@ import com.chtholly.agent.context.contributor.ProceduralContextContributor;
 import com.chtholly.agent.context.contributor.QuestionContextContributor;
 import com.chtholly.agent.context.contributor.RelationshipContextContributor;
 import com.chtholly.agent.context.contributor.ToolsContextContributor;
+import com.chtholly.agent.graph.GraphContextContributor;
+import com.chtholly.agent.graph.KnowledgeGraphService;
+import com.chtholly.agent.mood.SeasonService;
+import com.chtholly.agent.mood.SeasonalContextContributor;
 import com.chtholly.agent.state.CharacterStateService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -48,6 +52,39 @@ class ContextContributorSpringContextTest {
         });
     }
 
+    @Test
+    void defaultConfigurationAddsOrderedGraphAndMoodContributors() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ExtensionContextConfiguration.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    List<ContextContributor> contributors = context.getBeansOfType(ContextContributor.class)
+                            .values().stream()
+                            .sorted(java.util.Comparator.comparingInt(ContextContributor::order))
+                            .toList();
+
+                    assertThat(contributors).hasSize(10);
+                    assertThat(contributors).extracting(ContextContributor::name).containsExactly(
+                            "identity", "relationship", "seasonal", "page", "graph", "knowledge",
+                            "procedural", "tools", "history", "question");
+                });
+    }
+
+    @Test
+    void disabledGraphAndMoodExtensionsDoNotRegisterTheirContributors() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(ExtensionContextConfiguration.class)
+                .withPropertyValues(
+                        "agent.extensions.graph.enabled=false",
+                        "agent.extensions.mood.enabled=false")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).doesNotHaveBean(GraphContextContributor.class);
+                    assertThat(context).doesNotHaveBean(SeasonalContextContributor.class);
+                    assertThat(context.getBeansOfType(ContextContributor.class)).hasSize(8);
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     @Import({
             ContextEngine.class,
@@ -70,6 +107,21 @@ class ContextContributorSpringContextTest {
         @Bean
         CharacterStateService characterStateService() {
             return mock(CharacterStateService.class);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @Import({ContextConfiguration.class, GraphContextContributor.class, SeasonalContextContributor.class})
+    static class ExtensionContextConfiguration {
+
+        @Bean
+        KnowledgeGraphService knowledgeGraphService() {
+            return mock(KnowledgeGraphService.class);
+        }
+
+        @Bean
+        SeasonService seasonService() {
+            return mock(SeasonService.class);
         }
     }
 }

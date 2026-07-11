@@ -4,35 +4,24 @@ import com.chtholly.agent.context.ContextContribution;
 import com.chtholly.agent.context.ContextContributor;
 import com.chtholly.agent.context.ContextOrder;
 import com.chtholly.agent.context.ContextRequest;
-import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
 import com.chtholly.agent.state.EmotionState;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalTime;
 import java.util.Locale;
 
-/** Renders relational state, current mood, emotion, and optional seasonal feeling. */
+/** Renders relational state, current mood, and emotion. */
 @Slf4j
 @Component
 public class RelationshipContextContributor implements ContextContributor {
 
     private final CharacterStateService stateService;
-    private final SeasonService seasonService;
 
-    @Autowired
-    public RelationshipContextContributor(CharacterStateService stateService,
-                                          ObjectProvider<SeasonService> seasonServiceProvider) {
-        this(stateService, seasonServiceProvider.getIfAvailable());
-    }
-
-    public RelationshipContextContributor(CharacterStateService stateService, SeasonService seasonService) {
+    public RelationshipContextContributor(CharacterStateService stateService) {
         this.stateService = stateService;
-        this.seasonService = seasonService;
     }
 
     @Override
@@ -53,12 +42,6 @@ public class RelationshipContextContributor implements ContextContributor {
             appendCharacterState(prompt, request.anchors().relational());
         } catch (RuntimeException e) {
             log.warn("Relationship state context failed", e);
-            degraded = true;
-        }
-        try {
-            appendSeasonalFeeling(prompt);
-        } catch (RuntimeException e) {
-            log.warn("Seasonal context failed", e);
             degraded = true;
         }
         return prompt.isEmpty()
@@ -85,20 +68,6 @@ public class RelationshipContextContributor implements ContextContributor {
                 .append("（").append(emotion.label()).append(", intensity: ")
                 .append(String.format(Locale.ROOT, "%.2f", emotion.intensity())).append("）\n")
                 .append("互动次数：").append(safeState.relationship().interactionCount());
-    }
-
-    private void appendSeasonalFeeling(StringBuilder prompt) {
-        if (seasonService == null) {
-            return;
-        }
-        String seasonalPrompt = seasonService.getSeasonalPrompt();
-        if (!hasText(seasonalPrompt)) {
-            return;
-        }
-        if (!prompt.isEmpty()) {
-            prompt.append("\n\n");
-        }
-        prompt.append("## 季节感受\n\n").append(seasonalPrompt.trim());
     }
 
     private static String timePeriodLabel() {
@@ -158,7 +127,4 @@ public class RelationshipContextContributor implements ContextContributor {
         };
     }
 
-    private static boolean hasText(String value) {
-        return value != null && !value.isBlank();
-    }
 }
