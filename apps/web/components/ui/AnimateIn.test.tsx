@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AnimateIn } from "@/components/ui/AnimateIn";
@@ -16,6 +18,24 @@ describe("AnimateIn", () => {
     expect(content).toBeInTheDocument();
     expect(content).toHaveClass("animate-in");
     expect(content).not.toHaveClass("animate-in--ready");
+  });
+
+  it("keeps ready but non-visible content visible when reduced motion is requested", () => {
+    const responsiveCss = readFileSync(
+      resolve(process.cwd(), "app/styles/responsive.css"),
+      "utf8",
+    );
+    const reducedMotionCss = responsiveCss.slice(
+      responsiveCss.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    const reducedMotionAnimateRule = reducedMotionCss.match(
+      /\.animate-in--ready:not\(\.animate-in--visible\),\s*\.animate-in\s*\{([^}]*)\}/,
+    );
+
+    expect(reducedMotionAnimateRule).not.toBeNull();
+    expect(reducedMotionAnimateRule?.[1]).toMatch(/opacity:\s*1/);
+    expect(reducedMotionAnimateRule?.[1]).toMatch(/transform:\s*none/);
+    expect(reducedMotionAnimateRule?.[1]).toMatch(/transition:\s*none/);
   });
 
   it("enables animation only after observing and reveals intersecting content", async () => {

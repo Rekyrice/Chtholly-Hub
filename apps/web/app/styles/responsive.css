@@ -207,6 +207,7 @@
       transition: none;
     }
 
+    .animate-in--ready:not(.animate-in--visible),
     .animate-in {
       opacity: 1;
       transform: none;
