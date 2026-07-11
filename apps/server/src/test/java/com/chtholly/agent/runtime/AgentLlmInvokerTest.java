@@ -163,6 +163,23 @@ class AgentLlmInvokerTest {
                 .verify(Duration.ofSeconds(3));
     }
 
+    @Test
+    void streamUsesAbsoluteDeadlineWhileChunksContinueArriving() {
+        properties.setLlmTimeoutSeconds(1);
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).stream().content())
+                .thenReturn(Flux.interval(Duration.ofMillis(100))
+                        .map(index -> "x")
+                        .take(50));
+
+        Duration elapsed = StepVerifier.create(invoker.stream("system", "user", 0.3, 1024))
+                .expectNextCount(3)
+                .thenConsumeWhile("x"::equals)
+                .expectError(TimeoutException.class)
+                .verify(Duration.ofSeconds(3));
+
+        assertThat(elapsed).isBetween(Duration.ofMillis(800), Duration.ofSeconds(2));
+    }
+
     private boolean waitUntilTrue(AtomicBoolean value, Duration timeout) throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         while (!value.get() && System.nanoTime() < deadline) {

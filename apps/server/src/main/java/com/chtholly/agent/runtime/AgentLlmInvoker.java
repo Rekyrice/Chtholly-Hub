@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.concurrent.ExecutionException;
@@ -116,13 +117,20 @@ public class AgentLlmInvoker {
             double temperature,
             int maxTokens) {
         int timeoutSeconds = Math.max(1, properties.getLlmTimeoutSeconds());
-        return chatClient.prompt()
-                .system(system)
-                .user(userPrompt)
-                .options(chatOptions(temperature, maxTokens))
-                .stream()
-                .content()
-                .timeout(Duration.ofSeconds(timeoutSeconds));
+        long timeoutNanos = Duration.ofSeconds(timeoutSeconds).toNanos();
+        return Flux.defer(() -> {
+            // 普通 timeout 会被每个 chunk 重置；共享绝对截止点可防止持续输出无限续期。
+            long deadlineNanos = System.nanoTime() + timeoutNanos;
+            Flux<String> content = chatClient.prompt()
+                    .system(system)
+                    .user(userPrompt)
+                    .options(chatOptions(temperature, maxTokens))
+                    .stream()
+                    .content();
+            return content.timeout(
+                    deadlineSignal(deadlineNanos),
+                    chunk -> deadlineSignal(deadlineNanos));
+        });
     }
 
     @PreDestroy
@@ -138,5 +146,10 @@ public class AgentLlmInvoker {
                 .temperature(temperature)
                 .maxTokens(maxTokens)
                 .build();
+    }
+
+    private Mono<Long> deadlineSignal(long deadlineNanos) {
+        long remainingNanos = Math.max(0, deadlineNanos - System.nanoTime());
+        return Mono.delay(Duration.ofNanos(remainingNanos));
     }
 }

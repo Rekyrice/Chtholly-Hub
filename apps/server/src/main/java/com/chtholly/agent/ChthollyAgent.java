@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.micrometer.observation.Observation;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -50,9 +51,9 @@ import java.util.function.Consumer;
 @RequiredArgsConstructor
 public class ChthollyAgent {
 
-    private static final ExecutorService TOOL_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
     private static final String TOOL_TIMEOUT_MESSAGE = "Tool execution timed out";
 
+    private final ExecutorService toolExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final AgentLlmInvoker llmInvoker;
     private final AgentProperties properties;
     private final ObjectMapper objectMapper;
@@ -325,7 +326,7 @@ public class ChthollyAgent {
         }
 
         int timeoutSec = Math.max(1, properties.getToolTimeoutSeconds());
-        Future<String> future = TOOL_EXECUTOR.submit(() -> tool.execute(inputMap, userId));
+        Future<String> future = toolExecutor.submit(() -> tool.execute(inputMap, userId));
         try {
             return future.get(timeoutSec, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
@@ -340,6 +341,11 @@ public class ChthollyAgent {
             Thread.currentThread().interrupt();
             return agentDomainConfig.errors().toolInterrupted();
         }
+    }
+
+    @PreDestroy
+    void shutdownToolExecutor() {
+        toolExecutor.shutdownNow();
     }
 
     private String truncateAnswer(String answer) {
