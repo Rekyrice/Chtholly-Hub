@@ -4,14 +4,14 @@ import java.util.Map;
 import java.util.Optional;
 
 /** 根据 {@link AgentTool#parameterSchema()} 校验 LLM 传入的工具参数。 */
-final class AgentToolParamValidator {
+public final class AgentToolParamValidator {
 
     private AgentToolParamValidator() {}
 
     /**
      * @return 校验失败时的 observation 文本；通过则 empty
      */
-    static Optional<String> validate(Map<String, Object> input, Map<String, ParamDef> schema) {
+    public static Optional<String> validate(Map<String, Object> input, Map<String, ParamDef> schema) {
         if (schema == null || schema.isEmpty()) {
             return Optional.empty();
         }

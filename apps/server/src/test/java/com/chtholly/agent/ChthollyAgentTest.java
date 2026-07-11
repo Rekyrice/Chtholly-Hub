@@ -6,6 +6,7 @@ import com.chtholly.agent.context.ContextEngine;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.observability.AgentObservationService;
 import com.chtholly.agent.runtime.AgentLlmInvoker;
+import com.chtholly.agent.runtime.AgentToolExecutor;
 import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.observation.Observation;
@@ -102,7 +103,8 @@ class ChthollyAgentTest {
                 anyString(),
                 anyString()
         )).thenReturn("## ContextEngine Prompt");
-        agent = new ChthollyAgent(llmInvoker, properties, objectMapper, List.of(mockTool()), jsonExtractor,
+        agent = new ChthollyAgent(llmInvoker, new AgentToolExecutor(properties, agentDomainConfig),
+                properties, objectMapper, List.of(mockTool()), jsonExtractor,
                 agentMetrics, agentObservationService, characterSoulService, contextEngine,
                 tracePersistenceService, agentDomainConfig);
         events = new ArrayList<>();
@@ -198,7 +200,8 @@ class ChthollyAgentTest {
                 throw new RuntimeException("boom");
             }
         };
-        agent = new ChthollyAgent(llmInvoker, properties, objectMapper, List.of(failingTool), jsonExtractor,
+        agent = new ChthollyAgent(llmInvoker, new AgentToolExecutor(properties, agentDomainConfig),
+                properties, objectMapper, List.of(failingTool), jsonExtractor,
                 agentMetrics, agentObservationService, characterSoulService, contextEngine,
                 tracePersistenceService, agentDomainConfig);
 

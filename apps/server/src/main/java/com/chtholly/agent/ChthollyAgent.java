@@ -9,12 +9,13 @@ import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.observability.AgentObservationService;
 import com.chtholly.agent.runtime.AgentLlmInvoker;
+import com.chtholly.agent.runtime.AgentToolExecutor;
+import com.chtholly.agent.runtime.AgentToolResult;
 import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.micrometer.observation.Observation;
-import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -25,12 +26,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -51,10 +46,8 @@ import java.util.function.Consumer;
 @RequiredArgsConstructor
 public class ChthollyAgent {
 
-    private static final String TOOL_TIMEOUT_MESSAGE = "Tool execution timed out";
-
-    private final ExecutorService toolExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final AgentLlmInvoker llmInvoker;
+    private final AgentToolExecutor agentToolExecutor;
     private final AgentProperties properties;
     private final ObjectMapper objectMapper;
     private final List<AgentTool> tools;
@@ -223,11 +216,13 @@ public class ChthollyAgent {
                 emitAct(sink, tool.name(), action.input());
                 Observation toolSpan = agentObservationService.startToolSpan(agentSpan, tool.name());
                 long toolStart = System.currentTimeMillis();
-                String observation = executeTool(tool, inputMap, userId);
+                AgentToolResult toolResult = agentToolExecutor.execute(tool, inputMap, userId);
+                String observation = toolResult.observation();
                 long stepToolMs = System.currentTimeMillis() - toolStart;
-                agentObservationService.finishSpan(toolSpan, toolSpanAttributes(tool.name(), stepToolMs, observation));
+                agentObservationService.finishSpan(toolSpan, toolSpanAttributes(
+                        tool.name(), stepToolMs, toolResult.status() == AgentToolResult.Status.TIMEOUT));
                 trace.recordToolCall(tool.name(), stepToolMs, summarizeToolInput(action.input()), observation);
-                observation = augmentObservation(tool.name(), observation);
+                observation = augmentObservation(tool.name(), observation, toolResult.status());
                 emitObserve(sink, observation);
                 transcript.add(agentDomainConfig.context().assistantLabel() + " " + llmOut);
                 transcript.add(agentDomainConfig.context().observationLabel() + " " + observation);
@@ -318,36 +313,6 @@ public class ChthollyAgent {
         }
     }
 
-    /** Executes a tool on a virtual thread with configurable timeout; cancels on timeout. */
-    private String executeTool(AgentTool tool, Map<String, Object> inputMap, long userId) {
-        Optional<String> validationError = AgentToolParamValidator.validate(inputMap, tool.parameterSchema());
-        if (validationError.isPresent()) {
-            return validationError.get();
-        }
-
-        int timeoutSec = Math.max(1, properties.getToolTimeoutSeconds());
-        Future<String> future = toolExecutor.submit(() -> tool.execute(inputMap, userId));
-        try {
-            return future.get(timeoutSec, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            log.warn("Tool {} execution timed out (>{}s)", tool.name(), timeoutSec);
-            return TOOL_TIMEOUT_MESSAGE;
-        } catch (ExecutionException e) {
-            String message = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-            log.warn("Tool {} execution failed: {}", tool.name(), message);
-            return agentDomainConfig.render(agentDomainConfig.errors().toolFailed(), "message", message);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return agentDomainConfig.errors().toolInterrupted();
-        }
-    }
-
-    @PreDestroy
-    void shutdownToolExecutor() {
-        toolExecutor.shutdownNow();
-    }
-
     private String truncateAnswer(String answer) {
         if (answer == null || answer.isEmpty()) {
             return "";
@@ -425,17 +390,16 @@ public class ChthollyAgent {
                 .anyMatch(observation::contains);
     }
 
-    private boolean isToolTimeout(String observation) {
-        return observation != null && observation.contains(TOOL_TIMEOUT_MESSAGE);
-    }
-
     /** Adds gentle follow-up guidance to Observation for the next ReAct step. */
-    private String augmentObservation(String toolName, String observation) {
+    private String augmentObservation(
+            String toolName,
+            String observation,
+            AgentToolResult.Status toolStatus) {
         String result = observation == null ? "" : observation;
         if (isEmptySiteResult(result) && isSiteTool(toolName)) {
             result = result + "\n\n" + agentDomainConfig.systemPrompt().siteEmptyGuidance();
         }
-        if (isToolTimeout(result) && isBangumiTool(toolName)) {
+        if (toolStatus == AgentToolResult.Status.TIMEOUT && isBangumiTool(toolName)) {
             result = result + "\n\n" + agentDomainConfig.systemPrompt().bangumiTimeoutGuidance();
         }
         return result;
@@ -537,15 +501,11 @@ public class ChthollyAgent {
         return attrs;
     }
 
-    private static Map<String, String> toolSpanAttributes(String toolName, long durationMs, String observation) {
+    private static Map<String, String> toolSpanAttributes(String toolName, long durationMs, boolean timedOut) {
         Map<String, String> attrs = new LinkedHashMap<>();
         attrs.put("tool.name", toolName);
         attrs.put("tool.duration_ms", String.valueOf(durationMs));
-        attrs.put("tool.success", String.valueOf(!isToolTimeoutStatic(observation)));
+        attrs.put("tool.success", String.valueOf(!timedOut));
         return attrs;
-    }
-
-    private static boolean isToolTimeoutStatic(String observation) {
-        return observation != null && observation.contains(TOOL_TIMEOUT_MESSAGE);
     }
 }
