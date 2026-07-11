@@ -77,14 +77,19 @@ class CounterAggregationProcessorTest {
     }
 
     @Test
-    void given_event_when_applyEvent_then_registersAggKeyViaLua() {
-        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any())).thenReturn(1L);
+    void given_duplicateEvent_when_applyEvent_then_aggregatesOnlyOnce() {
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any()))
+                .thenReturn(1L, 0L);
 
-        CounterEvent event = CounterEvent.of("post", "7", "like", 0, 100L, 1);
-        processor.applyEvent(event);
+        CounterEvent event = CounterEvent.of("evt-1", "post", "7", "like", 0, 100L, 1);
 
-        verify(redis).execute(any(DefaultRedisScript.class),
-                eq(List.of(CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey())),
-                eq("0"), eq("1"));
+        assertThat(processor.applyEvent(event)).isTrue();
+        assertThat(processor.applyEvent(event)).isFalse();
+        verify(redis, org.mockito.Mockito.times(2)).execute(any(DefaultRedisScript.class),
+                eq(List.of(
+                        CounterKeys.aggKey("post", "7"),
+                        CounterKeys.aggIndexKey(),
+                        "counter:event:evt-1")),
+                eq("0"), eq("1"), eq("604800"));
     }
 }
