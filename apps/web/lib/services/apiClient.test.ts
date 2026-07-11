@@ -129,6 +129,28 @@ describe("apiFetch error messages", () => {
     expect(error.message).toBe("请求失败（502）");
   });
 
+  it.each([
+    `<!--${"proxy-error".repeat(100)}--><html><body>Bad Gateway</body></html>`,
+    `<?xml ${"metadata".repeat(150)}?><html><body>Bad Gateway</body></html>`,
+  ])("fails closed when leading HTML metadata exceeds the sniff window", async (body) => {
+    stubResponse(body, { status: 502 });
+
+    const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
+
+    expect(error.message).toBe("请求失败（502）");
+  });
+
+  it.each([
+    "<h1>502 Bad Gateway</h1>",
+    '<meta charset="utf-8"><title>502 Bad Gateway</title>',
+  ])("rejects an error page beginning with a common HTML element: %s", async (body) => {
+    stubResponse(body, { status: 502 });
+
+    const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
+
+    expect(error.message).toBe("请求失败（502）");
+  });
+
   it("preserves ordinary text that only mentions an HTML tag later", async () => {
     const body = "上游返回提示：<title> 字段缺失";
     stubResponse(body, {
@@ -146,6 +168,21 @@ describe("apiFetch error messages", () => {
     stubResponse(body, {
       status: 400,
       headers: { "Content-Type": "text/htmlish; charset=utf-8" },
+    });
+
+    const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));
+
+    expect(error.message).toBe(body);
+  });
+
+  it.each([
+    "计算失败：3 < 5 与预期不符",
+    "<h1ish>业务错误",
+    "<business-error>余额不足</business-error>",
+  ])("preserves non-HTML business text: %s", async (body) => {
+    stubResponse(body, {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
     });
 
     const error = await captureApiError(apiFetch("/api/example", { accessToken: null }));

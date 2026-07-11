@@ -56,15 +56,26 @@ function isHtmlErrorBody(contentType: string | null, rawText: string): boolean {
 
   let prefix = rawText.slice(0, HTML_SNIFF_PREFIX_LENGTH).trimStart();
   while (prefix) {
-    const withoutLeadingMetadata = prefix.replace(
-      /^(?:<\?xml\b[^>]*\?>|<!--[\s\S]*?-->)\s*/iu,
-      "",
-    );
-    if (withoutLeadingMetadata === prefix) break;
-    prefix = withoutLeadingMetadata;
+    if (prefix.startsWith("<!--")) {
+      const commentEnd = prefix.indexOf("-->");
+      if (commentEnd === -1) return true;
+      prefix = prefix.slice(commentEnd + 3).trimStart();
+      continue;
+    }
+
+    if (/^<\?xml(?=\s|\?>)/iu.test(prefix)) {
+      const declarationEnd = prefix.indexOf("?>");
+      if (declarationEnd === -1) return true;
+      prefix = prefix.slice(declarationEnd + 2).trimStart();
+      continue;
+    }
+
+    break;
   }
 
-  return /^(?:<!doctype\s+html\b|<(?:html|head|body|title)\b)/iu.test(prefix);
+  return /^(?:<!doctype\s+html(?=\s|>)|<(?:html|head|body|title|meta|base|link|style|script|noscript|main|section|article|header|footer|nav|div|h[1-6]|p|pre|table|form|iframe)(?=[\s/>]))/iu.test(
+    prefix,
+  );
 }
 
 function resolveApiErrorMessage(
