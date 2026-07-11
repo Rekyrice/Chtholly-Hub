@@ -15,6 +15,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -77,6 +78,16 @@ class SeedOrchestratorTest {
         verify(mapper, never()).insertSeedUser(any());
         verify(mapper, never()).markSeed(any(), any());
         verify(interactionService, never()).scheduleMultiRoundInteraction(any(), any());
+    }
+
+    @Test
+    void given_contentPackMode_when_runDirectly_thenRejectsLegacyPipeline() {
+        assertThatThrownBy(() -> orchestrator.run(new SeedRunOptions(SeedRunMode.CONTENT_PACK, true)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Content-pack mode");
+
+        verify(mapper, never()).existsSeed(any());
+        verify(bangumiSource, never()).fetchTopAnime(any(Integer.class));
     }
 
     @Test

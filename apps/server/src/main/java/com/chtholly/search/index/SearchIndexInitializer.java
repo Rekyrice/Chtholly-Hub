@@ -14,12 +14,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /**
  * 搜索索引初始化：应用启动时确保索引与 Mapping 存在。
  * 优先使用 IK 分词；本地 ES 未装 analysis-ik 时回退 standard。
  */
 @Service
+@ConditionalOnProperty(name = "seed.cli-read-only", havingValue = "false", matchIfMissing = true)
 @RequiredArgsConstructor
 public class SearchIndexInitializer {
     private static final Logger log = LoggerFactory.getLogger(SearchIndexInitializer.class);

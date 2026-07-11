@@ -234,7 +234,7 @@ class ContentPackMediaPublisherTest {
         var props = new com.chtholly.storage.config.StorageProperties();
         props.getLocal().setBasePath(storageRoot.toString());
         props.getLocal().setPublicUrlPrefix("/uploads");
-        var localStorage = new com.chtholly.storage.LocalFileStorageService(props);
+        var localStorage = new com.chtholly.storage.LocalFileStorageService(props, new com.chtholly.seed.SeedProperties());
         org.springframework.test.util.ReflectionTestUtils.invokeMethod(localStorage, "init");
         ContentPackMediaPublisher first = new ContentPackMediaPublisher(localStorage);
         ContentPackMediaPublisher second = new ContentPackMediaPublisher(localStorage);

@@ -111,6 +111,10 @@ public class SeedOrchestrator {
      */
     @Transactional
     public SeedRunSummary run(SeedRunOptions options) {
+        if (options.mode() == SeedRunMode.CONTENT_PACK) {
+            // 内容包有独立的校验、快照与幂等写入边界，绝不能落入旧模板生成管线。
+            throw new IllegalArgumentException("Content-pack mode must be routed through ContentPackImportService");
+        }
         String marker = options.mode().markerKey();
         if (!options.dryRun() && mapper.existsSeed(marker)) {
             return SeedRunSummary.skipped(options.mode(), false);

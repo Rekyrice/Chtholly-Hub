@@ -5,6 +5,10 @@ server:
 kafka:
   enabled: ${KAFKA_ENABLED:false}
 
+seed:
+  content-pack-path: ${SEED_CONTENT_PACK_PATH:../../content/seed/content-v2}
+  cli-read-only: ${SEED_CLI_READ_ONLY:false}
+
 search:
   content-base-url: ${SEARCH_CONTENT_BASE_URL:http://localhost:${SERVER_PORT:8888}}
 

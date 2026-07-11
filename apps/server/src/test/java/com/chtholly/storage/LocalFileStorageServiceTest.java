@@ -1,6 +1,7 @@
 package com.chtholly.storage;
 
 import com.chtholly.storage.config.StorageProperties;
+import com.chtholly.seed.SeedProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,8 +34,24 @@ class LocalFileStorageServiceTest {
         StorageProperties props = new StorageProperties();
         props.getLocal().setBasePath(tempDir.toString());
         props.getLocal().setPublicUrlPrefix("/uploads");
-        service = new LocalFileStorageService(props);
+        service = new LocalFileStorageService(props, new SeedProperties());
         service.init();
+    }
+
+    @Test
+    void init_whenCliReadOnly_thenNormalizesBasePathWithoutCreatingDirectory() {
+        Path missing = tempDir.resolve("read-only/missing");
+        StorageProperties props = new StorageProperties();
+        props.getLocal().setBasePath(missing.toString());
+        SeedProperties seed = new SeedProperties();
+        seed.setCliReadOnly(true);
+        LocalFileStorageService readOnly = new LocalFileStorageService(props, seed);
+
+        readOnly.init();
+
+        assertThat(Files.exists(missing)).isFalse();
+        assertThat(readOnly.resolveObjectPath("posts/1/content.md"))
+                .isEqualTo(missing.toAbsolutePath().normalize().resolve("posts/1/content.md"));
     }
 
     @Test

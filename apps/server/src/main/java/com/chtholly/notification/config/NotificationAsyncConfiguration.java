@@ -3,6 +3,7 @@ package com.chtholly.notification.config;
 import com.chtholly.common.tracing.MdcTaskDecorator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskExecutor;
@@ -16,6 +17,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 /** 通知异步执行线程池与未捕获异常处理。 */
 @Slf4j
 @Configuration
+@ConditionalOnProperty(name = "seed.cli-read-only", havingValue = "false", matchIfMissing = true)
 @EnableAsync
 @EnableScheduling
 public class NotificationAsyncConfiguration implements AsyncConfigurer {

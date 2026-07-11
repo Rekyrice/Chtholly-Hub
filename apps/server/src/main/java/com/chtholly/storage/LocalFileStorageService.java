@@ -3,8 +3,8 @@ package com.chtholly.storage;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.storage.config.StorageProperties;
+import com.chtholly.seed.SeedProperties;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -36,7 +36,6 @@ import java.util.UUID;
  * atomically linked into place, so an interrupted upload cannot expose partial bytes.
  */
 @Service
-@RequiredArgsConstructor
 @ConditionalOnProperty(name = "storage.type", havingValue = "local", matchIfMissing = true)
 public class LocalFileStorageService implements StorageService {
 
@@ -45,11 +44,21 @@ public class LocalFileStorageService implements StorageService {
     private static final String IMMUTABLE_SEED_PREFIX = "seed/content-v2/";
 
     private final StorageProperties props;
+    private final SeedProperties seedProperties;
     private Path basePath;
+
+    public LocalFileStorageService(StorageProperties props, SeedProperties seedProperties) {
+        this.props = props;
+        this.seedProperties = seedProperties;
+    }
 
     @PostConstruct
     void init() {
         Path configuredPath = Paths.get(props.getLocal().getBasePath()).toAbsolutePath().normalize();
+        basePath = configuredPath;
+        if (seedProperties.isCliReadOnly()) {
+            return;
+        }
         try {
             Files.createDirectories(configuredPath);
             basePath = configuredPath.toRealPath();
