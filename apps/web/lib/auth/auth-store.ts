@@ -11,7 +11,7 @@ const currentUserRequests = new Map<string, Promise<AuthUser>>();
 
 export function loadCurrentUserOnce(
   accessToken: string,
-  loader: () => Promise<AuthUser> = () => authService.me(),
+  loader: () => Promise<AuthUser> = () => authService.me(accessToken),
 ): Promise<AuthUser> {
   const existing = currentUserRequests.get(accessToken);
   if (existing) return existing;

@@ -112,11 +112,14 @@ export const authService = {
     return mapAuthResponse(res);
   },
 
-  me: async () => {
-    const raw = await apiFetch<Record<string, unknown>>(`${AUTH_PREFIX}/me`);
+  me: async (accessToken?: string) => {
+    const requestToken = accessToken ?? getStoredAuth()?.accessToken;
+    const raw = await apiFetch<Record<string, unknown>>(`${AUTH_PREFIX}/me`, {
+      accessToken: requestToken,
+    });
     const user = mapUser(raw);
     const stored = getStoredAuth();
-    if (stored) {
+    if (requestToken && stored?.accessToken === requestToken) {
       saveAuth(
         {
           accessToken: stored.accessToken,
