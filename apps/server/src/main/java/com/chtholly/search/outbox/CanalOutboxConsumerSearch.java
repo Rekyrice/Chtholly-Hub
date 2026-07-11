@@ -74,9 +74,12 @@ public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
 
         JsonNode eventPayload = objectMapper.readTree(payloadNode.asText());
         String entity = text(eventPayload.get("entity"));
+        if (!"post".equals(entity)) {
+            return;
+        }
         String op = text(eventPayload.get("op"));
         Long postId = asLong(eventPayload.get("id"));
-        if (!"post".equals(entity) || postId == null) {
+        if (postId == null) {
             return;
         }
 

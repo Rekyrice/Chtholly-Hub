@@ -251,13 +251,7 @@ public class PostServiceImpl implements PostService {
         }
 
         // 元数据变更后写入 Outbox 事件，驱动搜索索引更新
-        try {
-            long outId = idGen.nextId();
-            String payload = objectMapper.writeValueAsString(Map.of("entity", "post", "op", "upsert", "id", id));
-            outboxMapper.insert(outId, "post", id, "PostMetadataUpdated", payload);
-        } catch (Exception e) {
-            log.warn("Outbox event after metadata update failed, post {}: {}", id, e.getMessage());
-        }
+        writePostOutbox(id, "PostMetadataUpdated", "upsert");
 
         invalidateCache(id);
     }
@@ -291,13 +285,7 @@ public class PostServiceImpl implements PostService {
         }
 
         // 写入 Outbox 事件，驱动搜索索引增量更新
-        try {
-            long outId = idGen.nextId();
-            String payload = objectMapper.writeValueAsString(Map.of("entity", "post", "op", "upsert", "id", id));
-            outboxMapper.insert(outId, "post", id, "PostPublished", payload);
-        } catch (Exception e) {
-            log.warn("Outbox event after publish failed, post {}: {}", id, e.getMessage());
-        }
+        writePostOutbox(id, "PostPublished", "upsert");
 
         syncSearchIndexUpsert(id);
 
@@ -376,13 +364,7 @@ public class PostServiceImpl implements PostService {
         }
 
         // 写入 Outbox 事件，驱动搜索索引软删
-        try {
-            long outId = idGen.nextId();
-            String payload = objectMapper.writeValueAsString(Map.of("entity", "post", "op", "delete", "id", id));
-            outboxMapper.insert(outId, "post", id, "PostDeleted", payload);
-        } catch (Exception e) {
-            log.warn("Outbox event after delete failed, post {}: {}", id, e.getMessage());
-        }
+        writePostOutbox(id, "PostDeleted", "delete");
 
         if (wasPublished) {
             syncSearchIndexDelete(id);
@@ -427,13 +409,7 @@ public class PostServiceImpl implements PostService {
             tagService.releasePublishedPostTags(oldTags);
         }
 
-        try {
-            long outId = idGen.nextId();
-            String payload = objectMapper.writeValueAsString(Map.of("entity", "post", "op", "delete", "id", id));
-            outboxMapper.insert(outId, "post", id, "PostDeleted", payload);
-        } catch (Exception e) {
-            log.warn("Outbox event after admin delete failed, post {}: {}", id, e.getMessage());
-        }
+        writePostOutbox(id, "PostDeleted", "delete");
 
         if (wasPublished) {
             syncSearchIndexDelete(id);
@@ -457,6 +433,18 @@ public class PostServiceImpl implements PostService {
         } catch (Exception e) {
             log.warn("Search index delete failed, post {} (will retry on backfill): {}", id, e.getMessage(), e);
         }
+    }
+
+    /** Writes the post event in the caller's local transaction. */
+    private void writePostOutbox(long postId, String eventType, String operation) {
+        final String payload;
+        try {
+            payload = objectMapper.writeValueAsString(
+                    Map.of("entity", "post", "op", operation, "id", postId));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize Outbox event for post " + postId, e);
+        }
+        outboxMapper.insert(idGen.nextId(), "post", postId, eventType, payload);
     }
 
     private boolean isValidVisible(String visible) {

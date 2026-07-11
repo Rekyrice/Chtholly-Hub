@@ -20,6 +20,8 @@ import java.util.Set;
 public class CounterAggregationProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(CounterAggregationProcessor.class);
+    private static final String EVENT_KEY_PREFIX = "counter:event:";
+    private static final String EVENT_DEDUP_TTL_SECONDS = "604800";
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> aggIncrScript;
@@ -42,11 +44,21 @@ public class CounterAggregationProcessor {
     }
 
     /** 将单条计数增量写入 Redis 聚合桶。 */
-    public void applyEvent(CounterEvent evt) {
+    public boolean applyEvent(CounterEvent evt) {
+        if (evt.getEventId() == null || evt.getEventId().isBlank()) {
+            throw new IllegalArgumentException("Counter event ID is required");
+        }
         String aggKey = CounterKeys.aggKey(evt.getEntityType(), evt.getEntityId());
         String indexKey = CounterKeys.aggIndexKey();
+        String eventKey = EVENT_KEY_PREFIX + evt.getEventId();
         String field = String.valueOf(evt.getIdx());
-        redis.execute(aggIncrScript, List.of(aggKey, indexKey), field, String.valueOf(evt.getDelta()));
+        Long applied = redis.execute(
+                aggIncrScript,
+                List.of(aggKey, indexKey, eventKey),
+                field,
+                String.valueOf(evt.getDelta()),
+                EVENT_DEDUP_TTL_SECONDS);
+        return applied != null && applied == 1L;
     }
 
     /** 将聚合增量刷写到 SDS 固定结构计数，固定延迟 1s。 */
@@ -123,8 +135,13 @@ public class CounterAggregationProcessor {
     private static final String AGG_INCR_LUA = """
             local aggKey = KEYS[1]
             local indexKey = KEYS[2]
+            local eventKey = KEYS[3]
             local field = ARGV[1]
             local delta = tonumber(ARGV[2])
+            local dedupTtl = tonumber(ARGV[3])
+            if not redis.call('SET', eventKey, '1', 'NX', 'EX', dedupTtl) then
+                return 0
+            end
             redis.call('HINCRBY', aggKey, field, delta)
             redis.call('SADD', indexKey, aggKey)
             return 1

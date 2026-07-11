@@ -31,6 +31,10 @@ public class ElasticsearchConfig {
         }
 
         RestClientBuilder builder = RestClient.builder(org.apache.http.HttpHost.create(props.getHost()))
+                .setRequestConfigCallback(requestConfigBuilder -> requestConfigBuilder
+                        .setConnectTimeout(Math.toIntExact(props.getConnectionTimeout().toMillis()))
+                        .setConnectionRequestTimeout(Math.toIntExact(props.getConnectionTimeout().toMillis()))
+                        .setSocketTimeout(Math.toIntExact(props.getSocketTimeout().toMillis())))
                 .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
                         .setDefaultCredentialsProvider(creds));
 

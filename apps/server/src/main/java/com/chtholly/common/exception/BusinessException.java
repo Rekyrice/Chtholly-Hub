@@ -23,7 +23,7 @@ public class BusinessException extends RuntimeException {
      * @param errorCode 错误码（必填）
      */
     public BusinessException(ErrorCode errorCode) {
-        this(errorCode, errorCode.getDefaultMessage(), HttpStatus.BAD_REQUEST.value());
+        this(errorCode, errorCode.getDefaultMessage(), defaultHttpStatus(errorCode));
     }
 
     /**
@@ -33,7 +33,7 @@ public class BusinessException extends RuntimeException {
      * @param message 自定义提示文案
      */
     public BusinessException(ErrorCode errorCode, String message) {
-        this(errorCode, message, HttpStatus.BAD_REQUEST.value());
+        this(errorCode, message, defaultHttpStatus(errorCode));
     }
 
     /**
@@ -47,6 +47,12 @@ public class BusinessException extends RuntimeException {
         super(message);
         this.errorCode = errorCode;
         this.httpStatus = httpStatus;
+    }
+
+    private static int defaultHttpStatus(ErrorCode errorCode) {
+        return errorCode == ErrorCode.INTERNAL_ERROR
+                ? HttpStatus.INTERNAL_SERVER_ERROR.value()
+                : HttpStatus.BAD_REQUEST.value();
     }
 
 }
