@@ -17,6 +17,8 @@ scripts/oss/node_modules/
 .worktrees/
 .codex-tmp/
 .superpowers/
+content/seed/**/.media-prepare.lock/
+content/seed/**/.media-staging-*/
 
 # --- 本地运行日志 ---
 logs/*.log
