@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, MailWarning, ScrollText, Shield, Users } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { emitAuthChange, useAuthUser } from "@/lib/auth/auth-store";
 import { authService } from "@/lib/services/authService";
-import { getStoredAuth } from "@/lib/auth/tokens";
 import { cn } from "@/lib/utils";
 
 type AdminShellProps = {
@@ -27,36 +27,36 @@ function isAdminRole(role?: string | null) {
 export default function AdminShell({ children }: AdminShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const user = useAuthUser();
+  const isAdmin = isAdminRole(user?.role);
+  const [remoteAuthorized, setRemoteAuthorized] = useState<boolean | null>(null);
+  const authorized = isAdmin ? true : remoteAuthorized;
 
   useEffect(() => {
-    let alive = true;
-    const stored = getStoredAuth()?.user;
-    if (isAdminRole(stored?.role)) {
-      setAuthorized(true);
-      return;
-    }
+    if (isAdmin) return;
 
+    let alive = true;
     void authService.me()
       .then((user) => {
         if (!alive) return;
+        emitAuthChange();
         if (isAdminRole(user.role)) {
-          setAuthorized(true);
+          return;
         } else {
-          setAuthorized(false);
+          setRemoteAuthorized(false);
           router.replace("/hub");
         }
       })
       .catch(() => {
         if (!alive) return;
-        setAuthorized(false);
+        setRemoteAuthorized(false);
         router.replace("/hub");
       });
 
     return () => {
       alive = false;
     };
-  }, [router]);
+  }, [isAdmin, router]);
 
   const activePath = useMemo(() => {
     if (pathname === "/admin") return "/admin";

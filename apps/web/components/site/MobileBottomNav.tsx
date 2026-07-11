@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Heart, Home, Pen, Search, User } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { getStoredAuth, purgeExpiredAuth } from "@/lib/auth/tokens";
+import { useAuthUser } from "@/lib/auth/auth-store";
 import { cn } from "@/lib/utils";
 import type { AuthUser } from "@/lib/types/auth";
 
@@ -47,18 +46,7 @@ function NavUserAvatar({ user, size = 24 }: { user: AuthUser | null; size?: numb
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
-  const [user, setUser] = useState<AuthUser | null>(null);
-
-  const syncUser = useCallback(() => {
-    purgeExpiredAuth();
-    setUser(getStoredAuth()?.user ?? null);
-  }, []);
-
-  useEffect(() => {
-    syncUser();
-    window.addEventListener("chtholly-auth-change", syncUser);
-    return () => window.removeEventListener("chtholly-auth-change", syncUser);
-  }, [syncUser]);
+  const user = useAuthUser();
 
   const profileHref = user ? `/user/${user.handle || user.id}` : "/login";
   const profileActive =

@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Menu } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import NotificationBell from "@/components/site/NotificationBell";
+import { emitAuthChange, useStoredAuth } from "@/lib/auth/auth-store";
 import { authService } from "@/lib/services/authService";
-import { getStoredAuth, purgeExpiredAuth } from "@/lib/auth/tokens";
 import { siteConfig } from "@/lib/site.config";
 import { cn } from "@/lib/utils";
-import type { AuthUser } from "@/lib/types/auth";
 
 const SCROLL_THRESHOLD = 100;
 
@@ -21,10 +20,12 @@ const drawerExtraLinks = [
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const auth = useStoredAuth();
+  const user = auth?.user ?? null;
   const [isScrolled, setIsScrolled] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLLIElement>(null);
+  const requestedRoleTokenRef = useRef<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const brandMain = siteConfig.name.replace(/ Hub$/, "");
@@ -32,20 +33,12 @@ export default function Navbar() {
   const drawerLinks = [...siteConfig.nav, ...drawerExtraLinks];
   const isAdmin = user?.role?.toLowerCase() === "admin";
 
-  const syncUser = useCallback(() => {
-    purgeExpiredAuth();
-    const stored = getStoredAuth();
-    setUser(stored?.user ?? null);
-    if (stored?.accessToken && !stored.user?.role) {
-      void authService.me().then(setUser).catch(() => undefined);
-    }
-  }, []);
-
   useEffect(() => {
-    syncUser();
-    window.addEventListener("chtholly-auth-change", syncUser);
-    return () => window.removeEventListener("chtholly-auth-change", syncUser);
-  }, [syncUser]);
+    if (!auth?.accessToken || user?.role || requestedRoleTokenRef.current === auth.accessToken) return;
+
+    requestedRoleTokenRef.current = auth.accessToken;
+    void authService.me().then(emitAuthChange).catch(() => undefined);
+  }, [auth?.accessToken, user?.role]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -85,8 +78,6 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     await authService.logout();
-    setUser(null);
-    window.dispatchEvent(new Event("chtholly-auth-change"));
     setMenuOpen(false);
     setUserMenuOpen(false);
     router.push("/");
