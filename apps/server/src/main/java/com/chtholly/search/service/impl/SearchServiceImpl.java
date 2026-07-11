@@ -19,7 +19,6 @@ import co.elastic.clients.elasticsearch.core.search.CompletionSuggestOption;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.Suggestion;
 import com.chtholly.agent.api.dto.AgentExperienceResponse;
-import com.chtholly.counter.service.CounterService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.common.api.pagination.Pagination;
 import com.chtholly.post.api.dto.FeedItemResponse;
@@ -54,7 +53,7 @@ import java.util.stream.Collectors;
 public class SearchServiceImpl implements SearchService {
 
     private final ElasticsearchClient es;
-    private final CounterService counterService;
+    private final SearchHitMapper hitMapper;
     /**
      * ES 索引名：Chtholly Hub 内容统一索引。
      */
@@ -157,43 +156,9 @@ public class SearchServiceImpl implements SearchService {
             return new PageResponse<>(Collections.emptyList(), 0, safeSize, 0L, false, null, true);
         }
 
-        List<FeedItemResponse> items = new ArrayList<>();
-        List<Hit<Map<String, Object>>> hits = resp.hits() == null ? Collections.emptyList() : resp.hits().hits();
-        List<Long> postIds = new ArrayList<>(hits.size());
-
-        for (Hit<Map<String, Object>> hit : hits) {
-            Map<String, Object> source = hit.source();
-            if (source == null) {
-                continue;
-            }
-            Long postId = asLong(source.get("content_id"));
-            if (postId != null) {
-                postIds.add(postId);
-            }
-        }
-
-        Map<Long, Boolean> likedMap = currentUserIdNullable == null || postIds.isEmpty()
-                ? Collections.emptyMap()
-                : counterService.batchIsLiked(currentUserIdNullable, postIds);
-        Map<Long, Boolean> favedMap = currentUserIdNullable == null || postIds.isEmpty()
-                ? Collections.emptyMap()
-                : counterService.batchIsFaved(currentUserIdNullable, postIds);
-
-        for (Hit<Map<String, Object>> hit : hits) {
-            Map<String, Object> source = hit.source();
-            if (source == null) {
-                continue;
-            }
-            Long postId = asLong(source.get("content_id"));
-            String descriptionFromDoc = asString(source.get("description"));
-            String snippet = buildSnippet(hit);
-            String description = (snippet != null && !snippet.isBlank()) ? snippet : descriptionFromDoc;
-            Boolean liked = postId != null && Boolean.TRUE.equals(likedMap.get(postId));
-            Boolean faved = postId != null && Boolean.TRUE.equals(favedMap.get(postId));
-            items.add(FeedItemResponse.fromEsHit(source, liked, faved)
-                    .withDescription(description)
-                    .withTop(null));
-        }
+        List<Hit<Map<String, Object>>> hits =
+                resp.hits() == null ? Collections.emptyList() : resp.hits().hits();
+        List<FeedItemResponse> items = hitMapper.mapPostHits(hits, currentUserIdNullable);
 
         String nextCursor = null;
         boolean hasMore = items.size() >= safeSize;
@@ -280,7 +245,7 @@ public class SearchServiceImpl implements SearchService {
                             .sort(so -> so.field(f -> f.field("_score").order(SortOrder.Desc)))
                             .sort(so -> so.field(f -> f.field("publish_time").order(SortOrder.Desc))),
                     (Class<Map<String, Object>>) (Class<?>) Map.class);
-            return mapHitsToFeedItems(resp.hits().hits(), currentUserIdNullable);
+            return hitMapper.mapPostHits(resp.hits().hits(), currentUserIdNullable);
         } catch (Exception e) {
             log.warn("recommendByInterest failed: {}", e.getMessage(), e);
             return recommendHot(exclude, safeLimit, currentUserIdNullable);
@@ -306,7 +271,7 @@ public class SearchServiceImpl implements SearchService {
                             .sort(so -> so.field(f -> f.field("like_count").order(SortOrder.Desc)))
                             .sort(so -> so.field(f -> f.field("publish_time").order(SortOrder.Desc))),
                     (Class<Map<String, Object>>) (Class<?>) Map.class);
-            return mapHitsToFeedItems(resp.hits().hits(), currentUserIdNullable);
+            return hitMapper.mapPostHits(resp.hits().hits(), currentUserIdNullable);
         } catch (Exception e) {
             log.warn("recommendHot failed: {}", e.getMessage(), e);
             return Collections.emptyList();
@@ -342,7 +307,7 @@ public class SearchServiceImpl implements SearchService {
                             }))
                             .sort(so -> so.field(f -> f.field("like_count").order(SortOrder.Desc))),
                     (Class<Map<String, Object>>) (Class<?>) Map.class);
-            return mapHitsToFeedItems(resp.hits().hits(), currentUserIdNullable);
+            return hitMapper.mapPostHits(resp.hits().hits(), currentUserIdNullable);
         } catch (Exception e) {
             log.warn("recommendSimilarToPost failed sourcePostId={}: {}", sourcePostId, e.getMessage(), e);
             return Collections.emptyList();
@@ -502,7 +467,7 @@ public class SearchServiceImpl implements SearchService {
         if (item == null) {
             return RegionResult.degraded();
         }
-        return new RegionResult<>(mapHitsToFeedItems(hitsOf(item), currentUserIdNullable), STATUS_OK, totalHitsOf(item));
+        return new RegionResult<>(hitMapper.mapPostHits(hitsOf(item), currentUserIdNullable), STATUS_OK, totalHitsOf(item));
     }
 
     private RegionResult<TagCountResponse> parseHotTagsRegion(
@@ -576,58 +541,6 @@ public class SearchServiceImpl implements SearchService {
         return total > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total;
     }
 
-    private List<FeedItemResponse> mapHitsToFeedItems(
-            List<Hit<Map<String, Object>>> hits,
-            Long currentUserIdNullable) {
-        List<Long> postIds = new ArrayList<>(hits.size());
-        for (Hit<Map<String, Object>> hit : hits) {
-            Map<String, Object> source = hit.source();
-            if (source == null) {
-                continue;
-            }
-            Long postId = asLong(source.get("content_id"));
-            if (postId != null) {
-                postIds.add(postId);
-            }
-        }
-
-        Map<Long, Boolean> likedMap = currentUserIdNullable == null || postIds.isEmpty()
-                ? Collections.emptyMap()
-                : counterService.batchIsLiked(currentUserIdNullable, postIds);
-        Map<Long, Boolean> favedMap = currentUserIdNullable == null || postIds.isEmpty()
-                ? Collections.emptyMap()
-                : counterService.batchIsFaved(currentUserIdNullable, postIds);
-
-        List<FeedItemResponse> items = new ArrayList<>();
-        for (Hit<Map<String, Object>> hit : hits) {
-            Map<String, Object> source = hit.source();
-            if (source == null) {
-                continue;
-            }
-            items.add(mapHitToFeedItem(hit, likedMap, favedMap));
-        }
-        return items;
-    }
-
-    private FeedItemResponse mapHitToFeedItem(
-            Hit<Map<String, Object>> hit,
-            Map<Long, Boolean> likedMap,
-            Map<Long, Boolean> favedMap) {
-        Map<String, Object> source = hit.source();
-        Long postId = asLong(source.get("content_id"));
-        String descriptionFromDoc = asString(source.get("description"));
-        String snippet = buildSnippet(hit);
-        String description = (snippet != null && !snippet.isBlank()) ? snippet : descriptionFromDoc;
-        Boolean liked = postId != null && Boolean.TRUE.equals(likedMap.get(postId));
-        Boolean faved = postId != null && Boolean.TRUE.equals(favedMap.get(postId));
-        return FeedItemResponse.fromEsHit(source, liked, faved)
-                .withDescription(description)
-                .withTop(null);
-    }
-
-    /**
-     * 逗号分隔字符串解析为列表；空字符串返回 null。
-     */
     private List<String> parseCsv(String csv) {
         if (csv == null || csv.isBlank()) {
             return null;
@@ -677,48 +590,6 @@ public class SearchServiceImpl implements SearchService {
         }
     }
 
-    /**
-     * 合并高亮片段为 snippet：优先标题片段，否则正文首段；清理 Markdown 并截断。
-     */
-    private String buildSnippet(Hit<Map<String, Object>> hit) {
-        if (hit.highlight() == null) {
-            return null;
-        }
-
-        List<String> ht = hit.highlight().get("title");
-        if (ht != null && !ht.isEmpty()) {
-            return cleanSnippet(ht.getFirst());
-        }
-
-        List<String> hb = hit.highlight().get("body");
-        if (hb != null && !hb.isEmpty()) {
-            return cleanSnippet(hb.getFirst());
-        }
-
-        return null;
-    }
-
-    /** 去掉 Markdown 噪音，保留 ES 高亮 em 标签。 */
-    private String cleanSnippet(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-
-        String s = raw
-                .replaceAll("(?m)^#+\\s*", "")
-                .replaceAll("\\*\\*([^*]+)\\*\\*", "$1")
-                .replaceAll("\\[([^\\]]+)]\\([^)]*\\)", "$1")
-                .replaceAll("[\\r\\n]+", " ")
-                .replaceAll("\\s{2,}", " ")
-                .trim();
-
-        if (s.length() > 200) {
-            s = s.substring(0, 197) + "...";
-        }
-        return s.isEmpty() ? null : s;
-    }
-
-    /** 查询里含汉字时走短语匹配，避免 standard 单字 OR 误召回。 */
     private boolean containsCjk(String q) {
         if (q == null || q.isBlank()) {
             return false;
