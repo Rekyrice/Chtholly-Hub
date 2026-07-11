@@ -54,7 +54,11 @@ class SearchServiceImplTest {
     @BeforeEach
     void setUp() {
         SearchHitMapper hitMapper = new SearchHitMapper(counterService);
-        service = new SearchServiceImpl(es, hitMapper, new HubFeedSearchService(es, hitMapper));
+        service = new SearchServiceImpl(
+                es,
+                hitMapper,
+                new HubFeedSearchService(es, hitMapper),
+                new PostRecommendationSearchService(es, hitMapper));
     }
 
     @Test
