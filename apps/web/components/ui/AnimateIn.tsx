@@ -1,6 +1,6 @@
 "use client";
 
-import { useInView } from "@/hooks/useInView";
+import { useInView } from "@/lib/hooks/useInView";
 import { cn } from "@/lib/utils";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 

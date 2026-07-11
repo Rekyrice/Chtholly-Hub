@@ -11,6 +11,7 @@ export function useRequireAuth(loginPath = "/login") {
 
   useEffect(() => {
     if (getAccessToken()) {
+      /* eslint-disable-next-line react-hooks/set-state-in-effect -- auth is hydrated from browser storage */
       setAuthorized(true);
       return;
     }
