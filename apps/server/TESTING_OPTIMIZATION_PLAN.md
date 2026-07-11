@@ -188,31 +188,28 @@ mvn -q '-Dtest=SingleFlightLockRegistryTest' test
 
 Expected: 3 tests pass。
 
-- [ ] **Step 2: 用到达屏障替代同 Key 测试的 80ms 休眠**
+- [ ] **Step 2: 让 leader 持锁并观测同 Key followers 阻塞**
 
-增加 `CountDownLatch attempting = new CountDownLatch(10)`。每个线程在调用 `runExclusive` 前执行 `attempting.countDown()`；首个真正执行加载的 action 等待所有线程到达：
+使用固定大小为 10 的 `ExecutorService`，通过自定义 `ThreadFactory` 将工作线程记录到线程安全列表。先提交 leader Future；leader 首次进入 action 后触发 `leaderEntered`，并在有界的 `releaseLeader` 上持有 SingleFlight monitor。确认 leader 已进入后再提交 9 个 follower Future，并用 Awaitility 有界等待至少 9 个记录线程处于 `Thread.State.BLOCKED`：
 
 ```java
-attempting.countDown();
-registry.runExclusive("feed:page:1", () -> {
-    String hit = cache.get();
-    if (hit != null) {
-        return hit;
-    }
-    dbCalls.incrementAndGet();
-    if (!attempting.await(5, TimeUnit.SECONDS)) {
-        throw new IllegalStateException("workers did not reach SingleFlight in time");
-    }
-    cache.set("loaded");
-    return "loaded";
-});
+futures.add(executor.submit(worker));
+assertThat(leaderEntered.await(5, TimeUnit.SECONDS)).isTrue();
+for (int i = 0; i < 9; i++) {
+    futures.add(executor.submit(worker));
+}
+await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
+        assertThat(workerThreads.stream()
+                .filter(thread -> thread.getState() == Thread.State.BLOCKED)
+                .count()).isGreaterThanOrEqualTo(9));
+releaseLeader.countDown();
 ```
 
-这样测试依赖明确的并发到达条件，而不是假设 80ms 足够其他线程排队。
+主线程对 leader 和所有 follower 执行有界 `Future.get`，断言均返回 `loaded`，使 worker 异常显式传播到 JUnit。`finally` 中始终释放 leader，并执行 `shutdownNow` 与有界 `awaitTermination`，避免失败路径泄漏线程。
 
-- [ ] **Step 3: 用双向屏障证明不同 Key 可以同时进入 action**
+- [ ] **Step 3: 用 Executor/Future 和双向屏障证明不同 Key 并行**
 
-为 `differentKeysRunInParallel` 增加共享 `CountDownLatch enteredActions = new CountDownLatch(2)`，并传入 worker。每个 action 先 `countDown()`，再等待另一个 action 同时进入：
+为 `differentKeysRunInParallel` 使用固定大小为 2 的 `ExecutorService`，两个 Callable 的 action 共享 `CountDownLatch enteredActions = new CountDownLatch(2)`。每个 action 先 `countDown()`，再有界等待另一个 action 同时进入：
 
 ```java
 enteredActions.countDown();
@@ -222,7 +219,7 @@ if (!enteredActions.await(2, TimeUnit.SECONDS)) {
 calls.incrementAndGet();
 ```
 
-如果实现误用全局锁，第一个 action 会超时，测试将明确失败。
+主线程对两个 Future 执行有界 `get`，将 action 异常显式传播到 JUnit；`finally` 中关闭执行器并有界等待终止。如果实现误用全局锁，第一个 action 会以 `different keys were serialized` 超时失败。
 
 - [ ] **Step 4: 运行定向测试并提交**
 
