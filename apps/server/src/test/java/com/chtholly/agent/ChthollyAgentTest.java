@@ -28,6 +28,7 @@ import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -206,6 +207,32 @@ class ChthollyAgentTest {
                 eq(7L), isNull(), isNull(), any(), eq(""), eq("question"));
     }
 
+    @Test
+    void agentSpanDurationMatchesFinishedPersistedTrace() {
+        when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
+                .thenReturn("system");
+        when(loopExecutor.execute(any(), any(), any(), any())).thenAnswer(invocation -> {
+            Thread.sleep(20);
+            AgentExecutionTrace trace = invocation.getArgument(1);
+            trace.terminateMaxSteps();
+            trace.setErrorMessage("stopped");
+            return AgentLoopResult.terminal(
+                    AgentLoopResult.Status.MAX_STEPS,
+                    List.of("transcript"),
+                    "stopped");
+        });
+
+        agent.run("question", 7L, null, events::add);
+
+        ArgumentCaptor<Map<String, String>> attributesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpan(eq(agentSpan), attributesCaptor.capture());
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        long spanDuration = Long.parseLong(attributesCaptor.getValue().get("agent.duration_ms"));
+        assertThat(spanDuration).isEqualTo(traceCaptor.getValue().getDurationMs());
+        assertThat(spanDuration).isGreaterThanOrEqualTo(15);
+    }
+
     private List<String> eventTypes() {
         return events.stream().map(AgentEvent::type).toList();
     }
@@ -246,6 +273,7 @@ class ChthollyAgentTest {
                         "QUESTION_EMPTY",
                         "MODEL_TIMEOUT",
                         "MODEL_FAILED",
+                        "MODEL_INTERRUPTED",
                         "RESPONSE_TIMEOUT",
                         "RESPONSE_FAILED",
                         "MAX {maxSteps}",

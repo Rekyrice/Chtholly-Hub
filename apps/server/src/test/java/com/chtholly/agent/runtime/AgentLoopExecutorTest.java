@@ -229,6 +229,30 @@ class AgentLoopExecutorTest {
     }
 
     @Test
+    void interruptedLlmReturnsDedicatedTerminalStatusAndPreservesInterruptFlag() throws Exception {
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenThrow(new InterruptedException("caller interrupted"));
+        AgentExecutionTrace trace = trace(3);
+
+        try {
+            AgentLoopResult result = executor.execute(
+                    request(Map.of(), 3), trace, agentSpan, events::add);
+
+            assertThat(result.status()).isEqualTo(AgentLoopResult.Status.LLM_INTERRUPTED);
+            assertThat(result.errorMessage()).isEqualTo("MODEL_INTERRUPTED");
+            assertThat(eventTypes()).containsExactly("error");
+            assertThat(trace.getStepActions()).isEmpty();
+            assertThat(trace.getTerminatedBy()).isEqualTo("error");
+            assertThat(trace.getErrorMessage()).isEqualTo("MODEL_INTERRUPTED");
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            verify(llmInvoker, times(1)).call(anyString(), anyString(), anyDouble(), anyInt());
+            verify(observationService).finishSpanError(eq(childSpan), eq("llm_interrupted"), anyMap());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
     void interruptedToolRecordsStepEmitsErrorAndStopsWithInterruptFlagPreserved() throws Exception {
         AgentTool tool = tool("search");
         when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
@@ -335,6 +359,7 @@ class AgentLoopExecutorTest {
                         "QUESTION_EMPTY",
                         "MODEL_TIMEOUT",
                         "MODEL_FAILED",
+                        "MODEL_INTERRUPTED",
                         "RESPONSE_TIMEOUT",
                         "RESPONSE_FAILED",
                         "Reached max steps: {maxSteps}",

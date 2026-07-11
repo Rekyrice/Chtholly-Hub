@@ -136,6 +136,7 @@ class AgentToolExecutorTest {
                 "Question empty",
                 "Model response timeout",
                 "Model call failed",
+                "Model call interrupted",
                 "Response timeout",
                 "Response failed",
                 "Max steps",

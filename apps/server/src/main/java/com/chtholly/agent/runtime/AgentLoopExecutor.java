@@ -61,6 +61,19 @@ public class AgentLoopExecutor {
             String llmOut;
             try {
                 llmOut = llmInvoker.call(request.systemPrompt(), userPrompt, 0.1, 1024);
+            } catch (InterruptedException e) {
+                long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
+                Thread.currentThread().interrupt();
+                agentObservationService.finishSpanError(llmSpan, "llm_interrupted",
+                        AgentSpanAttributes.llm(stepLlmMs, inputChars, 0, "interrupted"));
+                log.warn("Agent LLM call interrupted", e);
+                return terminate(
+                        AgentLoopResult.Status.LLM_INTERRUPTED,
+                        transcript,
+                        agentDomainConfig.errors().modelCallInterrupted(),
+                        trace,
+                        sink,
+                        trace::terminateError);
             } catch (TimeoutException e) {
                 long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
                 agentObservationService.finishSpanError(llmSpan, "llm_timeout",

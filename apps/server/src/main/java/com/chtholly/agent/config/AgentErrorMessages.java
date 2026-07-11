@@ -5,6 +5,7 @@ public record AgentErrorMessages(
         String questionEmpty,
         String modelResponseTimeout,
         String modelCallFailed,
+        String modelCallInterrupted,
         String responseTimeout,
         String responseFailed,
         String maxSteps,

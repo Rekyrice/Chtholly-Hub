@@ -93,8 +93,8 @@ public class ChthollyAgent {
         try (Observation.Scope ignored = agentSpan.openScope()) {
             runInternal(question, userId, memory, sessionId, pageContext, sink, maxSteps, trace, agentSpan);
         } finally {
-            agentObservationService.finishSpan(agentSpan, AgentSpanAttributes.agent(trace));
             trace.finish();
+            agentObservationService.finishSpan(agentSpan, AgentSpanAttributes.agent(trace));
             trace.finishAndLog(objectMapper, agentMetrics);
             tracePersistenceService.persist(trace);
         }

@@ -19,7 +19,20 @@ public record AgentLoopResult(
         long finalDecisionLlmMs
 ) {
     public AgentLoopResult {
+        if (status == null) {
+            throw new IllegalArgumentException("status must not be null");
+        }
         transcript = transcript == null ? List.of() : List.copyOf(transcript);
+        if (status == Status.FINAL_READY) {
+            if (errorMessage != null || finalStepIndex < 0 || finalDecisionLlmMs < 0) {
+                throw new IllegalArgumentException("invalid final-ready trace metadata");
+            }
+        } else if (finalStepIndex != -1
+                || finalDecisionLlmMs != 0
+                || errorMessage == null
+                || errorMessage.isBlank()) {
+            throw new IllegalArgumentException("invalid terminal error metadata");
+        }
     }
 
     /**
@@ -34,9 +47,6 @@ public record AgentLoopResult(
             List<String> transcript,
             int finalStepIndex,
             long finalDecisionLlmMs) {
-        if (finalStepIndex < 0 || finalDecisionLlmMs < 0) {
-            throw new IllegalArgumentException("final trace metadata must be non-negative");
-        }
         return new AgentLoopResult(
                 Status.FINAL_READY,
                 transcript,
@@ -57,9 +67,6 @@ public record AgentLoopResult(
             Status status,
             List<String> transcript,
             String errorMessage) {
-        if (status == Status.FINAL_READY) {
-            throw new IllegalArgumentException("use finalReady for successful loop results");
-        }
         return new AgentLoopResult(status, transcript, errorMessage, -1, 0);
     }
 
@@ -68,6 +75,7 @@ public record AgentLoopResult(
         FINAL_READY,
         LLM_TIMEOUT,
         LLM_ERROR,
+        LLM_INTERRUPTED,
         TOOL_INTERRUPTED,
         MAX_STEPS
     }
