@@ -5,6 +5,14 @@ import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.anchor.KnowledgeService;
+import com.chtholly.agent.context.contributor.HistoryContextContributor;
+import com.chtholly.agent.context.contributor.IdentityContextContributor;
+import com.chtholly.agent.context.contributor.KnowledgeContextContributor;
+import com.chtholly.agent.context.contributor.PageContextContributor;
+import com.chtholly.agent.context.contributor.ProceduralContextContributor;
+import com.chtholly.agent.context.contributor.QuestionContextContributor;
+import com.chtholly.agent.context.contributor.RelationshipContextContributor;
+import com.chtholly.agent.context.contributor.ToolsContextContributor;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.content.ContentAnalysis;
 import com.chtholly.content.ContentIntelligenceReader;
@@ -23,8 +31,6 @@ import com.chtholly.agent.state.Personality;
 import com.chtholly.agent.state.Relationship;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 
 import java.time.Instant;
 import java.util.List;
@@ -62,7 +68,7 @@ class ContextEngineTest {
                 defaultState()));
         seasonService = mock(SeasonService.class);
         when(seasonService.getSeasonalPrompt()).thenReturn("秋天了……适合感性一点的故事，关于离别和怀念的。");
-        contextEngine = new ContextEngine(anchorManager, stateService, null, null, null, seasonService);
+        contextEngine = fullEngine(null, null, null, seasonService, null);
     }
 
     @Test
@@ -125,6 +131,20 @@ class ContextEngineTest {
                 .contains("## 用户的问题", "你怎么看这篇文章？");
         assertThat(prompt).doesNotContain("[系统提示]");
         assertThat(prompt.length()).isLessThan(8_000);
+        assertThat(prompt.indexOf("## 你的身份"))
+                .isLessThan(prompt.indexOf("## 当前状态"));
+        assertThat(prompt.indexOf("## 当前状态"))
+                .isLessThan(prompt.indexOf("## 用户当前在看"));
+        assertThat(prompt.indexOf("## 用户当前在看"))
+                .isLessThan(prompt.indexOf("## 相关知识"));
+        assertThat(prompt.indexOf("## 相关知识"))
+                .isLessThan(prompt.indexOf("## 你学到的行为规则"));
+        assertThat(prompt.indexOf("## 你学到的行为规则"))
+                .isLessThan(prompt.indexOf("## 可用工具"));
+        assertThat(prompt.indexOf("## 可用工具"))
+                .isLessThan(prompt.indexOf("## 对话历史"));
+        assertThat(prompt.indexOf("## 对话历史"))
+                .isLessThan(prompt.indexOf("## 用户的问题"));
         verify(anchorManager).buildContext(7L, "ws-1");
     }
 
@@ -146,7 +166,7 @@ class ContextEngineTest {
     @Test
     void injectsHybridSearchResultsForQueryIntent() {
         HybridSearchService hybridSearchService = mock(HybridSearchService.class);
-        ContextEngine engine = new ContextEngine(anchorManager, stateService, hybridSearchService);
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null, null));
         when(hybridSearchService.hybridSearch("帮我查一下芙莉莲的时间主题", 5)).thenReturn(List.of(
                 new SearchResult("post:9", "时间的重量", "芙莉莲文章片段", "hybrid", 0.2)
         ));
@@ -169,7 +189,7 @@ class ContextEngineTest {
     @Test
     void skipsHybridSearchWhenQuestionHasNoQueryIntent() {
         HybridSearchService hybridSearchService = mock(HybridSearchService.class);
-        ContextEngine engine = new ContextEngine(anchorManager, stateService, hybridSearchService);
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null, null));
 
         engine.buildSystemPrompt(
                 7L,
@@ -185,7 +205,7 @@ class ContextEngineTest {
     @Test
     void injectsKnowledgeBaseForAnimeQuestion() {
         KnowledgeService knowledgeService = mock(KnowledgeService.class);
-        ContextEngine engine = new ContextEngine(anchorManager, stateService, null, knowledgeService);
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(null, knowledgeService, null));
         when(knowledgeService.searchRelevantKnowledge("聊聊芙莉莲关于时间的主题", 3)).thenReturn(List.of(
                 "《葬送的芙莉莲》让我想到时间、记忆和迟来的理解。"
         ));
@@ -207,7 +227,7 @@ class ContextEngineTest {
     @Test
     void injectsKnowledgeGraphAssociationsWhenQuestionMentionsKnownTopic() {
         KnowledgeGraphService graphService = mock(KnowledgeGraphService.class);
-        ContextEngine engine = new ContextEngine(anchorManager, stateService, null, null, null, seasonService, graphService);
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(null, null, graphService));
         when(graphService.contextForQuestion("聊聊葬送的芙莉莲和时间", 5)).thenReturn(List.of(
                 "Frieren -> time (RELATED_TO, weight=0.90): time and memory"
         ));
@@ -229,7 +249,7 @@ class ContextEngineTest {
     @Test
     void injectsCurrentPostAnalysisWhenPageContextContainsPostId() {
         ContentIntelligenceReader contentService = mock(ContentIntelligenceReader.class);
-        ContextEngine engine = new ContextEngine(anchorManager, stateService, null, null, contentService);
+        ContextEngine engine = engineWith(new PageContextContributor(contentService));
         when(contentService.getAnalysis(42L)).thenReturn(new ContentAnalysis(
                 List.of(
                         new Entity("芙莉莲", "动漫作品名", 0.9),
@@ -257,7 +277,7 @@ class ContextEngineTest {
     @Test
     void injectsCurrentPostAnalysisWhenPageContextContainsPostSlug() {
         ContentIntelligenceReader contentService = mock(ContentIntelligenceReader.class);
-        ContextEngine engine = new ContextEngine(anchorManager, stateService, null, null, contentService);
+        ContextEngine engine = engineWith(new PageContextContributor(contentService));
         when(contentService.getAnalysisBySlug("frieren-review")).thenReturn(new ContentAnalysis(
                 List.of(new Entity("Frieren", "work", 0.9)),
                 "post slug summary",
@@ -278,30 +298,24 @@ class ContextEngineTest {
         verify(contentService).getAnalysisBySlug("frieren-review");
     }
 
-    @ParameterizedTest
-    @CsvSource({
-            "0,深夜",
-            "2,凌晨",
-            "6,早晨",
-            "10,上午",
-            "15,下午",
-            "19,傍晚",
-            "22,深夜"
-    })
-    void timePeriodLabelMapsHourToChinesePeriod(int hour, String expectedLabel) {
-        assertThat(ContextEngine.timePeriodLabel(hour)).isEqualTo(expectedLabel);
+    private ContextEngine fullEngine(HybridSearchService hybridSearchService,
+                                     KnowledgeService knowledgeService,
+                                     ContentIntelligenceReader contentReader,
+                                     SeasonService season,
+                                     KnowledgeGraphService graphService) {
+        return engineWith(
+                new IdentityContextContributor(),
+                new RelationshipContextContributor(stateService, season),
+                new PageContextContributor(contentReader),
+                new KnowledgeContextContributor(hybridSearchService, knowledgeService, graphService),
+                new ProceduralContextContributor(),
+                new ToolsContextContributor(),
+                new HistoryContextContributor(),
+                new QuestionContextContributor());
     }
 
-    @ParameterizedTest
-    @CsvSource({
-            "0.0,陌生人",
-            "0.1,刚认识",
-            "0.3,熟悉的人",
-            "0.6,朋友",
-            "0.9,很亲近的人"
-    })
-    void intimacyLabelMapsScoreToRelationshipLabel(double intimacy, String expectedLabel) {
-        assertThat(ContextEngine.intimacyLabel(intimacy)).isEqualTo(expectedLabel);
+    private ContextEngine engineWith(ContextContributor... contributors) {
+        return new ContextEngine(anchorManager, List.of(contributors));
     }
 
     private AgentTool mockTool() {
