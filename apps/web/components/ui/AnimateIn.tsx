@@ -2,7 +2,7 @@
 
 import { useInView } from "@/lib/hooks/useInView";
 import { cn } from "@/lib/utils";
-import type { CSSProperties, ReactNode, RefObject } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export type AnimateInProps = {
   children: ReactNode;
@@ -11,17 +11,12 @@ export type AnimateInProps = {
 };
 
 export function AnimateIn({ children, delay = 0, className }: AnimateInProps) {
-  const { ref, isInView, canAnimate } = useInView();
+  const ref = useInView<HTMLDivElement>();
 
   return (
     <div
-      ref={ref as RefObject<HTMLDivElement>}
-      className={cn(
-        "animate-in",
-        canAnimate && "animate-in--ready",
-        isInView && "animate-in--visible",
-        className,
-      )}
+      ref={ref}
+      className={cn("animate-in", className)}
       style={{ "--animate-delay": `${delay}ms` } as CSSProperties}
     >
       {children}

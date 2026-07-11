@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, render, screen, waitFor } from "@testing-library/react";
+import { Profiler } from "react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AnimateIn } from "@/components/ui/AnimateIn";
 
@@ -18,6 +21,52 @@ describe("AnimateIn", () => {
     expect(content).toBeInTheDocument();
     expect(content).toHaveClass("animate-in");
     expect(content).not.toHaveClass("animate-in--ready");
+  });
+
+  it("hydrates without a state-driven visible-to-hidden render", async () => {
+    const observe = vi.fn();
+
+    class IntersectionObserverMock {
+      observe = observe;
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    }
+
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+
+    let hydrationCommitCount = 0;
+    function HydrationTree() {
+      return (
+        <Profiler
+          id="animate-in-hydration"
+          onRender={() => {
+            hydrationCommitCount += 1;
+          }}
+        >
+          <AnimateIn>水合内容</AnimateIn>
+        </Profiler>
+      );
+    }
+
+    const container = document.createElement("div");
+    container.innerHTML = renderToString(<HydrationTree />);
+    document.body.appendChild(container);
+
+    const content = container.firstElementChild;
+    const serverClassName = content?.className;
+
+    const root = hydrateRoot(container, <HydrationTree />);
+    await act(async () => {});
+    await waitFor(() => expect(content).toHaveClass("animate-in--ready"));
+    const hydratedClassName = content?.className;
+
+    act(() => root.unmount());
+    container.remove();
+
+    expect(hydrationCommitCount).toBe(1);
+    expect(serverClassName).toBe("animate-in");
+    expect(observe).toHaveBeenCalledWith(content);
+    expect(hydratedClassName).toContain("animate-in--ready");
   });
 
   it("keeps ready but non-visible content visible when reduced motion is requested", () => {

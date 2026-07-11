@@ -1,43 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef } from "react";
 
-export function useInView(options?: IntersectionObserverInit) {
-  const ref = useRef<HTMLElement>(null);
-  const [hasIntersected, setHasIntersected] = useState(false);
-  const [canAnimate, setCanAnimate] = useState(false);
+export function useInView<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = ref.current;
     if (!element || typeof IntersectionObserver === "undefined") return;
 
-    let active = true;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setHasIntersected(true);
+          element.classList.add("animate-in--visible");
           observer.unobserve(element);
         }
       },
-      { threshold: 0.1, ...options },
+      { threshold: 0.1 },
     );
+
+    element.classList.add("animate-in--ready");
     observer.observe(element);
 
-    // 先完成观察器注册再隐藏元素，避免 JS/IO 不可用时内容永久不可见。
-    queueMicrotask(() => {
-      if (active) setCanAnimate(true);
-    });
-
     return () => {
-      active = false;
       observer.disconnect();
+      element.classList.remove("animate-in--ready", "animate-in--visible");
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 页面进入动画只在挂载时观察一次。
   }, []);
 
-  return {
-    ref,
-    canAnimate,
-    isInView: !canAnimate || hasIntersected,
-  };
+  return ref;
 }
