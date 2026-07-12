@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { access, lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
+import { access, lstat, mkdir, open, realpath, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
+const DEFAULT_TIMEOUT_MS = 60_000;
+const MAX_TIMEOUT_MS = 10 * 60_000;
 const ALLOWED_CONTENT_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -83,15 +85,83 @@ async function nearestExistingAncestor(candidate) {
   }
 }
 
-async function resolveSafeOutput(output) {
+function resolveOutputPath(output) {
   if (typeof output !== "string" || output.trim() === "") {
     throw new Error("--output must be a nonblank project-local destination");
   }
-  const resolvedRepoRoot = await realpath(REPO_ROOT);
   const resolvedOutput = path.resolve(output);
   if (!isInside(REPO_ROOT, resolvedOutput)) {
     throw new Error("--output must resolve inside the repository root");
   }
+  return resolvedOutput;
+}
+
+function validateTimeoutMs(timeoutMs) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) {
+    throw new Error(`timeoutMs must be a positive integer no greater than ${MAX_TIMEOUT_MS}`);
+  }
+  return timeoutMs;
+}
+
+function comparablePath(value) {
+  return process.platform === "win32" ? value.toLowerCase() : value;
+}
+
+async function captureParentIdentity(parent, resolvedRepoRoot) {
+  const [resolvedParent, parentStat] = await Promise.all([
+    realpath(parent),
+    stat(parent, { bigint: true }),
+  ]);
+  if (!parentStat.isDirectory()) {
+    throw new Error("Output parent must be a directory");
+  }
+  if (!isInside(resolvedRepoRoot, resolvedParent)) {
+    throw new Error("--output cannot escape the repository root through a symlink parent");
+  }
+  return {
+    realPath: comparablePath(resolvedParent),
+    dev: parentStat.dev,
+    ino: parentStat.ino,
+    mode: parentStat.mode,
+    birthtime: String(parentStat.birthtimeNs ?? parentStat.birthtimeMs),
+  };
+}
+
+function sameParentIdentity(expected, actual) {
+  const inodeAvailable = expected.ino !== 0n && actual.ino !== 0n;
+  if (inodeAvailable) {
+    return expected.realPath === actual.realPath
+      && expected.dev === actual.dev
+      && expected.ino === actual.ino;
+  }
+  return expected.realPath === actual.realPath
+    && expected.dev === actual.dev
+    && expected.mode === actual.mode
+    && expected.birthtime === actual.birthtime;
+}
+
+async function assertParentIdentity(parent, expected, resolvedRepoRoot) {
+  const actual = await captureParentIdentity(parent, resolvedRepoRoot);
+  if (!sameParentIdentity(expected, actual)) {
+    throw new Error("Output parent identity changed during atomic write");
+  }
+}
+
+async function assertOutputIsNotSymlink(output) {
+  try {
+    const outputStat = await lstat(output);
+    if (outputStat.isSymbolicLink()) {
+      throw new Error("--output cannot be an existing symlink");
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+}
+
+async function prepareOutputParent(resolvedOutput) {
+  const resolvedRepoRoot = await realpath(REPO_ROOT);
 
   const parent = path.dirname(resolvedOutput);
   const ancestor = await nearestExistingAncestor(parent);
@@ -101,48 +171,38 @@ async function resolveSafeOutput(output) {
   }
 
   await mkdir(parent, { recursive: true });
-  const resolvedParent = await realpath(parent);
-  if (!isInside(resolvedRepoRoot, resolvedParent)) {
-    throw new Error("--output cannot escape the repository root through a symlink parent");
-  }
-
-  try {
-    const outputStat = await lstat(resolvedOutput);
-    if (outputStat.isSymbolicLink()) {
-      throw new Error("--output cannot be an existing symlink");
-    }
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      throw error;
-    }
-  }
-  return resolvedOutput;
+  const identity = await captureParentIdentity(parent, resolvedRepoRoot);
+  await assertOutputIsNotSymlink(resolvedOutput);
+  return { parent, identity, resolvedRepoRoot };
 }
 
-async function fetchWithRedirects(initialUrl, userAgent) {
+async function fetchWithRedirects(initialUrl, userAgent, signal) {
   let current = initialUrl;
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
     const response = await fetch(current, {
       headers: { "User-Agent": userAgent },
       redirect: "manual",
+      signal,
     });
     if (![301, 302, 303, 307, 308].includes(response.status)) {
       return response;
     }
 
-    if (redirects === MAX_REDIRECTS) {
-      await response.body?.cancel();
-      throw new Error(`Redirect limit exceeded (${MAX_REDIRECTS})`);
+    let redirected;
+    try {
+      if (redirects === MAX_REDIRECTS) {
+        throw new Error(`Redirect limit exceeded (${MAX_REDIRECTS})`);
+      }
+      const location = response.headers.get("location");
+      if (!location) {
+        throw new Error(`Redirect response ${response.status} is missing Location`);
+      }
+      redirected = new URL(location, current);
+      parseHttpUrl(redirected.href, "redirect URL");
+    } finally {
+      await response.body?.cancel().catch(() => {});
     }
-    const location = response.headers.get("location");
-    if (!location) {
-      await response.body?.cancel();
-      throw new Error(`Redirect response ${response.status} is missing Location`);
-    }
-    const redirected = new URL(location, current);
-    parseHttpUrl(redirected.href, "redirect URL");
-    await response.body?.cancel();
-    current = redirected;
+    current = redirected.href;
   }
   throw new Error(`Redirect limit exceeded (${MAX_REDIRECTS})`);
 }
@@ -169,43 +229,65 @@ function validateContentLength(response) {
   }
 }
 
-async function writeResponseAtomically(response, output) {
-  const temporary = path.join(
-    path.dirname(output),
-    `.${path.basename(output)}.${process.pid}.${randomUUID()}.tmp`,
-  );
-  const hash = createHash("sha256");
+async function readResponseIntoMemory(response) {
+  if (!response.body) {
+    throw new Error("Image response has no body");
+  }
+  const chunks = [];
   let bytes = 0;
-  let handle;
-
   try {
-    handle = await open(temporary, "wx");
-    if (!response.body) {
-      throw new Error("Image response has no body");
-    }
     for await (const chunk of response.body) {
       const buffer = Buffer.from(chunk);
       bytes += buffer.length;
       if (bytes > MAX_BYTES) {
         throw new Error("Image is too large: maximum size is 15 MiB");
       }
-      hash.update(buffer);
-      let offset = 0;
-      while (offset < buffer.length) {
-        const { bytesWritten } = await handle.write(buffer, offset);
-        if (bytesWritten === 0) {
-          throw new Error("Unable to make progress while writing the image");
-        }
-        offset += bytesWritten;
+      chunks.push(buffer);
+    }
+  } catch (error) {
+    await response.body.cancel().catch(() => {});
+    throw error;
+  }
+  return Buffer.concat(chunks, bytes);
+}
+
+/**
+ * Writes a fully downloaded image using repeated parent-directory identity checks.
+ *
+ * This is a practical TOCTOU mitigation, not an absolute sandbox boundary. Node does
+ * not expose the openat/renameat directory-handle operations needed to guarantee
+ * resistance against a local writer continuously swapping paths at nanosecond scale.
+ */
+async function writeBufferAtomically(buffer, output) {
+  const { parent, identity, resolvedRepoRoot } = await prepareOutputParent(output);
+  const temporary = path.join(
+    parent,
+    `.${path.basename(output)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  let handle;
+
+  try {
+    await assertParentIdentity(parent, identity, resolvedRepoRoot);
+    const noFollow = fsConstants.O_NOFOLLOW ?? 0;
+    const flags = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | noFollow;
+    handle = await open(temporary, flags, 0o600);
+    await assertParentIdentity(parent, identity, resolvedRepoRoot);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const { bytesWritten } = await handle.write(buffer, offset);
+      if (bytesWritten === 0) {
+        throw new Error("Unable to make progress while writing the image");
       }
+      offset += bytesWritten;
     }
     await handle.sync();
     await handle.close();
     handle = undefined;
+    await assertParentIdentity(parent, identity, resolvedRepoRoot);
+    await assertOutputIsNotSymlink(output);
+    await assertParentIdentity(parent, identity, resolvedRepoRoot);
     await rename(temporary, output);
-    return { bytes, sha256: hash.digest("hex") };
   } catch (error) {
-    await response.body?.cancel().catch(() => {});
     if (handle) {
       await handle.close().catch(() => {});
     }
@@ -220,39 +302,56 @@ export async function fetchSourceAsset({
   output,
   userAgent,
   fetchedAt,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 }) {
+  const normalizedTimeoutMs = validateTimeoutMs(timeoutMs);
   const sourceUrl = parseHttpUrl(url, "--url").href;
   const sourcePageUrl = parseHttpUrl(sourcePage, "--source-page").href;
   if (typeof userAgent !== "string" || userAgent.trim() === "") {
     throw new Error("--user-agent must be nonblank");
   }
   const normalizedFetchedAt = normalizeFetchedAt(fetchedAt);
-  const resolvedOutput = await resolveSafeOutput(output);
-  const response = await fetchWithRedirects(sourceUrl, userAgent);
-
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(`Image request returned non-2xx status ${response.status}`);
-  }
-  parseHttpUrl(response.url, "final response URL");
-  let contentType;
+  const resolvedOutput = resolveOutputPath(output);
+  const controller = new AbortController();
+  const timeoutError = new Error(`Source image fetch timed out after ${normalizedTimeoutMs} ms`);
+  const timer = setTimeout(() => controller.abort(timeoutError), normalizedTimeoutMs);
+  let downloaded;
   try {
-    contentType = normalizeContentType(response);
-    validateContentLength(response);
+    const response = await fetchWithRedirects(sourceUrl, userAgent, controller.signal);
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      throw new Error(`Image request returned non-2xx status ${response.status}`);
+    }
+    parseHttpUrl(response.url, "final response URL");
+    let contentType;
+    try {
+      contentType = normalizeContentType(response);
+      validateContentLength(response);
+    } catch (error) {
+      await response.body?.cancel().catch(() => {});
+      throw error;
+    }
+    const buffer = await readResponseIntoMemory(response);
+    downloaded = { buffer, contentType, finalUrl: response.url };
   } catch (error) {
-    await response.body?.cancel().catch(() => {});
+    if (controller.signal.aborted) {
+      throw timeoutError;
+    }
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  const written = await writeResponseAtomically(response, resolvedOutput);
+
+  await writeBufferAtomically(downloaded.buffer, resolvedOutput);
 
   return {
     sourceUrl: url,
     sourcePageUrl: sourcePage,
-    finalUrl: response.url,
+    finalUrl: downloaded.finalUrl,
     fetchedAt: normalizedFetchedAt,
-    sha256: written.sha256,
-    contentType,
-    bytes: written.bytes,
+    sha256: createHash("sha256").update(downloaded.buffer).digest("hex"),
+    contentType: downloaded.contentType,
+    bytes: downloaded.buffer.length,
   };
 }
 

@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -30,6 +31,7 @@ async function withServer(handler, run) {
   try {
     return await run(origin);
   } finally {
+    server.closeAllConnections?.();
     await new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
@@ -179,10 +181,66 @@ test("rejects escape through an existing symlink parent", async (t) => {
     throw error;
   }
 
-  await assert.rejects(
-    fetchSourceAsset(options("http://127.0.0.1:1", path.join(link, "escaped.png"))),
-    /symlink|inside|repository|repo root/i,
-  );
+  await withServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "image/png" });
+    response.end(PNG_BYTES);
+  }, async (origin) => {
+    await assert.rejects(
+      fetchSourceAsset(options(origin, path.join(link, "escaped.png"))),
+      /symlink|inside|repository|repo root/i,
+    );
+  });
+});
+
+test("does not write outside the repository when a parent is swapped during download", async (t) => {
+  const directory = await makeCaseDir(t);
+  const parent = path.join(directory, "destination");
+  const originalParent = path.join(directory, "destination-original");
+  const outside = path.resolve(REPO_ROOT, "..", `task17-race-target-${process.pid}-${Date.now()}`);
+  const output = path.join(parent, "raced.png");
+  await mkdir(parent, { recursive: true });
+  await mkdir(outside, { recursive: true });
+
+  let releaseResponse;
+  const responseReleased = new Promise((resolve) => {
+    releaseResponse = resolve;
+  });
+  let markRequestSeen;
+  const requestSeen = new Promise((resolve) => {
+    markRequestSeen = resolve;
+  });
+
+  try {
+    await withServer(async (_request, response) => {
+      markRequestSeen();
+      await responseReleased;
+      response.writeHead(200, { "Content-Type": "image/png" });
+      response.end(PNG_BYTES);
+    }, async (origin) => {
+      const fetching = fetchSourceAsset(options(origin, output, { timeoutMs: 2_000 }));
+      await requestSeen;
+      await rename(parent, originalParent);
+      try {
+        await symlink(outside, parent, process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        releaseResponse();
+        await fetching.catch(() => {});
+        if (process.platform === "win32" && ["EPERM", "EACCES", "UNKNOWN"].includes(error.code)) {
+          t.skip(`symlink creation unavailable on this Windows host: ${error.code}`);
+          return;
+        }
+        throw error;
+      }
+      releaseResponse();
+
+      await assert.rejects(fetching, /symlink|inside|repository|parent|identity/i);
+      assert.deepEqual(await readdir(outside), []);
+    });
+  } finally {
+    await rm(parent, { force: true, recursive: true });
+    await rm(originalParent, { force: true, recursive: true });
+    await rm(outside, { force: true, recursive: true });
+  }
 });
 
 test("rejects a successful non-image response and leaves no output or temp file", async (t) => {
@@ -266,6 +324,87 @@ test("rejects redirect loops beyond the configured redirect limit", async (t) =>
   }, async (origin) => {
     await assert.rejects(fetchSourceAsset(options(origin, path.join(directory, "source.png"))), /redirect|limit|too many/i);
   });
+  assert.deepEqual(await readdir(directory), []);
+});
+
+for (const redirectLocation of ["http://[", "ftp://example.test/image.png"]) {
+  test(`cancels a streaming redirect body when Location is invalid: ${redirectLocation}`, async (t) => {
+    const directory = await makeCaseDir(t);
+    let markResponseClosed;
+    const responseClosed = new Promise((resolve) => {
+      markResponseClosed = resolve;
+    });
+
+    await withServer((_request, response) => {
+      response.writeHead(302, { Location: redirectLocation });
+      response.write(Buffer.alloc(1024, 0xaa));
+      const interval = setInterval(() => response.write(Buffer.alloc(1024, 0xbb)), 10);
+      response.once("close", () => {
+        clearInterval(interval);
+        markResponseClosed();
+      });
+    }, async (origin) => {
+      await assert.rejects(
+        fetchSourceAsset(options(origin, path.join(directory, "redirect.png"), { timeoutMs: 1_000 })),
+        /redirect|http|url/i,
+      );
+      await Promise.race([
+        responseClosed,
+        delay(400).then(() => {
+          throw new Error("redirect response body was not cancelled promptly");
+        }),
+      ]);
+    });
+    assert.deepEqual(await readdir(directory), []);
+  });
+}
+
+test("applies one total timeout while waiting for response headers", async (t) => {
+  const directory = await makeCaseDir(t);
+  await withServer((_request, response) => {
+    setTimeout(() => {
+      if (!response.destroyed) {
+        response.writeHead(200, { "Content-Type": "image/png" });
+        response.end(PNG_BYTES);
+      }
+    }, 200);
+  }, async (origin) => {
+    await assert.rejects(
+      fetchSourceAsset(options(origin, path.join(directory, "not-created-during-fetch", "late.png"), { timeoutMs: 40 })),
+      /timed out.*40|timeout.*40/i,
+    );
+  });
+  assert.deepEqual(await readdir(directory), []);
+});
+
+test("applies the same total timeout while reading a slow response body", async (t) => {
+  const directory = await makeCaseDir(t);
+  await withServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "image/png" });
+    response.write(PNG_BYTES.subarray(0, 4));
+    const interval = setInterval(() => response.write(Buffer.from([0xaa])), 50);
+    const finish = setTimeout(() => response.end(), 250);
+    response.once("close", () => {
+      clearInterval(interval);
+      clearTimeout(finish);
+    });
+  }, async (origin) => {
+    await assert.rejects(
+      fetchSourceAsset(options(origin, path.join(directory, "slow.png"), { timeoutMs: 90 })),
+      /timed out.*90|timeout.*90/i,
+    );
+  });
+  assert.deepEqual(await readdir(directory), []);
+});
+
+test("rejects invalid timeout budgets before network or filesystem work", async (t) => {
+  const directory = await makeCaseDir(t);
+  const output = path.join(directory, "timeout.png");
+  const base = options("http://127.0.0.1:1", output);
+
+  for (const timeoutMs of [0, -1, 1.5, 600_001, "1000"]) {
+    await assert.rejects(fetchSourceAsset({ ...base, timeoutMs }), /timeout.*positive integer|timeout.*600000/i);
+  }
   assert.deepEqual(await readdir(directory), []);
 });
 
