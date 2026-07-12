@@ -155,9 +155,9 @@
     - redisson-moved-log
     - redisson-cluster-route
   brief:
-    factAnchors: [Redis 6.0.11, Redisson 3.30.0, 三主三从频繁主备切换, 客户端拓扑可能未刷新, 请求发往旧节点, Redis 返回 MOVED, RedisTimeoutException Unable to acquire connection, Increase connection pool size, NodeSource slot 7685, redirect MOVED, 重启暂时恢复, Issue closed, milestone 3.33.0]
+    factAnchors: [Redis 6.0.11, Redisson 3.30.0, 三主三从频繁主备切换, 客户端拓扑可能未刷新, 请求先按旧slot映射发往当前副本, Redis 返回 MOVED, MOVED目标URL构造当前NodeSource, NodeSource addr是重定向目标, failover与failback小环境复现, 内部四个master而实际三主, a4bdaa5, re-added master node topology update, maintainer Fixed, Issue closed, milestone 3.33.0, 本文未自行复现或验证3.33.0]
     voice: 磁盘又满了，按日志、误判、定位、结果短句推进，判断直接，不把公开记录写成亲历事故
-    position: 连接池提示会把排查带向容量问题，而 NodeSource 中的 slot 与 redirect=MOVED 更能解释切换后旧拓扑仍在参与路由；升级只能在预发复现、压测和拓扑刷新观测后验收
+    position: 连接池提示会把排查带向容量问题；带redirect=MOVED的NodeSource记录的是重定向阶段，初始旧目标必须由DEBUG路由或拓扑快照确认；上游修复记录仍需在预发failover与failback场景验收
     format: technical-report
-    mediaPlan: [真实 GitHub Issue 页面截图作封面并保留 Closed bug milestone 3.33.0, 公开日志按原顺序排版且地址脱敏, 根据 Issue 现象绘制 client topology 到 old master 再经 MOVED 指向 new master 的非实测路径示意]
+    mediaPlan: [真实 GitHub Issue 页面截图作封面并保留 Closed bug milestone 3.33.0, 公开日志按原顺序排版且地址脱敏, 根据 Issue DEBUG 现象绘制 client topology 到旧映射目标当前副本再经 MOVED 指向当前主节点的非实测路径示意]
     sources: [redisson-5972-moved-timeout]

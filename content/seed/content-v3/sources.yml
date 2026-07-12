@@ -175,6 +175,6 @@
   pageUrl: https://github.com/redisson/redisson/issues/5972
   author: redisson/redisson contributors
   fetchedAt: 2026-07-12T17:29:37.200Z
-  factAnchors: [Redis 6.0.11, Redisson 3.30.0, 三主三从频繁主备切换, 客户端拓扑可能未刷新, 请求发往旧节点, Redis 返回 MOVED, RedisTimeoutException Unable to acquire connection, Increase connection pool size, NodeSource slot 7685, redirect MOVED, 重启后恢复, closed, bug, milestone 3.33.0]
+  factAnchors: [Redis 6.0.11, Redisson 3.30.0, 三主三从频繁主备切换, 客户端拓扑可能未刷新, RedisMovedException目标URL构造NodeSource, NodeSource addr是MOVED重定向目标, failover后failback小环境复现, DEBUG请求先到当前副本再MOVED到当前主节点, Redisson内部四个master而实际三主, commit a4bdaa5, re-added master node isn't updated in Cluster topology, maintainer回复Fixed并关闭, milestone 3.33.0, 本文未自行复现或验证3.33.0]
   quote: null
-  usageNote: "只核对公开 Issue、GitHub API 与 milestone；API：https://api.github.com/repos/redisson/redisson/issues/5972；milestone：https://github.com/redisson/redisson/milestone/178。不据此声称本地复现、确认修复提交或验证 3.33.0。"
+  usageNote: "核对公开 Issue、comments、timeline、3.30.0 RedisExecutor 与官方 commit；API：https://api.github.com/repos/redisson/redisson/issues/5972；comments：https://api.github.com/repos/redisson/redisson/issues/5972/comments；timeline：https://api.github.com/repos/redisson/redisson/issues/5972/timeline；源码：https://github.com/redisson/redisson/blob/redisson-3.30.0/redisson/src/main/java/org/redisson/command/RedisExecutor.java；commit：https://github.com/redisson/redisson/commit/a4bdaa5；milestone：https://github.com/redisson/redisson/milestone/178。区分首帖判断、社区复现和维护者修复记录，不声称本文复现或验证 3.33.0。"

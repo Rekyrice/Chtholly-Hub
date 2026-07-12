@@ -535,11 +535,11 @@
   sourceUrl: https://github.com/redisson/redisson/issues/5972
   sourcePageUrl: https://github.com/redisson/redisson/issues/5972
   fetchedAt: 2026-07-12T17:29:37.200Z
-  usageNote: 根据 Issue 所述切换、旧拓扑与 MOVED 现象绘制的简洁路径示意，仅表达 client topology、old master、MOVED、new master 关系，不是实测集群拓扑
+  usageNote: 根据 Issue 后续 DEBUG 所示 failback、旧slot映射与 MOVED 现象绘制，仅表达 client topology、旧映射目标（当前副本）、MOVED、当前主节点关系；不是实测集群拓扑，NodeSource addr 对应 MOVED 重定向目标
   sourceFile: redisson-5972-route-headless.png
   file: inline/redisson-cluster-route.webp
-  objectKey: seed/content-v3/inline/redisson-cluster-route/bcec62a0db429d338b0041dfa91ba8e43011245920e6ed7a13cbb1a46c00ca64.webp
-  sha256: bcec62a0db429d338b0041dfa91ba8e43011245920e6ed7a13cbb1a46c00ca64
+  objectKey: seed/content-v3/inline/redisson-cluster-route/7513fb0e5b19bfe196664fd1df8017814828543220e9f5743a144f2d9ed42dcc.webp
+  sha256: 7513fb0e5b19bfe196664fd1df8017814828543220e9f5743a144f2d9ed42dcc
   contentType: image/webp
   width: 1600
   height: 900
