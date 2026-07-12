@@ -1,196 +1,150 @@
-# Chtholly Hub — Agent 指南
+# Chtholly Hub — Agent 全局目录与工作契约
 
-> 本文件是参与本项目开发的 Coding Agent 的**唯一权威参考**。
-> 开始任何任务前，**务必先阅读本文**。
+> 本文件是仓库级任务的权威入口，适用于整个工作树；更深目录中的 `AGENTS.md` 可以补充该子树的局部规则，但不得放宽本文的安全约束。
+>
+> 采用渐进阅读：先用本文确定任务边界，只读取与当前任务直接相关的章节和局部规则，不要一次性加载整套知识库。
 
-## 项目概览
+## 开始任务前
 
-Chtholly Hub 是一个动漫博客向社区演进的全栈平台，从个人动漫博客起步，逐步引入 AI 内容能力。
+1. 阅读本文件，确认全局安全、Git、编码和验证规则。
+2. 在“任务路由”中找到任务类型，阅读对应的稳定知识章节。
+3. 进入目标子树后，继续阅读最近的局部 `AGENTS.md` 和应用 README。
+4. 检查 `git status`、当前分支、相关测试与用户已有改动，再决定最小实施范围。
 
-- **GitHub**: https://github.com/Rekyrice/Chtholly-Hub
-- **技术栈**: Java 21 + Spring Boot 3.2.4（后端）/ Next.js 16 + Tailwind CSS 4（前端）
-- **架构**: Monorepo — `apps/server`（Spring Boot）+ `apps/web`（Next.js）
+## 任务路由
 
-## 快速开始
+| 任务 | 先读 | 继续深入 |
+|------|------|----------|
+| 后端业务、API、缓存或事件 | [后端架构](docs/architecture/backend.md) | [后端局部规则](apps/server/AGENTS.md)、[数据与存储](docs/architecture/data-and-storage.md)、[请求链路](docs/architecture/request-flows.md) |
+| 前端页面、组件或交互 | [前端架构](docs/architecture/frontend.md) | [前端局部规则](apps/web/AGENTS.md)、[前端应用入口](apps/web/README.md) |
+| 角色 Agent、工具、上下文或记忆 | [Agent 系统](docs/architecture/agent-system.md) | [后端局部规则](apps/server/AGENTS.md)、[请求链路](docs/architecture/request-flows.md) |
+| 数据库、缓存、搜索、消息或 OSS | [数据与存储](docs/architecture/data-and-storage.md) | [数据库开发](docs/development/database.md)、[数据库操作入口](apps/server/db/README.md) |
+| 本地环境、配置与测试 | [开发入口](docs/development/README.md) | [配置](docs/development/configuration.md)、[测试矩阵](docs/development/testing.md) |
+| 部署、代理或容器 | [部署边界](docs/operations/deployment.md) | [Docker 操作入口](docker/README.md)、[脚本入口](scripts/README.md) |
+| Git、文档与仓库维护 | 本文件“工作区与 Git 安全” | [知识库首页](docs/README.md)、[测试矩阵](docs/development/testing.md) |
 
-```bash
-# 环境变量：复制仓库根目录 .env.example 为 .env 并填写
+## 系统概览
 
-# 后端
-cd apps/server
-mvn spring-boot:run    # 默认 http://localhost:8888
+Chtholly Hub 是 Java 21 + Spring Boot 3.2.4 与 Next.js 16 + Tailwind CSS 4 组成的 Monorepo：
 
-# 前端
-cd apps/web
-npm install
-npm run dev            # http://localhost:3000，/api/* 代理到 :8888
+```text
+浏览器
+  └─ Next.js Web（apps/web）
+       └─ Spring Boot API（apps/server）
+            ├─ MySQL：业务权威数据
+            ├─ Redis：缓存、Token、限流与位图状态
+            ├─ Elasticsearch：可降级的全文检索
+            ├─ Kafka：计数聚合与 Outbox 异步链路
+            └─ OSS：Markdown 正文与媒体
 
-# 基础设施（Docker）
-docker compose -f docker-compose.prod.yml up -d
+可选：WebSocket/API → 角色 Agent → LLM、RAG 与站内工具
 ```
 
-## 模块地图
+系统边界、同步/异步关系和关键入口统一见[架构首页](docs/architecture/README.md)。
 
-### 后端（`apps/server/src/main/java/com/chtholly/`）
+## 全局编码规则
 
-| 包名 | 职责 | 关键文件 |
-|------|------|----------|
-| `auth` | RS256 JWT 双 Token 认证、短信验证码 | `SecurityConfig`, `AuthService`, `JwtService` |
-| `post` | 文章 CRUD、多级缓存（Caffeine L1 + Redis L2）、SingleFlight、热 Key 检测 | `PostServiceImpl`, `PostFeedServiceImpl`, `HotKeyDetector` |
-| `counter` | 分布式点赞/收藏/浏览计数 — Redis Bitmap + SDS + Kafka 异步聚合 | `CounterServiceImpl`, `CounterAggregationConsumer` |
-| `relation` | 关注/取关 — 双表模型、Outbox + Canal CDC | `RelationServiceImpl`, `CanalOutboxConsumer` |
-| `comment` | 二级嵌套评论 + 通知事件 | `CommentServiceImpl`, `CommentController` |
-| `notification` | 事件驱动通知（Spring ApplicationEvent） | `NotificationServiceImpl`, `NotificationEventListener` |
-| `tag` | 标签 CRUD、文章关联、使用计数 | `TagServiceImpl`, `TagController` |
-| `search` | Elasticsearch 全文搜索（IK 分词）、游标分页 | `SearchServiceImpl`, `SearchIndexService`, `SearchIndexInitializer` |
-| `bangumi` | Bangumi API 客户端、本地缓存、番剧数据同步 | `BangumiClient`, `BangumiServiceImpl`, `BangumiSyncJob` |
-| `agent` | 自研 ReAct Agent 引擎 + WebSocket 流式输出 | `ChthollyAgent`, `AgentTool`, `AgentWebSocketHandler` |
-| `agent/tools` | Agent 工具：BangumiSearch、ArticleRAG、FulltextSearch 等 | `*Tool.java` |
-| `agent/memory` | 内存对话记忆（计划迁移 Redis） | `AgentConversationMemory`, `AgentMemoryStore` |
-| `storage` | OSS 预签名上传、头像管理 | `OssStorageService`, `StorageController` |
-| `profile` | 用户资料编辑、头像上传 | `ProfileServiceImpl`, `ProfileController` |
-| `user` | 公开用户信息、用户主页 | `UserPublicServiceImpl`, `UserController` |
-| `health` | 自定义 Actuator Health Indicator（ES/OSS/Bangumi） | `ElasticsearchHealthIndicator`, `OssHealthIndicator`, `BangumiHealthIndicator` |
-| `common` | 全局异常处理、雪花 ID、Slug 工具、分页 | `GlobalExceptionHandler`, `SnowflakeIdGenerator`, `SlugUtils` |
-| `config` | Elasticsearch、Redis、Redisson、Kafka、线程池配置 | `*Config.java` |
-| `llm` | Spring AI 集成、RAG 索引、SSE 流式 | `RagQueryService`, `PostRagIndexer` |
+### 后端
 
-### 前端（`apps/web/`）
+- 按 `{module}/api`、`service`、`service/impl`、`mapper`、`model` 组织业务；修改前遵循 `apps/server/AGENTS.md` 的局部规则。
+- 类级和 public/protected 方法级 Javadoc 使用英文，方法体内只用中文解释非显然的 WHY；魔法数字和非常规逻辑必须注明来源或含义。
+- 业务错误使用 `BusinessException` 与明确 HTTP 状态；禁止 `catch (Exception ignored) {}`，每个 catch 至少记录日志。
+- 环境相关值通过 `application*.yml` 中的 `${VAR:default}` 注入；可选能力必须有特性开关。
+- MyBatis 只允许 `#{param}` 参数化，禁止 `${param}`；实体 ID 使用 `SnowflakeIdGenerator`，禁止新增自增主键。
+- TODO/HACK 必须写明跟踪来源或移除条件，不保留注释掉的死代码。
 
-| 目录 | 职责 |
-|------|------|
-| `app/(site)/` | 公开页：首页、文章详情、归档、标签、关于、搜索、用户主页、Agent |
-| `app/(site)/login/` | 手机号 + 短信验证码登录/注册 |
-| `app/(site)/write/` | Markdown 编辑器 + 五步发布流程 |
-| `components/site/` | 共享 UI：Navbar、Sidebar、PostCard、Footer、CommentSection、NotificationBell |
-| `components/agent/` | Agent 聊天界面（AgentChat.tsx） |
-| `lib/services/` | API 客户端与服务模块（auth、post、comment、search、tag、notification、storage、user） |
-| `lib/types/` | TypeScript 类型定义 |
-| `lib/auth/` | 客户端 JWT Token 管理 |
+### 前端
 
-### 数据库
+- `app/(site)` 默认使用 Server Components 和 ISR；仅在浏览器交互确有需要时加入 `"use client"`。
+- Server Component 通过服务模块取数；Client Component 通过 `lib/services/apiClient.ts` 调用 API。
+- API 请求与响应类型集中在 `lib/types`，不要在页面中复制接口结构。
+- 样式使用 Tailwind 与 `globals.css` 主题 Token，优先复用 `--blog-primary`、`--blog-secondary` 等现有变量。
+- 进入前端子树后，以 `apps/web/AGENTS.md` 的 Next.js 版本规则、交互验证和局部约束为准。
 
-- **基础 Schema**: `apps/server/db/schema.sql`
-- **迁移脚本**: `apps/server/db/migration/V5__tags.sql` 至 `V10__notification_cleanup_index.sql`
-- **种子数据**: `apps/server/db/seed/phase_a_seed.sql`
-- **ORM**: MyBatis XML，`apps/server/src/main/resources/mapper/`
+## 临时文件与工作区安全
 
-## 编码规范
+- Agent 创建的临时文件必须放在当前项目内、且已被 Git 忽略的目录，例如 `.codex-tmp/` 或 `.superpowers/`。除非工具无法在项目内运行，不得写入 C 盘或用户主目录。
+- 创建项目内临时目录前，先通过 `.gitignore` 或本地 `.git/info/exclude` 确认其已被忽略。任务结束后删除任务专用临时文件并停止临时服务，除非用户要求保留。
+- 仓库可能已有用户或其他会话的改动。不得暂存、提交、变基、清理、复制、移动或删除不属于当前任务的文件、分支或 worktree。
 
-### 后端（Java）
+## Git ignore 安全
 
-1. **包结构**: `{module}/api/`（Controller + DTO）、`{module}/service/`（接口）、`{module}/service/impl/`（实现）、`{module}/mapper/`（MyBatis）、`{module}/model/`（实体/Row）
-2. **注释分层策略**（类/方法英文门面，方法体内中文 WHY）:
-   - **(a) 类级 Javadoc → 英文**：描述职责、在系统中的位置、关键架构关系；可含 `@see` 引用相关类
-   - **(b) 方法级 Javadoc → 英文**：public/protected 方法写 `@param`、`@return`、`@throws`（API 文档性质）
-   - **(c) 方法体内 WHY 注释 → 中文**：解释**为什么**这样设计（面试时可当讲解），不复述代码在做什么
-   - **(d) 魔法数字与非常规逻辑**：必须有行内注释（中英文皆可），说明含义或来源
-   - **(e) TODO/FIXME/HACK 标记**:
-     - `// TODO: Description — tracked in [issue/prompt reference]`
-     - `// HACK: 临时方案，原因 [reason]，在 [condition] 后移除`
-   - **不做的事**: 不给 Lombok 生成的 getter/setter 加注释；不给显而易见代码加注释；不写被注释掉的死代码
-   - 示例:
-     ```java
-     /**
-      * Multi-level cache feed service for public post listings.
-      *
-      * <p>Architecture: Caffeine L1 → Redis L2 fragment cache → MySQL.
-      * Uses SingleFlight for stampede prevention.
-      *
-      * @see HotKeyDetector
-      */
-     public class PostFeedServiceImpl {
-         /**
-          * Fetches a page of public posts with multi-level cache.
-          *
-          * @param page Page number (1-indexed).
-          * @param size Items per page (max 50).
-          * @return Cached feed page with enriched post items.
-          */
-         public FeedPage getPublicFeed(int page, int size) {
-             // 用 SingleFlight 而不是直接查缓存，是因为缓存同时过期时
-             // 几十个并发请求会同时打到 DB（缓存击穿）。
-         }
-     }
-     ```
-3. **异常处理**: 使用 `BusinessException` + HTTP 状态码。**禁止** `catch (Exception ignored) {}`，每个 catch 至少记录日志
-4. **配置**: 环境相关值统一 `${VAR:default}` 写在 `application.yml`；可选模块用特性开关（`LLM_ENABLED`、`CANAL_ENABLED`）
-5. **SQL**: MyBatis 一律 `#{param}` 参数化，**禁止** `${param}`（SQL 注入）
-6. **ID**: 实体 ID 统一 `SnowflakeIdGenerator`，禁止自增主键
+- 仓库忽略规则具有最高优先级。不得使用 `git add -f`，也不得因计划、Skill、模板或交付清单要求提交某文件而绕过忽略规则；只有用户明确授权该具体文件时才可例外。
+- 每次提交前，必须审计本次新增且已暂存的文件：
 
-### 前端（TypeScript/React）
+  ```powershell
+  git diff --cached --name-only --diff-filter=A | git check-ignore -v --no-index --stdin
+  ```
 
-1. **默认 Server Components**：`app/(site)/` 下页面为服务端组件，ISR（`revalidate = 60`）；仅交互必需时使用 `"use client"`
-2. **API 调用**: Server Component 直接调 `postService.*`；Client Component 用 `lib/services/apiClient.ts`
-3. **样式**: Tailwind 工具类 + `globals.css` 自定义属性；主题色 `--blog-primary`、`--blog-secondary`
-4. **类型**: 所有 API 请求/响应类型定义在 `lib/types/`
+  任何输出都是硬停止条件；逐个取消暂存并修正交付范围，禁止强制添加。
+- 每次 push 或创建 PR 前，先 fetch 目标分支，并审计任务新增文件（目标分支不是 `main` 时替换比较基线）：
 
-### Git
+  ```powershell
+  git fetch origin
+  git diff --name-only --diff-filter=A origin/main...HEAD | git check-ignore -v --no-index --stdin
+  ```
 
-1. **Commit 格式**: Conventional Commits — `feat:`、`fix:`、`refactor:`、`chore:`、`docs:`、`test:`
-2. **Commit 语言**: 中文
-3. **分支命名**: `feat/{description}`、`fix/{description}`
-4. **提交节奏**: 每个可独立验证的改动完成后及时提交；较长任务按真实职责边界拆成多个小提交
-5. **推送规则**: Coding Agent 只提交、不推送，远端推送由项目维护者执行
+  任何输出都阻止发布。不能只依赖 `git status`、范围检查或 `git ls-files -ci`，因为它们无法可靠区分基线中已跟踪的忽略文件。
+- 区分基线已跟踪的忽略文件与本任务新增文件，不修改无关基线文件。若本任务已经发布了被忽略文件，必须从 Agent 自有分支的任务历史中移除，确认审计为空，再用 `--force-with-lease` 更新；仅追加删除提交不能清理历史。
 
-### 常用验证命令
+## 并发 worktree 工作流
 
-```bash
+- 并发开发必须为每个会话使用独立分支和 `<repo>/.worktrees/<task>` 下的独立 worktree；创建前确认 `.worktrees/` 已被忽略，不得直接在共享主工作树实施。
+- 创建或发布任务分支前，先 `git fetch origin`，以最新 `origin/main` 为基线，并检查 `git status`、`git log --left-right --cherry-pick origin/main...HEAD` 和 `git diff origin/main...HEAD`，确保只包含任务范围。
+- 提交按可独立验证的真实职责边界拆分。push 或 PR 前运行快速测试与任务适用的集成测试。只有在 Agent 自有任务分支有意重写历史后，才允许使用 `--force-with-lease`。
+- PR 未关闭前保留任务 worktree。用户确认 PR 已合并或工作已放弃之前，不得合并、删除分支或移除 worktree。
+- 合并后先确认 PR 与 CI 状态，执行 `git fetch --prune`，确认主 worktree 与任务 worktree 干净，快进本地主分支，并验证功能树已存在于主分支。对于 squash merge，删除分支前必须比较树等价，因为任务提交不会成为主分支祖先。
+- 清理时使用 `git worktree remove`，只在确认 squash merge 树等价后才可 `git branch -D`，随后执行 `git worktree prune`，并确认本地/远端引用、worktree 注册和目录均已消失。
+- Windows 删除前必须解析绝对路径并确认目标位于仓库 `.worktrees` 目录内。优先使用 Git 原生命令；先诊断锁，不得对未验证或计算出的路径递归删除，只可处理确认安全的空残留目录。
+
+## 提交规则
+
+- 使用中文 Conventional Commits：`feat:`、`fix:`、`refactor:`、`chore:`、`docs:`、`test:`。
+- 分支名保持技术化，功能与修复默认使用 `feat/{description}`、`fix/{description}`；文档分支可使用 `docs/{description}`。
+- 分支名、提交信息、代码注释与工程文档只描述技术事实。
+- Coding Agent 只提交、不 push；远端推送由项目维护者执行。
+
+## 验证命令
+
+```powershell
 # 后端全量测试
-cd apps/server && mvn test
+cd apps/server
+mvn test
 
-# 后端单测（PowerShell 中多个类名参数需要整体加引号）
-cd apps/server && mvn -q '-Dtest=ClassATest,ClassBTest' test
+# 后端定向测试；PowerShell 中多个类名参数需要整体加引号
+mvn -q '-Dtest=ClassATest,ClassBTest' test
 
-# 前端生产构建
-cd apps/web && npm run build
+# 前端测试与生产构建
+cd ../web
+npm run test:run
+npm run build
 
-# 提交前检查
+# 提交前格式与范围
+cd ../..
 git diff --check
 git status --short
 ```
 
-## 架构决策
+按改动风险选择完整验证组合，具体矩阵见[测试文档](docs/development/testing.md)。
 
-| 决策 | 理由 |
-|------|------|
-| 多级缓存（Caffeine + Redis） | L1 热 Key（纳秒级）、L2 温数据（毫秒级）、DB 为最终数据源 |
-| SingleFlight | 防止缓存击穿 — 同一 pageKey 并发只打一次 DB |
-| Outbox + Canal CDC | 写路径与搜索索引/关系同步解耦，无需 2PC |
-| 通知用 Spring ApplicationEvent（非 Kafka） | MVP 刻意简化 — 通知非关键路径，同步可接受 |
-| 自研 ReAct Agent（非 Spring AI Agent） | 核心循环约 50 行，完全可控，无框架负担 |
-| MySQL 邻接表做知识图谱（非 Neo4j） | 数据量小（数千节点），Java BFS 比 Cypher 更清晰 |
-| Redis Bitmap 做点赞/收藏幂等 | O(1) 查/写，bitcount 统计 — 极省内存 |
+## 章节索引
 
-## 已知技术债
+- [项目知识库](docs/README.md)
+- [架构首页](docs/architecture/README.md)
+  - [后端架构](docs/architecture/backend.md)
+  - [前端架构](docs/architecture/frontend.md)
+  - [Agent 系统](docs/architecture/agent-system.md)
+  - [数据与存储](docs/architecture/data-and-storage.md)
+  - [请求链路](docs/architecture/request-flows.md)
+- [开发入口](docs/development/README.md)
+  - [配置](docs/development/configuration.md)
+  - [数据库开发](docs/development/database.md)
+  - [测试矩阵](docs/development/testing.md)
+- [部署](docs/operations/deployment.md)
+- [后端局部规则](apps/server/AGENTS.md)
+- [前端局部规则](apps/web/AGENTS.md)
 
-> 详细执行计划见 `docs/prompts/` 下各改进文档（若尚未创建，以 Issue/规划文档为准）。
+## Chtholly Hub 项目偏好
 
-- **Agent**: `docs/prompts/agent-improvements.md`
-- **Backend**: `docs/prompts/backend-improvements.md`
-- **Frontend**: `docs/prompts/frontend-improvements.md`
-
-## 部署
-
-- **生产环境**: 单机 ECS + Docker Compose
-- **Compose 文件**: `docker-compose.prod.yml`（Spring Boot + Next.js standalone + MySQL + Redis + Nginx）
-- **Nginx**: `docker/nginx/default.conf` — `/api` 反代 Spring Boot，静态走 Next.js
-- **OSS**: 阿里云 OSS 存储 Markdown 与头像
-- **降级路径**: 去掉 Kafka → Spring Event；去掉 ES → MySQL LIKE（见规划文档）
-
-## 环境变量
-
-开发见仓库根目录 `.env.example`，生产见 `.env.prod.example`。常用变量：
-
-| 变量 | 用途 | 默认值 |
-|------|------|--------|
-| `SERVER_PORT` | 后端端口 | `8888` |
-| `MYSQL_HOST` | 数据库主机 | `localhost` |
-| `REDIS_HOST` | Redis 主机 | `localhost` |
-| `KAFKA_BOOTSTRAP_SERVERS` | Kafka 地址 | `localhost:9092` |
-| `ES_URIS` | Elasticsearch 集群 | `http://localhost:9200` |
-| `DEEPSEEK_API_KEY` | DeepSeek LLM API Key | （无） |
-| `DASHSCOPE_API_KEY` | DashScope Embedding API Key | （无） |
-| `LLM_ENABLED` | 启用 LLM/Agent | `false` |
-| `OSS_*` | 阿里云 OSS 凭证 | （无） |
-| `BANGUMI_ACCESS_TOKEN` | Bangumi API Personal Token | （无） |
+- 设计文档和实施计划默认使用中文，用户明确要求其他语言时除外。
+- 分支名、提交信息、代码注释与工程文档保持严格技术化。
