@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the current low-quality Seed community with 8 natural-looking accounts, 40 curated illustrated posts, and reproducible non-uniform interactions without changing existing Seed user IDs or the IDs of the 32 existing Seed posts.
+**Goal:** Replace the current low-quality Seed community with 8 natural-looking accounts, 40 real-source posts, and reproducible non-uniform interactions without changing existing Seed user IDs or the IDs of the 32 existing Seed posts.
 
-**Architecture:** A versioned `content/seed/content-v2` package becomes the source of truth. Focused loader, validator, identity resolver, media publisher, database writer, and import orchestrator components apply the package idempotently; MySQL remains the runtime source of truth, StorageService owns stable media URLs, and SearchIndexService is synchronized after database commit.
+**Architecture:** Tasks 1–9 built and verified the reusable content-pack infrastructure. The 2026-07-12 revision below replaces the rejected `content-v2` editorial work with a real-source `content-v3` package, structured provenance cards, optional post media, and a three-post user review gate. MySQL remains the runtime source of truth, StorageService owns stable media URLs, and SearchIndexService is synchronized after database commit.
 
 **Tech Stack:** Java 21, Spring Boot 3.2.4, MyBatis XML, Jackson YAML, MySQL, Redis, Elasticsearch, existing StorageService, Node.js with Sharp for deterministic image preprocessing, JUnit 5, Mockito, Node built-in test runner.
 
@@ -1380,3 +1380,615 @@ Report:
 - backend/frontend verification;
 - commit list;
 - explicit confirmation that nothing was pushed.
+
+---
+
+# 2026-07-12 Real-Source Revision Implementation Plan
+
+Tasks 15–22 supersede the editorial portions of Tasks 9–14. Reuse the committed loader, stable identity, media publication, transactional writer, import orchestration and CLI work; do not reimplement those components.
+
+## Revised file map
+
+### Content-pack model and validation
+
+- Create: `apps/server/src/main/java/com/chtholly/seed/contentpack/model/SeedSourceDefinition.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/model/ContentPack.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/model/SeedAssetDefinition.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackLoader.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackValidator.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackDatabaseWriter.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackQualityGate.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackLoaderTest.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackValidatorTest.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackDatabaseWriterTest.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackQualityGateTest.java`
+
+### Deterministic source acquisition
+
+- Create: `apps/web/scripts/seed/fetch-source-asset.mjs`
+- Create: `apps/web/scripts/seed/fetch-source-asset.test.mjs`
+- Modify: `apps/web/package.json`
+
+### Real-source content pack
+
+- Delete: `content/seed/content-v2/**`
+- Create: `content/seed/content-v3/manifest.yml`
+- Create: `content/seed/content-v3/sources.yml`
+- Create: `content/seed/content-v3/accounts.yml`
+- Create: `content/seed/content-v3/assets.yml`
+- Create: `content/seed/content-v3/posts.yml`
+- Create: `content/seed/content-v3/interactions.yml`
+- Create: `content/seed/content-v3/posts/*.md`
+- Create: `content/seed/content-v3/assets/avatars/*`
+- Create: `content/seed/content-v3/assets/covers/*`
+- Create: `content/seed/content-v3/assets/inline/*`
+
+### Runtime defaults and review tooling
+
+- Modify: `apps/server/src/main/java/com/chtholly/seed/SeedProperties.java`
+- Modify: `apps/server/src/main/resources/application.yml`
+- Modify: `apps/server/src/test/java/com/chtholly/seed/SeedCliReadOnlySafetyTest.java`
+- Create temporarily, never commit: `.codex-tmp/seed-content-v3/review/index.html`
+- Create temporarily, never commit: `.codex-tmp/seed-content-v3/review-sources.json`
+
+## Task 15: Add structured provenance and optional post media
+
+**Files:**
+- Create: `apps/server/src/main/java/com/chtholly/seed/contentpack/model/SeedSourceDefinition.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/model/ContentPack.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/model/SeedAssetDefinition.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackLoader.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackValidator.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackDatabaseWriter.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackLoaderTest.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackValidatorTest.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackDatabaseWriterTest.java`
+
+- [ ] **Step 1: Write failing loader tests for `sources.yml`**
+
+Add a fixture source and assert it is loaded by key:
+
+```yaml
+- key: bgm-mygo-episode-discussion
+  type: bangumi-discussion
+  title: MyGO 单集讨论
+  pageUrl: https://bgm.tv/subject/428735/ep/12
+  author: null
+  fetchedAt: 2026-07-12T00:00:00Z
+  factAnchors: [第12话, live]
+  quote: null
+  usageNote: 仅提取争议点，不复制楼层正文
+```
+
+```java
+assertThat(pack.sources()).containsKey("bgm-mygo-episode-discussion");
+assertThat(pack.sources().get("bgm-mygo-episode-discussion").type())
+        .isEqualTo("bangumi-discussion");
+```
+
+- [ ] **Step 2: Run the loader test and confirm the missing model fails**
+
+Run:
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=ContentPackLoaderTest' test
+```
+
+Expected: compilation or assertion failure because `ContentPack.sources()` does not exist.
+
+- [ ] **Step 3: Add the immutable source model and loader boundary**
+
+Create:
+
+```java
+public record SeedSourceDefinition(
+        String key,
+        String type,
+        String title,
+        String pageUrl,
+        String author,
+        Instant fetchedAt,
+        List<String> factAnchors,
+        String quote,
+        String usageNote) {
+    public SeedSourceDefinition {
+        factAnchors = factAnchors == null ? List.of() : List.copyOf(factAnchors);
+    }
+}
+```
+
+Add `Map<String, SeedSourceDefinition> sources` to `ContentPack`. Keep an auxiliary constructor with the previous signature that supplies `Map.of()` so existing unit fixtures remain readable. Load optional `sources.yml` exactly like the existing account and asset lists, indexing by `SeedSourceDefinition::key`.
+
+- [ ] **Step 4: Write failing v3 provenance validation tests**
+
+Add tests that build a `content-v3` manifest and assert these exact diagnostics:
+
+```java
+assertThatThrownBy(() -> validator.validate(packWithUnknownSourceKey()))
+        .hasMessageContaining("missing post source: post-1 -> missing-source");
+assertThatThrownBy(() -> validator.validate(packWithGeneratedAsset()))
+        .hasMessageContaining("AI-generated asset forbidden: avatar-1");
+assertThatThrownBy(() -> validator.validate(packWithIncompleteWebAsset()))
+        .hasMessageContaining("missing asset source page: avatar-1");
+```
+
+For `content-v3`, interpret `post.brief().sources()` as source-card keys. Require at least one source per post and require every web asset to have `sourcePageUrl`, `fetchedAt` and `usageNote`. Reject `source`, `sourceUrl` or `sourcePageUrl` values containing `openai-imagegen`, `generated:` or `gocrazyai` case-insensitively.
+
+- [ ] **Step 5: Extend asset provenance fields and implement validation**
+
+Extend `SeedAssetDefinition` after `sourceUrl` with:
+
+```java
+String sourcePageUrl,
+Instant fetchedAt,
+String usageNote,
+```
+
+Update loader fixtures and constructor call sites. Apply strict provenance checks only when `manifest.version().equals("content-v3")`, while the AI-generated-source prohibition applies to every pack version.
+
+- [ ] **Step 6: Write failing tests for posts without covers**
+
+```java
+SeedPostDefinition noMedia = postWith(null, List.of());
+assertThatCode(() -> validator.validate(packWith(noMedia))).doesNotThrowAnyException();
+assertThat(ContentPackDatabaseWriter.contentHash(noMedia, 42L, publishedMarkdownOnly()))
+        .isNotBlank();
+```
+
+Expected before implementation: validator reports a missing cover and the writer requires a published cover.
+
+- [ ] **Step 7: Make cover assets optional end to end**
+
+In `ContentPackValidator`, validate the cover only when nonblank. In `ContentPackDatabaseWriter.contentHash` and `imageUrls`, add the cover hash/URL only when nonblank; keep inline assets ordered after it. Do not synthesize placeholder images.
+
+- [ ] **Step 8: Run targeted tests**
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=ContentPackLoaderTest,ContentPackValidatorTest,ContentPackDatabaseWriterTest' test
+```
+
+Expected: all tests pass.
+
+- [ ] **Step 9: Commit the model boundary**
+
+```powershell
+git add apps/server/src/main/java/com/chtholly/seed/contentpack apps/server/src/test/java/com/chtholly/seed/contentpack
+git commit -m "feat: 增加内容来源卡与可选文章媒体"
+```
+
+## Task 16: Retire the rejected v2 pack and establish the v3 default
+
+**Files:**
+- Delete: `content/seed/content-v2/**`
+- Create: `content/seed/content-v3/manifest.yml`
+- Create: `content/seed/content-v3/sources.yml`
+- Create: `content/seed/content-v3/accounts.yml`
+- Create: `content/seed/content-v3/assets.yml`
+- Create: `content/seed/content-v3/posts.yml`
+- Create: `content/seed/content-v3/interactions.yml`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/SeedProperties.java`
+- Modify: `apps/server/src/main/resources/application.yml`
+- Modify: `apps/server/src/test/java/com/chtholly/seed/SeedCliReadOnlySafetyTest.java`
+
+- [ ] **Step 1: Write the failing default-path assertion**
+
+```java
+assertThat(new SeedProperties().getContentPackPath())
+        .isEqualTo("../../content/seed/content-v3");
+```
+
+Also assert `application.yml` contains `${SEED_CONTENT_PACK_PATH:../../content/seed/content-v3}`.
+
+- [ ] **Step 2: Run the safety test and confirm it still points at v2**
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=SeedCliReadOnlySafetyTest' test
+```
+
+Expected: FAIL with the `content-v2` default.
+
+- [ ] **Step 3: Remove only the rejected pack after validating its path**
+
+```powershell
+$worktree = (Resolve-Path .).Path
+$target = (Resolve-Path content/seed/content-v2).Path
+$allowed = (Resolve-Path content/seed).Path
+if (-not $target.StartsWith($allowed + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to remove path outside content/seed: $target"
+}
+git status --short -- content/seed/content-v2
+git rm -r -- content/seed/content-v2
+if (Test-Path $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+```
+
+Expected: only files under this worktree's `content/seed/content-v2` are removed. Do not use `git clean`, `git reset` or touch another worktree.
+
+- [ ] **Step 4: Create the review-stage v3 skeleton**
+
+```yaml
+version: content-v3
+namespace: launch-community
+stage: review
+expectedAccounts: 0
+expectedPosts: 0
+expectedCategories: {}
+```
+
+Create empty YAML lists in `sources.yml`, `accounts.yml`, `assets.yml`, `posts.yml`, and all four lists in `interactions.yml`.
+
+- [ ] **Step 5: Switch both runtime defaults to v3**
+
+Change `SeedProperties.contentPackPath` and `application.yml`; do not change environment-variable override behavior.
+
+- [ ] **Step 6: Prove the empty review pack validates without mutation**
+
+```powershell
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+```
+
+Expected: `status=validated`, namespace `launch-community`, version `content-v3`, no validation or quality errors.
+
+- [ ] **Step 7: Commit the version transition**
+
+```powershell
+git add apps/server/src/main/java/com/chtholly/seed/SeedProperties.java apps/server/src/main/resources/application.yml apps/server/src/test/java/com/chtholly/seed/SeedCliReadOnlySafetyTest.java content/seed
+git commit -m "refactor: 将初始内容包切换到真实来源版本"
+```
+
+## Task 17: Add a deterministic network-asset fetcher
+
+**Files:**
+- Create: `apps/web/scripts/seed/fetch-source-asset.mjs`
+- Create: `apps/web/scripts/seed/fetch-source-asset.test.mjs`
+- Modify: `apps/web/package.json`
+
+- [ ] **Step 1: Write failing tests around a local HTTP server**
+
+The test must cover one redirect, a required custom `User-Agent`, byte preservation and metadata output:
+
+```js
+assert.equal(result.sha256, createHash("sha256").update(body).digest("hex"));
+assert.equal(result.sourceUrl, `${origin}/redirect`);
+assert.equal(result.finalUrl, `${origin}/avatar.jpg`);
+assert.equal(result.fetchedAt, "2026-07-12T00:00:00.000Z");
+assert.deepEqual(readFileSync(output), body);
+```
+
+Use `--fetched-at` in tests; production calls may default to the current instant. No test may call the public internet.
+
+- [ ] **Step 2: Run the Node test and confirm the script is absent**
+
+```powershell
+cd apps/web
+node --test scripts/seed/fetch-source-asset.test.mjs
+```
+
+Expected: FAIL because the module cannot be imported.
+
+- [ ] **Step 3: Implement the narrow CLI**
+
+Supported arguments:
+
+```text
+--url <public image URL>
+--source-page <page where the image was discovered>
+--output <project-local destination>
+--user-agent <descriptive user agent>
+--fetched-at <ISO instant, optional>
+```
+
+Reject destinations outside the current repository, non-HTTP(S) URLs, responses larger than 15 MiB, non-2xx final responses and content types outside `image/jpeg`, `image/png`, `image/webp`, `image/gif`. Write the image once, then print one JSON object containing `sourceUrl`, `sourcePageUrl`, `finalUrl`, `fetchedAt`, `sha256`, `contentType` and `bytes`. Do not create an internet-dependent build step.
+
+- [ ] **Step 4: Run tests and add a package script**
+
+```json
+"seed:fetch-source": "node scripts/seed/fetch-source-asset.mjs"
+```
+
+```powershell
+node --test scripts/seed/fetch-source-asset.test.mjs
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit the fetcher**
+
+```powershell
+git add apps/web/package.json apps/web/scripts/seed/fetch-source-asset.mjs apps/web/scripts/seed/fetch-source-asset.test.mjs
+git commit -m "feat: 增加公开来源图片固定工具"
+```
+
+## Task 18: Build eight real-looking accounts and approved avatars
+
+**Files:**
+- Modify: `content/seed/content-v3/manifest.yml`
+- Modify: `content/seed/content-v3/accounts.yml`
+- Modify: `content/seed/content-v3/assets.yml`
+- Create: `content/seed/content-v3/assets/avatars/*`
+
+- [ ] **Step 1: Acquire the eight approved visual categories**
+
+Use the approved Bangumi-user-avatar candidates C01, C03, C04, C05, C09 and C12, plus C06 hamster and C08 night sky. Use the real source page and avatar URL already recorded during research. If a URL is unavailable, replace it only with the same category and show the replacement in the visual review page.
+
+Run the fetcher once per asset, always writing the original into `.codex-tmp/seed-content-v3/source-images/`; then normalize with the existing Sharp media tool to 512×512 WebP under `content/seed/content-v3/assets/avatars/`.
+
+- [ ] **Step 2: Write eight concise accounts**
+
+Keep the existing stable `seedKey` and `legacyHandle` values so user IDs remain stable, but replace nickname, handle, bio, tags and voice. Requirements:
+
+```text
+nickname: 2–14 visible characters, mixed naming styles
+handle: 3–24 ASCII letters/digits/underscore
+bio: null, empty, or at most 45 Chinese characters
+school: null for all accounts
+voice.commonPhrases: empty list
+voice.forbiddenExpressions: include the known template phrases
+```
+
+Do not copy any source Bangumi username, nickname or profile text. Do not set a gender based on an avatar.
+
+- [ ] **Step 3: Declare full asset provenance**
+
+Each avatar entry must include:
+
+```yaml
+source: public-web
+sourceUrl: <direct Bangumi avatar URL>
+sourcePageUrl: <public Bangumi user page URL>
+fetchedAt: <ISO instant>
+usageNote: 仅复用公开头像图片，不关联或冒充原用户身份
+```
+
+Use content-addressed object keys and the real normalized-file hashes.
+
+- [ ] **Step 4: Run media and dry-run checks**
+
+```powershell
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --write-hashes
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+```
+
+Expected: 8 accounts, 8 avatars, 0 posts, no AI-generated source, status `validated`.
+
+- [ ] **Step 5: Create a local visual contact sheet and stop for account review**
+
+Generate `.codex-tmp/seed-content-v3/review/accounts.html` showing each avatar at 64 and 128 pixels beside nickname, handle and bio. Verify every local asset reference returns 200. Do not commit the review page.
+
+- [ ] **Step 6: Commit only after user approval**
+
+```powershell
+git add content/seed/content-v3/manifest.yml content/seed/content-v3/accounts.yml content/seed/content-v3/assets.yml content/seed/content-v3/assets/avatars
+git commit -m "feat: 重建真实来源社区账号与头像"
+```
+
+## Task 19: Author and review three real-source sample posts
+
+**Files:**
+- Modify: `content/seed/content-v3/manifest.yml`
+- Modify: `content/seed/content-v3/sources.yml`
+- Modify: `content/seed/content-v3/assets.yml`
+- Modify: `content/seed/content-v3/posts.yml`
+- Create: `content/seed/content-v3/posts/*.md`
+- Create: `content/seed/content-v3/assets/covers/*`
+- Create: `content/seed/content-v3/assets/inline/*`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackQualityGate.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackQualityGateTest.java`
+
+- [ ] **Step 1: Select source bundles before writing prose**
+
+Use `web-access` for all internet work. Create three bundles:
+
+1. one Bangumi discussion/log plus the subject page and official anime page;
+2. one real GitHub Issue plus official Java/Python/LLM documentation;
+3. one Bangumi discussion theme or game announcement suitable for a 180–450 Chinese-character community note.
+
+Record source cards first. A source bundle is rejected if it cannot support a concrete title without invented personal history.
+
+- [ ] **Step 2: Write failing quality tests for v3 formats and template-family repetition**
+
+Add format-specific bounds:
+
+```java
+ContentPack pack = pack(root,
+        post("community-short", "锚点", "锚点" + "短".repeat(177), "community-note"),
+        post("community-min", "锚点", "锚点" + "短".repeat(178), "community-note"),
+        post("issue-short", "锚点", "锚点" + "短".repeat(297), "issue-note"));
+ContentPackQualityGate.QualityGateResult result = gate.audit(pack);
+assertTrue(result.errors().stream().anyMatch(value -> value.equals(
+        "body length out of range: community-short -> 179")));
+assertFalse(result.errors().stream().anyMatch(value -> value.contains("community-min")));
+assertTrue(result.errors().stream().anyMatch(value -> value.equals(
+        "body length out of range: issue-short -> 299")));
+```
+
+Use these bounds: `community-note` 180–700 Han characters, `issue-note` 300–1,800, `review` 450–2,200. Add corpus-level errors when more than one post uses the same template family: `不是…而是…`, `真正…在意`, `总的来说`, or identical closing conclusions.
+
+- [ ] **Step 3: Implement the minimal quality-gate changes**
+
+Introduce a `LengthBounds` record and a format map. Preserve the existing `short-note` behavior for old test fixtures, but require every v3 sample to use `community-note`, `issue-note` or `review`.
+
+- [ ] **Step 4: Write three structurally different Markdown posts**
+
+- Anime review: 450–900 Han characters, one specific disagreement, no universal conclusion.
+- Issue note: 450–1,200 Han characters, include the real error/behavior, affected version, reproduction and source link; do not say it happened in the author's company.
+- Community note: 180–450 Han characters, no headings and no final takeaway.
+
+At most one short attributed quotation may appear in each post. Keep it under 25 words from its source. Every claim that looks factual must map to a source-card fact anchor.
+
+- [ ] **Step 5: Use only directly relevant real media**
+
+At least one sample must have no inline image. A cover is optional. Where media is used, acquire a Bangumi subject cover, official visual, Issue screenshot or real command output; do not create AI art or decorative SVG.
+
+- [ ] **Step 6: Run evidence, media and pack validation**
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=ContentPackQualityGateTest,ContentPackLoaderTest,ContentPackValidatorTest' test
+cd ../..
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --write-hashes
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+git diff --check
+```
+
+Expected: 3 posts, all source references resolve, media hashes pass, status `validated`.
+
+- [ ] **Step 7: Build the source-aware review page and stop**
+
+Create `.codex-tmp/seed-content-v3/review/index.html` with rendered Markdown, actual media, author card and a collapsed source panel listing source title, page URL, fact anchors and any short quote. Verify all local references return 200. Do not create interactions and do not commit the sample posts before explicit user approval.
+
+- [ ] **Step 8: Commit approved samples**
+
+```powershell
+git add apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackQualityGate.java apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackQualityGateTest.java content/seed/content-v3
+git commit -m "feat: 增加真实来源代表文章"
+```
+
+## Task 20: Expand the approved editorial system to about forty posts
+
+**Files:**
+- Modify: `content/seed/content-v3/manifest.yml`
+- Modify: `content/seed/content-v3/sources.yml`
+- Modify: `content/seed/content-v3/assets.yml`
+- Modify: `content/seed/content-v3/posts.yml`
+- Create: `content/seed/content-v3/posts/*.md`
+- Create: `content/seed/content-v3/assets/covers/*`
+- Create: `content/seed/content-v3/assets/inline/*`
+
+- [ ] **Step 1: Freeze the editorial matrix before drafting**
+
+Create 40 rows in `posts.yml` and set the manifest categories to `番剧: 20`、`技术: 10`、`生活: 10`. Assign all 32 historical Seed slugs exactly once through `legacySlug`; the remaining 8 posts use `legacySlug: null`. Use exactly 14 `community-note`, 8 `issue-note` and 18 `review` posts.
+
+- [ ] **Step 2: Create source cards in batches of five posts**
+
+For each row, record at least one source card before prose. Anime reviews require a Bangumi subject/discussion source plus an official source for production facts. Technical posts require a real Issue/advisory plus official documentation. Miscellaneous posts require a public announcement, book publisher page, public discussion or attributed photography source.
+
+- [ ] **Step 3: Draft five posts, then run the quality gate**
+
+Repeat for each batch:
+
+```powershell
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+```
+
+Expected: `validated` after every batch. Fix source gaps, repeated template families and format bounds before starting the next batch.
+
+- [ ] **Step 4: Acquire media only when it explains the post**
+
+Do not target a coverage percentage. Require all 8 avatars, but allow posts with no media. Every cover/inline image must have a structured source page, direct URL, fetch time, usage note and content hash. Reject AI-generated and decorative filler media.
+
+- [ ] **Step 5: Run the full content-pack checks**
+
+```powershell
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --write-hashes
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+cd apps/server
+mvn -q '-Dtest=ContentPackLoaderTest,ContentPackValidatorTest,ContentPackQualityGateTest,ContentPackIdentityResolverTest' test
+cd ../..
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+```
+
+Expected: 8 accounts, 40 posts with exact 20/10/10 category counts, 32 unique legacy slugs, no provenance or quality errors.
+
+- [ ] **Step 6: Review a stratified ten-post sample**
+
+Generate a local review page containing four anime posts, three technical posts and three miscellaneous posts, including the shortest and longest posts and every media pattern (no media, cover only, cover plus inline). Stop for user approval before interactions or formal import.
+
+- [ ] **Step 7: Commit the approved full corpus**
+
+```powershell
+git add content/seed/content-v3
+git commit -m "feat: 扩充真实来源初始社区内容"
+```
+
+## Task 21: Add restrained interactions and perform the formal import
+
+**Files:**
+- Modify: `content/seed/content-v3/interactions.yml`
+- Modify: `content/seed/content-v3/manifest.yml`
+
+- [ ] **Step 1: Add non-uniform interactions without generated comments**
+
+Set `stage: complete`. Add follows, likes, favorites and view baselines with stable keys and timestamps after publication. Leave comments empty unless a comment is independently sourced and rewritten under the same provenance rules; do not use LLM-generated filler comments.
+
+- [ ] **Step 2: Dry-run and targeted tests**
+
+```powershell
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+cd apps/server
+mvn -q '-Dtest=ContentPackValidatorTest,ContentPackImportServiceTest,ContentPackDatabaseWriterTest,ContentPackReactionApplierTest' test
+```
+
+Expected: `validated`; interaction references and timestamps pass.
+
+- [ ] **Step 3: Run the formal import once**
+
+```powershell
+cd ../..
+.\scripts\dev\run-seed.ps1 -Mode content_pack
+```
+
+Expected: `completed`, no pending views and no search-index failures.
+
+- [ ] **Step 4: Verify database, search and media state**
+
+Check 8 Seed accounts, 40 public Seed posts, 32 preserved historical IDs, 8 newly allocated IDs, category totals, tags, counters, ES document count and every stored media/Markdown URL. Query Hub pages until the full tail is visible.
+
+- [ ] **Step 5: Prove idempotency**
+
+Run the same formal import again. Expected: unchanged/skipped posts, stable IDs and no increase in relationship, reaction or view baselines.
+
+- [ ] **Step 6: Commit interactions**
+
+```powershell
+git add content/seed/content-v3/interactions.yml content/seed/content-v3/manifest.yml
+git commit -m "feat: 完成真实来源内容包互动与导入配置"
+```
+
+## Task 22: Full verification, cleanup and handoff
+
+**Files:**
+- Review: `docs/superpowers/specs/2026-07-11-seed-content-pack-design.md`
+- Review: `docs/superpowers/plans/2026-07-11-seed-content-pack-implementation.md`
+- Review: all Task 15–21 commits
+
+- [ ] **Step 1: Run complete backend and frontend verification**
+
+```powershell
+cd apps/server
+mvn test
+cd ../web
+node --test scripts/seed/prepare-content-media.test.mjs scripts/seed/fetch-source-asset.test.mjs
+npm run build
+cd ../..
+git diff --check
+git status --short
+```
+
+Expected: all commands exit 0 and the worktree contains no uncommitted content-pack files.
+
+- [ ] **Step 2: Audit provenance and rejected-content absence**
+
+Search committed `content/seed/content-v3` for `generated:`, `openai-imagegen`, rejected v2 asset keys, copied Bangumi usernames and missing source-card keys. Expected: zero matches except explicit validator test fixtures.
+
+- [ ] **Step 3: Stop temporary services and remove task-only temporary files**
+
+Stop the visual-companion and review servers by their recorded PID. Resolve each deletion target and confirm it is under this worktree's `.codex-tmp` or `.superpowers` directory before removal. Preserve no C-drive or user-home working files.
+
+- [ ] **Step 4: Inspect final history and scope**
+
+```powershell
+git log --oneline --decorate -20
+git status --short
+git diff origin/main...HEAD --stat
+```
+
+Expected: technical Chinese Conventional Commits only, no ignored files forced into Git, no push.
+
+- [ ] **Step 5: Deliver the verified result**
+
+Report account/post totals, category and format distribution, media/provenance totals, preserved IDs, import/idempotency evidence, test/build results, commit list and explicit confirmation that nothing was pushed.
