@@ -8,5 +8,5 @@ alwaysApply: true
 - 默认在一个可独立验证的真实职责边界完成后自动创建 commit；不要把无关改动混入同一提交。
 - Commit message 使用中文 Conventional Commits。
 - 用户明确要求不提交、先别提交或等待确认时，不创建 commit。
-- 不自动 push；只有用户明确要求时才允许推送。
+- Coding Agent 不 push；远端推送由项目维护者执行。
 - 完整的 ignore 审计、worktree、安全、提交与发布规则以根目录 [`AGENTS.md`](../../AGENTS.md) 为唯一权威来源，Cursor 不在此复制。

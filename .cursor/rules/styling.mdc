@@ -10,9 +10,9 @@ alwaysApply: false
 
 ## 颜色与 Token
 
-- 禁止在 TSX/CSS 中硬编码 hex、rgb/hsl 或任意颜色值（例如 `#009688`、`rgb(...)`、`text-[#424242]`）。
-- 必须使用 `apps/web/app/globals.css` 已定义的 CSS 变量或映射到 token 的 Tailwind 类。
-- 新增 token 时同步更新 `@theme inline` 与相应主题作用域（例如 `:root`），并使用表达语义而非具体颜色的名称。
+- 颜色字面量仅允许用于 `apps/web/app/globals.css` 中 Design Token 的源定义（例如 `:root`、`@theme inline`）；不得在其他 TSX/CSS 使用点硬编码 hex、rgb/hsl 或任意颜色值（例如 `#009688`、`rgb(...)`、`text-[#424242]`）。
+- 除上述 token 源定义外，所有 TSX/CSS 使用点必须引用 `globals.css` 已定义的 CSS 变量或映射到 token 的 Tailwind 类；组件 inline style 同样没有颜色字面量例外。
+- 新增或调整 token 时必须同步维护 `:root` 与 `@theme inline`，并使用表达语义而非具体颜色的名称。
 - `site.config.ts` 中的主题字段只作既有 SSR 兜底；新代码不得从那里读取视觉颜色。视觉改色统一修改 `globals.css` token。
 
 ```tsx
