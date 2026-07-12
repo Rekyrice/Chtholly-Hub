@@ -9,15 +9,17 @@ import AuthorCard from "@/components/site/AuthorCard";
 import ReadingProgress from "@/components/site/ReadingProgress";
 import RelatedPosts from "@/components/site/RelatedPosts";
 import PostQnA from "@/components/site/PostQnA";
-import {
-  ChthollyIllustration,
-  type ChthollyIllustrationProps,
-  type IllustrationState,
+import ArticleReadingSidebar from "@/components/site/ArticleReadingSidebar";
+import type {
+  ChthollyIllustrationProps,
+  IllustrationState,
 } from "@/components/site/ChthollyIllustration";
 import { Badge } from "@/components/ui/Badge";
 import { postService } from "@/lib/services/postService";
 import type { PostDetailResponse } from "@/lib/types/post";
 import { formatDate } from "@/lib/utils";
+import { extractMarkdownHeadings } from "@/lib/markdownHeadings";
+import { countWritingStats } from "@/lib/utils/markdownInsert";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -66,6 +68,8 @@ export default async function PostPage({ params }: Props) {
   const readingComment = getReadingComment(post);
   const timeOfDay = getCurrentTimeOfDay();
   const askHref = `/agent?context=${encodeURIComponent(`post:${post.slug}`)}`;
+  const headings = extractMarkdownHeadings(markdown);
+  const { readingMinutes } = countWritingStats(markdown);
 
   return (
     <div className="article-detail-layout">
@@ -109,6 +113,19 @@ export default async function PostPage({ params }: Props) {
             />
           </div>
 
+          <ArticleReadingSidebar
+            compact
+            headings={headings}
+            readingMinutes={readingMinutes}
+            authorId={post.authorId}
+            authorNickname={post.authorNickname}
+            tags={post.tags}
+            askHref={askHref}
+            readingComment={readingComment}
+            readingState={readingState}
+            timeOfDay={timeOfDay}
+          />
+
           <MarkdownContent content={markdown} />
 
           {post.tags.length > 0 && (
@@ -145,18 +162,17 @@ export default async function PostPage({ params }: Props) {
         <CommentSection postId={post.id} />
       </main>
 
-      <aside className="article-sidebar" aria-label="问珂朵莉关于这篇文章">
-        <ChthollyIllustration
-          size="sm"
-          state={readingState}
-          mood={0}
-          timeOfDay={timeOfDay}
-        />
-        <p className="article-sidebar-text">{readingComment}</p>
-        <Link href={askHref} className="article-sidebar-btn">
-          问珂朵莉
-        </Link>
-      </aside>
+      <ArticleReadingSidebar
+        headings={headings}
+        readingMinutes={readingMinutes}
+        authorId={post.authorId}
+        authorNickname={post.authorNickname}
+        tags={post.tags}
+        askHref={askHref}
+        readingComment={readingComment}
+        readingState={readingState}
+        timeOfDay={timeOfDay}
+      />
     </div>
   );
 }

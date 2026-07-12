@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import "../../styles/write.css";
 import MarkdownToolbar from "@/components/write/MarkdownToolbar";
 import TagAutocomplete from "@/components/write/TagAutocomplete";
-import WriteStats from "@/components/write/WriteStats";
+import WriteSidebar from "@/components/write/WriteSidebar";
 import { Button } from "@/components/ui/Button";
 import { useRequireAuth } from "@/lib/hooks/useRequireAuth";
 import { ApiError } from "@/lib/services/apiClient";
@@ -269,6 +269,7 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
 
   return (
     <div className="write-container" data-testid="write-page">
+      <div className="write-workspace-layout" data-testid="write-workspace-layout">
       <form onSubmit={onPublish} className="write-editor-wrapper">
         <div className="write-status" aria-live="polite">
           {saveStatus === "saved" && <span>已保存</span>}
@@ -377,10 +378,16 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
           />
         )}
 
-        {!preview && <WriteStats markdown={markdown} />}
-
         {error && <p className="write-error">{error}</p>}
       </form>
+      <WriteSidebar
+        title={title}
+        tags={tags}
+        description={description}
+        markdown={markdown}
+        saveStatus={saveStatus}
+      />
+      </div>
     </div>
   );
 }

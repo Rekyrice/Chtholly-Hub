@@ -64,8 +64,6 @@ vi.mock("@/components/write/MarkdownToolbar", () => ({
     </>
   ),
 }));
-vi.mock("@/components/write/WriteStats", () => ({ default: () => null }));
-
 async function finishAutosave() {
   await act(async () => vi.advanceTimersByTimeAsync(700));
   expect(screen.getByText("保存中...")).toBeInTheDocument();
@@ -87,6 +85,9 @@ describe("WritePage draft status", () => {
 
   it("keeps the complete writing workspace while visual surfaces change", () => {
     render(<WritePage />);
+
+    expect(screen.getByTestId("write-workspace-layout")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "写作辅助" })).toBeInTheDocument();
 
     expect(screen.getByRole("textbox", { name: "标题" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "摘要" })).toBeInTheDocument();
