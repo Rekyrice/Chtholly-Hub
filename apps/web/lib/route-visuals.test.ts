@@ -100,6 +100,13 @@ describe("route visuals", () => {
     }
   });
 
+  it("keeps the user background portrait face inside desktop and mobile crops", () => {
+    const userVisual = getRouteVisualConfig("/user/Rekyrice");
+
+    expect(userVisual?.page.positionDesktop).toBe("55% 22%");
+    expect(userVisual?.page.positionMobile).toBe("56% 28%");
+  });
+
   it("references public files that exist", () => {
     const images = new Set(
       [...ROUTE_VISUALS, NOT_FOUND_VISUAL].flatMap(({ page }) => page.images),

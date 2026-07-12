@@ -38,8 +38,13 @@ function background(
   });
 }
 
-function routeVisual(id: string, imageFiles: readonly string[]): RouteVisualConfig {
-  return Object.freeze({ id, page: background(imageFiles) });
+function routeVisual(
+  id: string,
+  imageFiles: readonly string[],
+  positionDesktop = DEFAULT_POSITION,
+  positionMobile = DEFAULT_POSITION,
+): RouteVisualConfig {
+  return Object.freeze({ id, page: background(imageFiles, positionDesktop, positionMobile) });
 }
 
 export const ROUTE_VISUALS: readonly RouteVisualConfig[] = Object.freeze([
@@ -49,7 +54,7 @@ export const ROUTE_VISUALS: readonly RouteVisualConfig[] = Object.freeze([
   routeVisual("login", ["login.webp"]),
   routeVisual("reset-password", ["reset-password.webp"]),
   routeVisual("about", ["about.webp"]),
-  routeVisual("user", ["user.webp"]),
+  routeVisual("user", ["user.webp"], "55% 22%", "56% 28%"),
   routeVisual("profile", ["search.webp"]),
   routeVisual("settings", ["settings.webp"]),
   routeVisual("archive", ["archive.webp"]),
