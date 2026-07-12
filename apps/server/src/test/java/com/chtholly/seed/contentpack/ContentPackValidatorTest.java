@@ -15,6 +15,7 @@ import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -299,6 +300,91 @@ class ContentPackValidatorTest {
         assertEquals(List.of(), result.warnings());
     }
 
+    @Test
+    void contentV3ReportsEveryInvalidSourceCardFieldInDeclarationOrder() throws Exception {
+        ContentPack loaded = loader.load(fixtureRoot("valid"));
+        Map<String, SeedSourceDefinition> sources = new LinkedHashMap<>();
+        sources.put("blank-key", new SeedSourceDefinition(" ", "official-doc", "Title", "https://example.com/a",
+                "Author", Instant.parse("2026-07-01T00:00:00Z"), List.of("fact"), null, "usage"));
+        sources.put("blank-type", new SeedSourceDefinition("blank-type", " ", "Title", "https://example.com/b",
+                "Author", Instant.parse("2026-07-01T00:00:00Z"), List.of("fact"), null, "usage"));
+        sources.put("blank-title", new SeedSourceDefinition("blank-title", "article", null, "https://example.com/c",
+                "Author", Instant.parse("2026-07-01T00:00:00Z"), List.of("fact"), null, "usage"));
+        sources.put("blank-page", new SeedSourceDefinition("blank-page", "article", "Title", " ", "Author",
+                Instant.parse("2026-07-01T00:00:00Z"), List.of("fact"), null, "usage"));
+        sources.put("bad-page", new SeedSourceDefinition("bad-page", "article", "Title", "https:///missing-host",
+                "Author", Instant.parse("2026-07-01T00:00:00Z"), List.of("fact"), null, "usage"));
+        sources.put("no-fetch", new SeedSourceDefinition("no-fetch", "article", "Title", "https://example.com/f",
+                "Author", null, List.of("fact"), null, "usage"));
+        sources.put("no-usage", new SeedSourceDefinition("no-usage", "article", "Title", "https://example.com/g",
+                "Author", Instant.parse("2026-07-01T00:00:00Z"), List.of("fact"), null, null));
+        sources.put("no-facts", new SeedSourceDefinition("no-facts", "article", "Title", "https://example.com/h",
+                "Author", Instant.parse("2026-07-01T00:00:00Z"), List.of(), null, "usage"));
+        SeedPostDefinition post = withSources(loaded.posts().getFirst(), List.of("blank-type"), null);
+        ContentPack pack = contentV3(loaded, sources, loaded.assets(), post);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertContainsInOrder(exception.getMessage(),
+                "blank source key",
+                "blank source type: blank-type",
+                "blank source title: blank-title",
+                "missing source page URL: blank-page",
+                "invalid source page URL: bad-page",
+                "missing source fetched timestamp: no-fetch",
+                "missing source usage note: no-usage",
+                "missing source fact anchors: no-facts");
+    }
+
+    @Test
+    void rejectsObfuscatedAiMarkersAcrossAllTextualProvenanceFieldsInStableOrder() throws Exception {
+        ContentPack loaded = loader.load(fixtureRoot("valid"));
+        SeedAssetDefinition original = loaded.assets().values().iterator().next();
+        Map<String, SeedAssetDefinition> assets = new LinkedHashMap<>();
+        assets.put("source-marker", assetWithProvenance(original, "source-marker", " openai_imagegen ", null, null, null, null));
+        assets.put("url-marker", assetWithProvenance(original, "url-marker", "local", "https://example.com/openai imagegen", null, null, null));
+        assets.put("page-marker", assetWithProvenance(original, "page-marker", "local", null, "https://example.com/generated : art", null, null));
+        assets.put("file-marker", assetWithProvenance(original, "file-marker", "local", null, null, "GoCrazy-AI/source.png", null));
+        assets.put("usage-marker", assetWithProvenance(original, "usage-marker", "local", null, null, null, "generated : illustration"));
+        ContentPack pack = new ContentPack(loaded.root(), loaded.manifest(), loaded.accounts(), assets,
+                loaded.posts(), loaded.comments(), loaded.follows(), loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertContainsInOrder(exception.getMessage(),
+                "AI-generated asset forbidden: source-marker",
+                "AI-generated asset forbidden: url-marker",
+                "AI-generated asset forbidden: page-marker",
+                "AI-generated asset forbidden: file-marker",
+                "AI-generated asset forbidden: usage-marker");
+    }
+
+    @Test
+    void contentV3RejectsHttpAssetUrlWithoutHostAfterTrimming() throws Exception {
+        ContentPack loaded = loader.load(fixtureRoot("valid"));
+        SeedAssetDefinition original = loaded.assets().values().iterator().next();
+        SeedAssetDefinition invalid = new SeedAssetDefinition(
+                original.key(), "local", "  https:///missing-host  ", "https://example.com/page",
+                Instant.parse("2026-07-01T00:00:00Z"), "illustrates fact", original.sourceFile(), original.file(),
+                original.objectKey(), original.sha256(), original.contentType(), original.width(), original.height(),
+                original.usage());
+        SeedSourceDefinition source = source("spring-observability");
+        SeedPostDefinition post = withSources(loaded.posts().getFirst(), List.of(source.key()), null);
+        ContentPack pack = contentV3(loaded, Map.of(source.key(), source), Map.of(invalid.key(), invalid), post);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("invalid asset source URL: " + invalid.key()));
+    }
+
+    private SeedAssetDefinition assetWithProvenance(SeedAssetDefinition original, String key, String source,
+                                                     String sourceUrl, String sourcePageUrl, String sourceFile,
+                                                     String usageNote) {
+        return new SeedAssetDefinition(key, source, sourceUrl, sourcePageUrl, original.fetchedAt(), usageNote,
+                sourceFile, original.file(), original.objectKey(), original.sha256(), original.contentType(),
+                original.width(), original.height(), original.usage());
+    }
+
     private ContentPack contentV3(ContentPack loaded, Map<String, SeedSourceDefinition> sources,
                                   Map<String, SeedAssetDefinition> assets, SeedPostDefinition post) {
         return new ContentPack(loaded.root(),
@@ -318,7 +404,7 @@ class ContentPackValidatorTest {
     }
 
     private SeedSourceDefinition source(String key) {
-        return new SeedSourceDefinition(key, "official-doc", "Spring observability", "https://spring.io/docs",
+        return new SeedSourceDefinition(key, "official-doc", "Spring observability", "  https://spring.io/docs  ",
                 "Spring", Instant.parse("2026-07-01T00:00:00Z"), List.of("metrics"), null, "fact checking");
     }
 

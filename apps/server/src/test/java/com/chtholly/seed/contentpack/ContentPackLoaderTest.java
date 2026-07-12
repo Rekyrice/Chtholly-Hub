@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -93,6 +94,75 @@ class ContentPackLoaderTest {
                 Instant.parse("2026-07-01T00:00:00Z"), null, null, "verification");
 
         assertEquals(java.util.List.of(), source.factAnchors());
+    }
+
+    @Test
+    void loadsLegacyContentV2WithoutSourcesFile(@TempDir Path tempDir) throws Exception {
+        copyFixture(fixtureRoot(), tempDir);
+        Files.delete(tempDir.resolve("sources.yml"));
+
+        ContentPack pack = loader.load(tempDir);
+
+        assertTrue(pack.sources().isEmpty());
+    }
+
+    @Test
+    void contentV3RequiresSourcesFile(@TempDir Path tempDir) throws Exception {
+        copyFixture(fixtureRoot(), tempDir);
+        Files.writeString(tempDir.resolve("manifest.yml"),
+                Files.readString(tempDir.resolve("manifest.yml")).replace("content-v2", "content-v3"));
+        Files.delete(tempDir.resolve("sources.yml"));
+
+        var exception = assertThrows(java.io.UncheckedIOException.class, () -> loader.load(tempDir));
+
+        assertTrue(exception.getMessage().contains("sources.yml"));
+    }
+
+    @Test
+    void rejectsDuplicateAssetKeys(@TempDir Path tempDir) throws Exception {
+        copyFixture(fixtureRoot(), tempDir);
+        Path assets = tempDir.resolve("assets.yml");
+        String yaml = Files.readString(assets);
+        Files.writeString(assets, yaml + System.lineSeparator() + yaml);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> loader.load(tempDir));
+
+        assertTrue(exception.getMessage().contains("duplicate asset key: avatar-night-coder"));
+    }
+
+    @Test
+    void rejectsDuplicateSourceKeys(@TempDir Path tempDir) throws Exception {
+        copyFixture(fixtureRoot(), tempDir);
+        Path sources = tempDir.resolve("sources.yml");
+        String yaml = Files.readString(sources);
+        Files.writeString(sources, yaml + System.lineSeparator() + yaml);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> loader.load(tempDir));
+
+        assertTrue(exception.getMessage().contains("duplicate source key: spring-observability"));
+    }
+
+    @Test
+    void preservesSourceDeclarationOrder(@TempDir Path tempDir) throws Exception {
+        copyFixture(fixtureRoot(), tempDir);
+        Path sources = tempDir.resolve("sources.yml");
+        Files.writeString(sources, Files.readString(sources) + """
+
+- key: second-source
+  type: article
+  title: Second source
+  pageUrl: https://example.com/second
+  author: Example
+  fetchedAt: 2026-07-02T00:00:00Z
+  factAnchors: [second]
+  quote: null
+  usageNote: comparison
+""");
+
+        ContentPack pack = loader.load(tempDir);
+
+        assertEquals(java.util.List.of("spring-observability", "second-source"),
+                new ArrayList<>(pack.sources().keySet()));
     }
 
     @ParameterizedTest

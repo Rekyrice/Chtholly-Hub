@@ -23,9 +23,10 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
- * Loads the six YAML documents and referenced Markdown files of a seed content pack.
+ * Loads the five base YAML documents, the v3 source document, and referenced Markdown files.
  */
 @Component
 public final class ContentPackLoader {
@@ -51,7 +52,7 @@ public final class ContentPackLoader {
     /**
      * Loads a content pack rooted at the supplied directory.
      *
-     * @param root directory containing the six required YAML files
+     * @param root directory containing the five base YAML files and v3 sources file
      * @return immutable content-pack input with hydrated Markdown
      * @throws IllegalArgumentException when a referenced path escapes the pack root
      * @throws UncheckedIOException when a required file cannot be read
@@ -61,7 +62,7 @@ public final class ContentPackLoader {
         ContentPackManifest manifest = readYaml(normalizedRoot, "manifest.yml", ContentPackManifest.class);
         List<SeedAccountDefinition> accounts = readYaml(normalizedRoot, "accounts.yml", ACCOUNTS_TYPE);
         List<SeedAssetDefinition> assetDefinitions = readYaml(normalizedRoot, "assets.yml", ASSETS_TYPE);
-        List<SeedSourceDefinition> sourceDefinitions = readYaml(normalizedRoot, "sources.yml", SOURCES_TYPE);
+        List<SeedSourceDefinition> sourceDefinitions = readSources(normalizedRoot, manifest);
         List<SeedPostDefinition> postDefinitions = readYaml(normalizedRoot, "posts.yml", POSTS_TYPE);
         Interactions interactions = readYaml(normalizedRoot, "interactions.yml", Interactions.class);
 
@@ -104,19 +105,33 @@ public final class ContentPackLoader {
     }
 
     private Map<String, SeedAssetDefinition> indexAssets(List<SeedAssetDefinition> definitions) {
-        Map<String, SeedAssetDefinition> assets = new LinkedHashMap<>();
-        if (definitions != null) {
-            definitions.forEach(asset -> assets.put(asset.key(), asset));
-        }
-        return assets;
+        return indexDefinitions(definitions, SeedAssetDefinition::key, "asset");
     }
 
     private Map<String, SeedSourceDefinition> indexSources(List<SeedSourceDefinition> definitions) {
-        Map<String, SeedSourceDefinition> sources = new LinkedHashMap<>();
-        if (definitions != null) {
-            definitions.forEach(source -> sources.put(source.key(), source));
+        return indexDefinitions(definitions, SeedSourceDefinition::key, "source");
+    }
+
+    private List<SeedSourceDefinition> readSources(Path root, ContentPackManifest manifest) {
+        Path path = resolveInside(root, "sources.yml");
+        if (!"content-v3".equals(manifest.version()) && Files.notExists(path)) {
+            return List.of();
         }
-        return sources;
+        return readYaml(root, "sources.yml", SOURCES_TYPE);
+    }
+
+    private <T> Map<String, T> indexDefinitions(
+            List<T> definitions, Function<T, String> keyExtractor, String type) {
+        Map<String, T> indexed = new LinkedHashMap<>();
+        if (definitions != null) {
+            for (T definition : definitions) {
+                String key = keyExtractor.apply(definition);
+                if (indexed.putIfAbsent(key, definition) != null) {
+                    throw new IllegalArgumentException("duplicate " + type + " key: " + key);
+                }
+            }
+        }
+        return indexed;
     }
 
     private <T> T readYaml(Path root, String relative, Class<T> type) {

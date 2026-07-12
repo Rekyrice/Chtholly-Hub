@@ -151,12 +151,27 @@ class ContentPackDatabaseWriterTest {
                 base.category(), base.tags(), base.publishTime(), base.markdownFile(), null, List.of(), base.brief(),
                 base.markdown());
 
-        writer.write(pack(List.of(account("author")), List.of(noMedia), List.of(), List.of()), published("post-one"));
+        PublishedContent content = published("post-one");
+        String firstHash = ContentPackDatabaseWriter.contentHash(noMedia, 42L, content);
+        String secondHash = ContentPackDatabaseWriter.contentHash(noMedia, 42L, content);
+        writer.write(pack(List.of(account("author")), List.of(noMedia), List.of(), List.of()), content);
 
         ArgumentCaptor<SeedPostRow> row = ArgumentCaptor.forClass(SeedPostRow.class);
         verify(mapper).insertSeedPost(row.capture());
         assertThat(row.getValue().imgUrlsJson()).isEqualTo("[]");
-        assertThat(ContentPackDatabaseWriter.contentHash(noMedia, 42L, published("post-one"))).isNotBlank();
+        assertThat(firstHash).isNotBlank().isEqualTo(secondHash);
+
+        when(mapper.findIdentity(NAMESPACE, "POST", "post-one"))
+                .thenReturn(identity("POST", "post-one", 101L, firstHash));
+        when(mapper.findPostStateById(101L))
+                .thenReturn(new PostState(101L, 42L, "[]", "posts/post-one.md"));
+
+        WriteResult rerun = writer.write(
+                pack(List.of(account("author")), List.of(noMedia), List.of(), List.of()), content);
+
+        verify(mapper, org.mockito.Mockito.times(1)).insertSeedPost(any());
+        verify(mapper, never()).updateSeedPostById(any());
+        assertThat(rerun.changedPostIds()).isEmpty();
     }
 
     @Test

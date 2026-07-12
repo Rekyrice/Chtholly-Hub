@@ -1,6 +1,8 @@
 package com.chtholly.seed.contentpack.model;
 
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -24,13 +26,20 @@ public record ContentPack(
      */
     public ContentPack {
         accounts = accounts == null ? List.of() : List.copyOf(accounts);
-        assets = assets == null ? Map.of() : Map.copyOf(assets);
-        sources = sources == null ? Map.of() : Map.copyOf(sources);
+        assets = immutableOrderedMap(assets);
+        sources = immutableOrderedMap(sources);
         posts = posts == null ? List.of() : List.copyOf(posts);
         comments = comments == null ? List.of() : List.copyOf(comments);
         follows = follows == null ? List.of() : List.copyOf(follows);
         reactions = reactions == null ? List.of() : List.copyOf(reactions);
         views = views == null ? List.of() : List.copyOf(views);
+    }
+
+    private static <K, V> Map<K, V> immutableOrderedMap(Map<K, V> values) {
+        if (values == null || values.isEmpty()) {
+            return Map.of();
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(values));
     }
 
     /**

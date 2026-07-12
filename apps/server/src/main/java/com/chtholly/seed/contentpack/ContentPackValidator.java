@@ -8,8 +8,11 @@ import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
 import com.chtholly.seed.contentpack.model.SeedFollowDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
 import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
+import com.chtholly.seed.contentpack.model.SeedSourceDefinition;
 import com.chtholly.seed.contentpack.model.SeedViewDefinition;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -34,6 +37,7 @@ public final class ContentPackValidator {
     private static final Pattern HANDLE_PATTERN = Pattern.compile("[A-Za-z0-9_]{3,64}");
     private static final Set<String> STAGES = Set.of("review", "complete");
     private static final Set<String> REACTION_TYPES = Set.of("like", "fav");
+    private static final Pattern URI_SCHEME_PATTERN = Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):");
 
     /**
      * Collects every structural error and rejects the pack once with deterministic diagnostics.
@@ -49,6 +53,7 @@ public final class ContentPackValidator {
         validateManifest(pack, errors);
         validateAccounts(pack, errors);
         validateAssets(pack, errors);
+        validateSources(pack, errors);
         validatePosts(pack, errors);
         validateComments(pack, errors);
         validateReactions(pack, errors);
@@ -151,16 +156,53 @@ public final class ContentPackValidator {
         for (SeedAssetDefinition asset : pack.assets().values()) {
             if (containsForbiddenAssetMarker(asset.source())
                     || containsForbiddenAssetMarker(asset.sourceUrl())
-                    || containsForbiddenAssetMarker(asset.sourcePageUrl())) {
+                    || containsForbiddenAssetMarker(asset.sourcePageUrl())
+                    || containsForbiddenAssetMarker(asset.sourceFile())
+                    || containsForbiddenAssetMarker(asset.usageNote())) {
                 errors.add("AI-generated asset forbidden: " + asset.key());
             }
-            boolean webAsset = "public-web".equalsIgnoreCase(asset.source()) || isHttpUrl(asset.sourceUrl());
+            HttpUrlStatus sourceUrlStatus = httpUrlStatus(asset.sourceUrl());
+            if (sourceUrlStatus == HttpUrlStatus.INVALID) {
+                errors.add("invalid asset source URL: " + asset.key());
+            }
+            boolean webAsset = "public-web".equalsIgnoreCase(trim(asset.source()))
+                    || sourceUrlStatus != HttpUrlStatus.NOT_HTTP;
             if (isContentV3(pack) && webAsset) {
                 requireNonblank(asset.sourcePageUrl(), "missing asset source page: " + asset.key(), errors);
+                if (asset.sourcePageUrl() != null && !asset.sourcePageUrl().isBlank()
+                        && httpUrlStatus(asset.sourcePageUrl()) != HttpUrlStatus.VALID) {
+                    errors.add("invalid asset source page URL: " + asset.key());
+                }
                 if (asset.fetchedAt() == null) {
                     errors.add("missing asset fetched timestamp: " + asset.key());
                 }
                 requireNonblank(asset.usageNote(), "missing asset usage note: " + asset.key(), errors);
+            }
+        }
+    }
+
+    private void validateSources(ContentPack pack, List<String> errors) {
+        if (!isContentV3(pack)) {
+            return;
+        }
+        for (SeedSourceDefinition source : pack.sources().values()) {
+            String key = source.key();
+            if (key == null || key.isBlank()) {
+                errors.add("blank source key");
+            }
+            requireNonblank(source.type(), "blank source type: " + key, errors);
+            requireNonblank(source.title(), "blank source title: " + key, errors);
+            if (source.pageUrl() == null || source.pageUrl().isBlank()) {
+                errors.add("missing source page URL: " + key);
+            } else if (httpUrlStatus(source.pageUrl()) != HttpUrlStatus.VALID) {
+                errors.add("invalid source page URL: " + key);
+            }
+            if (source.fetchedAt() == null) {
+                errors.add("missing source fetched timestamp: " + key);
+            }
+            requireNonblank(source.usageNote(), "missing source usage note: " + key, errors);
+            if (source.factAnchors().isEmpty()) {
+                errors.add("missing source fact anchors: " + key);
             }
         }
     }
@@ -182,22 +224,46 @@ public final class ContentPackValidator {
         if (value == null) {
             return false;
         }
-        String normalized = value.toLowerCase(Locale.ROOT);
-        return normalized.contains("openai-imagegen")
+        String normalized = value.strip().toLowerCase(Locale.ROOT).replaceAll("[\\s_-]+", "");
+        return normalized.contains("openaiimagegen")
                 || normalized.contains("generated:")
                 || normalized.contains("gocrazyai");
     }
 
-    private boolean isHttpUrl(String value) {
-        if (value == null) {
-            return false;
+    private HttpUrlStatus httpUrlStatus(String value) {
+        if (value == null || value.isBlank()) {
+            return HttpUrlStatus.NOT_HTTP;
         }
-        String normalized = value.toLowerCase(Locale.ROOT);
-        return normalized.startsWith("http://") || normalized.startsWith("https://");
+        String normalized = value.strip();
+        var matcher = URI_SCHEME_PATTERN.matcher(normalized);
+        if (!matcher.find()) {
+            return HttpUrlStatus.NOT_HTTP;
+        }
+        String scheme = matcher.group(1);
+        if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+            return HttpUrlStatus.NOT_HTTP;
+        }
+        try {
+            URI uri = new URI(normalized);
+            return uri.getHost() == null || uri.getHost().isBlank()
+                    ? HttpUrlStatus.INVALID : HttpUrlStatus.VALID;
+        } catch (URISyntaxException exception) {
+            return HttpUrlStatus.INVALID;
+        }
+    }
+
+    private String trim(String value) {
+        return value == null ? null : value.strip();
     }
 
     private boolean isContentV3(ContentPack pack) {
         return pack.manifest() != null && "content-v3".equals(pack.manifest().version());
+    }
+
+    private enum HttpUrlStatus {
+        NOT_HTTP,
+        VALID,
+        INVALID
     }
 
     private void validateComments(ContentPack pack, List<String> errors) {
