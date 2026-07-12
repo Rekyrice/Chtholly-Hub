@@ -103,7 +103,7 @@ describe("route visuals", () => {
   it("keeps the user background portrait face inside desktop and mobile crops", () => {
     const userVisual = getRouteVisualConfig("/user/Rekyrice");
 
-    expect(userVisual?.page.positionDesktop).toBe("55% 22%");
+    expect(userVisual?.page.positionDesktop).toBe("55% 12%");
     expect(userVisual?.page.positionMobile).toBe("56% 28%");
   });
 

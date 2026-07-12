@@ -54,7 +54,7 @@ export const ROUTE_VISUALS: readonly RouteVisualConfig[] = Object.freeze([
   routeVisual("login", ["login.webp"]),
   routeVisual("reset-password", ["reset-password.webp"]),
   routeVisual("about", ["about.webp"]),
-  routeVisual("user", ["user.webp"], "55% 22%", "56% 28%"),
+  routeVisual("user", ["user.webp"], "55% 12%", "56% 28%"),
   routeVisual("profile", ["search.webp"]),
   routeVisual("settings", ["settings.webp"]),
   routeVisual("archive", ["archive.webp"]),
