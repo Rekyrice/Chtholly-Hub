@@ -85,6 +85,23 @@ describe("WritePage draft status", () => {
     vi.clearAllMocks();
   });
 
+  it("keeps the complete writing workspace while visual surfaces change", () => {
+    render(<WritePage />);
+
+    expect(screen.getByRole("textbox", { name: "标题" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "摘要" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "预览" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发布" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI 生成描述" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "修改标签" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "修改正文" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "插入图片" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    expect(screen.getByText("还没有内容呢。")).toBeInTheDocument();
+  });
+
   it("marks every user or programmatic draft edit dirty before autosaving", async () => {
     render(<WritePage />);
     expect(screen.getByText("已保存")).toBeInTheDocument();

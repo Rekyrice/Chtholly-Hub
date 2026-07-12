@@ -106,6 +106,22 @@
     );
   }
 
+  [data-route-visual="auth"] .post-card {
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-auth-alpha) * 100%),
+      transparent
+    );
+  }
+
+  .site-shell--route-visual .write-preview.prose-anime {
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-editor-alpha) * 100%),
+      transparent
+    );
+  }
+
   @media (max-width: 767px) {
     .route-page-background__image {
       background-position: var(--route-bg-position-mobile);
@@ -114,6 +130,12 @@
     .site-shell--route-visual {
       --surface-card-alpha: 0.62;
       --surface-sidebar-alpha: 0.58;
+    }
+
+    .site-shell--route-visual .post-card,
+    .site-shell--route-visual .hub-sidebar .widget {
+      backdrop-filter: blur(7px) saturate(0.72);
+      -webkit-backdrop-filter: blur(7px) saturate(0.72);
     }
   }
 

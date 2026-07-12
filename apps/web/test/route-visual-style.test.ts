@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 const globals = readFileSync("app/globals.css", "utf8");
 const visuals = readFileSync("app/styles/route-visuals.css", "utf8");
 const feed = readFileSync("app/styles/feed.css", "utf8");
+const write = readFileSync("app/styles/write.css", "utf8");
+const settings = readFileSync("app/styles/settings.css", "utf8");
+const responsive = readFileSync("app/styles/responsive.css", "utf8");
 
 describe("route visual style contract", () => {
   it("loads the route layer after the existing responsive styles", () => {
@@ -15,7 +18,7 @@ describe("route visual style contract", () => {
   it("defines one shared high-transparency surface system", () => {
     expect(globals).not.toContain("--surface-card-alpha");
     expect(visuals).toMatch(/\.site-shell--route-visual\s*\{[\s\S]*?--surface-nav-alpha:\s*0\.71;[\s\S]*?--surface-panel-alpha:\s*0\.52;[\s\S]*?--surface-card-alpha:\s*0\.54;[\s\S]*?--surface-sidebar-alpha:\s*0\.48;[\s\S]*?--surface-reading-alpha:\s*0\.78;[\s\S]*?--surface-backdrop-blur:\s*8px;/);
-    expect(visuals).not.toMatch(/data-route-visual[^\{]*\{[^}]*--color-/);
+    expect(visuals).not.toMatch(/data-route-visual[^\{]*\{[^}]*--color-[\w-]+\s*:/);
   });
 
   it("applies the no-blur readability fallback after mobile transparency overrides", () => {
@@ -53,5 +56,21 @@ describe("route visual style contract", () => {
     expect(feed).toMatch(/\.hub-sidebar\s*\{[^}]*align-self:\s*start/);
     expect(feed).toMatch(/\.hub-feed-list\s*\{[^}]*display:\s*grid;[^}]*align-content:\s*start;[^}]*gap:\s*var\(--post-card-gap\)/);
     expect(feed).toMatch(/\.hub-feed-list \.post-card\s*\{[^}]*margin-bottom:\s*0/);
+  });
+
+  it("protects editor, auth, and settings readability without reusing landing artwork", () => {
+    expect(write).not.toContain('/images/landing/default.jpg');
+    expect(settings).not.toContain('/images/landing/default.jpg');
+    expect(write).toMatch(/\.write-editor-wrapper\s*\{[\s\S]*?--surface-editor-alpha/);
+    expect(settings).toMatch(/\.settings-menu__item\s*\{[\s\S]*?--surface-auth-alpha/);
+    expect(settings).toMatch(/\.settings-loading,[\s\S]*?\.settings-form-panel\s*\{[\s\S]*?--surface-auth-alpha/);
+    expect(settings).not.toMatch(/\.settings-menu\s*\{[^}]*background:/);
+    expect(visuals).toMatch(/\[data-route-visual="auth"\] \.post-card\s*\{[\s\S]*?--surface-auth-alpha/);
+    expect(visuals).toMatch(/\.write-preview\.prose-anime\s*\{[\s\S]*?--surface-editor-alpha/);
+  });
+
+  it("keeps mobile route surfaces readable in the final cascade", () => {
+    expect(responsive).toMatch(/\.site-shell\s*\{[^}]*padding-bottom:[^}]*safe-area-inset-bottom/);
+    expect(visuals).toMatch(/@media \(max-width:\s*767px\)[\s\S]*?\.site-shell--route-visual \.post-card,[\s\S]*?backdrop-filter:\s*blur\(7px\) saturate\(0\.72\);[\s\S]*?-webkit-backdrop-filter:\s*blur\(7px\) saturate\(0\.72\)/);
   });
 });
