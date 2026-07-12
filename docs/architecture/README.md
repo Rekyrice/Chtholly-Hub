@@ -68,7 +68,7 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
 | 后端启动类 | `apps/server/src/main/java/com/chtholly/ChthollyApplication.java` |
 | 前端站点路由 | `apps/web/app/(site)` |
 | 数据库 schema 与 migration | [`apps/server/db`](../../apps/server/db/README.md) |
-| 正文与媒体存储 | [`StorageConfiguration`](../../apps/server/src/main/java/com/chtholly/storage/config/StorageConfiguration.java)：默认本地文件系统，可切换 OSS |
+| 正文与媒体存储 | [`StorageProperties`](../../apps/server/src/main/java/com/chtholly/storage/config/StorageProperties.java) 定义 `storage.type`；默认使用 [`LocalFileStorageService`](../../apps/server/src/main/java/com/chtholly/storage/LocalFileStorageService.java)，可切换 [`OssStorageService`](../../apps/server/src/main/java/com/chtholly/storage/OssStorageService.java) |
 | 生产容器与代理 | [`docker`](../../docker/README.md)、`docker-compose.prod.yml` |
 | 开发与运维脚本 | [`scripts`](../../scripts/README.md) |
 

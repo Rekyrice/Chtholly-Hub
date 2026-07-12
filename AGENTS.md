@@ -40,7 +40,7 @@ Chtholly Hub 是 Java 21 + Spring Boot 3.2.4 与 Next.js 16 + Tailwind CSS 4 组
 可选：WebSocket/API → 角色 Agent → LLM、RAG 与站内工具
 ```
 
-存储实现的选择入口见 [`StorageConfiguration`](apps/server/src/main/java/com/chtholly/storage/config/StorageConfiguration.java)。
+存储类型属性见 [`StorageProperties`](apps/server/src/main/java/com/chtholly/storage/config/StorageProperties.java)；条件实现分别为默认的 [`LocalFileStorageService`](apps/server/src/main/java/com/chtholly/storage/LocalFileStorageService.java) 与可选的 [`OssStorageService`](apps/server/src/main/java/com/chtholly/storage/OssStorageService.java)。
 
 系统边界、同步/异步关系和关键入口统一见[架构首页](docs/architecture/README.md)。
 
