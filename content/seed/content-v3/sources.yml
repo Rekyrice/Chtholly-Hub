@@ -133,3 +133,39 @@
   factAnchors: [原作あらゐけいいち《CITY》, 监督石立太一, 角色设计与总作画监督徳山珠美, 动画制作京都アニメーション]
   quote: null
   usageNote: 观点路线：核对原作与核心制作阵容，为人物动作、团队表现和线条统一性的分析提供官方事实边界；媒体说明：不直接取图，媒体统一回到已记录的 Sakuga Blog 来源页
+- key: chainsaw-man-reze-sakuga
+  type: production-analysis
+  title: "Chainsaw Man: Reze Arc – The Movie Of The Moment"
+  pageUrl: https://blog.sakugabooru.com/2026/01/06/chainsaw-man-reze-the-movie-of-the-moment/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T16:22:06.309Z
+  factAnchors: [吉原达矢担任监督并调整宽银幕演出, 中园真登负责前段分镜与演出, 蕾塞的夸张肢体表演服务诱导与动摇, 泳池段落以非写实蓝色和牛尾宪辅配乐制造短暂梦境, 彩色爆炸呼应祭典烟火, 海中锁链回扣泳池, 白花与红花标记蕾塞的折返]
+  quote: null
+  usageNote: 观点路线：从雨夜相遇、泳池、烟火、海边与站台这些具体记忆讨论关系如何在动作奇观中反复回返；媒体说明：记录烟火、雨窗白花、空站台与海边暮色四张来源页静态图的实际画面和语境，不复制长段文字
+- key: chainsaw-man-reze-official
+  type: official-site
+  title: 劇場版『チェンソーマン レゼ篇』公式サイト
+  pageUrl: https://chainsawman.dog/movie_reze/
+  author: MAPPA / 東宝
+  fetchedAt: 2026-07-12T16:22:27.917Z
+  factAnchors: [剧场版标题为《チェンソーマン レゼ篇》, 日本公开日为2025年9月19日, 官方页面标示MAPPA与东宝, 官方主预告与视觉图]
+  quote: null
+  usageNote: 观点路线：只核对作品名称、公开日和官方发布主体，不承担观后评价；媒体说明：不直接取图，文章媒体均回到已记录的制作分析页静态图
+- key: orb-animation-sakuga
+  type: production-analysis
+  title: "Chi / Orb: On the Movements of the Earth – The Challenge To Animate The Uncompromising Human Spirit"
+  pageUrl: https://blog.sakugabooru.com/2025/05/09/chi-orb-the-challenge-to-animate-the-uncompromising/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T16:22:07.430Z
+  factAnchors: [动画制片人冈恒成邀请清水健一以清楚演出强调话语力量, 配音阵容服务高密度对白, 鱼丰仅明确希望牛尾宪辅担任音乐, 第一篇章以暖橙信仰与冷蓝星空形成对照, 第五集黑暗雨夜在星光出现后改变人物方向, 动画星空参考日期与地点并按篇章调整色彩]
+  quote: null
+  usageNote: 观点路线：从配音的气息与停顿、音乐进入时机和三组未被说服的人物时刻讨论动画如何保存固执与犹疑；媒体说明：记录星空握手、火中人物、原作黑白星空画格和三名披风人物朝暮色移动四张来源页图像的真实内容
+- key: orb-animation-official
+  type: official-site
+  title: TVアニメ「チ。 ―地球の運動について―」公式
+  pageUrl: https://anime-chi.jp/
+  author: チ。―地球の運動について―製作委員会
+  fetchedAt: 2026-07-12T16:22:34.150Z
+  factAnchors: [原作鱼丰, 监督清水健一, 音乐牛尾宪辅, 动画制作MADHOUSE, 拉法尔由坂本真绫配音, 诺瓦克由津田健次郎配音, 胡贝特由速水奖配音]
+  quote: null
+  usageNote: 观点路线：核对角色配音、监督、音乐与动画制作等官方事实边界；媒体说明：不直接取图，正文媒体统一回到已记录的制作分析页图像

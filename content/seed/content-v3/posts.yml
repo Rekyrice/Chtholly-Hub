@@ -93,3 +93,49 @@
     format: feature-review
     mediaPlan: [森林教育角静帧支撑同画面信息错位, 片尾式群像拼贴支撑居民关系的版面化组织, 终幕建筑群像支撑统一粗线与环境表演]
     sources: [city-animation-production-sakuga, city-animation-production-official]
+
+- seedKey: chainsaw-man-reze-rain
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 蕾塞篇：那场雨下得实在太久了
+  slug: chainsaw-man-reze-rain
+  description: 从电话亭的雨、祭典烟火和空站台写《链锯人 蕾塞篇》里那段借来的青春，也保留对后半段动作过饱的意见。
+  category: ANIME
+  tags: [链锯人 蕾塞篇, 蕾塞, 动画电影, 观后感]
+  publishTime: 2026-05-24T12:51:00Z
+  markdownFile: posts/chainsaw-man-reze-rain.md
+  coverAsset: chainsaw-man-reze-rain-cover
+  inlineAssets:
+    - chainsaw-man-reze-gerbera
+    - chainsaw-man-reze-seaside
+    - chainsaw-man-reze-platform
+  brief:
+    factAnchors: [电话亭雨夜相遇, 白花与红花, 夜间泳池, 校园与咖啡馆, 祭典烟火, 海中锁链, 海边告别, 蕾塞折返, 空站台, 电次在咖啡馆等待, 吉原达矢, 牛尾宪辅]
+    voice: 摸鱼大师，像社区里刚看完片的人聊天，喜欢就直说，动作看累了也直说，不摆制作履历
+    position: 雨、泳池与烟火把一段被操控的相遇拍成双方都曾认真相信的短暂青春，影片的动作奇观很痛快，也会在过饱时挤掉人物受伤的重量
+    format: feature-review
+    mediaPlan: [烟火下两人剪影作氛围封面, 雨窗前蕾塞持白花对应相遇与表演松动, 暮色海边远景对应战后短暂停顿, 空站台与列车对应蕾塞折返]
+    sources: [chainsaw-man-reze-sakuga, chainsaw-man-reze-official]
+
+- seedKey: orb-unpersuaded-people
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 我喜欢《地。》里那些没有被说服的人
+  slug: orb-unpersuaded-people
+  description: 从配音、停顿和牛尾宪辅的音乐进入《地。》，听拉法尔、奥克兹、约兰妲与诺瓦克怎样保留固执和犹疑。
+  category: ANIME
+  tags: [地。―关于地球的运动―, 配音, 牛尾宪辅, 动画观后感]
+  publishTime: 2026-05-08T09:36:00Z
+  markdownFile: posts/orb-unpersuaded-people.md
+  coverAsset: orb-unpersuaded-people-cover
+  inlineAssets:
+    - orb-voices
+    - orb-night-sky
+    - orb-procession
+  brief:
+    factAnchors: [拉法尔与胡贝特仰望星空, 拉法尔置身火光, 奥克兹与巴德尼的夜行, 第五集暗夜与星光, 约兰妲的研究处境, 诺瓦克的审问与父女关系, 跨世代记录接力, 清水健一, 牛尾宪辅, 坂本真绫, 津田健次郎, MADHOUSE]
+    voice: 耳机线打结，更留意音色、气息、停顿和配乐进入时机，但仍像普通动画社区用户说个人好恶
+    position: 《地。》的声音没有把信念唱成无杂质的英雄宣言，而是在三组不肯被说服的人物时刻里保留恐惧、迟疑、自负与代价
+    format: feature-review
+    mediaPlan: [星空下两人握手作人物与天空关系的封面, 火光中独站人物对应拉法尔声线里的恐惧与固执, 原作黑白星空画格对照动画如何用停顿控制一句美的时长, 三名披风人物奔向暮色对应跨代接力]
+    sources: [orb-animation-sakuga, orb-animation-official]
