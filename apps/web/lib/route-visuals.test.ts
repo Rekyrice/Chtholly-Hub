@@ -64,6 +64,18 @@ describe("route visuals", () => {
     }
   });
 
+  it("deeply freezes the exported visual configuration graph", () => {
+    expect(Object.isFrozen(ROUTE_VISUALS)).toBe(true);
+
+    for (const config of ROUTE_VISUALS) {
+      expect(Object.isFrozen(config)).toBe(true);
+      expect(Object.isFrozen(config.page)).toBe(true);
+      if (config.hero) {
+        expect(Object.isFrozen(config.hero)).toBe(true);
+      }
+    }
+  });
+
   it.each([
     "/hub",
     "/search",

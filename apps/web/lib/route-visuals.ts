@@ -1,16 +1,16 @@
 export type VisualBackground = {
-  image: string;
-  positionDesktop: string;
-  positionMobile: string;
-  overlayAlpha: number;
-  blurPx: number;
-  saturate: number;
+  readonly image: string;
+  readonly positionDesktop: string;
+  readonly positionMobile: string;
+  readonly overlayAlpha: number;
+  readonly blurPx: number;
+  readonly saturate: number;
 };
 
 export type RouteVisualConfig = {
-  id: string;
-  hero?: VisualBackground;
-  page: VisualBackground;
+  readonly id: string;
+  readonly hero?: VisualBackground;
+  readonly page: VisualBackground;
 };
 
 const BACKGROUND_ROOT = "/images/site/backgrounds/";
@@ -24,14 +24,18 @@ function background(
   blurPx: number,
   saturate = DEFAULT_SATURATE,
 ): VisualBackground {
-  return {
+  return Object.freeze({
     image: `${BACKGROUND_ROOT}${image}`,
     positionDesktop,
     positionMobile,
     overlayAlpha,
     blurPx,
     saturate,
-  };
+  });
+}
+
+function routeVisual(config: RouteVisualConfig): RouteVisualConfig {
+  return Object.freeze(config);
 }
 
 const searchBackground = background("search-content.webp", "52% 40%", "56% 40%", 0.2, 0.8);
@@ -43,25 +47,25 @@ const archiveBackground = background("archive-hall.webp", "50% 38%", "58% 38%", 
 const tagBackground = background("tag-trace.webp", "62% 42%", "70% 42%", 0.2, 1);
 const postBackground = background("post-ruins.webp", "52% 38%", "50% 40%", 0.2, 1);
 
-export const ROUTE_VISUALS: readonly RouteVisualConfig[] = [
-  {
+export const ROUTE_VISUALS: readonly RouteVisualConfig[] = Object.freeze([
+  routeVisual({
     id: "hub",
     hero: background("hub-hero.webp", "52% 45%", "58% 44%", 0.18, 0),
     page: background("hub-content.webp", "50% 45%", "52% 42%", 0.18, 1, 0.96),
-  },
-  { id: "search", hero: searchBackground, page: searchBackground },
-  {
+  }),
+  routeVisual({ id: "search", hero: searchBackground, page: searchBackground }),
+  routeVisual({
     id: "write",
     page: background("write-workspace.webp", "66% 38%", "68% 36%", 0.22, 0.5),
-  },
-  { id: "auth", hero: authBackground, page: authBackground },
-  { id: "about", hero: aboutBackground, page: aboutBackground },
-  { id: "profile", hero: profileBackground, page: profileBackground },
-  { id: "settings", hero: settingsBackground, page: settingsBackground },
-  { id: "archive", hero: archiveBackground, page: archiveBackground },
-  { id: "tag", hero: tagBackground, page: tagBackground },
-  { id: "post", hero: postBackground, page: postBackground },
-] as const;
+  }),
+  routeVisual({ id: "auth", hero: authBackground, page: authBackground }),
+  routeVisual({ id: "about", hero: aboutBackground, page: aboutBackground }),
+  routeVisual({ id: "profile", hero: profileBackground, page: profileBackground }),
+  routeVisual({ id: "settings", hero: settingsBackground, page: settingsBackground }),
+  routeVisual({ id: "archive", hero: archiveBackground, page: archiveBackground }),
+  routeVisual({ id: "tag", hero: tagBackground, page: tagBackground }),
+  routeVisual({ id: "post", hero: postBackground, page: postBackground }),
+]);
 
 const ROUTE_SEGMENTS: ReadonlyArray<readonly [segment: string, visualId: string]> = [
   ["/hub", "hub"],
