@@ -169,3 +169,12 @@
   factAnchors: [原作鱼丰, 监督清水健一, 音乐牛尾宪辅, 动画制作MADHOUSE, 拉法尔由坂本真绫配音, 诺瓦克由津田健次郎配音, 胡贝特由速水奖配音]
   quote: null
   usageNote: 观点路线：核对角色配音、监督、音乐与动画制作等官方事实边界；媒体说明：不直接取图，正文媒体统一回到已记录的制作分析页图像
+- key: redisson-5972-moved-timeout
+  type: github-issue
+  title: The redis three-master and three-slave clusters often perform active/standby switchover
+  pageUrl: https://github.com/redisson/redisson/issues/5972
+  author: redisson/redisson contributors
+  fetchedAt: 2026-07-12T17:29:37.200Z
+  factAnchors: [Redis 6.0.11, Redisson 3.30.0, 三主三从频繁主备切换, 客户端拓扑可能未刷新, 请求发往旧节点, Redis 返回 MOVED, RedisTimeoutException Unable to acquire connection, Increase connection pool size, NodeSource slot 7685, redirect MOVED, 重启后恢复, closed, bug, milestone 3.33.0]
+  quote: null
+  usageNote: "只核对公开 Issue、GitHub API 与 milestone；API：https://api.github.com/repos/redisson/redisson/issues/5972；milestone：https://github.com/redisson/redisson/milestone/178。不据此声称本地复现、确认修复提交或验证 3.33.0。"

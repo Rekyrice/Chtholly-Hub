@@ -502,3 +502,45 @@
   width: 1600
   height: 900
   usage: inline
+- key: redisson-moved-timeout-cover
+  source: public-web
+  sourceUrl: https://github.com/redisson/redisson/issues/5972
+  sourcePageUrl: https://github.com/redisson/redisson/issues/5972
+  fetchedAt: 2026-07-12T17:29:37.200Z
+  usageNote: 真实 GitHub Issue 页面截图，经裁切保留标题、Closed、bug 与 milestone 3.33.0；隐藏作者用户名与头像，移除无关导航，作为技术复盘封面
+  sourceFile: redisson-5972-issue-crop.png
+  file: covers/redisson-moved-timeout.webp
+  objectKey: seed/content-v3/covers/redisson-moved-timeout/e6b9427d4e8239165b0d40eb74c2984b7e51f2bf620f88236d18b3f4a1dc6a36.webp
+  sha256: e6b9427d4e8239165b0d40eb74c2984b7e51f2bf620f88236d18b3f4a1dc6a36
+  contentType: image/webp
+  width: 1200
+  height: 675
+  usage: cover
+- key: redisson-moved-log
+  source: public-web
+  sourceUrl: https://github.com/redisson/redisson/issues/5972
+  sourcePageUrl: https://github.com/redisson/redisson/issues/5972
+  fetchedAt: 2026-07-12T17:29:37.200Z
+  usageNote: 根据公开 Issue 日志按原顺序排版的终端样式图片，地址一致脱敏；未执行本地命令，也不表示完成本地复现
+  sourceFile: redisson-5972-log-headless.png
+  file: inline/redisson-moved-log.webp
+  objectKey: seed/content-v3/inline/redisson-moved-log/e6accbd8258c8fb71b6bba8260ac5321344c7e3a69d0a6fc9ec3d5560995178f.webp
+  sha256: e6accbd8258c8fb71b6bba8260ac5321344c7e3a69d0a6fc9ec3d5560995178f
+  contentType: image/webp
+  width: 1600
+  height: 1000
+  usage: inline
+- key: redisson-cluster-route
+  source: public-web
+  sourceUrl: https://github.com/redisson/redisson/issues/5972
+  sourcePageUrl: https://github.com/redisson/redisson/issues/5972
+  fetchedAt: 2026-07-12T17:29:37.200Z
+  usageNote: 根据 Issue 所述切换、旧拓扑与 MOVED 现象绘制的简洁路径示意，仅表达 client topology、old master、MOVED、new master 关系，不是实测集群拓扑
+  sourceFile: redisson-5972-route-headless.png
+  file: inline/redisson-cluster-route.webp
+  objectKey: seed/content-v3/inline/redisson-cluster-route/3c91f7645693701ccc1fc0c82c56477ca1b1cb16025698a57c7fa4febcafbf22.webp
+  sha256: 3c91f7645693701ccc1fc0c82c56477ca1b1cb16025698a57c7fa4febcafbf22
+  contentType: image/webp
+  width: 1600
+  height: 900
+  usage: inline
