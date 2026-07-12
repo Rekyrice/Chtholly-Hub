@@ -5,7 +5,7 @@
 ## 开始前
 
 1. 先读[后端领域地图](../../docs/architecture/backend.md)，确认所属领域、入口与联动面。
-2. 涉及 MySQL、Redis、Kafka、Elasticsearch 或文件存储时，再读[数据与存储](../../docs/architecture/data-and-storage.md)和[数据库操作入口](db/README.md)。
+2. 涉及 MySQL、Redis、Kafka、Elasticsearch 或文件存储时，再读[数据与存储](../../docs/architecture/data-and-storage.md)和[数据库](../../docs/development/database.md)。
 3. 端到端行为跨越多个领域时，继续读[核心请求链路](../../docs/architecture/request-flows.md)。
 
 ## 代码结构与注释
@@ -40,4 +40,4 @@ mvn -q '-Dtest=ClassATest,ClassBTest' test
 mvn -Pintegration-test verify
 ```
 
-运行和配置入口见 [`README.md`](README.md)。
+命令职责、外部依赖和 CI 边界见[测试与验证](../../docs/development/testing.md)；运行入口见 [`README.md`](README.md)，环境变量权威来源见[配置](../../docs/development/configuration.md)。

@@ -1,13 +1,13 @@
-# 数据库脚本（apps/server/db）
+# 数据库操作入口（apps/server/db）
 
-Chtholly Hub 后端使用 MySQL 数据库。开发阶段以 `schema.sql` 作为唯一的全量结构入口，用来一次性创建当前所需的全部表、索引和基础种子数据。
+Chtholly Hub 使用 MySQL。稳定的 schema、增量、seed 关系与生产边界见[数据库章节](../../../docs/development/database.md)；本页保留可直接执行的局部命令。
 
 ## 目录结构
 
 ```text
 db/
 ├── schema.sql          # 开发阶段全量建表脚本
-├── migration/          # 预留给后续 Flyway 迁移脚本
+├── migration/          # 已有数据库的增量脚本（当前 V20、V21）
 └── seed/               # 开发/演示用种子数据
     └── phase_a_seed.sql
 ```
@@ -27,13 +27,14 @@ db/
    docker exec -i -e MYSQL_PWD='你的密码' mysql mysql -uroot --default-character-set=utf8mb4 chtholly -e "source /tmp/schema.sql"
    ```
 
-3. 如需演示数据，再执行 `seed/` 下的脚本。正文 Markdown 文件仍然由 OSS 种子流程管理，不放在数据库目录中。
+3. 如需演示数据，再执行 `seed/` 下的脚本。正文 Markdown 文件由 OSS 种子流程管理，不放在数据库目录中。
 
-## 关于 migration/
+## 增量脚本
 
-`migration/` 目录目前只作为占位保留。开发阶段已经将 V0-V19 的历史迁移内容合并进 `schema.sql`，新同学或本地环境重建数据库时不需要逐个执行迁移脚本。
+- [`V20__knowledge_graph.sql`](migration/V20__knowledge_graph.sql)：知识实体与关系表。
+- [`V21__chtholly_bot_user.sql`](migration/V21__chtholly_bot_user.sql)：确保专用珂朵莉账号使用高 ID。
 
-上线或进入稳定发布流程后，再基于当时确认的 `schema.sql` 拆回独立 Flyway 迁移脚本，并按版本号维护增量变更。
+`schema.sql` 已包含当前最终表形，空库无需为 V0–V19 逐个找历史脚本。本地已有库可从根目录运行 `.\scripts\dev\apply-migrations.ps1`；它使用 `schema_migrations` 登记，不代表应用启用了 Flyway。新增变更只追加更高版本的 `V*.sql`，已应用脚本不得修改。
 
 ## 数据库与 OSS 的分工
 

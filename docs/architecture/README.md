@@ -16,7 +16,7 @@
 
 Chtholly Hub 仓库负责 Web 体验、业务 API、后台任务与容器化配置。浏览器只直接访问 Next.js 或同域代理；Spring Boot 承担业务规则，访问 MySQL、Redis，并按启用功能连接 Elasticsearch、Kafka 等基础设施。正文与媒体默认写入本地文件系统，也可切换到 OSS。外部 LLM、Embedding 与 Bangumi 等服务通过可选集成接入，不是主站阅读与基础互动的启动前提。
 
-MySQL 保存大多数业务最终事实；点赞/收藏成员关系没有 MySQL 落点，无论 Kafka 是否启用，Redis bitmap 都是当前成员关系唯一的状态源，可靠性依赖 Redis 持久化与备份。Kafka 启用时只额外保存可回放的计数增量，用于重建 SDS，不能恢复 bitmap；关闭时 Spring 计数事件只在进程内传播且不可重放。Redis 还保存可重建缓存和其他高频状态；Elasticsearch 保存可重建搜索索引。`STORAGE_TYPE` 默认 `local`，使用本地文件系统保存 Markdown 正文与媒体；生产环境可选并推荐切换为 OSS。当前操作入口见[数据与存储](data-and-storage.md)、[数据库说明](../../apps/server/db/README.md)与 [Docker 说明](../../docker/README.md)。
+MySQL 保存大多数业务最终事实；点赞/收藏成员关系没有 MySQL 落点，无论 Kafka 是否启用，Redis bitmap 都是当前成员关系唯一的状态源，可靠性依赖 Redis 持久化与备份。Kafka 启用时只额外保存可回放的计数增量，用于重建 SDS，不能恢复 bitmap；关闭时 Spring 计数事件只在进程内传播且不可重放。Redis 还保存可重建缓存和其他高频状态；Elasticsearch 保存可重建搜索索引。`STORAGE_TYPE` 默认 `local`，使用本地文件系统保存 Markdown 正文与媒体；生产环境可选切换为 OSS。当前操作入口见[数据与存储](data-and-storage.md)、[数据库](../development/database.md)与[生产部署](../operations/deployment.md)。
 
 ## 组件关系
 
@@ -56,8 +56,8 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
 - [**Agent 系统**](agent-system.md)：Agent Core、上下文、运行时、工具、记忆、扩展、Trace 与配置边界。
 - [**数据与存储**](data-and-storage.md)：MySQL、Redis、Kafka、Elasticsearch、本地文件和 OSS 的权威性、一致性与降级边界。
 - [**核心请求链路**](request-flows.md)：十条高价值端到端调用、状态位置、异步边界与失败路径。
-- **开发章节（待建立）**：本地环境、配置、数据库和测试；当前先读[项目快速开始](../../README.md)。
-- **部署章节（待建立）**：生产拓扑、验证与回滚边界；当前先读 [Docker 操作入口](../../docker/README.md)。
+- [**开发指南**](../development/README.md)：本地工具链、启动与阅读入口；继续阅读[测试](../development/testing.md)、[配置](../development/configuration.md)和[数据库](../development/database.md)。
+- [**生产部署**](../operations/deployment.md)：生产拓扑、代理、初始化、验证与回滚边界。
 
 ## 关键入口
 
@@ -69,9 +69,9 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
 | 后端局部规则 | [`apps/server/AGENTS.md`](../../apps/server/AGENTS.md) |
 | 后端启动类 | `apps/server/src/main/java/com/chtholly/ChthollyApplication.java` |
 | 前端站点路由 | `apps/web/app/(site)` |
-| 数据库 schema 与 migration | [`apps/server/db`](../../apps/server/db/README.md) |
+| 数据库 schema 与 migration | [数据库章节](../development/database.md)、[`apps/server/db`](../../apps/server/db/README.md) |
 | 正文与媒体存储 | [`StorageProperties`](../../apps/server/src/main/java/com/chtholly/storage/config/StorageProperties.java) 定义 `storage.type`；默认使用 [`LocalFileStorageService`](../../apps/server/src/main/java/com/chtholly/storage/LocalFileStorageService.java)，可切换 [`OssStorageService`](../../apps/server/src/main/java/com/chtholly/storage/OssStorageService.java) |
-| 生产容器与代理 | [`docker`](../../docker/README.md)、`docker-compose.prod.yml` |
+| 生产容器与代理 | [生产部署](../operations/deployment.md)、[`docker`](../../docker/README.md)、`docker-compose.prod.yml` |
 | 开发与运维脚本 | [`scripts`](../../scripts/README.md) |
 
 具体类名、配置与测试入口由各专章维护，本页只定义全局关系，避免复制易漂移的实现清单。

@@ -18,9 +18,9 @@
 | 后端业务、API、缓存或事件 | [后端局部规则](apps/server/AGENTS.md) | [后端领域地图](docs/architecture/backend.md)、[核心请求链路](docs/architecture/request-flows.md) |
 | 前端页面、组件或交互 | [前端局部规则](apps/web/AGENTS.md) | [前端架构](docs/architecture/frontend.md)、[前端应用入口](apps/web/README.md) |
 | 角色 Agent、工具、上下文或记忆 | [Agent 系统](docs/architecture/agent-system.md) | [后端局部规则](apps/server/AGENTS.md)、[核心请求链路](docs/architecture/request-flows.md#8-agent-websocket上下文工具与记忆) |
-| 数据库、缓存、搜索、消息或 OSS | [数据与存储](docs/architecture/data-and-storage.md) | [数据库操作入口](apps/server/db/README.md)、[核心请求链路](docs/architecture/request-flows.md) |
-| 本地环境、配置与测试 | [项目快速开始](README.md) | [后端应用入口](apps/server/README.md)、[前端应用入口](apps/web/README.md) |
-| 部署、代理或容器 | [Docker 操作入口](docker/README.md) | [脚本入口](scripts/README.md)、[架构首页](docs/architecture/README.md) |
+| 数据库、缓存、搜索、消息或 OSS | [数据与存储](docs/architecture/data-and-storage.md) | [数据库](docs/development/database.md)、[核心请求链路](docs/architecture/request-flows.md) |
+| 本地环境、配置与测试 | [开发指南](docs/development/README.md) | [配置](docs/development/configuration.md)、[测试与验证](docs/development/testing.md) |
+| 部署、代理或容器 | [生产部署](docs/operations/deployment.md) | [Docker 操作入口](docker/README.md)、[脚本入口](scripts/README.md) |
 | Git、文档与仓库维护 | 本文件“工作区与 Git 安全” | [知识库首页](docs/README.md)、[脚本入口](scripts/README.md) |
 
 ## 系统概览
@@ -129,6 +129,11 @@ git status --short
 - [Agent 系统](docs/architecture/agent-system.md)
 - [数据与存储](docs/architecture/data-and-storage.md)
 - [核心请求链路](docs/architecture/request-flows.md)
+- [开发指南](docs/development/README.md)
+- [测试与验证](docs/development/testing.md)
+- [配置](docs/development/configuration.md)
+- [数据库](docs/development/database.md)
+- [生产部署](docs/operations/deployment.md)
 - [后端应用入口](apps/server/README.md)
 - [后端局部规则](apps/server/AGENTS.md)
 - [前端应用入口](apps/web/README.md)

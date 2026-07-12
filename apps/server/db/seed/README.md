@@ -1,5 +1,7 @@
 # Phase A 种子数据
 
+全量 schema、V20/V21 增量与生产边界见[数据库章节](../../../../docs/development/database.md)。
+
 `phase_a_seed.sql` 写入：
 
 - 用户 **Rekyrice**（`id=1`，`handle=Rekyrice`）

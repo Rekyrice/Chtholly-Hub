@@ -14,6 +14,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 2. 修改 Agent UI、WebSocket、Live2D 或页面上下文时，再读[Agent 系统](../../docs/architecture/agent-system.md)。
 3. 这是 Next.js 16；写代码前必须查阅 `node_modules/next/dist/docs/` 中与当前 API 对应的本地文档，不依赖训练记忆或通用 Next.js 教程。
 
+本地启动和根 `.env` 边界见[开发指南](../../docs/development/README.md)与[配置](../../docs/development/configuration.md)。
+
 ## 组件与数据边界
 
 - `app/(site)` 默认使用 Server Components；公共读取优先由页面直接调用 `lib/services/*Service.ts`。需要 ISR 时由路由显式声明 `revalidate`。
@@ -40,3 +42,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
   ```
 
 - `build` 用于验证 Next.js 路由、Server/Client 边界、类型与 standalone 生产输出，不能只凭单测宣布完成。
+- 命令、外部依赖与 CI 覆盖边界统一见[测试与验证](../../docs/development/testing.md)。
