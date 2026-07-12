@@ -9,7 +9,6 @@ export type VisualBackground = {
 
 export type RouteVisualConfig = {
   readonly id: string;
-  readonly hero?: VisualBackground;
   readonly page: VisualBackground;
 };
 
@@ -38,6 +37,8 @@ function routeVisual(config: RouteVisualConfig): RouteVisualConfig {
   return Object.freeze(config);
 }
 
+export const SITE_HEADER_BACKGROUND = background("hub-hero.webp", "52% 0%", "72% 0%", 0.18, 0);
+
 const searchBackground = background("search-content.webp", "52% 40%", "56% 40%", 0.2, 0.8);
 const authBackground = background("auth-arrival.webp", "34% 55%", "50% 48%", 0.2, 1);
 const aboutBackground = background("about-community.webp", "50% 34%", "50% 30%", 0.2, 1);
@@ -50,21 +51,20 @@ const postBackground = background("post-ruins.webp", "52% 38%", "50% 40%", 0.2, 
 export const ROUTE_VISUALS: readonly RouteVisualConfig[] = Object.freeze([
   routeVisual({
     id: "hub",
-    hero: background("hub-hero.webp", "52% 45%", "58% 44%", 0.18, 0),
     page: background("hub-content.webp", "50% 45%", "52% 42%", 0.18, 1, 0.96),
   }),
-  routeVisual({ id: "search", hero: searchBackground, page: searchBackground }),
+  routeVisual({ id: "search", page: searchBackground }),
   routeVisual({
     id: "write",
-    page: background("write-workspace.webp", "66% 38%", "68% 36%", 0.22, 0.5),
+    page: background("write-workspace.webp", "50% 4%", "52% 0%", 0.16, 0.5),
   }),
-  routeVisual({ id: "auth", hero: authBackground, page: authBackground }),
-  routeVisual({ id: "about", hero: aboutBackground, page: aboutBackground }),
-  routeVisual({ id: "profile", hero: profileBackground, page: profileBackground }),
-  routeVisual({ id: "settings", hero: settingsBackground, page: settingsBackground }),
-  routeVisual({ id: "archive", hero: archiveBackground, page: archiveBackground }),
-  routeVisual({ id: "tag", hero: tagBackground, page: tagBackground }),
-  routeVisual({ id: "post", hero: postBackground, page: postBackground }),
+  routeVisual({ id: "auth", page: authBackground }),
+  routeVisual({ id: "about", page: aboutBackground }),
+  routeVisual({ id: "profile", page: profileBackground }),
+  routeVisual({ id: "settings", page: settingsBackground }),
+  routeVisual({ id: "archive", page: archiveBackground }),
+  routeVisual({ id: "tag", page: tagBackground }),
+  routeVisual({ id: "post", page: postBackground }),
 ]);
 
 const ROUTE_SEGMENTS: ReadonlyArray<readonly [segment: string, visualId: string]> = [

@@ -142,9 +142,17 @@ describe("SiteChrome", () => {
     expect(screen.getByTestId("content").parentElement).toHaveClass("max-w-6xl");
   });
 
-  it("passes route hero backgrounds to ordinary headers", () => {
+  it("keeps the shared white-background hero across decorated ordinary routes", () => {
     navigation.pathname = "/hub";
     const { rerender } = render(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
+    expect(screen.getByTestId("site-header")).toHaveTextContent("/hub-hero.webp");
+
+    navigation.pathname = "/search";
+    rerender(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
+    expect(screen.getByTestId("site-header")).toHaveTextContent("/hub-hero.webp");
+
+    navigation.pathname = "/login";
+    rerender(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
     expect(screen.getByTestId("site-header")).toHaveTextContent("/hub-hero.webp");
 
     navigation.pathname = "/admin";
