@@ -71,7 +71,13 @@ describe("route visual style contract", () => {
   });
 
   it("keeps mobile route surfaces readable in the final cascade", () => {
+    const mobileStart = visuals.indexOf("@media (max-width: 767px)");
+    const mobileEnd = visuals.indexOf("@media (prefers-reduced-motion: reduce)", mobileStart);
+    const mobileRules = visuals.slice(mobileStart, mobileEnd);
+
     expect(responsive).toMatch(/\.site-shell\s*\{[^}]*padding-bottom:[^}]*safe-area-inset-bottom/);
-    expect(visuals).toMatch(/\.site-shell--route-visual \.post-card,\s*\.site-shell--route-visual \.hub-sidebar \.widget\s*\{[^}]*backdrop-filter:\s*blur\(7px\) saturate\(0\.72\);[^}]*-webkit-backdrop-filter:\s*blur\(7px\) saturate\(0\.72\)/);
+    expect(mobileStart).toBeGreaterThan(-1);
+    expect(mobileEnd).toBeGreaterThan(mobileStart);
+    expect(mobileRules).toMatch(/\.site-shell--route-visual \.post-card,\s*\.site-shell--route-visual \.hub-sidebar \.widget\s*\{[^}]*backdrop-filter:\s*blur\(7px\) saturate\(0\.72\);[^}]*-webkit-backdrop-filter:\s*blur\(7px\) saturate\(0\.72\)/);
   });
 });
