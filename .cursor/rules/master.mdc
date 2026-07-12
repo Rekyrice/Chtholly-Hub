@@ -1,6 +1,6 @@
 ---
 description: 项目主规则。开始任何任务前必须先阅读根目录 AGENTS.md。
-globs: **/*
+globs: "**/*"
 alwaysApply: true
 ---
 
