@@ -24,3 +24,72 @@
     format: longform-review
     mediaPlan: [天空下的八千代氛围剧照作封面, 角色原案图对应竹本泉, 银河楼与废墟图对应美术分析, 八千代树下休息画面对应第十一集, 两张树林图作结尾前后对照]
     sources: [apocalypse-hotel-sakuga, apocalypse-hotel-bangumi-user, apocalypse-hotel-itmedia, apocalypse-hotel-ann, apocalypse-hotel-netlab, apocalypse-hotel-animate-times, apocalypse-hotel-episode11-stills, apocalypse-hotel-gamebiz, apocalypse-hotel-official]
+
+- seedKey: shoushimin-cinematography
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 《小市民系列》的摄影，为什么总让人坐立不安
+  slug: shoushimin-cinematography
+  description: 从中轴构图、人物距离和被压低的声音，拆解《小市民系列》怎样把“普通”拍成一场随时会露馅的表演。
+  category: ANIME
+  tags: [小市民系列, 动画摄影, 构图, 制作考察]
+  publishTime: 2026-06-28T14:17:00Z
+  markdownFile: posts/shoushimin-cinematography.md
+  coverAsset: shoushimin-cinematography-cover
+  inlineAssets:
+    - shoushimin-centered-frame
+    - shoushimin-room-distance
+    - shoushimin-ordinary-mask
+  brief:
+    factAnchors: [米泽穗信, 神户守, 斋藤敦史, 盐川智幸, Lapin Track, 中轴构图, 背景切换, 稀疏配乐, 岐阜实景, 普通生活的表演性]
+    voice: kzn，先注意镜头和声音，判断直接，句子偏短
+    position: 端正构图与克制声音没有制造安全感，而是把小鸠和小佐内维持普通生活的用力程度暴露出来
+    format: feature-review
+    mediaPlan: [居中远景支撑过度整齐的构图, 房间远景支撑人物与空间的距离, 结尾画面支撑普通面具开始松动]
+    sources: [shoushimin-cinematography-sakuga, shoushimin-cinematography-official]
+
+- seedKey: hyakuemu-one-hundred-meters
+  legacySlug: null
+  authorSeedKey: anime-critic
+  title: 一百米够跑完一个人的一生吗？——《百米。》观后
+  slug: hyakuemu-one-hundred-meters
+  description: 从脚掌落地、雨中冲刺和终点后的回望，讨论《百米。》如何让身体、胜负与时间彼此较劲。
+  category: ANIME
+  tags: [百米。, 岩井泽健治, 运动动画, 动画电影]
+  publishTime: 2026-06-19T10:42:00Z
+  markdownFile: posts/hyakuemu-one-hundred-meters.md
+  coverAsset: hyakuemu-one-hundred-meters-cover
+  inlineAssets:
+    - hyakuemu-body-lines
+    - hyakuemu-rain-sprint
+    - hyakuemu-finish
+  brief:
+    factAnchors: [鱼丰, 岩井泽健治, 武藤康之, 小岛庆祐, Rock'n Roll Mountain, 转描, 三维跑步模型, 场景粗稿, 雨中长镜头, 百米赛事的十秒时间]
+    voice: 佐仓市民A，允许长段落、犹豫和保留意见，不把个人判断写成普遍定论
+    position: 影片最有说服力的不是把奔跑概括成人生，而是让长期准备与十秒比赛在具体身体里发生冲突
+    format: feature-review
+    mediaPlan: [起跑身体线条支撑重量分析, 雨中冲刺支撑速度与制作方法, 终点回望支撑胜负之后仍未结束的时间]
+    sources: [hyakuemu-production-sakuga, hyakuemu-production-official]
+
+- seedKey: city-restless-town
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 关于《CITY》：京都动画怎样画一座停不下来的城
+  slug: city-restless-town
+  description: 从人物动作、背景反应与剪辑节拍出发，看京都动画如何让荒井切利的粗线条扩散成一整座城的运动。
+  category: ANIME
+  tags: [CITY THE ANIMATION, 京都动画, 喜剧演出, 制作考察]
+  publishTime: 2026-06-03T16:08:00Z
+  markdownFile: posts/city-restless-town.md
+  coverAsset: city-restless-town-cover
+  inlineAssets:
+    - city-comedy-impact
+    - city-space-elasticity
+    - city-line-language
+  brief:
+    factAnchors: [荒井切利, 石立太一, 徳山珠美, 京都动画, 北之原孝将, 第十二集, 无对白古典乐段落, 二维特效, 背景动画, 全城反应]
+    voice: kzn，开门见山并置笑点，拆动作与节拍时判断直接，短段落推进
+    position: 《CITY》的统一感来自人物、背景、线条和剪辑共享同一套反应机制，而非把漫画笑点单独装饰得更华丽
+    format: feature-review
+    mediaPlan: [夸张反应支撑喜剧冲击, 变形街道支撑空间弹性, 群像粗线画面支撑团队统一的线条语言]
+    sources: [city-animation-production-sakuga, city-animation-production-official]
