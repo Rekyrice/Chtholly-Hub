@@ -2148,3 +2148,221 @@ Build `review/index.html` with the complete article, actual cover and seven inli
 - [ ] **Step 4: Stop for user review**
 
 Do not stage or commit the quality-gate code, article, media or content-pack data. Ask the user to approve the single long-form article before resuming Task 20.
+
+## 2026-07-12《末日后酒店》范文二次修订执行计划
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 把已通过结构审阅的《末日后酒店》范文改成 `rekyrice` 本人的安静观看札记，替换氛围封面并让内容包真实绑定站长账号。
+
+**Architecture:** 内容层保留现有文章事实、结构和媒体数量，只重写暴露研究过程或带机械总结感的表达。身份层使用保留作者键 `site-owner`，由 `SiteProperties.ownerUserId()` 在文章写入边界解析，不把管理员混入 Seed 子账号集合、关注清理或互动。媒体层把现有高分辨率天空剧照转为封面，再补一张第 11 集树下剧照维持七张正文图。
+
+**Tech Stack:** Java 21、Spring Boot 3.2.4、JUnit 5、Mockito、YAML、Markdown、Node.js 媒体固定脚本。
+
+---
+
+## Task 27: 支持真实站长作为内容包文章作者
+
+**Files:**
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackValidator.java`
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackDatabaseWriter.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackValidatorTest.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackDatabaseWriterTest.java`
+
+- [ ] **Step 1: 写出校验器失败测试**
+
+新增测试，把有效 fixture 的文章作者替换为 `site-owner`，断言文章校验通过；再分别构造作者为 `site-owner` 的评论和参与者为 `site-owner` 的关注，断言仍出现缺失账号错误。普通 `absent-author` 必须继续失败。
+
+```java
+private static final String SITE_OWNER = "site-owner";
+
+@Test
+void acceptsSiteOwnerOnlyAsPostAuthor() throws Exception {
+    ContentPack loaded = loader.load(fixtureRoot("valid"));
+    SeedPostDefinition original = loaded.posts().getFirst();
+    SeedPostDefinition owned = new SeedPostDefinition(
+            original.seedKey(), original.legacySlug(), SITE_OWNER, original.title(), original.slug(),
+            original.description(), original.category(), original.tags(), original.publishTime(),
+            original.markdownFile(), original.coverAsset(), original.inlineAssets(), original.brief(), original.markdown());
+    ContentPack pack = new ContentPack(loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(),
+            List.of(owned), List.of(), List.of(), List.of(), List.of());
+
+    assertThat(validator.validate(pack).warnings()).isEmpty();
+}
+```
+
+- [ ] **Step 2: 运行校验器 RED**
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=ContentPackValidatorTest#acceptsSiteOwnerOnlyAsPostAuthor' test
+```
+
+Expected: FAIL，错误包含 `missing post author`。
+
+- [ ] **Step 3: 最小化放行保留作者键**
+
+在 `ContentPackValidator` 中增加包内常量和专用判断，只改变文章作者校验：
+
+```java
+static final String SITE_OWNER_AUTHOR = "site-owner";
+
+private boolean isKnownPostAuthor(Set<String> accountKeys, String authorSeedKey) {
+    return SITE_OWNER_AUTHOR.equals(authorSeedKey) || accountKeys.contains(authorSeedKey);
+}
+```
+
+评论、关注、反应和其他账号引用继续只接受 `accounts.yml` 中声明的 seed key。
+
+- [ ] **Step 4: 写出数据库作者解析失败测试**
+
+给 writer 测试注入 `new SiteProperties(7L, 888888888888888888L, "", "rekyrice", "rekyrice")`，构造 `post("post-one", "site-owner")`，捕获 `SeedPostRow` 并断言 `creatorId == 7L`；另用 `ownerUserId=0` 断言写入前抛出 `IllegalStateException`，且未调用 `insertSeedPost` 或 `updateSeedPostById`。
+
+- [ ] **Step 5: 运行 writer RED**
+
+```powershell
+mvn -q '-Dtest=ContentPackDatabaseWriterTest#givenSiteOwnerAuthor_whenWrite_thenUsesConfiguredOwnerId,ContentPackDatabaseWriterTest#givenInvalidSiteOwnerId_whenWrite_thenFailsBeforePostMutation' test
+```
+
+Expected: FAIL，因为 writer 尚未接收 `SiteProperties`，也无法解析 `site-owner`。
+
+- [ ] **Step 6: 在文章写入边界解析站长 ID**
+
+为 `ContentPackDatabaseWriter` 注入 `SiteProperties`，新增方法：
+
+```java
+private long resolvePostAuthorId(Map<String, Long> accountIds, String authorSeedKey) {
+    if (ContentPackValidator.SITE_OWNER_AUTHOR.equals(authorSeedKey)) {
+        long ownerUserId = siteProperties.ownerUserId();
+        if (ownerUserId <= 0) {
+            throw new IllegalStateException("site.owner-user-id must be positive for site-owner posts");
+        }
+        return ownerUserId;
+    }
+    return requireIdentity(accountIds, authorSeedKey, "post author");
+}
+```
+
+`writePosts` 仅用该方法解析文章作者，不把 `site-owner` 放入 `accountIds`。
+
+- [ ] **Step 7: 运行 GREEN 与回归**
+
+```powershell
+mvn -q '-Dtest=ContentPackValidatorTest,ContentPackDatabaseWriterTest,ContentPackImportServiceTest' test
+```
+
+Expected: 全部通过；既有 Seed 账号、评论、关注和导入测试行为不变。
+
+## Task 28: 重写范文声音与小标题
+
+**Files:**
+- Modify: `content/seed/content-v3/posts/apocalypse-hotel-legacies.md`
+- Modify: `content/seed/content-v3/posts.yml`
+
+- [ ] **Step 1: 切换真实作者并保持内容包规模**
+
+在 `posts.yml` 中只把该文 `authorSeedKey` 改为 `site-owner`。`manifest.yml` 保持 `expectedAccounts: 8`、`expectedPosts: 1`，不得新增名为 rekyrice 的 Seed 账号。
+
+- [ ] **Step 2: 替换八个小标题**
+
+正文 H2 必须按以下顺序出现：
+
+```markdown
+## 在银河楼亮灯以前
+## 那些没有长成标准答案的角色
+## 一阵从旧时代吹来的风
+## 废墟里仍有晴天
+## 客人来过，又把世界带走
+## 时间有颜色，温泉通向彩虹
+## 一个人走过人类留下的地球
+## 没有人回来，酒店仍然开门
+```
+
+- [ ] **Step 3: 做全文观看札记式重写**
+
+逐段保留已核实的制作史事实、ep5/6/11/12 分析、24 段左右结构和最终判断，重写暴露研究过程或机械收束的句子。删除正文中的 `Sakuga Blog`、`原文`、`资料将其称为`、`这恰好解释了`、`由此可以看出`、`这意味着` 等元话语；用具体画面、人物动作和站长自己的判断连接段落。不得把外部文章逐段翻译为近似副本。
+
+- [ ] **Step 4: 清理所有可见图片来源**
+
+每张图注只描述画面，不得包含 `来源：`、`Sakuga`、`Animate Times`、`ORICON` 或 URL。内部 `assets.yml` 与 `sources.yml` 的来源字段不删除。
+
+- [ ] **Step 5: 运行内容扫描**
+
+```powershell
+$post = 'content/seed/content-v3/posts/apocalypse-hotel-legacies.md'
+Select-String -Path $post -Pattern 'Sakuga Blog|来源：|原文|这恰好解释了|由此可以看出|这意味着'
+(Select-String -Path $post -Pattern '^## ').Count
+```
+
+Expected: 禁用模式零匹配，H2 数量为 8；严格正文汉字仍为 4,000–6,000，重点集数与结论均未丢失。
+
+## Task 29: 更换氛围封面并维持七张正文图
+
+**Files:**
+- Modify: `content/seed/content-v3/assets.yml`
+- Modify: `content/seed/content-v3/posts.yml`
+- Modify: `content/seed/content-v3/sources.yml`
+- Replace: `content/seed/content-v3/assets/covers/apocalypse-hotel.webp`
+- Create: `content/seed/content-v3/assets/inline/apocalypse-hotel-tree-rest.webp`
+- Temporary: `.codex-tmp/seed-content-v3/sources/apocalypse-hotel-tree-rest-actual.jpg`
+
+- [ ] **Step 1: 把天空剧照改作封面源**
+
+使用已固定的高清源 `https://blog.sakugabooru.com/wp-content/uploads/2026/01/apohotel5-scaled.jpg` 重新生成 `apocalypse-hotel-cover`。目标为 1200×675 WebP；八千代在辽阔天空下占较小比例，无标题拼贴。原 `apocalypse-hotel-yachiyo-sky` 不再作为 inline asset。
+
+- [ ] **Step 2: 固定新的第 11 集树下剧照**
+
+使用页面 `https://www.animatetimes.com/news/img.php?id=1749726773&n=4&p=1` 的公开剧照：
+
+```text
+https://img2.animatetimes.com/2025/06/6032747a017dc50c2e60544f0b5f8930684abd73081318_22160650_96b471b70187ffac262b8f612250273e6ab4f33d.jpg
+```
+
+通过 `fetch-source-asset.mjs` 写入真实抓取时间，再生成 key `apocalypse-hotel-tree-rest`、文件 `inline/apocalypse-hotel-tree-rest.webp`。在 `sources.yml` 新增 `apocalypse-hotel-episode11-stills` 来源卡，在 `assets.yml` 保留来源页、原图 URL、哈希和用途说明。
+
+- [ ] **Step 3: 更新文章媒体引用**
+
+把第 11 集段落中的 `asset:apocalypse-hotel-yachiyo-sky` 替换为 `asset:apocalypse-hotel-tree-rest`，图注只写八千代在树下短暂停留的画面意义。`posts.yml` 的 `inlineAssets` 同步替换，最终仍是 1 张封面加 7 张互不重复的正文图。
+
+- [ ] **Step 4: 写入哈希并检查**
+
+```powershell
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --write-hashes
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+```
+
+Expected: 16 个总资产（8 个头像、1 张文章封面、7 张正文图）全部校验通过；新封面 1200×675，正文无重复封面。
+
+## Task 30: 重建预览并完成双重审查
+
+**Files:**
+- Replace temporarily: `.codex-tmp/seed-content-v3/review/index.html`
+
+- [ ] **Step 1: 重建真实管理员预览**
+
+预览作者显示 `rekyrice`，不再复用 `anime-critic` 的昵称或头像。页面显示完整正文、1 张新封面、7 张正文图；不生成读者可见的图片来源面板或来源字样。
+
+- [ ] **Step 2: 运行定向测试与只读 dry-run**
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=ContentPackValidatorTest,ContentPackQualityGateTest,ContentPackLoaderTest,ContentPackDatabaseWriterTest,ContentPackImportServiceTest' test
+cd ../..
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+git diff --check
+```
+
+Expected: 测试全部通过；报告为 `validated`，`validationWarnings`、`qualityWarnings`、`qualityErrors` 均为空。
+
+- [ ] **Step 3: 做规格审查**
+
+逐项核对设计第 15 节：8 个精确小标题、`site-owner`、4,000–6,000 汉字、四个重点集数、24 段左右、1+7 图片、可见来源零匹配。发现偏差时返回相应任务修复后重审。
+
+- [ ] **Step 4: 做独立质量审查**
+
+重点检查是否仍有来源腔、翻译腔、AI 式总结、过度抒情和姓名堆砌；检查封面氛围、每张图与相邻段落以及管理员署名。质量审查不修改文件，只给出 `APPROVED` 或准确问题清单。
+
+- [ ] **Step 5: 交付用户复审并停止**
+
+确认预览页与全部图片 HTTP 200、浏览器无破图、暂存区为空。不要提交本轮文章、媒体和导入代码；把审阅链接交给用户，等待最终批准。
