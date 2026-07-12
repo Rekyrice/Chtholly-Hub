@@ -52,8 +52,8 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
 ## 章节导航
 
 - [**后端领域地图**](backend.md)：业务领域、22 个顶级包边界、主要入口、依赖与代表性测试。
-- **前端架构（待建立）**：用户路径、路由、组件与 Server/Client 边界；当前先读[前端局部规则](../../apps/web/AGENTS.md)。
-- **Agent 系统（待建立）**：Agent Core、上下文、工具、记忆与可选扩展；当前先读[后端领域地图的 Agent 平台章节](backend.md#agent-平台)和[Agent 请求链](request-flows.md#8-agent-websocket上下文工具与记忆)。
+- [**前端架构**](frontend.md)：用户路径、路由、组件、Server/Client、API、主题、Live2D 与验证入口。
+- [**Agent 系统**](agent-system.md)：Agent Core、上下文、运行时、工具、记忆、扩展、Trace 与配置边界。
 - [**数据与存储**](data-and-storage.md)：MySQL、Redis、Kafka、Elasticsearch、本地文件和 OSS 的权威性、一致性与降级边界。
 - [**核心请求链路**](request-flows.md)：十条高价值端到端调用、状态位置、异步边界与失败路径。
 - **开发章节（待建立）**：本地环境、配置、数据库和测试；当前先读[项目快速开始](../../README.md)。
@@ -64,6 +64,7 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
 | 关注点 | 代码或操作入口 |
 |--------|----------------|
 | Next.js 应用 | [`apps/web`](../../apps/web/README.md) |
+| 前端局部规则 | [`apps/web/AGENTS.md`](../../apps/web/AGENTS.md) |
 | Spring Boot 应用 | [`apps/server`](../../apps/server/README.md) |
 | 后端局部规则 | [`apps/server/AGENTS.md`](../../apps/server/AGENTS.md) |
 | 后端启动类 | `apps/server/src/main/java/com/chtholly/ChthollyApplication.java` |

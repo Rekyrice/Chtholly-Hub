@@ -16,8 +16,8 @@
 | 任务 | 先读 | 继续深入 |
 |------|------|----------|
 | 后端业务、API、缓存或事件 | [后端局部规则](apps/server/AGENTS.md) | [后端领域地图](docs/architecture/backend.md)、[核心请求链路](docs/architecture/request-flows.md) |
-| 前端页面、组件或交互 | [前端局部规则](apps/web/AGENTS.md) | [前端应用入口](apps/web/README.md)、[架构首页](docs/architecture/README.md) |
-| 角色 Agent、工具、上下文或记忆 | [后端局部规则](apps/server/AGENTS.md) | [后端领域地图的 Agent 平台章节](docs/architecture/backend.md#agent-平台)、[核心请求链路](docs/architecture/request-flows.md#8-agent-websocket上下文工具与记忆) |
+| 前端页面、组件或交互 | [前端局部规则](apps/web/AGENTS.md) | [前端架构](docs/architecture/frontend.md)、[前端应用入口](apps/web/README.md) |
+| 角色 Agent、工具、上下文或记忆 | [Agent 系统](docs/architecture/agent-system.md) | [后端局部规则](apps/server/AGENTS.md)、[核心请求链路](docs/architecture/request-flows.md#8-agent-websocket上下文工具与记忆) |
 | 数据库、缓存、搜索、消息或 OSS | [数据与存储](docs/architecture/data-and-storage.md) | [数据库操作入口](apps/server/db/README.md)、[核心请求链路](docs/architecture/request-flows.md) |
 | 本地环境、配置与测试 | [项目快速开始](README.md) | [后端应用入口](apps/server/README.md)、[前端应用入口](apps/web/README.md) |
 | 部署、代理或容器 | [Docker 操作入口](docker/README.md) | [脚本入口](scripts/README.md)、[架构首页](docs/architecture/README.md) |
@@ -52,11 +52,7 @@ Chtholly Hub 是 Java 21 + Spring Boot 3.2.4 与 Next.js 16 + Tailwind CSS 4 组
 
 ### 前端
 
-- `app/(site)` 默认使用 Server Components 和 ISR；仅在浏览器交互确有需要时加入 `"use client"`。
-- Server Component 通过服务模块取数；Client Component 通过 `lib/services/apiClient.ts` 调用 API。
-- API 请求与响应类型集中在 `lib/types`，不要在页面中复制接口结构。
-- 样式使用 Tailwind 与 `globals.css` 主题 Token，优先复用 `--blog-primary`、`--blog-secondary` 等现有变量。
-- 进入前端子树后，以 `apps/web/AGENTS.md` 的 Next.js 版本规则、交互验证和局部约束为准。
+- 进入 `apps/web` 后必须阅读[前端局部规则](apps/web/AGENTS.md)；该文件是 Next.js 版本、Server/Client、服务与类型、样式、交互和测试细则的局部唯一来源，不得放宽本文件的仓库级安全约束。用户路径与联动面见[前端架构](docs/architecture/frontend.md)。
 
 ## 临时文件与工作区安全
 
@@ -129,13 +125,13 @@ git status --short
 - [项目知识库](docs/README.md)
 - [架构首页](docs/architecture/README.md)
 - [后端领域地图](docs/architecture/backend.md)
+- [前端架构](docs/architecture/frontend.md)
+- [Agent 系统](docs/architecture/agent-system.md)
 - [数据与存储](docs/architecture/data-and-storage.md)
 - [核心请求链路](docs/architecture/request-flows.md)
-- 待建立的架构专章：`frontend.md`、`agent-system.md`
-- 待建立的开发章节：`docs/development/README.md`、`configuration.md`、`database.md`、`testing.md`
-- 待建立的运维章节：`docs/operations/deployment.md`
 - [后端应用入口](apps/server/README.md)
 - [后端局部规则](apps/server/AGENTS.md)
+- [前端应用入口](apps/web/README.md)
 - [前端局部规则](apps/web/AGENTS.md)
 - [数据库操作入口](apps/server/db/README.md)
 - [Docker 操作入口](docker/README.md)

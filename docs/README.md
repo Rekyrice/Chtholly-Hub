@@ -6,17 +6,17 @@
 
 | 任务 | 先读 | 继续深入 |
 |------|------|----------|
-| 理解系统边界与依赖 | [架构首页](architecture/README.md) | [后端领域地图](architecture/backend.md)、[数据与存储](architecture/data-and-storage.md) |
+| 理解系统边界与依赖 | [架构首页](architecture/README.md) | [后端领域地图](architecture/backend.md)、[前端架构](architecture/frontend.md)、[Agent 系统](architecture/agent-system.md)、[数据与存储](architecture/data-and-storage.md) |
 | 修改后端业务 | [后端局部规则](../apps/server/AGENTS.md) | [后端领域地图](architecture/backend.md)、[核心请求链路](architecture/request-flows.md) |
-| 修改前端 UI | [前端局部规则](../apps/web/AGENTS.md) | [前端应用入口](../apps/web/README.md)、[架构首页](architecture/README.md) |
-| 修改角色 Agent | [后端局部规则](../apps/server/AGENTS.md) | [后端领域地图的 Agent 平台章节](architecture/backend.md#agent-平台)、[核心请求链路](architecture/request-flows.md#8-agent-websocket上下文工具与记忆) |
+| 修改前端 UI | [前端局部规则](../apps/web/AGENTS.md) | [前端架构](architecture/frontend.md)、[前端应用入口](../apps/web/README.md) |
+| 修改角色 Agent | [Agent 系统](architecture/agent-system.md) | [后端局部规则](../apps/server/AGENTS.md)、[核心请求链路](architecture/request-flows.md#8-agent-websocket上下文工具与记忆) |
 | 修改数据库或外部存储 | [数据与存储](architecture/data-and-storage.md) | [数据库操作入口](../apps/server/db/README.md)、[核心请求链路](architecture/request-flows.md) |
 | 搭建开发环境或验证改动 | [项目快速开始](../README.md) | [后端应用入口](../apps/server/README.md)、[前端应用入口](../apps/web/README.md) |
 | 部署与排障 | [Docker 操作入口](../docker/README.md) | [脚本入口](../scripts/README.md)、[架构首页](architecture/README.md) |
 
 ## 按主题阅读
 
-- [Architecture](architecture/README.md)：稳定的系统边界与组件关系；继续阅读[后端领域地图](architecture/backend.md)、[数据与存储](architecture/data-and-storage.md)和[核心请求链路](architecture/request-flows.md)。
+- [Architecture](architecture/README.md)：稳定的系统边界与组件关系；继续阅读[后端领域地图](architecture/backend.md)、[前端架构](architecture/frontend.md)、[Agent 系统](architecture/agent-system.md)、[数据与存储](architecture/data-and-storage.md)和[核心请求链路](architecture/request-flows.md)。
 - **Development（待建立）**：将承载本地开发、配置、数据库变更与验证方法；当前先读[项目快速开始](../README.md)与[数据库操作入口](../apps/server/db/README.md)。
 - **Operations（待建立）**：将承载生产拓扑、验证与回滚边界；当前先读 [Docker 操作入口](../docker/README.md)。
 

@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Chtholly Hub Web
 
-## Getting Started
+`apps/web` 是 Chtholly Hub 的 Next.js 16 前端，负责公开内容、Hub、Agent 工作区与浮窗、写作、账号、用户主页和 Admin 体验。后端业务规则由 `apps/server` 提供；开发环境通过 Next rewrite 代理 `/api/v1/*` 与 `/uploads/*`，生产环境使用 standalone 输出并由 Nginx 同域反代。
 
-First, run the development server:
+## 先读
+
+- [前端局部规则](AGENTS.md)：Next.js 16、本地文档、Server/Client、service/type、样式与验证约束。
+- [前端架构](../../docs/architecture/frontend.md)：用户路径、真实路由、组件、API、Live2D 与测试地图。
+- [Agent 系统](../../docs/architecture/agent-system.md)：Agent WebSocket、Core、上下文、记忆和扩展边界。
+
+## 目录
+
+| 目录 | 职责 |
+|------|------|
+| `app/(site)` | 公开站点、Hub、Agent、写作、账号、用户与 Admin 路由 |
+| `app/styles` | 页面/领域样式，主题源在 `app/globals.css` |
+| `components/site` | 站点、Hub、账号与 Admin 业务组件 |
+| `components/agent` | Agent workspace、浮窗、会话、WebSocket 与 Live2D |
+| `components/ui` | 通用基础组件 |
+| `components/write` | Markdown 写作子组件 |
+| `lib/services` | API 传输层和领域 service |
+| `lib/types` | API 与共享领域类型 |
+| `lib/auth` | 浏览器登录态与 token 生命周期 |
+
+## 环境变量
+
+环境变量模板统一在仓库根目录 [`.env.example`](../../.env.example)：
+
+| 变量 | 用途 | 缺省行为 |
+|------|------|----------|
+| `API_SERVER_URL` | Next Server Component 与开发 rewrite 访问 Spring Boot | `http://localhost:8888` |
+| `NEXT_PUBLIC_API_SERVER_URL` | 浏览器需要显式知道 API origin 时使用，也可推导 WebSocket | 浏览器 API 通常走同域相对路径 |
+| `NEXT_PUBLIC_WS_URL` | Agent WebSocket origin | 回退到 `NEXT_PUBLIC_API_SERVER_URL`，再回退当前主机 `:8888` |
+| `NEXT_PUBLIC_SITE_URL` | canonical、Open Graph 等站点 URL | 本地站点地址 |
+| `NEXT_PUBLIC_OSS_PUBLIC_URL` | Next Image 允许的 OSS 公网来源 | 仅保留内置开发 OSS pattern |
+| `NEXT_PUBLIC_OWNER_USER_ID` | 站点所有者展示相关配置 | 未设置时使用代码缺省逻辑 |
+
+## 本地启动与验证
+
+在仓库根目录准备 `.env` 并先启动后端，然后：
 
 ```bash
+cd apps/web
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+前端默认访问 `http://localhost:3000`，Spring Boot 默认访问 `http://localhost:8888`。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# 一次性运行全部 Vitest
+npm run test:run
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# 生产构建，包含类型、路由和 Server/Client 边界验证
+npm run build
 
-## Learn More
+# 运行已构建的 standalone-compatible Next 服务
+npm run start
+```
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+修改页面或组件前先查阅 `node_modules/next/dist/docs/` 中对应的 Next.js 16 本地文档；本 README 只记录 Chtholly Hub Web 的项目入口，不替代框架文档。
