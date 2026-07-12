@@ -224,10 +224,14 @@ public final class ContentPackValidator {
         if (value == null) {
             return false;
         }
-        String normalized = value.strip().toLowerCase(Locale.ROOT).replaceAll("[\\s_-]+", "");
-        return normalized.contains("openaiimagegen")
-                || normalized.contains("generated:")
-                || normalized.contains("gocrazyai");
+        StringBuilder normalized = new StringBuilder();
+        value.codePoints()
+                .filter(Character::isLetterOrDigit)
+                .map(Character::toLowerCase)
+                .forEach(normalized::appendCodePoint);
+        return normalized.indexOf("openaiimagegen") >= 0
+                || normalized.indexOf("generated") >= 0
+                || normalized.indexOf("gocrazyai") >= 0;
     }
 
     private HttpUrlStatus httpUrlStatus(String value) {

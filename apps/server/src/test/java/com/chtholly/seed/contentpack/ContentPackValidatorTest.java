@@ -346,6 +346,11 @@ class ContentPackValidatorTest {
         assets.put("page-marker", assetWithProvenance(original, "page-marker", "local", null, "https://example.com/generated : art", null, null));
         assets.put("file-marker", assetWithProvenance(original, "file-marker", "local", null, null, "GoCrazy-AI/source.png", null));
         assets.put("usage-marker", assetWithProvenance(original, "usage-marker", "local", null, null, null, "generated : illustration"));
+        assets.put("domain-marker", assetWithProvenance(original, "domain-marker", "local", null, "https://gocrazy.ai/art", null, null));
+        assets.put("dot-marker", assetWithProvenance(original, "dot-marker", "local", null, null, null, "openai.imagegen"));
+        assets.put("mixed-marker", assetWithProvenance(original, "mixed-marker", "local", null, null, "generated/:/art.png", null));
+        assets.put("legal-url", assetWithProvenance(original, "legal-url", "local",
+                "https://images.example.com/art-v2.png", "https://example.com/license", null, "editorial image"));
         ContentPack pack = new ContentPack(loaded.root(), loaded.manifest(), loaded.accounts(), assets,
                 loaded.posts(), loaded.comments(), loaded.follows(), loaded.reactions(), loaded.views());
 
@@ -356,7 +361,11 @@ class ContentPackValidatorTest {
                 "AI-generated asset forbidden: url-marker",
                 "AI-generated asset forbidden: page-marker",
                 "AI-generated asset forbidden: file-marker",
-                "AI-generated asset forbidden: usage-marker");
+                "AI-generated asset forbidden: usage-marker",
+                "AI-generated asset forbidden: domain-marker",
+                "AI-generated asset forbidden: dot-marker",
+                "AI-generated asset forbidden: mixed-marker");
+        assertTrue(!exception.getMessage().contains("AI-generated asset forbidden: legal-url"));
     }
 
     @Test

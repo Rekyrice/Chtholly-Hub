@@ -1,6 +1,7 @@
 package com.chtholly.seed.contentpack;
 
 import com.chtholly.seed.contentpack.model.ContentPack;
+import com.chtholly.seed.contentpack.model.SeedAssetDefinition;
 import com.chtholly.seed.contentpack.model.SeedSourceDefinition;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,6 +15,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -163,6 +166,34 @@ class ContentPackLoaderTest {
 
         assertEquals(java.util.List.of("spring-observability", "second-source"),
                 new ArrayList<>(pack.sources().keySet()));
+    }
+
+    @Test
+    void contentPackRejectsNullAssetAndSourceMapEntries() throws Exception {
+        ContentPack loaded = loader.load(fixtureRoot());
+        var asset = loaded.assets().values().iterator().next();
+        var source = loaded.sources().values().iterator().next();
+        Map<String, SeedAssetDefinition> assetNullKey = new LinkedHashMap<>();
+        assetNullKey.put(null, asset);
+        Map<String, SeedAssetDefinition> assetNullValue = new LinkedHashMap<>();
+        assetNullValue.put("asset", null);
+        Map<String, SeedSourceDefinition> sourceNullKey = new LinkedHashMap<>();
+        sourceNullKey.put(null, source);
+        Map<String, SeedSourceDefinition> sourceNullValue = new LinkedHashMap<>();
+        sourceNullValue.put("source", null);
+
+        assertThrows(NullPointerException.class, () -> copyWithMaps(loaded, assetNullKey, loaded.sources()));
+        assertThrows(NullPointerException.class, () -> copyWithMaps(loaded, assetNullValue, loaded.sources()));
+        assertThrows(NullPointerException.class, () -> copyWithMaps(loaded, loaded.assets(), sourceNullKey));
+        assertThrows(NullPointerException.class, () -> copyWithMaps(loaded, loaded.assets(), sourceNullValue));
+    }
+
+    private ContentPack copyWithMaps(
+            ContentPack loaded,
+            Map<String, SeedAssetDefinition> assets,
+            Map<String, SeedSourceDefinition> sources) {
+        return new ContentPack(loaded.root(), loaded.manifest(), loaded.accounts(), assets, sources, loaded.posts(),
+                loaded.comments(), loaded.follows(), loaded.reactions(), loaded.views());
     }
 
     @ParameterizedTest

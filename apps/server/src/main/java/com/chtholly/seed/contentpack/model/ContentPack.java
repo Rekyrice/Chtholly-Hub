@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Fully loaded, immutable filesystem input boundary for seed content.
@@ -26,8 +27,8 @@ public record ContentPack(
      */
     public ContentPack {
         accounts = accounts == null ? List.of() : List.copyOf(accounts);
-        assets = immutableOrderedMap(assets);
-        sources = immutableOrderedMap(sources);
+        assets = orderedImmutableMap(assets);
+        sources = orderedImmutableMap(sources);
         posts = posts == null ? List.of() : List.copyOf(posts);
         comments = comments == null ? List.of() : List.copyOf(comments);
         follows = follows == null ? List.of() : List.copyOf(follows);
@@ -35,11 +36,18 @@ public record ContentPack(
         views = views == null ? List.of() : List.copyOf(views);
     }
 
-    private static <K, V> Map<K, V> immutableOrderedMap(Map<K, V> values) {
-        if (values == null || values.isEmpty()) {
+    private static <K, V> Map<K, V> orderedImmutableMap(Map<K, V> values) {
+        Objects.requireNonNull(values, "map");
+        if (values.isEmpty()) {
             return Map.of();
         }
-        return Collections.unmodifiableMap(new LinkedHashMap<>(values));
+        Map<K, V> ordered = new LinkedHashMap<>();
+        for (Map.Entry<K, V> entry : values.entrySet()) {
+            ordered.put(
+                    Objects.requireNonNull(entry.getKey(), "map key"),
+                    Objects.requireNonNull(entry.getValue(), "map value"));
+        }
+        return Collections.unmodifiableMap(ordered);
     }
 
     /**
