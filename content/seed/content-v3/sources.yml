@@ -178,3 +178,12 @@
   factAnchors: [Redis 6.0.11, Redisson 3.30.0, 三主三从频繁主备切换, 客户端拓扑可能未刷新, RedisMovedException目标URL构造NodeSource, NodeSource addr是MOVED重定向目标, failover后failback小环境复现, DEBUG请求先到当前副本再MOVED到当前主节点, Redisson内部四个master而实际三主, commit a4bdaa5, re-added master node isn't updated in Cluster topology, maintainer回复Fixed并关闭, milestone 3.33.0, 本文未自行复现或验证3.33.0]
   quote: null
   usageNote: "核对公开 Issue、comments、timeline、3.30.0 RedisExecutor 与官方 commit；API：https://api.github.com/repos/redisson/redisson/issues/5972；comments：https://api.github.com/repos/redisson/redisson/issues/5972/comments；timeline：https://api.github.com/repos/redisson/redisson/issues/5972/timeline；源码：https://github.com/redisson/redisson/blob/redisson-3.30.0/redisson/src/main/java/org/redisson/command/RedisExecutor.java；commit：https://github.com/redisson/redisson/commit/a4bdaa5；milestone：https://github.com/redisson/redisson/milestone/178。区分首帖判断、社区复现和维护者修复记录，不声称本文复现或验证 3.33.0。"
+- key: rag-chunk-local-experiment
+  type: local-experiment
+  title: RAG chunk size deterministic TF-IDF baseline
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/commit/c9f0747298c1267e4d1e3767fdfc5fb12185cb7e
+  author: kuro_404
+  fetchedAt: 2026-07-13T00:00:00Z
+  factAnchors: [README.md, AGENTS.md, apps/server/README.md, apps/server/src/main/resources/knowledge/about-me.md, apps/server/src/main/resources/knowledge/my-home.md, apps/server/src/main/resources/knowledge/my-world.md, apps/server/src/main/resources/knowledge/those-stories.md, HEAD c9f0747298c1267e4d1e3767fdfc5fb12185cb7e, script SHA-256 9d91e35ea66ab34e009b53f9023548cbe2bb340655bbce41ea7499aa195d71b2, result SHA-256 6d43b3386613ec936cf7e65393caddec244a722c70d10b5d6d2997559e32cad5, chunk size 500 与 800, overlap 80, top 3, Hit@1 0.375 与 0.375, MRR 0.563095 与 0.556490]
+  quote: null
+  usageNote: "本地只读实验；命令：python .codex-tmp/seed-content-v3/technical/rag_chunk_experiment.py --output .codex-tmp/seed-content-v3/technical/rag_chunk_results-a.json。固定七文件、八问、expected source path 与 Markdown heading；按 heading 分段，以 Unicode 字符窗口切片，中文单字与相邻二元组加英文数字 token，TF-IDF 余弦 top 3；不调用 LLM、外部 embedding 或网络。"

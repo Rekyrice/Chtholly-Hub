@@ -2,7 +2,7 @@ version: content-v3
 namespace: launch-community
 stage: review
 expectedAccounts: 8
-expectedPosts: 7
+expectedPosts: 8
 expectedCategories:
   ANIME: 6
-  TECH: 1
+  TECH: 2

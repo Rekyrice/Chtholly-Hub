@@ -161,3 +161,25 @@
     format: technical-report
     mediaPlan: [真实 GitHub Issue 页面截图作封面并保留 Closed bug milestone 3.33.0, 公开日志按原顺序排版且地址脱敏, 根据 Issue DEBUG 现象绘制 client topology 到旧映射目标当前副本再经 MOVED 指向当前主节点的非实测路径示意]
     sources: [redisson-5972-moved-timeout]
+
+- seedKey: rag-chunk-size-regression
+  legacySlug: null
+  authorSeedKey: algo-runner
+  title: 500 与 800 字符切片：命中率没变，MRR 小幅下降
+  slug: rag-chunk-size-regression
+  description: 七份本地 Markdown、八个固定问题，对比两种字符切片的命中率、MRR 和逐问排名。
+  category: TECH
+  tags: [RAG, 文档切片, TF-IDF, 检索实验]
+  publishTime: 2026-04-11T11:05:00Z
+  markdownFile: posts/rag-chunk-size-regression.md
+  coverAsset: rag-chunk-size-regression-cover
+  inlineAssets:
+    - rag-recall-table
+    - rag-failed-query
+  brief:
+    factAnchors: [7 份本地 Markdown, 8 个固定问题, Markdown heading 分段, Unicode 字符窗口, chunk size 500 与 800, overlap 80, 中文单字与相邻二元组, 英文数字 token, TF-IDF 余弦, top 3, Hit@1 0.375, 500 MRR 0.563095, 800 MRR 0.556490, 文章缓存 expected rank 3 到 4, 无 LLM, 无 embedding]
+    voice: kuro_404，公开条件反例和失败项，样本小就不下大结论，像个人实验记录
+    position: 这组无模型基线里两种切片的 Hit@1 持平，800 字符的 MRR 小幅下降，但逐问同时存在改善，结果不外推到 embedding 或完整 RAG 系统
+    format: technical-report
+    mediaPlan: [真实实验摘要终端式封面, 由结果 JSON 生成的八问首位结果与指标表, 由结果 JSON 生成的文章缓存查询 top 3 与 expected 排名变化]
+    sources: [rag-chunk-local-experiment]
