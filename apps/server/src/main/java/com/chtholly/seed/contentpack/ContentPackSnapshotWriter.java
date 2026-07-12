@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
 public final class ContentPackSnapshotWriter {
 
     private static final Pattern SAFE_RUN_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,127}");
+    private static final Pattern SAFE_PACK_VERSION = Pattern.compile("[a-z0-9-]+");
     private static final List<String> FILES = List.of("accounts.json", "posts.json", "interactions.json");
     private static final List<String> SECRET_FRAGMENTS = List.of(
             "password", "passwd", "phone", "mobile", "token", "credential", "secret", "email");
@@ -70,8 +71,17 @@ public final class ContentPackSnapshotWriter {
         if (runId == null || !SAFE_RUN_ID.matcher(runId).matches()) {
             throw new IllegalArgumentException("unsafe snapshot runId: " + runId);
         }
-        String namespace = Objects.requireNonNull(pack.manifest(), "manifest").namespace();
-        Path base = projectRoot.resolve(".codex-tmp/seed-content-v2").normalize();
+        var manifest = Objects.requireNonNull(pack.manifest(), "manifest");
+        String namespace = manifest.namespace();
+        String version = manifest.version();
+        if (version == null || !SAFE_PACK_VERSION.matcher(version).matches()) {
+            throw new IllegalArgumentException("unsafe content pack version: " + version);
+        }
+        Path tempRoot = projectRoot.resolve(".codex-tmp").normalize();
+        Path base = tempRoot.resolve(version).normalize();
+        if (!base.startsWith(tempRoot)) {
+            throw new IllegalArgumentException("snapshot version escapes project temp directory: " + version);
+        }
         Path directory = base.resolve(runId).normalize();
         if (!directory.startsWith(base)) {
             throw new IllegalArgumentException("snapshot runId escapes project temp directory: " + runId);

@@ -21,8 +21,9 @@ async function writeSvg(file, width = 800, height = 600, color = "#7c3aed") {
   );
 }
 
-async function writePack(packRoot, assets) {
+async function writePack(packRoot, assets, version = "content-v2") {
   await mkdir(packRoot, { recursive: true });
+  await writeFile(path.join(packRoot, "manifest.yml"), YAML.stringify({ version }));
   await writeFile(path.join(packRoot, "assets.yml"), YAML.stringify(assets));
 }
 
@@ -58,7 +59,7 @@ test("prepares an alpha-preserving WebP avatar at the explicit output and record
 test("normalizes usages, writes hashes, and emits a stable sorted report", async () => {
   const projectRoot = path.join(testRoot, "normalize-project");
   const packRoot = path.join(projectRoot, "content", "seed", "content-v2");
-  const sourcesRoot = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "sources");
+  const sourcesRoot = path.join(projectRoot, ".codex-tmp", "content-v2", "sources");
   await writeSvg(path.join(sourcesRoot, "wide.svg"), 2400, 1200, "#123456");
   await writeSvg(path.join(sourcesRoot, "portrait.svg"), 600, 900, "#abcdef");
   await writePack(packRoot, [
@@ -88,14 +89,46 @@ test("normalizes usages, writes hashes, and emits a stable sorted report", async
   assert.ok(savedAssets.every((asset) => /^[a-f0-9]{64}$/.test(asset.sha256)));
   assert.ok(savedAssets.every((asset) => asset.contentType === "image/webp"));
   assert.equal(first.assets.at(-1).sourceUrl, "https://example.test/provenance");
-  const reportPath = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "media-report.json");
+  const reportPath = path.join(projectRoot, ".codex-tmp", "content-v2", "media-report.json");
   assert.deepEqual(JSON.parse(await readFile(reportPath, "utf8")), second);
+});
+
+test("uses a non-empty content-v3 manifest for sources, hashes, checks, and reports", async () => {
+  const projectRoot = path.join(testRoot, "content-v3-project");
+  const packRoot = path.join(projectRoot, "content", "seed", "content-v3");
+  const source = path.join(projectRoot, ".codex-tmp", "content-v3", "sources", "avatar.svg");
+  await writeSvg(source);
+  await writePack(packRoot, [
+    { key: "avatar", source: "local", sourceFile: "avatar.svg", file: "avatars/avatar.webp", objectKey: "seed/content-v3/avatars/avatar.webp", sha256: "", contentType: "", width: 0, height: 0, usage: "avatar" },
+  ], "content-v3");
+
+  const prepared = await preparePack({ packRoot, projectRoot, writeHashes: true });
+  const checked = await preparePack({ packRoot, projectRoot, check: true });
+
+  assert.deepEqual(checked, prepared);
+  const savedAssets = YAML.parse(await readFile(path.join(packRoot, "assets.yml"), "utf8"));
+  assert.match(savedAssets[0].sha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(projectRoot, ".codex-tmp", "content-v3", "media-report.json"), "utf8")),
+    prepared,
+  );
+});
+
+test("rejects an unsafe manifest version before resolving temp paths", async () => {
+  const projectRoot = path.join(testRoot, "unsafe-version-project");
+  const packRoot = path.join(projectRoot, "content", "seed", "content-v3");
+  await writePack(packRoot, [], "../outside");
+
+  await assert.rejects(
+    () => preparePack({ packRoot, projectRoot, writeHashes: true }),
+    /unsafe content pack version/i,
+  );
 });
 
 test("check mode validates without modifying outputs or assets.yml", async () => {
   const projectRoot = path.join(testRoot, "check-project");
   const packRoot = path.join(projectRoot, "content", "seed", "content-v2");
-  const source = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "sources", "avatar.svg");
+  const source = path.join(projectRoot, ".codex-tmp", "content-v2", "sources", "avatar.svg");
   await writeSvg(source);
   await writePack(packRoot, [
     { key: "avatar", source: "local", sourceFile: "avatar.svg", file: "avatars/avatar.webp", objectKey: "seed/content-v2/avatars/avatar.webp", sha256: "", contentType: "", width: 0, height: 0, usage: "avatar" },
@@ -104,7 +137,7 @@ test("check mode validates without modifying outputs or assets.yml", async () =>
   const yamlBefore = await readFile(path.join(packRoot, "assets.yml"), "utf8");
   const output = path.join(packRoot, "assets", "avatars", "avatar.webp");
   const modifiedBefore = (await stat(output)).mtimeMs;
-  const report = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "media-report.json");
+  const report = path.join(projectRoot, ".codex-tmp", "content-v2", "media-report.json");
   const reportBefore = await readFile(report, "utf8");
   const reportModifiedBefore = (await stat(report)).mtimeMs;
 
@@ -119,13 +152,13 @@ test("check mode validates without modifying outputs or assets.yml", async () =>
 test("check mode does not create a report when none exists", async () => {
   const projectRoot = path.join(testRoot, "check-no-report-project");
   const packRoot = path.join(projectRoot, "content", "seed", "content-v2");
-  const source = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "sources", "avatar.svg");
+  const source = path.join(projectRoot, ".codex-tmp", "content-v2", "sources", "avatar.svg");
   await writeSvg(source);
   await writePack(packRoot, [
     { key: "avatar", source: "local", sourceFile: "avatar.svg", file: "avatars/avatar.webp", objectKey: "seed/content-v2/avatars/avatar.webp", sha256: "", contentType: "", width: 0, height: 0, usage: "avatar" },
   ]);
   await preparePack({ packRoot, projectRoot, writeHashes: true });
-  const report = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "media-report.json");
+  const report = path.join(projectRoot, ".codex-tmp", "content-v2", "media-report.json");
   await rm(report);
 
   await preparePack({ packRoot, projectRoot, check: true });
@@ -136,7 +169,7 @@ test("check mode does not create a report when none exists", async () => {
 test("rejects two declarations that normalize to the same output path", async () => {
   const projectRoot = path.join(testRoot, "normalized-duplicate-project");
   const packRoot = path.join(projectRoot, "content", "seed", "content-v2");
-  const source = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "sources", "avatar.svg");
+  const source = path.join(projectRoot, ".codex-tmp", "content-v2", "sources", "avatar.svg");
   await writeSvg(source);
   const base = { source: "local", sourceFile: "avatar.svg", objectKey: "seed/content-v2/avatars/avatar.webp", sha256: "", contentType: "", width: 0, height: 0, usage: "avatar" };
   await writePack(packRoot, [
@@ -150,7 +183,7 @@ test("rejects two declarations that normalize to the same output path", async ()
 test("does not replace an earlier output when a later asset fails preprocessing", async () => {
   const projectRoot = path.join(testRoot, "atomic-project");
   const packRoot = path.join(projectRoot, "content", "seed", "content-v2");
-  const sourcesRoot = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "sources");
+  const sourcesRoot = path.join(projectRoot, ".codex-tmp", "content-v2", "sources");
   const oldOutput = path.join(packRoot, "assets", "avatars", "old.webp");
   const oldBytes = Buffer.from("existing output must survive");
   await writeSvg(path.join(sourcesRoot, "valid.svg"));
@@ -170,7 +203,7 @@ test("does not replace an earlier output when a later asset fails preprocessing"
 test("rejects a concurrent writer lock without changing it", async () => {
   const projectRoot = path.join(testRoot, "lock-project");
   const packRoot = path.join(projectRoot, "content", "seed", "content-v2");
-  const source = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "sources", "avatar.svg");
+  const source = path.join(projectRoot, ".codex-tmp", "content-v2", "sources", "avatar.svg");
   const lock = path.join(packRoot, ".media-prepare.lock");
   await writeSvg(source);
   await writePack(packRoot, [
@@ -186,7 +219,7 @@ test("rejects a concurrent writer lock without changing it", async () => {
 test("rejects an output directory junction or symlink that escapes the pack", async (context) => {
   const projectRoot = path.join(testRoot, "symlink-project");
   const packRoot = path.join(projectRoot, "content", "seed", "content-v2");
-  const source = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "sources", "avatar.svg");
+  const source = path.join(projectRoot, ".codex-tmp", "content-v2", "sources", "avatar.svg");
   const outside = path.join(projectRoot, "outside-assets");
   const linkedAvatars = path.join(packRoot, "assets", "avatars");
   await writeSvg(source);
@@ -214,7 +247,7 @@ test("rolls back installed images when a report target escapes during commit", a
   const packRoot = path.join(projectRoot, "content", "seed", "content-v2");
   const incomingRoot = path.join(projectRoot, "apps", "web", "public", "images", "_incoming", "pic");
   const oldOutput = path.join(packRoot, "assets", "avatars", "avatar.webp");
-  const reportDirectory = path.join(projectRoot, ".codex-tmp", "seed-content-v2");
+  const reportDirectory = path.join(projectRoot, ".codex-tmp", "content-v2");
   const outside = path.join(testRoot, "outside-report");
   const oldBytes = Buffer.from("old image bytes");
   await writeSvg(path.join(incomingRoot, "avatar.svg"));
@@ -265,14 +298,14 @@ test("does not create report directories through an escaping project junction", 
 
   await assert.rejects(() => preparePack({ packRoot, projectRoot }), /outside the trusted pack/i);
 
-  await assert.rejects(() => stat(path.join(outside, "seed-content-v2")), { code: "ENOENT" });
+  await assert.rejects(() => stat(path.join(outside, "content-v2")), { code: "ENOENT" });
   await assert.rejects(() => stat(path.join(packRoot, ".media-prepare.lock")), { code: "ENOENT" });
 });
 
 test("rejects escaped paths, missing sources, unsupported inputs, oversized files, and duplicate declarations", async () => {
   const projectRoot = path.join(testRoot, "reject-project");
   const packRoot = path.join(projectRoot, "content", "seed", "content-v2");
-  const sourcesRoot = path.join(projectRoot, ".codex-tmp", "seed-content-v2", "sources");
+  const sourcesRoot = path.join(projectRoot, ".codex-tmp", "content-v2", "sources");
   await mkdir(sourcesRoot, { recursive: true });
   await writeFile(path.join(sourcesRoot, "plain.txt"), "not an image");
   await writeFile(path.join(sourcesRoot, "large.png"), Buffer.alloc(15 * 1024 * 1024 + 1));

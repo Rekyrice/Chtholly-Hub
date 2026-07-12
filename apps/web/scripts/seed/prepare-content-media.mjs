@@ -8,6 +8,7 @@ import sharp from "sharp";
 import YAML from "yaml";
 
 const MAX_SOURCE_BYTES = 15 * 1024 * 1024;
+const SAFE_PACK_VERSION = /^[a-z0-9-]+$/;
 const SUPPORTED_INPUT_FORMATS = new Set(["avif", "gif", "heif", "jpeg", "png", "svg", "tiff", "webp"]);
 const WEBP_QUALITY = Object.freeze({ avatar: 82, cover: 84, inline: 85 });
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -103,13 +104,13 @@ export async function prepareOne(options) {
   };
 }
 
-async function resolveApprovedSource(projectRoot, sourceFile) {
+async function resolveApprovedSource(projectRoot, version, sourceFile) {
   if (typeof sourceFile !== "string" || sourceFile.trim() === "") {
     throw new Error("sourceFile must be a non-empty path");
   }
 
   const approvedRoots = [
-    path.join(projectRoot, ".codex-tmp", "seed-content-v2", "sources"),
+    path.join(projectRoot, ".codex-tmp", version, "sources"),
     path.join(projectRoot, "apps", "web", "public", "images", "_incoming", "pic"),
   ].map((root) => path.resolve(root));
 
@@ -233,11 +234,24 @@ async function resolveTrustedPack(projectRoot, packRoot) {
     throw new Error(`Pack resolves outside the trusted content/seed directory: ${packRoot}`);
   }
   const assetsFile = path.join(packRoot, "assets.yml");
-  const resolvedAssetsFile = await realpath(assetsFile);
-  if (!isWithin(resolvedPack, resolvedAssetsFile)) {
+  const manifestFile = path.join(packRoot, "manifest.yml");
+  const [resolvedAssetsFile, resolvedManifestFile] = await Promise.all([
+    realpath(assetsFile),
+    realpath(manifestFile),
+  ]);
+  if (!isWithin(resolvedPack, resolvedAssetsFile) || !isWithin(resolvedPack, resolvedManifestFile)) {
     throw new Error(`assets.yml resolves outside the trusted pack: ${assetsFile}`);
   }
-  return { resolvedPack, resolvedProject, assetsFile };
+  return { resolvedPack, resolvedProject, assetsFile, manifestFile };
+}
+
+async function readPackVersion(manifestFile) {
+  const manifest = YAML.parse(await readFile(manifestFile, "utf8"));
+  const version = manifest?.version;
+  if (typeof version !== "string" || !SAFE_PACK_VERSION.test(version)) {
+    throw new Error(`Unsafe content pack version: ${version}`);
+  }
+  return version;
 }
 
 async function assertOutputMatches(output, expected, asset) {
@@ -335,7 +349,11 @@ export async function preparePack({ packRoot, projectRoot = defaultProjectRoot, 
   }
   const normalizedProjectRoot = path.resolve(projectRoot);
   const normalizedPackRoot = path.resolve(packRoot);
-  const { resolvedPack, resolvedProject, assetsFile } = await resolveTrustedPack(normalizedProjectRoot, normalizedPackRoot);
+  const { resolvedPack, resolvedProject, assetsFile, manifestFile } = await resolveTrustedPack(
+    normalizedProjectRoot,
+    normalizedPackRoot,
+  );
+  const version = await readPackVersion(manifestFile);
   const assets = YAML.parse(await readFile(assetsFile, "utf8"));
   const declarations = validateDeclarations(assets, normalizedPackRoot)
     .sort((left, right) => left.asset.key.localeCompare(right.asset.key, "en"));
@@ -364,7 +382,7 @@ export async function preparePack({ packRoot, projectRoot = defaultProjectRoot, 
     const targets = [];
     for (let index = 0; index < declarations.length; index += 1) {
       const { asset, output } = declarations[index];
-      const input = await resolveApprovedSource(normalizedProjectRoot, asset.sourceFile);
+      const input = await resolveApprovedSource(normalizedProjectRoot, version, asset.sourceFile);
       const rendered = await renderOne({ input, ...transformForUsage(asset.usage) });
       if (check) {
         await assertOutputMatches(output, rendered, asset);
@@ -397,7 +415,7 @@ export async function preparePack({ packRoot, projectRoot = defaultProjectRoot, 
       targets.push({ staged: stagedYaml, final: assetsFile, trustedRoot: resolvedPack, label: "assets.yml" });
     }
 
-    const reportFile = path.join(normalizedProjectRoot, ".codex-tmp", "seed-content-v2", "media-report.json");
+    const reportFile = path.join(normalizedProjectRoot, ".codex-tmp", version, "media-report.json");
     const stagedReport = path.join(stagingRoot, "media-report.json");
     await writeFile(stagedReport, `${JSON.stringify(report, null, 2)}\n`);
     targets.push({ staged: stagedReport, final: reportFile, trustedRoot: resolvedProject, label: "Media report" });

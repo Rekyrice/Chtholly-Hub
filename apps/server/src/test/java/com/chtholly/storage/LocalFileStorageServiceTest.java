@@ -127,6 +127,23 @@ class LocalFileStorageServiceTest {
     }
 
     @Test
+    void uploadVerifiedObject_whenContentV3ImmutableTargetDiffers_thenKeepsOriginalAndFails() throws Exception {
+        byte[] original = "content-v3-original".getBytes(StandardCharsets.UTF_8);
+        byte[] replacement = "content-v3-replacement".getBytes(StandardCharsets.UTF_8);
+        String key = "seed/content-v3/posts/post-" + sha256(original) + ".md";
+        service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(original), "text/markdown", original.length, sha256(original));
+
+        assertThatThrownBy(() -> service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(replacement), "text/markdown", replacement.length, sha256(replacement)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("immutable object already exists with different content");
+
+        assertThat(Files.readAllBytes(service.resolveObjectPath(key))).containsExactly(original);
+        assertThat(findUploadTemps()).isEmpty();
+    }
+
+    @Test
     void uploadVerifiedObject_whenImmutableTargetMatches_thenIsIdempotent() throws Exception {
         byte[] data = "same-content".getBytes(StandardCharsets.UTF_8);
         String key = "seed/content-v2/posts/post-" + sha256(data) + ".md";

@@ -43,13 +43,15 @@ class ContentPackMediaPublisherTest {
     private static final byte[] WEBP = "RIFFxxxxWEBPseed-content".getBytes(StandardCharsets.US_ASCII);
 
     @TempDir
-    Path root;
+    Path tempDir;
 
+    private Path root;
     private StorageService storage;
     private ContentPackMediaPublisher publisher;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
+        root = Files.createDirectories(tempDir.resolve("content-v2"));
         storage = mock(StorageService.class);
         publisher = new ContentPackMediaPublisher(storage);
     }
@@ -66,6 +68,35 @@ class ContentPackMediaPublisherTest {
         assertThat(result.publicUrl()).isEqualTo("/uploads/" + asset.objectKey());
         assertThat(result.newlyCreated()).isTrue();
         assertThat(result.objectKey()).contains(result.sha256());
+    }
+
+    @Test
+    void givenNonEmptyContentV3Pack_whenPublishAll_thenUsesV3ObjectKeys() throws Exception {
+        Path v3Root = Files.createDirectories(tempDir.resolve("content-v3"));
+        SeedAssetDefinition asset = writeAsset(v3Root, "content-v3", "cover-v3", "media/cover.webp", WEBP);
+        SeedPostDefinition post = post("post-v3", "正文");
+        ContentPack pack = pack(v3Root, "content-v3", asset, post);
+        String markdownObjectKey = markdownKey("content-v3", post.seedKey(), post.markdown());
+        when(storage.resolvePublicUrl(asset.objectKey())).thenReturn("/uploads/" + asset.objectKey());
+        when(storage.resolvePublicUrl(markdownObjectKey)).thenReturn("/uploads/" + markdownObjectKey);
+
+        PublishedContent content = publisher.publishAll(pack);
+
+        assertThat(content.assets().get(asset.key()).objectKey()).startsWith("seed/content-v3/");
+        assertThat(content.markdownByPost().get(post.seedKey()).objectKey()).startsWith("seed/content-v3/");
+        publisher.commitPublishedObjects(content);
+    }
+
+    @Test
+    void givenContentV3RootWithV2ObjectKey_whenPublish_thenRejectsVersionMismatch() throws Exception {
+        Path v3Root = Files.createDirectories(tempDir.resolve("content-v3"));
+        SeedAssetDefinition asset = writeAsset(v3Root, "content-v2", "wrong-version", "media/wrong.webp", WEBP);
+
+        assertThatThrownBy(() -> publisher.publish(v3Root, asset))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("content-addressed object key");
+
+        verifyNoInteractions(storage);
     }
 
     @Test
@@ -351,11 +382,16 @@ class ContentPackMediaPublisherTest {
     }
 
     private SeedAssetDefinition writeAsset(String key, String file, byte[] bytes) throws Exception {
-        Path target = root.resolve(file);
+        return writeAsset(root, "content-v2", key, file, bytes);
+    }
+
+    private SeedAssetDefinition writeAsset(
+            Path packRoot, String version, String key, String file, byte[] bytes) throws Exception {
+        Path target = packRoot.resolve(file);
         Files.createDirectories(target.getParent());
         Files.write(target, bytes);
         String hash = sha256(bytes);
-        return asset(key, file, "seed/content-v2/assets/" + key + "-" + hash + ".webp", hash);
+        return asset(key, file, "seed/" + version + "/assets/" + key + "-" + hash + ".webp", hash);
     }
 
     private SeedAssetDefinition asset(String key, String file, String objectKey, String hash) {
@@ -384,10 +420,19 @@ class ContentPackMediaPublisherTest {
     }
 
     private ContentPack pack(List<SeedAssetDefinition> assets, SeedPostDefinition post) {
+        return pack(root, "content-v2", assets, post);
+    }
+
+    private ContentPack pack(Path packRoot, String version, SeedAssetDefinition asset, SeedPostDefinition post) {
+        return pack(packRoot, version, List.of(asset), post);
+    }
+
+    private ContentPack pack(
+            Path packRoot, String version, List<SeedAssetDefinition> assets, SeedPostDefinition post) {
         Map<String, SeedAssetDefinition> indexed = assets.stream()
                 .collect(java.util.stream.Collectors.toMap(SeedAssetDefinition::key, value -> value));
-        return new ContentPack(root,
-                new ContentPackManifest("v2", "seed", "review", 0, 1, Map.of("动漫", 1)),
+        return new ContentPack(packRoot,
+                new ContentPackManifest(version, "seed-" + version, "review", 0, 1, Map.of("动漫", 1)),
                 List.of(), indexed, List.of(post), List.of(), List.of(), List.of(), List.of());
     }
 
@@ -396,8 +441,12 @@ class ContentPackMediaPublisherTest {
     }
 
     private String markdownKey(String postSeedKey, String markdown) throws Exception {
+        return markdownKey("content-v2", postSeedKey, markdown);
+    }
+
+    private String markdownKey(String version, String postSeedKey, String markdown) throws Exception {
         String hash = sha256(markdown.getBytes(StandardCharsets.UTF_8));
-        return "seed/content-v2/posts/" + postSeedKey + "-" + hash + ".md";
+        return "seed/" + version + "/posts/" + postSeedKey + "-" + hash + ".md";
     }
 
     private static String sha256(byte[] bytes) throws Exception {

@@ -45,9 +45,9 @@ import org.springframework.stereotype.Component;
 @Component
 public final class ContentPackMediaPublisher {
 
-    private static final String OBJECT_PREFIX = "seed/content-v2/";
     private static final String MARKDOWN_CONTENT_TYPE = "text/markdown; charset=utf-8";
     private static final int SHA256_HEX_LENGTH = 64;
+    private static final Pattern SAFE_PACK_VERSION = Pattern.compile("[a-z0-9-]+");
     private static final Pattern MARKDOWN_ASSET = Pattern.compile(
             "([!]?\\[[^\\]\\r\\n]*]\\(\\s*)asset:([A-Za-z0-9_-]+)(\\s*(?:\"[^\"\\r\\n]*\")?\\))"
                     + "|\\{\\{asset:([A-Za-z0-9_-]+)}}");
@@ -81,13 +81,14 @@ public final class ContentPackMediaPublisher {
         List<String> newObjectKeys = new ArrayList<>();
         try {
             Path root = realRoot(pack.root());
+            String version = requireSafeVersion(pack.manifest().version());
             for (SeedAssetDefinition asset : pack.assets().values()) {
-                PublishedAsset published = publish(root, asset);
+                PublishedAsset published = publish(root, asset, version);
                 assets.put(asset.key(), published);
                 recordNewObject(published, newObjectKeys);
             }
             for (SeedPostDefinition post : pack.posts()) {
-                PublishedAsset published = publishMarkdown(post, assets);
+                PublishedAsset published = publishMarkdown(post, assets, version);
                 markdownByPost.put(post.seedKey(), published);
                 recordNewObject(published, newObjectKeys);
             }
@@ -111,8 +112,12 @@ public final class ContentPackMediaPublisher {
      * @throws IOException when the asset cannot be read, verified or uploaded
      */
     public PublishedAsset publish(Path root, SeedAssetDefinition asset) throws IOException {
-        Objects.requireNonNull(asset, "asset");
         Path realRoot = realRoot(root);
+        return publish(realRoot, asset, requireSafeVersion(realRoot.getFileName().toString()));
+    }
+
+    private PublishedAsset publish(Path realRoot, SeedAssetDefinition asset, String version) throws IOException {
+        Objects.requireNonNull(asset, "asset");
         byte[] bytes = readOnceInside(realRoot, asset.file(), asset.key());
         if (bytes.length == 0) {
             throw new IllegalArgumentException("empty media asset: " + asset.key());
@@ -128,7 +133,7 @@ public final class ContentPackMediaPublisher {
         if (!matchesMime(bytes, contentType)) {
             throw new IllegalArgumentException("MIME mismatch for " + asset.key() + ": " + contentType);
         }
-        validateContentAddressedKey(asset.objectKey(), hash, asset.key());
+        validateContentAddressedKey(asset.objectKey(), hash, asset.key(), objectPrefix(version));
         return store(asset.key(), asset.objectKey(), hash, contentType, bytes);
     }
 
@@ -183,7 +188,8 @@ public final class ContentPackMediaPublisher {
 
     private PublishedAsset publishMarkdown(
             SeedPostDefinition post,
-            Map<String, PublishedAsset> assets) throws IOException {
+            Map<String, PublishedAsset> assets,
+            String version) throws IOException {
         RewrittenMarkdown rewritten = rewriteAssetReferences(post, assets);
         if (!rewritten.assetKeys().equals(post.inlineAssets())) {
             throw new IllegalArgumentException(
@@ -195,8 +201,8 @@ public final class ContentPackMediaPublisher {
             throw new IllegalArgumentException("empty Markdown: " + post.seedKey());
         }
         String hash = sha256(bytes);
-        String objectKey = OBJECT_PREFIX + "posts/" + post.seedKey() + "-" + hash + ".md";
-        validateContentAddressedKey(objectKey, hash, post.seedKey());
+        String objectKey = objectPrefix(version) + "posts/" + post.seedKey() + "-" + hash + ".md";
+        validateContentAddressedKey(objectKey, hash, post.seedKey(), objectPrefix(version));
         return store(post.seedKey(), objectKey, hash, MARKDOWN_CONTENT_TYPE, bytes);
     }
 
@@ -358,16 +364,28 @@ public final class ContentPackMediaPublisher {
         return bytes;
     }
 
-    private void validateContentAddressedKey(String objectKey, String hash, String key) {
+    private void validateContentAddressedKey(String objectKey, String hash, String key, String objectPrefix) {
         String requiredKey = requireText(objectKey, "objectKey for " + key);
         StorageObjectKeyValidator.assertSafeObjectKey(requiredKey);
         String hashSuffix = "-" + hash.toLowerCase(Locale.ROOT);
         int extensionIndex = requiredKey.lastIndexOf('.');
         boolean containsFullHash = extensionIndex > 0
                 && requiredKey.substring(0, extensionIndex).toLowerCase(Locale.ROOT).endsWith(hashSuffix);
-        if (!requiredKey.startsWith(OBJECT_PREFIX) || !containsFullHash) {
+        if (!requiredKey.startsWith(objectPrefix) || !containsFullHash) {
             throw new IllegalArgumentException("invalid content-addressed object key for " + key + ": " + requiredKey);
         }
+    }
+
+    private String objectPrefix(String version) {
+        return "seed/" + requireSafeVersion(version) + "/";
+    }
+
+    private String requireSafeVersion(String version) {
+        String requiredVersion = requireText(version, "content pack version");
+        if (!SAFE_PACK_VERSION.matcher(requiredVersion).matches()) {
+            throw new IllegalArgumentException("unsafe content pack version: " + version);
+        }
+        return requiredVersion;
     }
 
     private boolean matchesMime(byte[] bytes, String contentType) {
