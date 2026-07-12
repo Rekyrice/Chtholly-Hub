@@ -20,9 +20,17 @@ public final class ContentPackQualityGate {
     private static final int MIN_BODY_CHINESE_CHARACTERS = 600;
     private static final int MAX_BODY_CHINESE_CHARACTERS = 2_600;
     private static final double MAX_FIVE_GRAM_JACCARD = 0.38;
+    private static final Set<String> CONTENT_V3_FORMATS = Set.of(
+            "community-note", "issue-note", "review", "longform-review");
+    private static final List<TemplateFamily> TEMPLATE_FAMILIES = List.of(
+            new TemplateFamily("不是…而是…", Pattern.compile("不是[^。！？\\n]{0,80}而是")),
+            new TemplateFamily("真正…在意", Pattern.compile("真正[^。！？\\n]{0,80}在意")),
+            new TemplateFamily("总的来说", Pattern.compile("总的来说")));
     private static final Pattern HEADING_PATTERN = Pattern.compile("(?m)^#{2,3}\\s+(.+?)\\s*$");
     private static final Pattern ANY_HEADING_PATTERN = Pattern.compile("^#{1,6}\\s+.*$");
     private static final Pattern IMAGE_PATTERN = Pattern.compile("!\\[[^]]*]\\([^)]*\\)");
+    private static final Pattern IMAGE_CAPTION_PATTERN = Pattern.compile(
+            "^\\s*(?:\\*[^*\\r\\n]+\\*|_[^_\\r\\n]+_)\\s*$");
     private static final Pattern LINK_PATTERN = Pattern.compile("\\[([^]]+)]\\([^)]*\\)");
     private static final Pattern AUTOLINK_PATTERN = Pattern.compile("<https?://[^>]+>");
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s。，、；：！？)\\]}>]+");
@@ -45,13 +53,17 @@ public final class ContentPackQualityGate {
         List<String> warnings = new ArrayList<>();
         List<PostAnalysis> analyses = pack.posts().stream().map(this::analyze).toList();
 
+        boolean contentV3 = "content-v3".equals(pack.manifest().version());
         for (PostAnalysis analysis : analyses) {
-            auditPost(analysis, errors);
+            auditPost(analysis, contentV3, errors);
         }
         for (int left = 0; left < analyses.size(); left++) {
             for (int right = left + 1; right < analyses.size(); right++) {
                 auditPair(analyses.get(left), analyses.get(right), errors);
             }
+        }
+        if (contentV3) {
+            auditCorpusTemplates(analyses, errors);
         }
         return new QualityGateResult(errors, warnings);
     }
@@ -63,7 +75,7 @@ public final class ContentPackQualityGate {
         return new PostAnalysis(post, scanned.prose(), lead, ending, scanned.headings(), fiveGrams(scanned.prose()));
     }
 
-    private void auditPost(PostAnalysis analysis, List<String> errors) {
+    private void auditPost(PostAnalysis analysis, boolean contentV3, List<String> errors) {
         SeedPostDefinition post = analysis.post();
         String prose = analysis.prose();
         for (BannedPhrase bannedPhrase : BANNED_PHRASES) {
@@ -81,12 +93,42 @@ public final class ContentPackQualityGate {
         }
 
         String format = post.brief() == null ? null : post.brief().format();
-        if (!"short-note".equals(format)) {
-            long bodyLength = prose.codePoints()
-                    .filter(codePoint -> Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN)
-                    .count();
-            if (bodyLength < MIN_BODY_CHINESE_CHARACTERS || bodyLength > MAX_BODY_CHINESE_CHARACTERS) {
+        long bodyLength = chineseCharacterCount(prose);
+        if (contentV3) {
+            if (format == null || !CONTENT_V3_FORMATS.contains(format)) {
+                errors.add("unsupported content-v3 format: " + post.seedKey() + " -> " + format);
+                return;
+            }
+            LengthRange range = switch (format) {
+                case "community-note" -> new LengthRange(180, 700);
+                case "issue-note" -> new LengthRange(300, 1_800);
+                case "review" -> new LengthRange(450, 2_200);
+                case "longform-review" -> new LengthRange(4_000, 6_000);
+                default -> throw new IllegalStateException("unreachable content-v3 format: " + format);
+            };
+            if (!range.contains(bodyLength)) {
                 errors.add("body length out of range: " + post.seedKey() + " -> " + bodyLength);
+            }
+        } else if (!"short-note".equals(format)
+                && (bodyLength < MIN_BODY_CHINESE_CHARACTERS || bodyLength > MAX_BODY_CHINESE_CHARACTERS)) {
+            errors.add("body length out of range: " + post.seedKey() + " -> " + bodyLength);
+        }
+    }
+
+    private long chineseCharacterCount(String prose) {
+        return prose.codePoints()
+                .filter(codePoint -> Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN)
+                .count();
+    }
+
+    private void auditCorpusTemplates(List<PostAnalysis> analyses, List<String> errors) {
+        for (TemplateFamily family : TEMPLATE_FAMILIES) {
+            List<String> matches = analyses.stream()
+                    .filter(analysis -> family.pattern().matcher(analysis.prose()).find())
+                    .map(analysis -> analysis.post().seedKey())
+                    .toList();
+            if (matches.size() > 1) {
+                errors.add("corpus template family " + family.label() + ": " + String.join(" <-> ", matches));
             }
         }
     }
@@ -122,6 +164,7 @@ public final class ContentPackQualityGate {
         List<String> headings = new ArrayList<>();
         StringBuilder paragraph = new StringBuilder();
         Character fenceMarker = null;
+        boolean imageAwaitingCaption = false;
         for (String line : markdown.replace("\r\n", "\n").split("\n", -1)) {
             String trimmed = line.stripLeading();
             Character marker = fenceMarker(trimmed);
@@ -136,6 +179,22 @@ public final class ContentPackQualityGate {
                 }
                 continue;
             }
+
+            boolean imageLine = IMAGE_PATTERN.matcher(line.strip()).matches();
+            if (imageLine) {
+                flushParagraph(paragraph, paragraphs);
+                imageAwaitingCaption = true;
+                continue;
+            }
+            if (line.isBlank()) {
+                flushParagraph(paragraph, paragraphs);
+                continue;
+            }
+            if (imageAwaitingCaption && IMAGE_CAPTION_PATTERN.matcher(line).matches()) {
+                imageAwaitingCaption = false;
+                continue;
+            }
+            imageAwaitingCaption = false;
 
             String proseLine = stripNonProse(line).strip();
             if (ANY_HEADING_PATTERN.matcher(proseLine).matches()) {
@@ -209,6 +268,16 @@ public final class ContentPackQualityGate {
     }
 
     private record BannedPhrase(String label, Pattern pattern) {
+    }
+
+    private record TemplateFamily(String label, Pattern pattern) {
+    }
+
+    private record LengthRange(long minimum, long maximum) {
+
+        private boolean contains(long value) {
+            return value >= minimum && value <= maximum;
+        }
     }
 
     private record ScannedMarkdown(List<String> paragraphs, List<String> headings, String prose) {

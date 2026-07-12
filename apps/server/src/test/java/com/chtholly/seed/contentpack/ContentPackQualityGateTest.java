@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ContentPackQualityGateTest {
@@ -140,9 +141,121 @@ class ContentPackQualityGateTest {
         assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length")));
     }
 
+    @Test
+    void enforcesContentV3FormatSpecificLengthsAndAllowedFormats(@TempDir Path root) {
+        ContentPack pack = pack("content-v3", root,
+                post("community-short", "锚点", "锚点" + "短".repeat(177), "community-note"),
+                post("community-valid", "锚点", "锚点" + "中".repeat(178), "community-note"),
+                post("community-max", "锚点", "锚点" + "界".repeat(698), "community-note"),
+                post("community-too-long", "锚点", "锚点" + "超".repeat(699), "community-note"),
+                post("issue-long", "锚点", "锚点" + "长".repeat(1799), "issue-note"),
+                post("review-valid", "锚点", "锚点" + "评".repeat(448), "review"),
+                post("legacy-format", "锚点", "锚点" + "文".repeat(700), "article"),
+                post("missing-format", "锚点", "锚点" + "空".repeat(700), null));
+
+        ContentPackQualityGate.QualityGateResult result = assertDoesNotThrow(() -> gate.audit(pack));
+
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("community-short")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("community-valid")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("community-max")));
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("community-too-long")));
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("issue-long")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("review-valid")));
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("unsupported content-v3 format") && value.contains("legacy-format")));
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("unsupported content-v3 format") && value.contains("missing-format")));
+    }
+
+    @Test
+    void preservesLegacyShortNoteAndArticleLengthBehavior(@TempDir Path root) {
+        ContentPack pack = pack("content-v2", root,
+                post("legacy-note", "锚点", "锚点", "short-note"),
+                post("legacy-article", "锚点", "锚点" + "文".repeat(598), "article"));
+
+        ContentPackQualityGate.QualityGateResult result = gate.audit(pack);
+
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("legacy-note")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("legacy-article")));
+    }
+
+    @Test
+    void enforcesLongformReviewExactChineseCharacterBoundaries(@TempDir Path root) {
+        ContentPack pack = pack("content-v3", root,
+                post("longform-3999", "锚", "锚" + "短".repeat(3998), "longform-review"),
+                post("longform-4000", "锚", "锚" + "下".repeat(3999), "longform-review"),
+                post("longform-6000", "锚", "锚" + "内".repeat(5999), "longform-review"),
+                post("longform-6001", "锚", "锚" + "长".repeat(6000), "longform-review"));
+
+        ContentPackQualityGate.QualityGateResult result = assertDoesNotThrow(() -> gate.audit(pack));
+
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("longform-3999")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("longform-4000")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("longform-6000")));
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("longform-6001")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("unsupported content-v3 format")
+                && (value.contains("longform-4000") || value.contains("longform-6000"))));
+    }
+
+    @Test
+    void excludesImageCaptionButCountsOrdinaryEmphasisForLongformLength(@TempDir Path root) {
+        String excludedCaption = "# 标题不计数\n\n"
+                + "![镜头](asset:frame)\n\n"
+                + "*这是一段紧随图片的中文说明文字，应当从正文汉字数中排除。*\n\n"
+                + "锚" + "甲".repeat(3998);
+        String countedEmphasis = "# 标题不计数\n\n"
+                + "![镜头](asset:frame)\n\n"
+                + "*这段图片说明也不计数。*\n\n"
+                + "*锚" + "乙".repeat(3999) + "*";
+        ContentPack pack = pack("content-v3", root,
+                post("caption-excluded", "锚", excludedCaption, "longform-review"),
+                post("ordinary-emphasis-counted", "锚", countedEmphasis, "longform-review"));
+
+        ContentPackQualityGate.QualityGateResult result = gate.audit(pack);
+
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("body length")
+                && value.contains("caption-excluded")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length")
+                && value.contains("ordinary-emphasis-counted")));
+    }
+
+    @Test
+    void enforcesReviewExactChineseCharacterBoundaries(@TempDir Path root) {
+        ContentPack pack = pack("content-v3", root,
+                post("review-449", "锚", "锚" + "短".repeat(448), "review"),
+                post("review-450", "锚", "锚" + "下".repeat(449), "review"),
+                post("review-2200", "锚", "锚" + "内".repeat(2199), "review"),
+                post("review-2201", "锚", "锚" + "长".repeat(2200), "review"));
+
+        ContentPackQualityGate.QualityGateResult result = gate.audit(pack);
+
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("review-449")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("review-450")));
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("review-2200")));
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains("review-2201")));
+    }
+
+    @Test
+    void reportsContentV3CorpusTemplateFamilies(@TempDir Path root) {
+        ContentPack pack = pack("content-v3", root,
+                post("a", "锚点甲", "锚点甲。这不是速度问题，而是边界问题。" + "甲".repeat(460), "review"),
+                post("b", "锚点乙", "锚点乙。这不是配置问题，而是版本问题。" + "乙".repeat(460), "review"),
+                post("c", "锚点丙", "锚点丙。真正让人们在意的是一次失败。" + "丙".repeat(460), "review"),
+                post("d", "锚点丁", "锚点丁。真正让维护者在意的是复现路径。" + "丁".repeat(460), "review"));
+
+        ContentPackQualityGate.QualityGateResult result = gate.audit(pack);
+
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("corpus template family")
+                && value.contains("不是…而是…") && value.contains("a") && value.contains("b")));
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("corpus template family")
+                && value.contains("真正…在意") && value.contains("c") && value.contains("d")));
+    }
+
     private ContentPack pack(Path root, SeedPostDefinition... posts) {
+        return pack("v", root, posts);
+    }
+
+    private ContentPack pack(String version, Path root, SeedPostDefinition... posts) {
         return new ContentPack(root,
-                new ContentPackManifest("v", "namespace", "review", 0, posts.length, Map.of("TECH", posts.length)),
+                new ContentPackManifest(version, "namespace", "review", 0, posts.length, Map.of("TECH", posts.length)),
                 List.of(), Map.of(), List.of(posts), List.of(), List.of(), List.of(), List.of());
     }
 
