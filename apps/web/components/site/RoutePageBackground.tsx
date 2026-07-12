@@ -54,6 +54,17 @@ export default function RoutePageBackground({
     return () => query.removeEventListener("change", sync);
   }, []);
 
+  useEffect(() => {
+    if (background.images.length < 2) return;
+
+    const nextIndex = normalizeIndex(requestedIndex + 1, background.images.length);
+    const nextUrl = background.images[nextIndex];
+    if (!nextUrl) return;
+
+    const image = new Image();
+    image.src = nextUrl;
+  }, [background.images, requestedIndex]);
+
   if (visible.requestedUrl !== requestedLayer.url || visible.reduced !== reduceMotion) {
     const sameImage = visible.current.url === requestedLayer.url;
     setVisible({

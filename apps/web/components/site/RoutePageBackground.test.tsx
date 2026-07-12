@@ -5,6 +5,7 @@ import type { PageVisualBackground } from "@/lib/route-visuals";
 
 const motion = vi.hoisted(() => ({ reduced: false }));
 const frames = vi.hoisted(() => [] as FrameRequestCallback[]);
+const preloadedImages = vi.hoisted(() => [] as Array<{ src: string }>);
 
 const background: PageVisualBackground = {
   images: ["/one.webp", "/two.webp", "/three.webp"],
@@ -31,6 +32,25 @@ describe("RoutePageBackground", () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }));
+    preloadedImages.length = 0;
+    vi.stubGlobal("Image", class {
+      set src(value: string) {
+        preloadedImages.push({ src: value });
+      }
+    });
+  });
+
+  it("preloads only the next Hub image without adding another DOM layer", async () => {
+    const { container, rerender } = render(
+      <RoutePageBackground background={background} activeIndex={0} />,
+    );
+
+    await waitFor(() => expect(preloadedImages).toEqual([{ src: "/two.webp" }]));
+    expect(container.querySelectorAll("[data-image-index]")).toHaveLength(1);
+
+    rerender(<RoutePageBackground background={background} activeIndex={1} />);
+    await waitFor(() => expect(preloadedImages.at(-1)).toEqual({ src: "/three.webp" }));
+    expect(container.querySelectorAll("[data-image-index]")).toHaveLength(2);
   });
 
   it("mounts one image for a static route and keeps one shared overlay", () => {
