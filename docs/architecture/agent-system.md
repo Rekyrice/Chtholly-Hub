@@ -1,5 +1,7 @@
 # Agent 系统
 
+本文描述当前 Agent 的实现结构与修改入口。产品定位、三层能力模型、单 Agent 决策和多 Agent 演进条件见 [Agent 产品定位与演进设计](../design/2026-07-13-agent-product-positioning-and-evolution-design.md)。
+
 ## 阅读时机
 
 修改角色对话、上下文拼装、工具执行、会话记忆、认知扩展、主动行为或执行追踪前阅读本章。只改前端 Agent 界面时，先读[前端架构](frontend.md)，再用本章确认 WebSocket 协议和后端能力边界。
