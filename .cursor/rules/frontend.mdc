@@ -1,15 +1,20 @@
 ---
-description: Next.js 前端补充约定（编辑 web 代码时生效）
+description: Next.js 前端入口规则（编辑 web 文件时生效）
 globs: apps/web/**/*
 alwaysApply: false
 ---
 
-# 前端补充（详情见 AGENTS.md）
+# 前端规则入口
 
-- 遵守 `apps/web/AGENTS.md`：写路由/Server Component 前查阅 `node_modules/next/dist/docs/`
-- 默认 Server Components；仅交互需要时用 `"use client"`；类型在 `lib/types/`
-- RSC/SSR 用 `apiClient.ts` + `API_SERVER_URL`（默认 `http://localhost:8888`，**非 8080**）
-- 沿用现有 Sakuga 视觉与组件；localStorage 仅放 `useEffect`，避免 hydration 不一致
-- 站点配置 `lib/site.config.ts`；产品名 Chtholly Hub，作者 Rekyrice
-- 样式与组件：遵守 `styling.mdc`、`components.mdc`（Design Token、禁止 inline 色值）
-- UI 改动完成后用 **Playwright MCP**（`@playwright/mcp`）对 `http://localhost:3000` 截图验收（见 `.cursor/mcp.json`）
+进入 `apps/web/**` 后，在修改代码前加载：
+
+1. [`apps/web/AGENTS.md`](../../apps/web/AGENTS.md)：前端局部规则的唯一权威来源。
+2. [前端架构](../../docs/architecture/frontend.md)：确认用户路径、真实入口与联动面。
+3. 修改 Agent UI、WebSocket、Live2D 或页面上下文时，再读 [Agent 系统](../../docs/architecture/agent-system.md)。
+
+## Cursor 专属行为
+
+- 本项目使用 Next.js 16。编写路由、组件或框架 API 前，先查阅 `apps/web/node_modules/next/dist/docs/` 中与任务相关的当前文档，并遵循弃用提示。
+- UI 改动使用 `.cursor/mcp.json` 配置的 **Playwright MCP** 在本地页面执行真实交互、必要的桌面/移动视口截图与可访问性检查；具体组件和样式硬约束由对应 glob 的 `components.mdc`、`styling.mdc` 补充。
+
+其余组件边界、数据调用、类型、品牌和验证命令均以 `apps/web/AGENTS.md` 及其稳定文档入口为准。

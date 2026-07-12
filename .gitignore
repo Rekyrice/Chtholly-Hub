@@ -3,8 +3,11 @@
 .env.local
 .env.*.local
 
-# --- 本地文档（superpowers 工作流产物）---
-docs/
+# --- 本地与工作流文档 ---
+docs/local/
+docs/drafts/
+docs/superpowers/
+docs/补充.txt
 
 # --- 构建产物 ---
 apps/server/target/
