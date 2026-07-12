@@ -18,7 +18,7 @@ Invoke-RestMethod http://localhost:9200
 .\scripts\dev\ensure-kafka-topics.ps1
 ```
 
-## 生产 Compose
+## 受支持的一键生产 Compose
 
 ```bash
 cp .env.prod.example .env
@@ -31,12 +31,13 @@ curl -fsS http://127.0.0.1/health
 
 当前 Compose 始终启动 Kafka，并让 server 等待其健康；`KAFKA_ENABLED=false` 只关闭应用使用 Kafka，不会从 Compose 中移除服务。server 同样在 Compose 中固定 `LLM_ENABLED=false` 和 `CANAL_ENABLED=false`。存储默认 `local`，通过 `uploads_data` 供 server 写入、Nginx 读取。
 
-首次部署可运行 `bash scripts/deploy/ecs-bootstrap.sh`；它包含数据库初始化。数据库真实流程见[数据库章节](../docs/development/database.md)，不要把 SQL 文件名约定理解为已启用 Flyway。
+这是当前受支持的 Nginx 一键生产路径。首次部署可运行 `bash scripts/deploy/ecs-bootstrap.sh`；它包含数据库初始化。`ecs-bootstrap.sh` 与 `ecs-init-db.sh` 都硬编码 `docker-compose.prod.yml`，只能用于本节路径。数据库真实流程见[数据库章节](../docs/development/database.md)，不要把 SQL 文件名约定理解为已启用 Flyway。
 
-## Nginx 与 Caddy
+## Nginx 与 Caddy 参考模板
 
 - 默认 [`nginx/default.conf`](nginx/default.conf)：HTTP 入口；`/api/`、Agent WebSocket、`/health` 转发后端，`/uploads/` 读取共享卷，其余转发 Next.js。
-- [`caddy/Caddyfile`](caddy/Caddyfile) 与根 [`docker-compose.caddy.example.yml`](../docker-compose.caddy.example.yml)：自动 HTTPS 示例。使用前替换域名和联系邮箱，不要与 Nginx 方案同时占用端口。
+- [`caddy/Caddyfile`](caddy/Caddyfile) 与根 [`docker-compose.caddy.example.yml`](../docker-compose.caddy.example.yml) 只是自动 HTTPS 参考模板，不是当前受支持的一键路径。不要与 Nginx 栈同时启动，也不要在 Caddy 路径运行 `ecs-bootstrap.sh` 或 `ecs-init-db.sh`；脚本会操作硬编码的 prod Compose/Nginx 栈并可能造成端口冲突。
+- Caddy 示例的 web build 缺少 prod Compose 已传入的 `NEXT_PUBLIC_SITE_URL` 与 `NEXT_PUBLIC_OSS_PUBLIC_URL`。直接构建可能让 canonical/Open Graph 回退 localhost，并缺少自定义 OSS 的 Next Image 来源。投入生产前需自行对齐 build args，并补齐数据库初始化、健康验证和回滚流程。
 
 ## 常见故障
 
