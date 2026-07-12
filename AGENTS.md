@@ -15,10 +15,10 @@
 
 | 任务 | 先读 | 继续深入 |
 |------|------|----------|
-| 后端业务、API、缓存或事件 | [后端应用入口](apps/server/README.md) | [架构首页](docs/architecture/README.md)、[数据库操作入口](apps/server/db/README.md) |
+| 后端业务、API、缓存或事件 | [后端局部规则](apps/server/AGENTS.md) | [后端领域地图](docs/architecture/backend.md)、[核心请求链路](docs/architecture/request-flows.md) |
 | 前端页面、组件或交互 | [前端局部规则](apps/web/AGENTS.md) | [前端应用入口](apps/web/README.md)、[架构首页](docs/architecture/README.md) |
-| 角色 Agent、工具、上下文或记忆 | [后端应用入口](apps/server/README.md) | [Agent 代码入口](apps/server/src/main/java/com/chtholly/agent/ChthollyAgent.java)、[架构首页](docs/architecture/README.md) |
-| 数据库、缓存、搜索、消息或 OSS | [数据库操作入口](apps/server/db/README.md) | [后端应用入口](apps/server/README.md)、[架构首页](docs/architecture/README.md) |
+| 角色 Agent、工具、上下文或记忆 | [后端局部规则](apps/server/AGENTS.md) | [后端领域地图的 Agent 平台章节](docs/architecture/backend.md#agent-平台)、[核心请求链路](docs/architecture/request-flows.md#8-agent-websocket上下文工具与记忆) |
+| 数据库、缓存、搜索、消息或 OSS | [数据与存储](docs/architecture/data-and-storage.md) | [数据库操作入口](apps/server/db/README.md)、[核心请求链路](docs/architecture/request-flows.md) |
 | 本地环境、配置与测试 | [项目快速开始](README.md) | [后端应用入口](apps/server/README.md)、[前端应用入口](apps/web/README.md) |
 | 部署、代理或容器 | [Docker 操作入口](docker/README.md) | [脚本入口](scripts/README.md)、[架构首页](docs/architecture/README.md) |
 | Git、文档与仓库维护 | 本文件“工作区与 Git 安全” | [知识库首页](docs/README.md)、[脚本入口](scripts/README.md) |
@@ -48,7 +48,7 @@ Chtholly Hub 是 Java 21 + Spring Boot 3.2.4 与 Next.js 16 + Tailwind CSS 4 组
 
 ### 后端
 
-- 按 `{module}/api`、`service`、`service/impl`、`mapper`、`model` 组织业务；修改前先读[后端应用入口](apps/server/README.md)。后端局部规则将在 `apps/server/AGENTS.md` 建立后接管更细约束。
+- 后端局部结构、注释、错误、配置、持久化与测试规则由[后端局部规则](apps/server/AGENTS.md)接管；领域入口与联动面见[后端领域地图](docs/architecture/backend.md)。
 - 类级和 public/protected 方法级 Javadoc 使用英文，方法体内只用中文解释非显然的 WHY；魔法数字和非常规逻辑必须注明来源或含义。
 - 业务错误使用 `BusinessException` 与明确 HTTP 状态；禁止 `catch (Exception ignored) {}`，每个 catch 至少记录日志。
 - 环境相关值通过 `application*.yml` 中的 `${VAR:default}` 注入；可选能力必须有特性开关。
@@ -133,10 +133,14 @@ git status --short
 
 - [项目知识库](docs/README.md)
 - [架构首页](docs/architecture/README.md)
-- 待建立的架构专章：`backend.md`、`frontend.md`、`agent-system.md`、`data-and-storage.md`、`request-flows.md`
+- [后端领域地图](docs/architecture/backend.md)
+- [数据与存储](docs/architecture/data-and-storage.md)
+- [核心请求链路](docs/architecture/request-flows.md)
+- 待建立的架构专章：`frontend.md`、`agent-system.md`
 - 待建立的开发章节：`docs/development/README.md`、`configuration.md`、`database.md`、`testing.md`
 - 待建立的运维章节：`docs/operations/deployment.md`
 - [后端应用入口](apps/server/README.md)
+- [后端局部规则](apps/server/AGENTS.md)
 - [前端局部规则](apps/web/AGENTS.md)
 - [数据库操作入口](apps/server/db/README.md)
 - [Docker 操作入口](docker/README.md)
