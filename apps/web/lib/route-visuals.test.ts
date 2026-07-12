@@ -2,40 +2,53 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { ROUTE_VISUALS, getRouteVisualConfig } from "./route-visuals";
+import { ROUTE_VISUALS, SITE_HEADER_BACKGROUND, getRouteVisualConfig } from "./route-visuals";
 
 describe("route visuals", () => {
   const routeCases = [
-    ["/hub", "hub", "hub-hero.webp", "hub-content.webp"],
-    ["/hub/topic", "hub", "hub-hero.webp", "hub-content.webp"],
-    ["/search", "search", "search-content.webp", "search-content.webp"],
-    ["/search/results", "search", "search-content.webp", "search-content.webp"],
-    ["/write", "write", null, "write-workspace.webp"],
-    ["/write/draft", "write", null, "write-workspace.webp"],
-    ["/login", "auth", "auth-arrival.webp", "auth-arrival.webp"],
-    ["/reset-password/token", "auth", "auth-arrival.webp", "auth-arrival.webp"],
-    ["/about", "about", "about-community.webp", "about-community.webp"],
-    ["/about/team", "about", "about-community.webp", "about-community.webp"],
-    ["/user/alice", "profile", "profile-personal.webp", "profile-personal.webp"],
-    ["/profile/edit", "profile", "profile-personal.webp", "profile-personal.webp"],
-    ["/settings", "settings", "settings-calm.webp", "settings-calm.webp"],
-    ["/settings/account", "settings", "settings-calm.webp", "settings-calm.webp"],
-    ["/archive", "archive", "archive-hall.webp", "archive-hall.webp"],
-    ["/archive/2026", "archive", "archive-hall.webp", "archive-hall.webp"],
-    ["/tag/typescript", "tag", "tag-trace.webp", "tag-trace.webp"],
-    ["/post/hello-world", "post", "post-ruins.webp", "post-ruins.webp"],
+    ["/hub", "hub", "hub-content.webp"],
+    ["/hub/topic", "hub", "hub-content.webp"],
+    ["/search", "search", "search-content.webp"],
+    ["/search/results", "search", "search-content.webp"],
+    ["/write", "write", "write-workspace.webp"],
+    ["/write/draft", "write", "write-workspace.webp"],
+    ["/login", "auth", "auth-arrival.webp"],
+    ["/reset-password/token", "auth", "auth-arrival.webp"],
+    ["/about", "about", "about-community.webp"],
+    ["/about/team", "about", "about-community.webp"],
+    ["/user/alice", "profile", "profile-personal.webp"],
+    ["/profile/edit", "profile", "profile-personal.webp"],
+    ["/settings", "settings", "settings-calm.webp"],
+    ["/settings/account", "settings", "settings-calm.webp"],
+    ["/archive", "archive", "archive-hall.webp"],
+    ["/archive/2026", "archive", "archive-hall.webp"],
+    ["/tag/typescript", "tag", "tag-trace.webp"],
+    ["/post/hello-world", "post", "post-ruins.webp"],
   ] as const;
 
   it.each(routeCases)(
     "maps %s to %s",
-    (pathname, expectedId, expectedHeroFile, expectedPageFile) => {
+    (pathname, expectedId, expectedPageFile) => {
       const config = getRouteVisualConfig(pathname);
 
       expect(config?.id).toBe(expectedId);
-      expect(config?.hero?.image.split("/").at(-1) ?? null).toBe(expectedHeroFile);
       expect(config?.page.image.split("/").at(-1)).toBe(expectedPageFile);
     },
   );
+
+  it("keeps one shared white-background image in every ordinary site header", () => {
+    expect(SITE_HEADER_BACKGROUND.image).toBe("/images/site/backgrounds/hub-hero.webp");
+    expect(SITE_HEADER_BACKGROUND.positionDesktop).toBe("52% 0%");
+    expect(SITE_HEADER_BACKGROUND.positionMobile).toBe("72% 0%");
+  });
+
+  it("keeps the writing subject visible near the top of its page background", () => {
+    const write = ROUTE_VISUALS.find(({ id }) => id === "write");
+
+    expect(write?.page.positionDesktop).toBe("50% 4%");
+    expect(write?.page.positionMobile).toBe("52% 0%");
+    expect(write?.page.overlayAlpha).toBe(0.16);
+  });
 
   it.each(["/", "/agent", "/agent/history", "/chtholly", "/admin", "/admin/posts"])(
     "does not decorate excluded route %s",
@@ -70,10 +83,8 @@ describe("route visuals", () => {
     for (const config of ROUTE_VISUALS) {
       expect(Object.isFrozen(config)).toBe(true);
       expect(Object.isFrozen(config.page)).toBe(true);
-      if (config.hero) {
-        expect(Object.isFrozen(config.hero)).toBe(true);
-      }
     }
+    expect(Object.isFrozen(SITE_HEADER_BACKGROUND)).toBe(true);
   });
 
   it.each([
@@ -102,9 +113,7 @@ describe("route visuals", () => {
 
   it("references public files that exist", () => {
     const images = new Set(
-      ROUTE_VISUALS.flatMap(({ hero, page }) => [hero?.image, page.image]).filter(
-        (image): image is string => image !== undefined,
-      ),
+      [SITE_HEADER_BACKGROUND.image, ...ROUTE_VISUALS.map(({ page }) => page.image)],
     );
 
     for (const image of images) {

@@ -7,7 +7,7 @@
     --surface-sidebar-alpha: 0.48;
     --surface-reading-alpha: 0.78;
     --surface-auth-alpha: 0.78;
-    --surface-editor-alpha: 0.88;
+    --surface-editor-alpha: 0.78;
     --surface-backdrop-blur: 8px;
     --surface-border: color-mix(in srgb, var(--color-border) 62%, transparent);
     --surface-shadow: 0 9px 23px color-mix(in srgb, var(--color-text) 11%, transparent);

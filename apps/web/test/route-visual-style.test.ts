@@ -17,7 +17,7 @@ describe("route visual style contract", () => {
 
   it("defines one shared high-transparency surface system", () => {
     expect(globals).not.toContain("--surface-card-alpha");
-    expect(visuals).toMatch(/\.site-shell--route-visual\s*\{[\s\S]*?--surface-nav-alpha:\s*0\.71;[\s\S]*?--surface-panel-alpha:\s*0\.52;[\s\S]*?--surface-card-alpha:\s*0\.54;[\s\S]*?--surface-sidebar-alpha:\s*0\.48;[\s\S]*?--surface-reading-alpha:\s*0\.78;[\s\S]*?--surface-backdrop-blur:\s*8px;/);
+    expect(visuals).toMatch(/\.site-shell--route-visual\s*\{[\s\S]*?--surface-nav-alpha:\s*0\.71;[\s\S]*?--surface-panel-alpha:\s*0\.52;[\s\S]*?--surface-card-alpha:\s*0\.54;[\s\S]*?--surface-sidebar-alpha:\s*0\.48;[\s\S]*?--surface-reading-alpha:\s*0\.78;[\s\S]*?--surface-editor-alpha:\s*0\.78;[\s\S]*?--surface-backdrop-blur:\s*8px;/);
     expect(visuals).not.toMatch(/data-route-visual[^\{]*\{[^}]*--color-[\w-]+\s*:/);
   });
 
