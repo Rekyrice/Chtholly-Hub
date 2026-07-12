@@ -5,7 +5,7 @@
 ## 前置条件
 
 - JDK 21 与 Maven。
-- 按任务启用 MySQL、Redis、Elasticsearch、Kafka 等依赖；职责与降级边界见[数据与存储](../../docs/architecture/data-and-storage.md)。
+- MySQL、Redis 是基础依赖；仓库示例 `.env` 显式设置 `KAFKA_ENABLED=true`，按推荐流程启动时也需准备 Kafka，除非将该值改为 `false` 使用进程内 fallback。职责与可靠性边界见[数据与存储](../../docs/architecture/data-and-storage.md)。
 - 在仓库根目录从 `.env.example` 创建本地 `.env`，不要把凭据写入文档或提交到 Git。
 - 首次初始化数据库时阅读 [`db/README.md`](db/README.md)。
 
@@ -18,7 +18,7 @@
 ./scripts/dev/start-backend.ps1
 ```
 
-默认地址为 `http://localhost:8888`，健康检查为 `http://localhost:8888/actuator/health`。若需要直接启动：
+默认地址为 `http://localhost:8888`，健康检查为 `http://localhost:8888/actuator/health`。以下直接启动命令仅适用于环境变量已经由外部注入到当前终端的情况；它不会加载根目录 `.env`：
 
 ```powershell
 cd apps/server

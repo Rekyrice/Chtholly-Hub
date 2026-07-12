@@ -48,12 +48,7 @@ Chtholly Hub 是 Java 21 + Spring Boot 3.2.4 与 Next.js 16 + Tailwind CSS 4 组
 
 ### 后端
 
-- 后端局部结构、注释、错误、配置、持久化与测试规则由[后端局部规则](apps/server/AGENTS.md)接管；领域入口与联动面见[后端领域地图](docs/architecture/backend.md)。
-- 类级和 public/protected 方法级 Javadoc 使用英文，方法体内只用中文解释非显然的 WHY；魔法数字和非常规逻辑必须注明来源或含义。
-- 业务错误使用 `BusinessException` 与明确 HTTP 状态；禁止 `catch (Exception ignored) {}`，每个 catch 至少记录日志。
-- 环境相关值通过 `application*.yml` 中的 `${VAR:default}` 注入；可选能力必须有特性开关。
-- MyBatis 只允许 `#{param}` 参数化，禁止 `${param}`；实体 ID 使用 `SnowflakeIdGenerator`，禁止新增自增主键。
-- TODO/HACK 必须写明跟踪来源或移除条件，不保留注释掉的死代码。
+- 进入 `apps/server` 后必须阅读[后端局部规则](apps/server/AGENTS.md)；该文件是后端结构、注释、错误、配置、持久化与测试细则的局部唯一来源，不得放宽本文件的仓库级安全约束。领域入口与联动面见[后端领域地图](docs/architecture/backend.md)。
 
 ### 前端
 

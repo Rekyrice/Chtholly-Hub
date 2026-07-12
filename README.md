@@ -27,7 +27,7 @@ AGENTS.md     Agent 全局目录与工作契约
 
 前置条件：JDK 21、Maven 3.9+、Node.js 20+ 与 npm。推荐后端脚本需要 PowerShell；其他系统请按[后端应用入口](apps/server/README.md)导出环境变量后运行 Maven。
 
-启动前请确认外部依赖已就绪并完成数据库初始化：MySQL、Redis 是基础依赖，Kafka、Elasticsearch 按启用功能准备。仓库当前没有通用的本地基础设施 Compose；[Docker 说明](docker/README.md)主要记录维护者本机约定与生产部署，[数据库说明](apps/server/db/README.md)提供初始化步骤。
+启动前请确认外部依赖已就绪并完成数据库初始化：MySQL、Redis 是基础依赖；从 `.env.example` 复制的推荐 `.env` 显式设置 `KAFKA_ENABLED=true`，因此也需准备 Kafka，除非改为 `false` 使用进程内 fallback；Elasticsearch 按启用功能准备。仓库当前没有通用的本地基础设施 Compose；[Docker 说明](docker/README.md)主要记录维护者本机约定与生产部署，[数据库说明](apps/server/db/README.md)提供初始化步骤。
 
 复制开发环境变量模板：
 
