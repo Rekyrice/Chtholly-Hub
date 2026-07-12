@@ -1,6 +1,6 @@
 version: content-v3
 namespace: launch-community
 stage: review
-expectedAccounts: 0
+expectedAccounts: 8
 expectedPosts: 0
 expectedCategories: {}

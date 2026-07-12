@@ -1,1 +1,88 @@
-[]
+- seedKey: night-coder
+  legacyHandle: night-coder
+  nickname: 磁盘又满了
+  handle: df99
+  bio: Java、Python，排错记录放这里。
+  avatarAsset: avatar-night-coder
+  gender: undisclosed
+  birthday: null
+  school: null
+  tags: [Java, Python, 排错]
+  voice: null
+- seedKey: algo-runner
+  legacyHandle: algo-runner
+  nickname: kuro_404
+  handle: kuro404
+  bio: RAG 和 Agent 小实验。样本小就先不下结论。
+  avatarAsset: avatar-algo-runner
+  gender: undisclosed
+  birthday: null
+  school: null
+  tags: [RAG, Agent, 实验]
+  voice: null
+- seedKey: anime-critic
+  legacyHandle: anime-critic
+  nickname: 佐仓市民A
+  handle: skra7
+  bio: null
+  avatarAsset: avatar-anime-critic
+  gender: undisclosed
+  birthday: null
+  school: null
+  tags: [动画, 观后感, 演出]
+  voice: null
+- seedKey: design-sis
+  legacyHandle: design-sis
+  nickname: kzn
+  handle: kzn17
+  bio: 看番时经常先注意声音。
+  avatarAsset: avatar-design-sis
+  gender: undisclosed
+  birthday: null
+  school: null
+  tags: [动画, 声音, 演出]
+  voice: null
+- seedKey: moyu-master
+  legacyHandle: moyu-master
+  nickname: 周末再补
+  handle: mada_nai
+  bio: 游戏打到一半，番也补到一半。
+  avatarAsset: avatar-moyu-master
+  gender: undisclosed
+  birthday: null
+  school: null
+  tags: [游戏, 动画, 补番]
+  voice: null
+- seedKey: indie-dev
+  legacyHandle: indie-dev
+  nickname: 耳机线打结
+  handle: kanade26
+  bio: OST 循环比正片勤。
+  avatarAsset: avatar-indie-dev
+  gender: undisclosed
+  birthday: null
+  school: null
+  tags: [OST, 动画音乐, 声优]
+  voice: null
+- seedKey: book-notes
+  legacyHandle: book-notes
+  nickname: 余白
+  handle: yohaku
+  bio: 读得慢，也常停在半路。
+  avatarAsset: avatar-book-notes
+  gender: undisclosed
+  birthday: null
+  school: null
+  tags: [阅读, 页边笔记, 随笔]
+  voice: null
+- seedKey: photo-walker
+  legacyHandle: photo-walker
+  nickname: 北口改札
+  handle: ktgc24
+  bio: null
+  avatarAsset: avatar-photo-walker
+  gender: undisclosed
+  birthday: null
+  school: null
+  tags: [散步, 摄影, 街道]
+  voice: null
