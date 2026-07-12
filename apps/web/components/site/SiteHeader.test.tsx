@@ -73,6 +73,7 @@ describe("SiteHeader", () => {
     const css = readFileSync("app/styles/navbar.css", "utf8");
 
     expect(css).toMatch(/\.site-header\s*\{[\s\S]*?height:\s*480px/);
+    expect(css).toMatch(/\.site-header\s*\{[^}]*z-index:\s*1/);
     expect(css).toMatch(/\.site-header\s*\{[\s\S]*?mask-image:\s*linear-gradient/);
     expect(css).toMatch(/\.site-header-title\s*\{[\s\S]*?font-size:\s*63px/);
     expect(css).toMatch(/\.site-header-desc\s*\{[\s\S]*?font-size:\s*18px/);
