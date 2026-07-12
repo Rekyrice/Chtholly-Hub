@@ -61,16 +61,17 @@ describe("route visual style contract", () => {
   it("protects editor, auth, and settings readability without reusing landing artwork", () => {
     expect(write).not.toContain('/images/landing/default.jpg');
     expect(settings).not.toContain('/images/landing/default.jpg');
-    expect(write).toMatch(/\.write-editor-wrapper\s*\{[\s\S]*?--surface-editor-alpha/);
-    expect(settings).toMatch(/\.settings-menu__item\s*\{[\s\S]*?--surface-auth-alpha/);
-    expect(settings).toMatch(/\.settings-loading,[\s\S]*?\.settings-form-panel\s*\{[\s\S]*?--surface-auth-alpha/);
+    expect(write).toMatch(/\.write-editor-wrapper\s*\{[^}]*--surface-editor-alpha/);
+    expect(settings).toMatch(/\.settings-menu__item\s*\{[^}]*--surface-auth-alpha/);
+    expect(settings).toMatch(/\.settings-loading,[^{]*\.settings-form-panel\s*\{[^}]*--surface-auth-alpha/);
     expect(settings).not.toMatch(/\.settings-menu\s*\{[^}]*background:/);
-    expect(visuals).toMatch(/\[data-route-visual="auth"\] \.post-card\s*\{[\s\S]*?--surface-auth-alpha/);
-    expect(visuals).toMatch(/\.write-preview\.prose-anime\s*\{[\s\S]*?--surface-editor-alpha/);
+    expect(settings).toMatch(/\.settings-menu__item:hover\s*\{[^}]*box-shadow:\s*var\(--surface-shadow\)/);
+    expect(visuals).toMatch(/\[data-route-visual="auth"\] \.post-card\s*\{[^}]*--surface-auth-alpha/);
+    expect(visuals).toMatch(/\.write-preview\.prose-anime\s*\{[^}]*--surface-editor-alpha/);
   });
 
   it("keeps mobile route surfaces readable in the final cascade", () => {
     expect(responsive).toMatch(/\.site-shell\s*\{[^}]*padding-bottom:[^}]*safe-area-inset-bottom/);
-    expect(visuals).toMatch(/@media \(max-width:\s*767px\)[\s\S]*?\.site-shell--route-visual \.post-card,[\s\S]*?backdrop-filter:\s*blur\(7px\) saturate\(0\.72\);[\s\S]*?-webkit-backdrop-filter:\s*blur\(7px\) saturate\(0\.72\)/);
+    expect(visuals).toMatch(/\.site-shell--route-visual \.post-card,\s*\.site-shell--route-visual \.hub-sidebar \.widget\s*\{[^}]*backdrop-filter:\s*blur\(7px\) saturate\(0\.72\);[^}]*-webkit-backdrop-filter:\s*blur\(7px\) saturate\(0\.72\)/);
   });
 });

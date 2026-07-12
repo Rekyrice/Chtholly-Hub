@@ -82,7 +82,7 @@
   .settings-menu__item:hover {
     border-color: color-mix(in srgb, var(--color-sky) 42%, var(--color-border));
     transform: translateY(-1px);
-    box-shadow: 0 16px 36px rgb(15 23 42 / 12%);
+    box-shadow: var(--surface-shadow);
   }
 
   .settings-menu__icon {
