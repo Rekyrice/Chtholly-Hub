@@ -270,6 +270,13 @@ def run_self_tests(repo_root):
         {"source_path": "doc.md", "heading": "H", "text": "完整"},
         {"source_path": "doc.md", "heading": "H", "text": "答案"},
     ])
+    assert "中文" in tokenize("中文")
+    for separated in ("中 abc 文", "中，文", "中\n文"):
+        assert "中文" not in tokenize(separated)
+    headings = [heading for heading, _ in parse_sections(
+        "# Root\n```powershell\n# fake heading\n```\n## Real\nbody\n"
+    )]
+    assert headings == ["Root", "Real"]
     temp_parent = repo_root / ".codex-tmp"
     temp_parent.mkdir(exist_ok=True)
     directory = tempfile.mkdtemp(dir=str(temp_parent))
@@ -287,7 +294,7 @@ def run_self_tests(repo_root):
         assert read_git_blob(fixture, commit, "doc.md") == before
     finally:
         shutil.rmtree(directory, onerror=remove_readonly)
-    print("self-tests: 3 passed")
+    print("self-tests: 8 passed")
 
 
 def main():
