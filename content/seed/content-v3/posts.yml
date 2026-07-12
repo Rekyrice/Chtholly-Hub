@@ -183,3 +183,26 @@
     format: technical-report
     mediaPlan: [由 tracked results 生成的 Hit@1 与 MRR 摘要封面, 由 tracked results 生成的八问 answer-bearing 首位结果表, 缓存查询 top 3 加真实 relevant 第 4 行]
     sources: [rag-chunk-local-experiment]
+
+- seedKey: urban-myth-search-box
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 《都市传说解体中心》通关后，我还是不敢关掉搜索框
+  slug: urban-myth-search-box
+  description: 从关键词搜索、时间线翻帖和现场调查聊这部游戏，也说说我喜欢的传言设计和太着急的提示。
+  category: GAME
+  tags: [都市传说解体中心, 冒险游戏, 推理游戏, 像素美术]
+  publishTime: 2026-03-29T13:48:00Z
+  markdownFile: posts/urban-myth-search-box.md
+  coverAsset: urban-myth-search-box-cover
+  inlineAssets:
+    - urban-myth-search-interface
+    - urban-myth-dialogue
+    - urban-myth-investigation
+  brief:
+    factAnchors: [墓场文库, 集英社游戏, 福来蓟, 廻屋涉, 茉莉, 社交媒体帖子调查, 关键词搜索, 现场调查, 眼镜查看残留意念与记忆, 都市传说特定与解体, 剧集式悬疑冒险, 迷幻像素画]
+    voice: 摸鱼大师，像通关后在游戏社区发长帖，操作感受写具体，喜欢和嫌弃都不绕弯，不冒充攻略作者
+    position: 搜索框与时间线把网络传言本身变成调查现场；人物闲聊和像素表情让案件有余味，但过于着急的提示会挤掉自己试错的乐趣
+    format: review
+    mediaPlan: [官网主视觉作封面, Steam官方中文截图呈现关键词搜索和社交媒体帖子, Steam官方中文截图呈现中心内角色对话, Steam官方中文截图呈现现场调查与异常痕迹]
+    sources: [urban-myth-official, urban-myth-shueisha-games, urban-myth-steam]
