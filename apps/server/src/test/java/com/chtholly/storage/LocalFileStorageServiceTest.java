@@ -5,6 +5,8 @@ import com.chtholly.seed.SeedProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -141,6 +143,37 @@ class LocalFileStorageServiceTest {
 
         assertThat(Files.readAllBytes(service.resolveObjectPath(key))).containsExactly(original);
         assertThat(findUploadTemps()).isEmpty();
+    }
+
+    @Test
+    void uploadVerifiedObject_whenContentV12ImmutableTargetDiffers_thenKeepsOriginalAndFails() throws Exception {
+        byte[] original = "content-v12-original".getBytes(StandardCharsets.UTF_8);
+        byte[] replacement = "content-v12-replacement".getBytes(StandardCharsets.UTF_8);
+        String key = "seed/content-v12/posts/post-" + sha256(original) + ".md";
+        service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(original), "text/markdown", original.length, sha256(original));
+
+        assertThatThrownBy(() -> service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(replacement), "text/markdown", replacement.length, sha256(replacement)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("immutable object already exists with different content");
+
+        assertThat(Files.readAllBytes(service.resolveObjectPath(key))).containsExactly(original);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"content-beta", "content-v0"})
+    void uploadVerifiedObject_whenVersionIsNotAccepted_thenUsesNormalReplaceBehavior(String version) throws Exception {
+        byte[] original = "mutable-original".getBytes(StandardCharsets.UTF_8);
+        byte[] replacement = "mutable-replacement".getBytes(StandardCharsets.UTF_8);
+        String key = "seed/" + version + "/posts/post.md";
+
+        service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(original), "text/markdown", original.length, sha256(original));
+        service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(replacement), "text/markdown", replacement.length, sha256(replacement));
+
+        assertThat(Files.readAllBytes(service.resolveObjectPath(key))).containsExactly(replacement);
     }
 
     @Test

@@ -28,7 +28,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 /**
  * Local filesystem storage used when OSS is disabled.
@@ -42,8 +41,6 @@ public class LocalFileStorageService implements StorageService {
 
     private static final int PRESIGN_EXPIRES_SECONDS = 600;
     private static final String UPLOAD_ENDPOINT = "/api/v1/storage/upload";
-    private static final Pattern IMMUTABLE_CONTENT_PACK_KEY =
-            Pattern.compile("seed/content-v[0-9]+/.+");
 
     private final StorageProperties props;
     private final SeedProperties seedProperties;
@@ -169,7 +166,7 @@ public class LocalFileStorageService implements StorageService {
             if (expectedSha256 != null && !staged.sha256().equalsIgnoreCase(expectedSha256)) {
                 throw new IOException("upload sha256 mismatch for " + objectKey);
             }
-            if (IMMUTABLE_CONTENT_PACK_KEY.matcher(objectKey).matches()) {
+            if (StorageObjectKeyValidator.isContentPackObjectKey(objectKey)) {
                 installImmutableObject(target, temporary, staged);
             } else {
                 moveReplacing(target, temporary);

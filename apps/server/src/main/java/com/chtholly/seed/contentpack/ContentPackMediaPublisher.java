@@ -47,7 +47,6 @@ public final class ContentPackMediaPublisher {
 
     private static final String MARKDOWN_CONTENT_TYPE = "text/markdown; charset=utf-8";
     private static final int SHA256_HEX_LENGTH = 64;
-    private static final Pattern SAFE_PACK_VERSION = Pattern.compile("[a-z0-9-]+");
     private static final Pattern MARKDOWN_ASSET = Pattern.compile(
             "([!]?\\[[^\\]\\r\\n]*]\\(\\s*)asset:([A-Za-z0-9_-]+)(\\s*(?:\"[^\"\\r\\n]*\")?\\))"
                     + "|\\{\\{asset:([A-Za-z0-9_-]+)}}");
@@ -81,7 +80,7 @@ public final class ContentPackMediaPublisher {
         List<String> newObjectKeys = new ArrayList<>();
         try {
             Path root = realRoot(pack.root());
-            String version = requireSafeVersion(pack.manifest().version());
+            String version = StorageObjectKeyValidator.requireContentPackVersion(pack.manifest().version());
             for (SeedAssetDefinition asset : pack.assets().values()) {
                 PublishedAsset published = publish(root, asset, version);
                 assets.put(asset.key(), published);
@@ -113,7 +112,8 @@ public final class ContentPackMediaPublisher {
      */
     public PublishedAsset publish(Path root, SeedAssetDefinition asset) throws IOException {
         Path realRoot = realRoot(root);
-        return publish(realRoot, asset, requireSafeVersion(realRoot.getFileName().toString()));
+        return publish(realRoot, asset,
+                StorageObjectKeyValidator.requireContentPackVersion(realRoot.getFileName().toString()));
     }
 
     private PublishedAsset publish(Path realRoot, SeedAssetDefinition asset, String version) throws IOException {
@@ -377,15 +377,7 @@ public final class ContentPackMediaPublisher {
     }
 
     private String objectPrefix(String version) {
-        return "seed/" + requireSafeVersion(version) + "/";
-    }
-
-    private String requireSafeVersion(String version) {
-        String requiredVersion = requireText(version, "content pack version");
-        if (!SAFE_PACK_VERSION.matcher(requiredVersion).matches()) {
-            throw new IllegalArgumentException("unsafe content pack version: " + version);
-        }
-        return requiredVersion;
+        return StorageObjectKeyValidator.contentPackObjectPrefix(version);
     }
 
     private boolean matchesMime(byte[] bytes, String contentType) {

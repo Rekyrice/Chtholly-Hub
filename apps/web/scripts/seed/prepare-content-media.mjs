@@ -8,7 +8,7 @@ import sharp from "sharp";
 import YAML from "yaml";
 
 const MAX_SOURCE_BYTES = 15 * 1024 * 1024;
-const SAFE_PACK_VERSION = /^[a-z0-9-]+$/;
+const SAFE_PACK_VERSION = /^content-v[1-9][0-9]*$/;
 const SUPPORTED_INPUT_FORMATS = new Set(["avif", "gif", "heif", "jpeg", "png", "svg", "tiff", "webp"]);
 const WEBP_QUALITY = Object.freeze({ avatar: 82, cover: 84, inline: 85 });
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -110,7 +110,7 @@ async function resolveApprovedSource(projectRoot, version, sourceFile) {
   }
 
   const approvedRoots = [
-    path.join(projectRoot, ".codex-tmp", version, "sources"),
+    path.join(projectRoot, ".codex-tmp", `seed-${version}`, "sources"),
     path.join(projectRoot, "apps", "web", "public", "images", "_incoming", "pic"),
   ].map((root) => path.resolve(root));
 
@@ -415,7 +415,7 @@ export async function preparePack({ packRoot, projectRoot = defaultProjectRoot, 
       targets.push({ staged: stagedYaml, final: assetsFile, trustedRoot: resolvedPack, label: "assets.yml" });
     }
 
-    const reportFile = path.join(normalizedProjectRoot, ".codex-tmp", version, "media-report.json");
+    const reportFile = path.join(normalizedProjectRoot, ".codex-tmp", `seed-${version}`, "media-report.json");
     const stagedReport = path.join(stagingRoot, "media-report.json");
     await writeFile(stagedReport, `${JSON.stringify(report, null, 2)}\n`);
     targets.push({ staged: stagedReport, final: reportFile, trustedRoot: resolvedProject, label: "Media report" });

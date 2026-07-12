@@ -6,6 +6,8 @@ import com.chtholly.seed.contentpack.model.ContentPackManifest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,7 +47,7 @@ class ContentPackSnapshotWriterTest {
         SnapshotRef ref = new ContentPackSnapshotWriter(mapper, new ObjectMapper(), tempDir)
                 .write(pack, "run-safe-1");
 
-        assertThat(ref.directory()).isEqualTo(tempDir.resolve(".codex-tmp/content-v2/run-safe-1"));
+        assertThat(ref.directory()).isEqualTo(tempDir.resolve(".codex-tmp/seed-content-v2/run-safe-1"));
         assertThat(ref.files()).containsExactly("accounts.json", "posts.json", "interactions.json");
         String allJson = Files.readString(ref.directory().resolve("accounts.json"))
                 + Files.readString(ref.directory().resolve("posts.json"))
@@ -66,12 +68,13 @@ class ContentPackSnapshotWriterTest {
         SnapshotRef ref = new ContentPackSnapshotWriter(mapper, new ObjectMapper(), tempDir)
                 .write(pack, "run-v3");
 
-        assertThat(ref.directory()).isEqualTo(tempDir.resolve(".codex-tmp/content-v3/run-v3"));
+        assertThat(ref.directory()).isEqualTo(tempDir.resolve(".codex-tmp/seed-content-v3/run-v3"));
     }
 
-    @Test
-    void givenUnsafeManifestVersion_whenSnapshot_thenRejectsBeforeCreatingDirectory() {
-        ContentPack pack = pack(tempDir, "review", "../outside", "launch-community");
+    @ParameterizedTest
+    @ValueSource(strings = {"content-beta", "content-v0", "../outside"})
+    void givenUnsupportedManifestVersion_whenSnapshot_thenRejectsBeforeCreatingDirectory(String version) {
+        ContentPack pack = pack(tempDir, "review", version, "launch-community");
         ContentPackSnapshotWriter writer = new ContentPackSnapshotWriter(
                 mock(ContentPackMapper.class), new ObjectMapper(), tempDir);
 
@@ -110,7 +113,7 @@ class ContentPackSnapshotWriterTest {
         assertThatThrownBy(() -> writer.write(pack(tempDir, "complete"), "run-atomic-failure"))
                 .isInstanceOf(RuntimeException.class);
 
-        Path base = tempDir.resolve(".codex-tmp/content-v2");
+        Path base = tempDir.resolve(".codex-tmp/seed-content-v2");
         assertThat(base.resolve("run-atomic-failure")).doesNotExist();
         try (var children = Files.list(base)) {
             assertThat(children.map(path -> path.getFileName().toString()).toList())

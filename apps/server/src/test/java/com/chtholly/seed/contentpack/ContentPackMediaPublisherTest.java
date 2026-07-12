@@ -11,6 +11,8 @@ import com.chtholly.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -95,6 +97,16 @@ class ContentPackMediaPublisherTest {
         assertThatThrownBy(() -> publisher.publish(v3Root, asset))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("content-addressed object key");
+
+        verifyNoInteractions(storage);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"content-beta", "content-v0", "../outside"})
+    void givenUnsupportedManifestVersion_whenPublishAll_thenRejectsBeforeStorage(String version) {
+        assertThatThrownBy(() -> publisher.publishAll(emptyPack(version)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("content pack version");
 
         verifyNoInteractions(storage);
     }
@@ -425,6 +437,12 @@ class ContentPackMediaPublisherTest {
 
     private ContentPack pack(Path packRoot, String version, SeedAssetDefinition asset, SeedPostDefinition post) {
         return pack(packRoot, version, List.of(asset), post);
+    }
+
+    private ContentPack emptyPack(String version) {
+        return new ContentPack(root,
+                new ContentPackManifest(version, "seed-" + version, "review", 0, 0, Map.of()),
+                List.of(), Map.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     private ContentPack pack(

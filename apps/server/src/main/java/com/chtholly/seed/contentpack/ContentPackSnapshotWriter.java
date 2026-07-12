@@ -1,6 +1,7 @@
 package com.chtholly.seed.contentpack;
 
 import com.chtholly.seed.contentpack.model.ContentPack;
+import com.chtholly.storage.StorageObjectKeyValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,7 +29,6 @@ import java.util.regex.Pattern;
 public final class ContentPackSnapshotWriter {
 
     private static final Pattern SAFE_RUN_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,127}");
-    private static final Pattern SAFE_PACK_VERSION = Pattern.compile("[a-z0-9-]+");
     private static final List<String> FILES = List.of("accounts.json", "posts.json", "interactions.json");
     private static final List<String> SECRET_FRAGMENTS = List.of(
             "password", "passwd", "phone", "mobile", "token", "credential", "secret", "email");
@@ -73,12 +73,9 @@ public final class ContentPackSnapshotWriter {
         }
         var manifest = Objects.requireNonNull(pack.manifest(), "manifest");
         String namespace = manifest.namespace();
-        String version = manifest.version();
-        if (version == null || !SAFE_PACK_VERSION.matcher(version).matches()) {
-            throw new IllegalArgumentException("unsafe content pack version: " + version);
-        }
+        String version = StorageObjectKeyValidator.requireContentPackVersion(manifest.version());
         Path tempRoot = projectRoot.resolve(".codex-tmp").normalize();
-        Path base = tempRoot.resolve(version).normalize();
+        Path base = tempRoot.resolve("seed-" + version).normalize();
         if (!base.startsWith(tempRoot)) {
             throw new IllegalArgumentException("snapshot version escapes project temp directory: " + version);
         }
