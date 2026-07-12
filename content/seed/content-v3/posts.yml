@@ -206,3 +206,23 @@
     format: review
     mediaPlan: [官网主视觉作封面, Steam官方中文截图呈现关键词搜索和社交媒体帖子, Steam官方中文截图呈现廻屋向福来蓟说明中心性质, Steam官方中文截图呈现现场调查与异常痕迹]
     sources: [urban-myth-official, urban-myth-shueisha-games, urban-myth-steam]
+
+- seedKey: yokomichi-yonosuke-after
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 《横道世之介》离开以后，书里反而更热闹了
+  slug: yokomichi-yonosuke-after
+  description: 世之介不在以后再往前翻，祥子、加藤和那些琐碎场面忽然换了位置；记忆没有替他作结，只把人留得更乱一些。
+  category: LIFE
+  tags: [横道世之介, 吉田修一, 日本文学, 阅读随笔]
+  publishTime: 2026-03-12T07:19:00Z
+  markdownFile: posts/yokomichi-yonosuke-after.md
+  coverAsset: null
+  inlineAssets: []
+  brief:
+    factAnchors: [吉田修一, 世之介已经不在, 祥子, 加藤, 多年以后]
+    voice: 余白，读到一半会停下来往前翻，不急着替人物整理意义，也不把难过说满
+    position: 世之介的离场没有替过去作结；它改变的是朋友们回想他的方式，也让读者重新看见那些当时毫不起眼的琐碎场面
+    format: personal-essay
+    mediaPlan: []
+    sources: [yokomichi-yonosuke-book]

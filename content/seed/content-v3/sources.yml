@@ -214,3 +214,12 @@
   factAnchors: [剧集式悬疑冒险, 福来蓟通过现场调查和社交媒体帖子收集证据, 迷幻像素画, 眼镜看到残留意念与记忆, 官方简体中文游戏截图]
   quote: null
   usageNote: 核对简体中文产品说明，并固定搜索界面、中心对话和现场调查三张官方商店截图；截图只呈现宣传页已有的低剧透场面
+- key: yokomichi-yonosuke-book
+  type: publisher-ebook-page
+  title: 横道世之介
+  pageUrl: https://read.douban.com/ebook/54232408/
+  author: 吉田修一
+  fetchedAt: 2026-07-12T20:25:00Z
+  factAnchors: [吉田修一, 林雅惠, 上海人民出版社, 2018年版, ISBN 9787208152038]
+  quote: null
+  usageNote: 只核对作者、译者、出版社、版本、ISBN 与人物姓名；不引用作品简介，不读取或改写豆瓣用户书评
