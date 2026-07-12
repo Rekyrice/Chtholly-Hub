@@ -35,7 +35,7 @@ Chtholly Hub 是 Java 21 + Spring Boot 3.2.4 与 Next.js 16 + Tailwind CSS 4 组
             ├─ Redis：缓存、Token、限流与位图状态
             ├─ Elasticsearch：可降级的全文检索
             ├─ Kafka：计数聚合与 Outbox 异步链路
-            └─ OSS：Markdown 正文与媒体
+            └─ 本地文件系统（默认）或 OSS：Markdown 正文与媒体
 
 可选：WebSocket/API → 角色 Agent → LLM、RAG 与站内工具
 ```

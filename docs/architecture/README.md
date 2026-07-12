@@ -14,9 +14,9 @@
 
 ## 系统边界
 
-Chtholly Hub 仓库负责 Web 体验、业务 API、后台任务与容器化配置。浏览器只直接访问 Next.js 或同域代理；Spring Boot 承担业务规则并访问 MySQL、Redis、Elasticsearch、Kafka 和 OSS。外部 LLM、Embedding 与 Bangumi 等服务通过可选集成接入，不是主站阅读与基础互动的启动前提。
+Chtholly Hub 仓库负责 Web 体验、业务 API、后台任务与容器化配置。浏览器只直接访问 Next.js 或同域代理；Spring Boot 承担业务规则，访问 MySQL、Redis，并按启用功能连接 Elasticsearch、Kafka 等基础设施。正文与媒体默认写入本地文件系统，也可切换到 OSS。外部 LLM、Embedding 与 Bangumi 等服务通过可选集成接入，不是主站阅读与基础互动的启动前提。
 
-MySQL 是业务事实的最终来源；Redis 保存可重建缓存和部分高频状态；Elasticsearch 保存可重建搜索索引；Kafka 在启用时传递异步事件；OSS 保存 Markdown 正文与媒体对象。当前操作入口见[数据库说明](../../apps/server/db/README.md)与 [Docker 说明](../../docker/README.md)。
+MySQL 是业务事实的最终来源；Redis 保存可重建缓存和部分高频状态；Elasticsearch 保存可重建搜索索引；Kafka 在启用时传递异步事件。`STORAGE_TYPE` 默认 `local`，使用本地文件系统保存 Markdown 正文与媒体；生产环境可选并推荐切换为 OSS。当前操作入口见[数据库说明](../../apps/server/db/README.md)与 [Docker 说明](../../docker/README.md)。
 
 ## 组件关系
 
@@ -32,7 +32,7 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
   ├──▶ Redis（缓存、Token、限流、位图状态）
   ├──▶ Elasticsearch（可降级全文检索）
   ├──▶ Kafka（异步聚合与 Outbox）
-  └──▶ OSS（正文与媒体）
+  └──▶ 本地文件系统（默认）或 OSS（正文与媒体）
 
 可选分支：
 浏览器 ──WebSocket/API──▶ Agent ──▶ LLM
@@ -68,6 +68,7 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
 | 后端启动类 | `apps/server/src/main/java/com/chtholly/ChthollyApplication.java` |
 | 前端站点路由 | `apps/web/app/(site)` |
 | 数据库 schema 与 migration | [`apps/server/db`](../../apps/server/db/README.md) |
+| 正文与媒体存储 | [`StorageConfiguration`](../../apps/server/src/main/java/com/chtholly/storage/config/StorageConfiguration.java)：默认本地文件系统，可切换 OSS |
 | 生产容器与代理 | [`docker`](../../docker/README.md)、`docker-compose.prod.yml` |
 | 开发与运维脚本 | [`scripts`](../../scripts/README.md) |
 
