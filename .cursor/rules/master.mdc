@@ -1,33 +1,22 @@
 ---
-description: 项目主规则。开始任何任务前务必先阅读 AGENTS.md。
+description: 项目主规则。开始任何任务前必须先阅读根目录 AGENTS.md。
 globs: **/*
 alwaysApply: true
 ---
 
-# Chtholly Hub — Cursor 规则
+# Chtholly Hub — Cursor 入口规则
 
-## 第一原则
+## 唯一权威入口
 
-**先读 `/AGENTS.md`**（模块地图、架构、编码规范、环境变量）。本文件只补充 AGENTS.md 未覆盖的约束。
+开始任何任务前，先阅读根目录 [`AGENTS.md`](../../AGENTS.md)。项目事实、编码规范、安全约束、验证命令和完整 Git/worktree 规则均以该文件及其指向的最近一级局部 `AGENTS.md`、稳定文档为准；本文件不复制这些内容。
 
-## 核心规则
+## Cursor 工作行为
 
-1. **语言**: 与用户对话用中文；Commit message 用中文（Conventional Commits：`feat:`、`fix:`、`refactor:`、`chore:`、`docs:`、`test:`）。
-2. **注释**: 类/方法 Javadoc 英文；方法体内 WHY 注释中文。详见 AGENTS.md。
-3. **异常**: 禁止 `catch (Exception ignored) {}`；每个 catch 至少打日志。
-4. **配置**: 禁止硬编码密钥；用 `application.yml` 的 `${VAR:default}`。
-5. **范围**: 最小 diff，只改当前任务相关文件；未被要求时不 push/新建 markdown。提交策略见 `git-commits.mdc`（默认改完自动分阶段 commit）。
+- 与用户对话使用中文；用户明确要求其他语言时除外。
+- 保持最小 diff，只修改当前任务直接相关的文件，并保留无关的用户改动。
+- 完成前按 [`AGENTS.md`](../../AGENTS.md#验证命令) 选择与改动风险匹配的验证；没有新鲜验证证据时不得声称完成或通过。
+- Git 提交的 Cursor 默认行为见 [`git-commits.mdc`](git-commits.mdc)，完整规则仍以根 `AGENTS.md` 为准。
 
-## Git 与品牌
+## 按 glob 加载局部规则
 
-- 对外品牌 **Chtholly Hub**；作者名 **Rekyrice**；侧栏/导航用 Rekyrice。
-
-## 完成前验证
-
-- 后端改动：`cd apps/server && mvn compile`（核心逻辑再跑相关 `mvn test`）
-- 前端改动：`cd apps/web && npm run build`
-- 未验证前不得声称「已完成 / 已通过」
-
-## 按目录补充约定
-
-编辑 `apps/server/**` 或 `apps/web/**` 时，Cursor 会自动加载对应 glob 规则（`backend.mdc` / `frontend.mdc`）。
+Cursor 编辑 `apps/server/**`、`apps/web/**`、前端组件或样式文件时，会按 glob 自动加载对应 MDC。MDC 只负责加载入口与 Cursor 专属约束；进入子树后仍必须阅读其最近一级 `AGENTS.md`，不得把 MDC 当作项目事实来源。
