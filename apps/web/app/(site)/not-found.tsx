@@ -5,10 +5,6 @@ import "../styles/not-found.css";
 export default function NotFound() {
   return (
     <div className="not-found-page">
-      <div className="not-found-background">
-        <div className="not-found-background__image" />
-        <div className="not-found-background__scrim" />
-      </div>
       <div className="not-found-content">
         <Image
           src="/images/illustrations/lost.png"

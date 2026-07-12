@@ -113,9 +113,6 @@ describe("route CSS import boundaries", () => {
     expect(landing).not.toContain("@keyframes not-found-float");
     for (const selector of [
       "not-found-page",
-      "not-found-background",
-      "not-found-background__image",
-      "not-found-background__scrim",
       "not-found-content",
       "not-found-illustration",
       "not-found-title",
@@ -125,6 +122,14 @@ describe("route CSS import boundaries", () => {
     ]) {
       expect(notFound).toContain(`.${selector}`);
     }
+    for (const selector of [
+      "not-found-background",
+      "not-found-background__image",
+      "not-found-background__scrim",
+    ]) {
+      expect(notFound).not.toContain(`.${selector}`);
+    }
+    expect(notFound).not.toContain('/images/landing/default.jpg');
     expect(notFound).toContain("@keyframes not-found-float");
     expect(notFound).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*\.not-found-illustration/,

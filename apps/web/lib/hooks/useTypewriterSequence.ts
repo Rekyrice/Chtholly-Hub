@@ -65,5 +65,5 @@ export function useTypewriterSequence(
     return () => clearTimeout(timeout);
   }, [text, isDeleting, index, lines, typeMs, eraseMs, pauseMs]);
 
-  return { text };
+  return { text, index };
 }

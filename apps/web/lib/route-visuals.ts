@@ -1,5 +1,5 @@
-export type VisualBackground = {
-  readonly image: string;
+export type PageVisualBackground = {
+  readonly images: readonly string[];
   readonly positionDesktop: string;
   readonly positionMobile: string;
   readonly overlayAlpha: number;
@@ -9,22 +9,27 @@ export type VisualBackground = {
 
 export type RouteVisualConfig = {
   readonly id: string;
-  readonly page: VisualBackground;
+  readonly page: PageVisualBackground;
 };
 
 const BACKGROUND_ROOT = "/images/site/backgrounds/";
+const DEFAULT_POSITION = "50% 50%";
+const DEFAULT_OVERLAY_ALPHA = 0.2;
+const DEFAULT_BLUR_PX = 1;
 const DEFAULT_SATURATE = 0.98;
 
 function background(
-  image: string,
-  positionDesktop: string,
-  positionMobile: string,
-  overlayAlpha: number,
-  blurPx: number,
+  imageFiles: readonly string[],
+  positionDesktop = DEFAULT_POSITION,
+  positionMobile = DEFAULT_POSITION,
+  overlayAlpha = DEFAULT_OVERLAY_ALPHA,
+  blurPx = DEFAULT_BLUR_PX,
   saturate = DEFAULT_SATURATE,
-): VisualBackground {
+): PageVisualBackground {
+  const images = Object.freeze(imageFiles.map((image) => `${BACKGROUND_ROOT}${image}`));
+
   return Object.freeze({
-    image: `${BACKGROUND_ROOT}${image}`,
+    images,
     positionDesktop,
     positionMobile,
     overlayAlpha,
@@ -33,53 +38,42 @@ function background(
   });
 }
 
-function routeVisual(config: RouteVisualConfig): RouteVisualConfig {
-  return Object.freeze(config);
+function routeVisual(id: string, imageFiles: readonly string[]): RouteVisualConfig {
+  return Object.freeze({ id, page: background(imageFiles) });
 }
 
-export const SITE_HEADER_BACKGROUND = background("hub-hero.webp", "52% 0%", "72% 0%", 0.18, 0);
-
-const searchBackground = background("search-content.webp", "52% 40%", "56% 40%", 0.2, 0.8);
-const authBackground = background("auth-arrival.webp", "34% 55%", "50% 48%", 0.2, 1);
-const aboutBackground = background("about-community.webp", "50% 34%", "50% 30%", 0.2, 1);
-const profileBackground = background("profile-personal.webp", "42% 40%", "48% 38%", 0.2, 1);
-const settingsBackground = background("settings-calm.webp", "50% 42%", "54% 42%", 0.18, 1);
-const archiveBackground = background("archive-hall.webp", "50% 38%", "58% 38%", 0.2, 1);
-const tagBackground = background("tag-trace.webp", "62% 42%", "70% 42%", 0.2, 1);
-const postBackground = background("post-ruins.webp", "52% 38%", "50% 40%", 0.2, 1);
-
 export const ROUTE_VISUALS: readonly RouteVisualConfig[] = Object.freeze([
-  routeVisual({
-    id: "hub",
-    page: background("hub-content.webp", "50% 45%", "52% 42%", 0.18, 1, 0.96),
-  }),
-  routeVisual({ id: "search", page: searchBackground }),
-  routeVisual({
-    id: "write",
-    page: background("write-workspace.webp", "50% 4%", "52% 0%", 0.16, 0.5),
-  }),
-  routeVisual({ id: "auth", page: authBackground }),
-  routeVisual({ id: "about", page: aboutBackground }),
-  routeVisual({ id: "profile", page: profileBackground }),
-  routeVisual({ id: "settings", page: settingsBackground }),
-  routeVisual({ id: "archive", page: archiveBackground }),
-  routeVisual({ id: "tag", page: tagBackground }),
-  routeVisual({ id: "post", page: postBackground }),
+  routeVisual("hub", ["hub-01.webp", "hub-02.webp", "hub-03.webp"]),
+  routeVisual("search", ["search.webp"]),
+  routeVisual("write", ["write.webp"]),
+  routeVisual("login", ["login.webp"]),
+  routeVisual("reset-password", ["reset-password.webp"]),
+  routeVisual("about", ["about.webp"]),
+  routeVisual("user", ["user.webp"]),
+  routeVisual("profile", ["search.webp"]),
+  routeVisual("settings", ["settings.webp"]),
+  routeVisual("archive", ["archive.webp"]),
+  routeVisual("tag", ["tag.webp"]),
+  routeVisual("post", ["post.webp"]),
+  routeVisual("admin", ["admin.webp"]),
 ]);
+
+export const NOT_FOUND_VISUAL = routeVisual("not-found", ["not-found.webp"]);
 
 const ROUTE_SEGMENTS: ReadonlyArray<readonly [segment: string, visualId: string]> = [
   ["/hub", "hub"],
   ["/search", "search"],
   ["/write", "write"],
-  ["/login", "auth"],
-  ["/reset-password", "auth"],
+  ["/login", "login"],
+  ["/reset-password", "reset-password"],
   ["/about", "about"],
-  ["/user", "profile"],
+  ["/user", "user"],
   ["/profile", "profile"],
   ["/settings", "settings"],
   ["/archive", "archive"],
   ["/tag", "tag"],
   ["/post", "post"],
+  ["/admin", "admin"],
 ];
 
 function matchesSegment(pathname: string, segment: string): boolean {
