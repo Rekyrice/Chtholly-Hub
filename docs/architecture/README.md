@@ -16,7 +16,7 @@
 
 Chtholly Hub 仓库负责 Web 体验、业务 API、后台任务与容器化配置。浏览器只直接访问 Next.js 或同域代理；Spring Boot 承担业务规则，访问 MySQL、Redis，并按启用功能连接 Elasticsearch、Kafka 等基础设施。正文与媒体默认写入本地文件系统，也可切换到 OSS。外部 LLM、Embedding 与 Bangumi 等服务通过可选集成接入，不是主站阅读与基础互动的启动前提。
 
-MySQL 保存大多数业务最终事实；点赞/收藏成员关系没有 MySQL 落点，`kafka.enabled=false` 时 Redis bitmap 是唯一的持久状态源，可靠性依赖 Redis 持久化与备份。Redis 还保存可重建缓存和其他高频状态；Elasticsearch 保存可重建搜索索引；Kafka 在启用时传递异步事件。`STORAGE_TYPE` 默认 `local`，使用本地文件系统保存 Markdown 正文与媒体；生产环境可选并推荐切换为 OSS。当前操作入口见[数据与存储](data-and-storage.md)、[数据库说明](../../apps/server/db/README.md)与 [Docker 说明](../../docker/README.md)。
+MySQL 保存大多数业务最终事实；点赞/收藏成员关系没有 MySQL 落点，无论 Kafka 是否启用，Redis bitmap 都是当前成员关系唯一的状态源，可靠性依赖 Redis 持久化与备份。Kafka 启用时只额外保存可回放的计数增量，用于重建 SDS，不能恢复 bitmap；关闭时 Spring 计数事件只在进程内传播且不可重放。Redis 还保存可重建缓存和其他高频状态；Elasticsearch 保存可重建搜索索引。`STORAGE_TYPE` 默认 `local`，使用本地文件系统保存 Markdown 正文与媒体；生产环境可选并推荐切换为 OSS。当前操作入口见[数据与存储](data-and-storage.md)、[数据库说明](../../apps/server/db/README.md)与 [Docker 说明](../../docker/README.md)。
 
 ## 组件关系
 
