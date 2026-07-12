@@ -215,7 +215,7 @@
   quote: null
   usageNote: 核对简体中文产品说明，并固定搜索界面、中心对话和现场调查三张官方商店截图；截图只呈现宣传页已有的低剧透场面
 - key: yokomichi-yonosuke-book
-  type: publisher-ebook-page
+  type: ebook-retail-page
   title: 横道世之介
   pageUrl: https://read.douban.com/ebook/54232408/
   author: 吉田修一
@@ -223,3 +223,12 @@
   factAnchors: [吉田修一, 林雅惠, 上海人民出版社, 2018年版, ISBN 9787208152038]
   quote: null
   usageNote: 只核对作者、译者、出版社、版本、ISBN 与人物姓名；不引用作品简介，不读取或改写豆瓣用户书评
+- key: yokomichi-yonosuke-primary-text
+  type: primary-text
+  title: 横道世之介（上海人民出版社 2018 年林雅惠译本）
+  pageUrl: https://read.douban.com/ebook/54232408/
+  author: 吉田修一 / 林雅惠译
+  fetchedAt: 2026-07-12T20:50:00Z
+  factAnchors: [祥子在非洲难民营工作, 法国同事西尔维, 四驱车返回职员驻地, 谈起各自从前的男友, 世之介夏天去加藤住处吹空调, 明明睡过床却装作睡地板, 午夜公园长凳上的西瓜, 多年后的加藤笑起来]
+  quote: null
+  usageNote: 具体人物、未来插叙与两处场景依据上海人民出版社 2018 年林雅惠译本的原作阅读记录；pageUrl 只用于定位该版电子书与书目信息，公开零售页本身不独立证明非试读章节内容；不保存或引用长段原文

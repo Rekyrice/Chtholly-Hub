@@ -212,7 +212,7 @@
   authorSeedKey: book-notes
   title: 《横道世之介》离开以后，书里反而更热闹了
   slug: yokomichi-yonosuke-after
-  description: 世之介不在以后再往前翻，祥子、加藤和那些琐碎场面忽然换了位置；记忆没有替他作结，只把人留得更乱一些。
+  description: 祥子在非洲回驻地的车上谈起旧男友，加藤记起闷热住处与午夜西瓜；世之介离开后，小事仍被人说起。
   category: LIFE
   tags: [横道世之介, 吉田修一, 日本文学, 阅读随笔]
   publishTime: 2026-03-12T07:19:00Z
@@ -220,9 +220,9 @@
   coverAsset: null
   inlineAssets: []
   brief:
-    factAnchors: [吉田修一, 世之介已经不在, 祥子, 加藤, 多年以后]
-    voice: 余白，读到一半会停下来往前翻，不急着替人物整理意义，也不把难过说满
-    position: 世之介的离场没有替过去作结；它改变的是朋友们回想他的方式，也让读者重新看见那些当时毫不起眼的琐碎场面
+    factAnchors: [祥子在非洲难民营工作, 法国同事西尔维, 回职员驻地的四驱车, 两个人从前的男友, 世之介的住处没有空调, 明明睡过人家的床, 一直老实睡在地板上, 夜里的公园, 长凳上吃西瓜, 加藤笑了起来]
+    voice: 余白，少解释人物，只把两段多年后的闲谈和记住的小事放在一起，句子有长有短，停在人物反应上
+    position: 祥子和加藤并未把世之介整理成统一结论；非洲车程、空调房与午夜西瓜让已离场的人继续进入新听众的谈话
     format: personal-essay
     mediaPlan: []
-    sources: [yokomichi-yonosuke-book]
+    sources: [yokomichi-yonosuke-book, yokomichi-yonosuke-primary-text]
