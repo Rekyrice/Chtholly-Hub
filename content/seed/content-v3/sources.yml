@@ -79,3 +79,57 @@
   factAnchors: [2025年4月8日开播, 监督春藤佳奈, 角色原案竹本泉, 系列构成村越繁, 美术监督本田光平, 动画制作CygamesPictures]
   quote: null
   usageNote: 核对播出时间、核心职员与官方世界观简介，并提供封面视觉
+- key: shoushimin-cinematography-sakuga
+  type: production-analysis
+  title: Shoushimin Series' Cinematography And The Unnerving Pretense Of Ordinariness
+  pageUrl: https://blog.sakugabooru.com/2025/12/31/shoushimin-series-cinematography/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T14:29:34.163Z
+  factAnchors: [主角追求普通生活与中性构图之间的反差, 岐阜实景与《冰菓》动画的对照关系, 斋藤敦史负责角色设计, 看似克制的取景会逐步转为不安与夸张风格]
+  quote: null
+  usageNote: 观点路线：从过度端正的构图、人物与空间的距离进入“普通是一种表演”的论证；媒体说明：用于核对四张来源页静态剧照及其摄影语境，不复制原文长段
+- key: shoushimin-cinematography-official
+  type: official-site
+  title: TVアニメ『小市民シリーズ』公式サイト
+  pageUrl: https://shoshimin-anime.com/
+  author: 小市民シリーズ製作委員会
+  fetchedAt: 2026-07-12T14:29:34.948Z
+  factAnchors: [原作米泽穗信, 监督神户守, 角色设计斋藤敦史, 摄影监督盐川智幸, 动画制作Lapin Track]
+  quote: null
+  usageNote: 观点路线：仅核对作品、角色与制作职员等官方事实，不承担摄影评价；媒体说明：不直接取图，媒体统一回到已记录的 Sakuga Blog 来源页
+- key: hyakuemu-production-sakuga
+  type: production-analysis
+  title: "Hyakuemu / 100 Meters: Uoto & Kenji Iwaisawa's Full Force Sprint"
+  pageUrl: https://blog.sakugabooru.com/2025/12/27/hyakuemu-100-meters-uoto-kenji-iwaisawa/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T14:29:35.703Z
+  factAnchors: [鱼丰与岩井泽健治围绕非理性热情形成合作, 岩井泽健治以自行摸索的转描方法进入动画, 《音乐》的长期个人制作经验影响本片流程, 奔跑画面强调身体重量与创作者的执拗]
+  quote: null
+  usageNote: 观点路线：从身体线条、速度感和胜负时间切入制作方法与人物热情；媒体说明：用于核对四张来源页静态剧照及其动画语境，不复制原文长段
+- key: hyakuemu-production-official
+  type: official-site
+  title: 映画『ひゃくえむ。』公式サイト
+  pageUrl: https://hyakuemu-anime.com/
+  author: 『ひゃくえむ。』製作委員会
+  fetchedAt: 2026-07-12T14:29:42.584Z
+  factAnchors: [原作鱼丰, 监督岩井泽健治, 脚本武藤康之, 角色设计与总作画监督小岛庆祐, 动画制作Rock'n Roll Mountain]
+  quote: null
+  usageNote: 观点路线：核对原作、剧情前提和制作阵容，不替代对运动画面的分析；媒体说明：不直接取图，媒体统一回到已记录的 Sakuga Blog 来源页
+- key: city-animation-production-sakuga
+  type: production-analysis
+  title: "CITY: The Animation Final Production Notes And Kyoto Animation's Future"
+  pageUrl: https://blog.sakugabooru.com/2025/09/29/city-the-animation-final-production-notes-and-kyoto-animations-future/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T14:29:43.341Z
+  factAnchors: [第十二集由北之原孝将执导并分镜, 夸张二维动作与荒井切利的卡通表演结合, 无对白段落以古典音乐组织喜剧节拍, 动画师的线条与动作承担统一全城反应的作用]
+  quote: null
+  usageNote: 观点路线：按人物动作、背景反应与剪辑节拍拆解城市喜剧，再回到团队统一的线条语言；媒体说明：用于核对来源页静态剧照，线条图因原候选误指展览宣传图而改用同页 city-end 静态画面
+- key: city-animation-production-official
+  type: official-site
+  title: 『CITY THE ANIMATION』公式サイト
+  pageUrl: https://city-the-animation.com/
+  author: CITY THE ANIMATION 製作委員会
+  fetchedAt: 2026-07-12T14:29:44.100Z
+  factAnchors: [作品官方标题为CITY THE ANIMATION, 官方站记录Blu-ray与DVD发行状态, 官方站记录Prime Video配信状态]
+  quote: null
+  usageNote: 观点路线：仅核对作品身份与官方发布状态，不据此推导制作评价；媒体说明：不直接取图，媒体统一回到已记录的 Sakuga Blog 来源页
