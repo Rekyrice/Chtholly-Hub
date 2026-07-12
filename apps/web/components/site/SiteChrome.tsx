@@ -8,10 +8,8 @@ import RoutePageBackground from "@/components/site/RoutePageBackground";
 import SiteHeader from "@/components/site/SiteHeader";
 import AgentPageBackground from "@/components/agent/AgentPageBackground";
 import { getAgentRuntimePolicy } from "@/components/agent/agentRuntimePolicy";
-import { getRouteVisualConfig, type VisualBackground } from "@/lib/route-visuals";
+import { getRouteVisualConfig } from "@/lib/route-visuals";
 import { cn } from "@/lib/utils";
-
-const RouteAwareSiteHeader = SiteHeader as React.ComponentType<{ background?: VisualBackground }>;
 
 export default function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -31,7 +29,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
     >
       <Navbar />
       <div className="h-[52px]" />
-      {!isFocusedPage && !isChthollyRoom && <RouteAwareSiteHeader background={routeVisual?.hero} />}
+      {!isFocusedPage && !isChthollyRoom && <SiteHeader background={routeVisual?.hero} />}
       <div className={cn("relative", policy.agentWorkspace ? "h-[calc(100vh-52px)] min-h-0 overflow-hidden" : "flex-1")}>
         {policy.agentWorkspace && <AgentPageBackground />}
         {routeVisual && <RoutePageBackground background={routeVisual.page} />}

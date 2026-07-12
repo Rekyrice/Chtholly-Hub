@@ -3,9 +3,14 @@
 import { useEffect, useState } from "react";
 import HeroParticles from "@/components/site/HeroParticles";
 import HeroTypewriter from "@/components/site/HeroTypewriter";
+import type { VisualBackground } from "@/lib/route-visuals";
 import { siteConfig } from "@/lib/site.config";
 
-export default function SiteHeader() {
+export interface SiteHeaderProps {
+  background?: VisualBackground;
+}
+
+export default function SiteHeader(_props: SiteHeaderProps) {
   const [parallaxY, setParallaxY] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
 
