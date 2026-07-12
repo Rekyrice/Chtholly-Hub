@@ -91,6 +91,12 @@ describe("SiteChrome", () => {
       expect(shell).not.toHaveClass("site-shell--route-visual");
       expect(shell).not.toHaveAttribute("data-route-visual");
     }
+
+    if (header) {
+      expect(shell).toHaveClass("site-shell--with-header");
+    } else {
+      expect(shell).not.toHaveClass("site-shell--with-header");
+    }
   });
 
   it("renders landing content without the site shell", () => {

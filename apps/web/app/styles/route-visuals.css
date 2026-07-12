@@ -56,6 +56,28 @@
     background: transparent;
   }
 
+  .site-shell--route-visual.site-shell--with-header .main-content {
+    margin-top: -34px;
+  }
+
+  .site-shell--route-visual.site-shell--with-header .main-content::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: -92px 0 auto;
+    height: 180px;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      color-mix(in srgb, var(--color-surface) 9%, transparent) 42%,
+      color-mix(in srgb, var(--color-surface) 5%, transparent) 72%,
+      transparent 100%
+    );
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+
   .site-shell--route-visual .site-header-bg {
     background: transparent;
   }
@@ -145,6 +167,10 @@
     .site-shell--route-visual {
       --surface-card-alpha: 0.62;
       --surface-sidebar-alpha: 0.58;
+    }
+
+    .site-shell--route-visual.site-shell--with-header .main-content {
+      margin-top: -20px;
     }
 
     .site-shell--route-visual .post-card,

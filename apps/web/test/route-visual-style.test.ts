@@ -7,6 +7,7 @@ const feed = readFileSync("app/styles/feed.css", "utf8");
 const write = readFileSync("app/styles/write.css", "utf8");
 const settings = readFileSync("app/styles/settings.css", "utf8");
 const responsive = readFileSync("app/styles/responsive.css", "utf8");
+const navbar = readFileSync("app/styles/navbar.css", "utf8");
 
 describe("route visual style contract", () => {
   it("loads the route layer after the existing responsive styles", () => {
@@ -43,6 +44,13 @@ describe("route visual style contract", () => {
 
   it("lets route artwork continue through the transparent header", () => {
     expect(visuals).toMatch(/\.site-shell--route-visual \.site-header-bg\s*\{[^}]*background:\s*transparent/);
+  });
+
+  it("bridges only pages that actually render the shared header", () => {
+    expect(navbar).toMatch(/\.site-header-overlay\s*\{[\s\S]*?linear-gradient\([\s\S]*?transparent\s+100%/);
+    expect(visuals).toMatch(/\.site-shell--route-visual\.site-shell--with-header \.main-content\s*\{[^}]*margin-top:\s*-34px/);
+    expect(visuals).toMatch(/\.site-shell--route-visual\.site-shell--with-header \.main-content::before\s*\{[\s\S]*?linear-gradient/);
+    expect(visuals).not.toMatch(/\[data-route-visual="write"\][^{]*\.main-content\s*\{[^}]*margin-top/);
   });
 
   it("preserves both navbar states", () => {

@@ -49,6 +49,7 @@ export default function SiteChrome({ children, visualOverride }: SiteChromeProps
   const routeVisual = visualOverride ?? getRouteVisualConfig(pathname);
   const isChthollyRoom = pathname === "/chtholly";
   const isFocusedPage = policy.agentWorkspace || policy.writeWorkspace;
+  const showHeader = !isFocusedPage && !isChthollyRoom;
 
   if (policy.landing) {
     return <>{children}</>;
@@ -56,7 +57,11 @@ export default function SiteChrome({ children, visualOverride }: SiteChromeProps
 
   return (
     <div
-      className={cn("site-shell min-h-screen flex flex-col", routeVisual && "site-shell--route-visual")}
+      className={cn(
+        "site-shell min-h-screen flex flex-col",
+        routeVisual && "site-shell--route-visual",
+        showHeader && "site-shell--with-header",
+      )}
       data-route-visual={routeVisual?.id}
     >
       <Navbar />
@@ -64,7 +69,7 @@ export default function SiteChrome({ children, visualOverride }: SiteChromeProps
       <RouteVisualLayers
         key={`${pathname}:${routeVisual?.id ?? "none"}`}
         routeVisual={routeVisual}
-        showHeader={!isFocusedPage && !isChthollyRoom}
+        showHeader={showHeader}
       />
       <div className={cn("relative", policy.agentWorkspace ? "h-[calc(100vh-52px)] min-h-0 overflow-hidden" : "flex-1")}>
         {policy.agentWorkspace && <AgentPageBackground />}

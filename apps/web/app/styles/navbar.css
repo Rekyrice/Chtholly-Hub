@@ -347,7 +347,13 @@
     position: absolute;
     inset: 0;
     z-index: 2;
-    background: rgb(0 0 0 / var(--site-header-overlay, var(--blog-header-overlay)));
+    background: linear-gradient(
+      to bottom,
+      rgb(0 0 0 / var(--site-header-overlay, var(--blog-header-overlay))) 0%,
+      rgb(0 0 0 / calc(var(--site-header-overlay, var(--blog-header-overlay)) * 0.92)) 58%,
+      rgb(0 0 0 / calc(var(--site-header-overlay, var(--blog-header-overlay)) * 0.42)) 82%,
+      transparent 100%
+    );
   }
 
   @media (max-width: 767px) {
