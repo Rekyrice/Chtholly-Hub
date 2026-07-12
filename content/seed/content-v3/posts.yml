@@ -1,1 +1,26 @@
-[]
+- seedKey: apocalypse-hotel-legacies
+  legacySlug: null
+  authorSeedKey: site-owner
+  title: 即使无法生活，也可以停留——《末日后酒店》与那些比世界活得更久的东西
+  slug: apocalypse-hotel-legacies
+  description: 从一项几经换手的原创企划，读到银河楼、八千代与“停留”留下来的时间。
+  category: ANIME
+  tags: [末日后酒店, 动画, 制作考察, 长篇评论]
+  publishTime: 2026-07-12T08:30:00Z
+  markdownFile: posts/apocalypse-hotel-legacies.md
+  coverAsset: apocalypse-hotel-cover
+  inlineAssets:
+    - apocalypse-hotel-takemoto-designs
+    - apocalypse-hotel-window
+    - apocalypse-hotel-gingarou
+    - apocalypse-hotel-overgrown-city
+    - apocalypse-hotel-tree-rest
+    - apocalypse-hotel-tree-before
+    - apocalypse-hotel-tree-after
+  brief:
+    factAnchors: [LIDENFILMS, CygamesPictures, 竹中信广, 村越繁, 竹本泉, 春藤佳奈, Gainax, 本田光平, 第五集, 第六集, 第十一集, 第十二集, 即使无法生活，也可以停留]
+    voice: null
+    position: 把企划换手与创作者谱系视为作品形式的一部分，并结合四个具体集数讨论单元剧、八千代与酒店主旨
+    format: longform-review
+    mediaPlan: [天空下的八千代氛围剧照作封面, 角色原案图对应竹本泉, 银河楼与废墟图对应美术分析, 八千代树下休息画面对应第十一集, 两张树林图作结尾前后对照]
+    sources: [apocalypse-hotel-sakuga, apocalypse-hotel-bangumi-user, apocalypse-hotel-itmedia, apocalypse-hotel-ann, apocalypse-hotel-netlab, apocalypse-hotel-animate-times, apocalypse-hotel-episode11-stills, apocalypse-hotel-gamebiz, apocalypse-hotel-official]

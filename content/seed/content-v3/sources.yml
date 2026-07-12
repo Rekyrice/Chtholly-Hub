@@ -1,1 +1,81 @@
-[]
+- key: apocalypse-hotel-sakuga
+  type: production-analysis
+  title: Apocalypse Hotel And Legacies That Outlast The End Of The World
+  pageUrl: https://blog.sakugabooru.com/2026/01/02/apocalypse-hotel-and-legacies/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [企划换手形成的创作者谱系, 竹中信广与村越繁重整企划, 竹本泉原案的持续影响, 春藤佳奈的Gainax合作谱系, 本田光平的彩色废墟, 同一树林的前后对照]
+  quote: null
+  usageNote: 作为制作研究主线与图像来源；中文正文重新组织事实和论证，不逐段翻译或复制英文表达
+- key: apocalypse-hotel-bangumi-user
+  type: user-review
+  title: 末日后酒店公开条目与 rekyrice 收藏评论
+  pageUrl: https://bgm.tv/subject/509986
+  author: rekyrice / Bangumi
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [单元剧既是缺点也是优点, 第五集时间也是有色彩的, 第六集温泉与彩虹, 第十一集有种活着的感觉, 第十二集人类大笨蛋, 即使无法生活也可以停留]
+  quote: null
+  usageNote: 用户明确授权融合其本人公开评论；按文章论证拆分吸收，不把整段原评机械粘贴
+- key: apocalypse-hotel-itmedia
+  type: interview
+  title: ロジックじゃない、感覚で創る――「アポカリプスホテル」誕生の軌跡
+  pageUrl: https://www.itmedia.co.jp/news/articles/2509/20/news007.html
+  author: ITmedia NEWS
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [企划源自Cygames制片人与LIDENFILMS里见哲朗, 竹中信广邀请村越繁重整, 疫情导致排期困难, 制作转移至CygamesPictures, CyberAgent椛嶋麻菜美参与推进]
+  quote: null
+  usageNote: 核实企划起点、制作换手原因与商业推进过程
+- key: apocalypse-hotel-ann
+  type: interview
+  title: Opening the Apocalypse Hotel with CygamesPictures President Nobuhiro Takenaka, Director Kana Shundo, & Screenwriter Shigeru Murakoshi
+  pageUrl: https://www.animenewsnetwork.com/interview/2025-06-24/opening-the-apocalypse-hotel-with-cygamespictures-president-nobuhiro-takenaka-director-kana-shundo-/.225414
+  author: Anime News Network
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [村越繁约2020年加入, 十二集梗概, 八千代的未知扩展功能, 春藤佳奈把八千代视为工作女性, 银座传统与现代并存, 悲伤与欢乐是同一枚硬币的两面]
+  quote: null
+  usageNote: 核实核心成员对企划、八千代设计与银座场景的说明
+- key: apocalypse-hotel-netlab
+  type: interview
+  title: アニメ「アポカリプスホテル」竹中信広、村越繁ロングインタビュー
+  pageUrl: https://nlab.itmedia.co.jp/cont/articles/3456032/
+  author: ねとらぼ
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [各集并非有意切换类型, 从酒店里会发生什么出发, 第六集配音与插曲选角, 春藤佳奈调整演出]
+  quote: null
+  usageNote: 核实单元剧类型跳跃的创作出发点与第六集制作细节
+- key: apocalypse-hotel-animate-times
+  type: interview
+  title: 『アポカリプスホテル』キャラクター原案・竹本泉インタビュー
+  pageUrl: https://www.animatetimes.com/news/details.php?id=1749194269
+  author: Animate Times
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [竹本泉担任角色原案, 设计会从世界设定反推, 早期草案拓展角色可能性]
+  quote: null
+  usageNote: 核实竹本泉的角色设计方法，不把未采用草案写成正片设定
+- key: apocalypse-hotel-episode11-stills
+  type: episode-review
+  title: Apocalypse Hotel – 11
+  pageUrl: https://lostinanime.com/2025/06/apocalypse-hotel-11/
+  author: Guardian Enzo / Lost in Anime
+  fetchedAt: 2026-07-12T12:53:53.689Z
+  factAnchors: [第十一集评论页所嵌截图, 八千代独坐树荫下圆桌旁的画面]
+  quote: null
+  usageNote: 仅用于核对第十一集评论页所嵌截图与树荫下休息画面，不据此推断授权范围
+- key: apocalypse-hotel-gamebiz
+  type: interview
+  title: 『アポカリプスホテル』はなぜ心に残るのか
+  pageUrl: https://gamebiz.jp/news/411946
+  author: gamebiz
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [制作从LIDENFILMS转到CygamesPictures, 第五集跨越约五十年, 归来的人类不会重新定居, 八千代逐渐更接近人类]
+  quote: null
+  usageNote: 核实椛嶋麻菜美对企划、第五集时间跨度与结尾决定的说明
+- key: apocalypse-hotel-official
+  type: official-site
+  title: TVアニメ「アポカリプスホテル」公式
+  pageUrl: https://apocalypse-hotel.jp/
+  author: アポカリプスホテル製作委員会
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [2025年4月8日开播, 监督春藤佳奈, 角色原案竹本泉, 系列构成村越繁, 美术监督本田光平, 动画制作CygamesPictures]
+  quote: null
+  usageNote: 核对播出时间、核心职员与官方世界观简介，并提供封面视觉
