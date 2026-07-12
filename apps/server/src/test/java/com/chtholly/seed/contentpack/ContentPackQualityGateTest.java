@@ -196,6 +196,38 @@ class ContentPackQualityGateTest {
     }
 
     @Test
+    void enforcesFirstBatchFormatExactChineseCharacterBoundaries(@TempDir Path root) {
+        ContentPack pack = pack("content-v3", root,
+                post("feature-review-1799", "锚", "锚" + "短".repeat(1798), "feature-review"),
+                post("feature-review-1800", "锚", "锚" + "中".repeat(1799), "feature-review"),
+                post("feature-review-3400", "锚", "锚" + "内".repeat(3399), "feature-review"),
+                post("feature-review-3401", "锚", "锚" + "长".repeat(3400), "feature-review"),
+                post("technical-report-1499", "锚", "锚" + "短".repeat(1498), "technical-report"),
+                post("technical-report-1500", "锚", "锚" + "中".repeat(1499), "technical-report"),
+                post("technical-report-2800", "锚", "锚" + "内".repeat(2799), "technical-report"),
+                post("technical-report-2801", "锚", "锚" + "长".repeat(2800), "technical-report"),
+                post("personal-essay-799", "锚", "锚" + "短".repeat(798), "personal-essay"),
+                post("personal-essay-800", "锚", "锚" + "中".repeat(799), "personal-essay"),
+                post("personal-essay-1800", "锚", "锚" + "内".repeat(1799), "personal-essay"),
+                post("personal-essay-1801", "锚", "锚" + "长".repeat(1800), "personal-essay"));
+
+        ContentPackQualityGate.QualityGateResult result = gate.audit(pack);
+
+        assertLengthError(result, "feature-review-1799");
+        assertNoLengthError(result, "feature-review-1800");
+        assertNoLengthError(result, "feature-review-3400");
+        assertLengthError(result, "feature-review-3401");
+        assertLengthError(result, "technical-report-1499");
+        assertNoLengthError(result, "technical-report-1500");
+        assertNoLengthError(result, "technical-report-2800");
+        assertLengthError(result, "technical-report-2801");
+        assertLengthError(result, "personal-essay-799");
+        assertNoLengthError(result, "personal-essay-800");
+        assertNoLengthError(result, "personal-essay-1800");
+        assertLengthError(result, "personal-essay-1801");
+    }
+
+    @Test
     void excludesImageCaptionButCountsOrdinaryEmphasisForLongformLength(@TempDir Path root) {
         String excludedCaption = "# 标题不计数\n\n"
                 + "![镜头](asset:frame)\n\n"
@@ -267,5 +299,15 @@ class ContentPackQualityGateTest {
         return new SeedPostDefinition(key, null, "author", key, key, "足够长度的文章描述", "TECH", List.of(),
                 Instant.parse("2026-01-01T00:00:00Z"), "markdown/" + key + ".md", "cover", List.of(),
                 new SeedPostDefinition.ArticleBrief(List.of(anchor), "voice", "position", format, List.of(), List.of()), markdown);
+    }
+
+    private void assertLengthError(ContentPackQualityGate.QualityGateResult result, String seedKey) {
+        assertTrue(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains(seedKey)),
+                () -> "expected body length error for " + seedKey + ", but got " + result.errors());
+    }
+
+    private void assertNoLengthError(ContentPackQualityGate.QualityGateResult result, String seedKey) {
+        assertFalse(result.errors().stream().anyMatch(value -> value.contains("body length") && value.contains(seedKey)),
+                () -> "unexpected body length error for " + seedKey + ": " + result.errors());
     }
 }

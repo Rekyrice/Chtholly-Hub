@@ -21,7 +21,8 @@ public final class ContentPackQualityGate {
     private static final int MAX_BODY_CHINESE_CHARACTERS = 2_600;
     private static final double MAX_FIVE_GRAM_JACCARD = 0.38;
     private static final Set<String> CONTENT_V3_FORMATS = Set.of(
-            "community-note", "issue-note", "review", "longform-review");
+            "community-note", "issue-note", "review", "longform-review",
+            "feature-review", "technical-report", "personal-essay");
     private static final List<TemplateFamily> TEMPLATE_FAMILIES = List.of(
             new TemplateFamily("不是…而是…", Pattern.compile("不是[^。！？\\n]{0,80}而是")),
             new TemplateFamily("真正…在意", Pattern.compile("真正[^。！？\\n]{0,80}在意")),
@@ -104,6 +105,9 @@ public final class ContentPackQualityGate {
                 case "issue-note" -> new LengthRange(300, 1_800);
                 case "review" -> new LengthRange(450, 2_200);
                 case "longform-review" -> new LengthRange(4_000, 6_000);
+                case "feature-review" -> new LengthRange(1_800, 3_400);
+                case "technical-report" -> new LengthRange(1_500, 2_800);
+                case "personal-essay" -> new LengthRange(800, 1_800);
                 default -> throw new IllegalStateException("unreachable content-v3 format: " + format);
             };
             if (!range.contains(bodyLength)) {
