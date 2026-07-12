@@ -16,7 +16,7 @@
 
 Chtholly Hub 仓库负责 Web 体验、业务 API、后台任务与容器化配置。浏览器只直接访问 Next.js 或同域代理；Spring Boot 承担业务规则并访问 MySQL、Redis、Elasticsearch、Kafka 和 OSS。外部 LLM、Embedding 与 Bangumi 等服务通过可选集成接入，不是主站阅读与基础互动的启动前提。
 
-MySQL 是业务事实的最终来源；Redis 保存可重建缓存和部分高频状态；Elasticsearch 保存可重建搜索索引；Kafka 传递异步事件；OSS 保存 Markdown 正文与媒体对象。各存储的一致性和降级边界见[数据与存储](data-and-storage.md)。
+MySQL 是业务事实的最终来源；Redis 保存可重建缓存和部分高频状态；Elasticsearch 保存可重建搜索索引；Kafka 在启用时传递异步事件；OSS 保存 Markdown 正文与媒体对象。当前操作入口见[数据库说明](../../apps/server/db/README.md)与 [Docker 说明](../../docker/README.md)。
 
 ## 组件关系
 
@@ -45,19 +45,19 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
 - 页面渲染、认证、文章与评论读写等用户需要立即确认结果的操作，经 Next.js 到 Spring Boot 同步完成。
 - MySQL 写入定义业务提交边界；缓存失效、搜索索引或计数汇总不得反向成为业务事实来源。
 - Redis 命中可缩短读链路，未命中时回源 MySQL；缓存不可用时由具体领域决定降级或失败策略。
-- Kafka 承担点赞/收藏等计数聚合及 Outbox 下游处理，使非关键派生更新脱离主请求；消费端必须考虑重试和幂等。
-- Spring ApplicationEvent 用于进程内通知等轻量协作；它与 Kafka 的可靠性和跨进程边界不同。
+- 计数聚合由 `KAFKA_ENABLED` 选择通道：启用 Kafka 时投递 Kafka；默认 `false` 或未配置时，通过 Spring ApplicationEvent 在进程内聚合。Kafka 模式也会同步发布本地计数事件，供通知等本地监听器消费。
+- 通知继续使用 Spring ApplicationEvent 做进程内轻量协作；它与 Kafka 的可靠性和跨进程边界不同。
 - Agent 的 WebSocket/API 调用在会话内流式返回，LLM、RAG 与工具调用属于可选分支；关闭相关特性不应阻断博客与社区主链路。
 
 ## 章节导航
 
-- [后端架构](backend.md)：业务领域、包边界、主要入口与依赖。
-- [前端架构](frontend.md)：用户路径、路由、组件与 Server/Client 边界。
-- [Agent 系统](agent-system.md)：Agent Core、上下文、工具、记忆与可选扩展。
-- [数据与存储](data-and-storage.md)：MySQL、Redis、Kafka、Elasticsearch、OSS 的职责。
-- [请求链路](request-flows.md)：高价值端到端调用、状态位置与失败路径。
-- [开发入口](../development/README.md)：本地环境、配置、数据库和测试。
-- [部署文档](../operations/deployment.md)：生产拓扑、验证与回滚边界。
+- **后端架构（待建立）**：业务领域、包边界、主要入口与依赖；当前先读[后端应用入口](../../apps/server/README.md)。
+- **前端架构（待建立）**：用户路径、路由、组件与 Server/Client 边界；当前先读[前端局部规则](../../apps/web/AGENTS.md)。
+- **Agent 系统（待建立）**：Agent Core、上下文、工具、记忆与可选扩展；当前从 [Agent 代码入口](../../apps/server/src/main/java/com/chtholly/agent/ChthollyAgent.java) 开始。
+- **数据与存储（待建立）**：MySQL、Redis、Kafka、Elasticsearch、OSS 的职责；当前先读[数据库说明](../../apps/server/db/README.md)与 [Docker 说明](../../docker/README.md)。
+- **请求链路（待建立）**：高价值端到端调用、状态位置与失败路径。
+- **开发章节（待建立）**：本地环境、配置、数据库和测试；当前先读[项目快速开始](../../README.md)。
+- **部署章节（待建立）**：生产拓扑、验证与回滚边界；当前先读 [Docker 操作入口](../../docker/README.md)。
 
 ## 关键入口
 

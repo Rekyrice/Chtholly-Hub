@@ -25,17 +25,18 @@ AGENTS.md     Agent 全局目录与工作契约
 
 ## 快速开始
 
+开始前需准备外部基础设施并完成数据库初始化，操作分别见 [Docker 说明](docker/README.md) 与[数据库说明](apps/server/db/README.md)。
+
 复制开发环境变量模板：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-启动后端（默认 `http://localhost:8888`）：
+从仓库根目录启动后端（脚本会加载根 `.env`，默认地址 `http://localhost:8888`）：
 
 ```powershell
-cd apps/server
-mvn spring-boot:run
+.\scripts\dev\start-backend.ps1
 ```
 
 启动前端（默认 `http://localhost:3000`）：
@@ -46,15 +47,13 @@ npm install
 npm run dev
 ```
 
-外部基础设施见[部署文档](docs/operations/deployment.md)，数据库初始化见[数据库开发文档](docs/development/database.md)。
-
 ## 文档导航
 
 - [Agent 全局目录与工作契约](AGENTS.md)
 - [项目知识库](docs/README.md)
 - [后端应用入口](apps/server/README.md)
 - [前端应用入口](apps/web/README.md)
-- [部署文档](docs/operations/deployment.md)
+- [部署与容器操作](docker/README.md)
 
 ## 验证
 
