@@ -16,7 +16,7 @@
 | 类别 | 最小要求 | 说明 |
 |------|----------|------|
 | 后端工具链 | JDK 21、Maven 3.9+ | Spring Boot 应用位于 `apps/server` |
-| 前端工具链 | Node.js 20+、npm | Next.js 应用位于 `apps/web` |
+| 前端工具链 | Node.js 20.9+、npm | Next.js 应用位于 `apps/web` |
 | 推荐本地终端 | Windows PowerShell | 根目录开发脚本负责加载根 `.env` |
 | 基础服务 | MySQL 8、Redis | 主站后端的基础依赖 |
 | 按配置启用 | Kafka、Elasticsearch、OSS、LLM/Embedding、Bangumi | `.env.example` 显式开启 Kafka；其他能力按功能与开关准备 |
