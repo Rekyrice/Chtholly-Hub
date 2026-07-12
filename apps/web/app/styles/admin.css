@@ -1,3 +1,7 @@
+.admin-shell {
+  --color-text-secondary: color-mix(in srgb, var(--color-text) 76%, transparent);
+}
+
 @media (prefers-color-scheme: dark) {
   .admin-loading-card,
   .admin-sidebar,

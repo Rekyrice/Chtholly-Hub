@@ -65,8 +65,12 @@ export default function AdminShell({ children }: AdminShellProps) {
   }, [auth?.accessToken, isAdmin, router]);
 
   const activePath = useMemo(() => {
-    if (pathname === "/admin") return "/admin";
-    return ADMIN_LINKS.find((item) => pathname.startsWith(`${item.href}/`) || pathname === item.href)?.href ?? "/admin";
+    const matched = [...ADMIN_LINKS]
+      .sort((left, right) => right.href.length - left.href.length)
+      .find((item) => item.href === "/admin"
+        ? pathname === item.href
+        : pathname === item.href || pathname.startsWith(`${item.href}/`));
+    return matched?.href ?? "/admin";
   }, [pathname]);
 
   if (authorized !== true) {

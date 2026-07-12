@@ -8,6 +8,7 @@ const write = readFileSync("app/styles/write.css", "utf8");
 const settings = readFileSync("app/styles/settings.css", "utf8");
 const responsive = readFileSync("app/styles/responsive.css", "utf8");
 const navbar = readFileSync("app/styles/navbar.css", "utf8");
+const admin = readFileSync("app/styles/admin.css", "utf8");
 
 describe("route visual style contract", () => {
   it("loads the route layer after the existing responsive styles", () => {
@@ -88,6 +89,11 @@ describe("route visual style contract", () => {
     expect(visuals).toMatch(/\[data-route-visual="login"\] \.post-card,[\s\S]*?\[data-route-visual="reset-password"\] \.post-card\s*\{[^}]*--surface-auth-alpha/);
     expect(visuals).not.toContain('[data-route-visual="auth"]');
     expect(visuals).toMatch(/\.write-preview\.prose-anime\s*\{[^}]*--surface-editor-alpha/);
+  });
+
+  it("gives admin data surfaces and secondary text a stronger readability contract", () => {
+    expect(visuals).toMatch(/\[data-route-visual="admin"\]\s*\{[\s\S]*?--surface-card-alpha:\s*0\.84;[\s\S]*?--surface-backdrop-blur:\s*11px/);
+    expect(admin).toMatch(/\.admin-shell\s*\{[^}]*--color-text-secondary:\s*color-mix\(in srgb, var\(--color-text\) 76%, transparent\)/);
   });
 
   it("keeps mobile route surfaces readable in the final cascade", () => {

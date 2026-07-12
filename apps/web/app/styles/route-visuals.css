@@ -180,6 +180,12 @@
     }
   }
 
+  [data-route-visual="admin"] {
+    --surface-card-alpha: 0.84;
+    --surface-sidebar-alpha: 0.82;
+    --surface-backdrop-blur: 11px;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .route-page-background__image {
       transform: none;
