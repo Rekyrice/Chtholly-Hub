@@ -4,14 +4,19 @@ import { usePathname } from "next/navigation";
 import Footer from "@/components/site/Footer";
 import MobileBottomNav from "@/components/site/MobileBottomNav";
 import Navbar from "@/components/site/Navbar";
+import RoutePageBackground from "@/components/site/RoutePageBackground";
 import SiteHeader from "@/components/site/SiteHeader";
 import AgentPageBackground from "@/components/agent/AgentPageBackground";
 import { getAgentRuntimePolicy } from "@/components/agent/agentRuntimePolicy";
+import { getRouteVisualConfig, type VisualBackground } from "@/lib/route-visuals";
 import { cn } from "@/lib/utils";
+
+const RouteAwareSiteHeader = SiteHeader as React.ComponentType<{ background?: VisualBackground }>;
 
 export default function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const policy = getAgentRuntimePolicy(pathname);
+  const routeVisual = getRouteVisualConfig(pathname);
   const isChthollyRoom = pathname === "/chtholly";
   const isFocusedPage = policy.agentWorkspace || policy.writeWorkspace;
 
@@ -20,12 +25,16 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="site-shell min-h-screen flex flex-col">
+    <div
+      className={cn("site-shell min-h-screen flex flex-col", routeVisual && "site-shell--route-visual")}
+      data-route-visual={routeVisual?.id}
+    >
       <Navbar />
       <div className="h-[52px]" />
-      {!isFocusedPage && !isChthollyRoom && <SiteHeader />}
+      {!isFocusedPage && !isChthollyRoom && <RouteAwareSiteHeader background={routeVisual?.hero} />}
       <div className={cn("relative", policy.agentWorkspace ? "h-[calc(100vh-52px)] min-h-0 overflow-hidden" : "flex-1")}>
         {policy.agentWorkspace && <AgentPageBackground />}
+        {routeVisual && <RoutePageBackground background={routeVisual.page} />}
         <main
           className={cn(
             "main-content relative z-10",
