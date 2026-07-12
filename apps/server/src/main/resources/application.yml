@@ -6,7 +6,7 @@ kafka:
   enabled: ${KAFKA_ENABLED:false}
 
 seed:
-  content-pack-path: ${SEED_CONTENT_PACK_PATH:../../content/seed/content-v2}
+  content-pack-path: ${SEED_CONTENT_PACK_PATH:../../content/seed/content-v3}
   cli-read-only: ${SEED_CLI_READ_ONLY:false}
 
 search:

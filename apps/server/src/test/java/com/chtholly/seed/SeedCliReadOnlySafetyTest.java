@@ -13,6 +13,11 @@ import com.chtholly.user.mapper.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -20,6 +25,19 @@ class SeedCliReadOnlySafetyTest {
 
     private final UserMapper userMapper = mock(UserMapper.class);
     private final ElasticsearchClient elasticsearch = mock(ElasticsearchClient.class);
+
+    @Test
+    void contentPackDefaults_toContentV3InPropertiesAndApplicationYaml() throws IOException {
+        assertThat(new SeedProperties().getContentPackPath())
+                .isEqualTo("../../content/seed/content-v3");
+
+        try (var applicationYaml = Objects.requireNonNull(
+                getClass().getClassLoader().getResourceAsStream("application.yml"))) {
+            var yaml = new String(applicationYaml.readAllBytes(), StandardCharsets.UTF_8);
+            assertThat(yaml).contains(
+                    "content-pack-path: ${SEED_CONTENT_PACK_PATH:../../content/seed/content-v3}");
+        }
+    }
 
     @Test
     void cliReadOnly_doesNotRegisterStartupWritersOrCallMySqlAndElasticsearch() {

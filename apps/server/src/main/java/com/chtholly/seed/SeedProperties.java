@@ -12,6 +12,6 @@ public class SeedProperties {
     private boolean enabled = false;
     private String mode = "full";
     private boolean dryRun = false;
-    private String contentPackPath = "../../content/seed/content-v2";
+    private String contentPackPath = "../../content/seed/content-v3";
     private boolean cliReadOnly = false;
 }
