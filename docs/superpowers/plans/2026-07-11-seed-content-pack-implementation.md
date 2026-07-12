@@ -2366,3 +2366,602 @@ Expected: 测试全部通过；报告为 `validated`，`validationWarnings`、`q
 - [ ] **Step 5: 交付用户复审并停止**
 
 确认预览页与全部图片 HTTP 200、浏览器无破图、暂存区为空。不要提交本轮文章、媒体和导入代码；把审阅链接交给用户，等待最终批准。
+
+## 2026-07-12 首批九篇内容扩写实施计划
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 在已批准《末日后酒店》范文的基础上，新增五篇动漫、两篇技术、一篇游戏和一篇阅读文章，形成十篇可视化审阅样本。
+
+**Architecture:** 内容包继续使用 `content/seed/content-v3` 的离线 Markdown、YAML 来源卡和固定媒体结构。质量门新增三种篇幅格式；九篇文章按三个内部小批次完成，每篇先核对来源与媒体，再按独立作者声音成文，最后统一生成十篇总览和九篇全文预览。本阶段只运行 dry-run，不写入真实数据库，不生成互动数据。
+
+**Tech Stack:** Java 21、Spring Boot 3.2.4、JUnit 5、YAML、Markdown、Node.js 媒体固定脚本、Python 3（RAG 基线实验）、本地 HTML 审阅页。
+
+---
+
+### Task 31: 为首批扩写增加三种文章格式
+
+**Files:**
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackQualityGate.java`
+- Test: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackQualityGateTest.java`
+
+- [ ] **Step 1: 写出三个格式的精确边界测试**
+
+在 `ContentPackQualityGateTest` 新增：
+
+```java
+@Test
+void enforcesFirstBatchFormatExactChineseCharacterBoundaries(@TempDir Path root) {
+    ContentPack pack = pack("content-v3", root,
+            post("feature-1799", "锚", "锚" + "短".repeat(1798), "feature-review"),
+            post("feature-1800", "锚", "锚" + "下".repeat(1799), "feature-review"),
+            post("feature-3400", "锚", "锚" + "内".repeat(3399), "feature-review"),
+            post("feature-3401", "锚", "锚" + "长".repeat(3400), "feature-review"),
+            post("technical-1499", "锚", "锚" + "短".repeat(1498), "technical-report"),
+            post("technical-1500", "锚", "锚" + "下".repeat(1499), "technical-report"),
+            post("technical-2800", "锚", "锚" + "内".repeat(2799), "technical-report"),
+            post("technical-2801", "锚", "锚" + "长".repeat(2800), "technical-report"),
+            post("essay-799", "锚", "锚" + "短".repeat(798), "personal-essay"),
+            post("essay-800", "锚", "锚" + "下".repeat(799), "personal-essay"),
+            post("essay-1800", "锚", "锚" + "内".repeat(1799), "personal-essay"),
+            post("essay-1801", "锚", "锚" + "长".repeat(1800), "personal-essay"));
+
+    ContentPackQualityGate.QualityGateResult result = gate.audit(pack);
+
+    assertLengthError(result, "feature-1799");
+    assertNoLengthError(result, "feature-1800");
+    assertNoLengthError(result, "feature-3400");
+    assertLengthError(result, "feature-3401");
+    assertLengthError(result, "technical-1499");
+    assertNoLengthError(result, "technical-1500");
+    assertNoLengthError(result, "technical-2800");
+    assertLengthError(result, "technical-2801");
+    assertLengthError(result, "essay-799");
+    assertNoLengthError(result, "essay-800");
+    assertNoLengthError(result, "essay-1800");
+    assertLengthError(result, "essay-1801");
+}
+
+private void assertLengthError(ContentPackQualityGate.QualityGateResult result, String seedKey) {
+    assertTrue(result.errors().stream()
+            .anyMatch(value -> value.contains("body length") && value.contains(seedKey)));
+}
+
+private void assertNoLengthError(ContentPackQualityGate.QualityGateResult result, String seedKey) {
+    assertFalse(result.errors().stream()
+            .anyMatch(value -> value.contains("body length") && value.contains(seedKey)));
+}
+```
+
+- [ ] **Step 2: 运行 RED**
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=ContentPackQualityGateTest#enforcesFirstBatchFormatExactChineseCharacterBoundaries' test
+```
+
+Expected: FAIL，三个新格式均出现 `unsupported content-v3 format`。
+
+- [ ] **Step 3: 最小化增加格式与长度边界**
+
+把格式集合与 switch 改为：
+
+```java
+private static final Set<String> CONTENT_V3_FORMATS = Set.of(
+        "community-note", "issue-note", "review", "longform-review",
+        "feature-review", "technical-report", "personal-essay");
+
+LengthRange range = switch (format) {
+    case "community-note" -> new LengthRange(180, 700);
+    case "issue-note" -> new LengthRange(300, 1_800);
+    case "review" -> new LengthRange(450, 2_200);
+    case "longform-review" -> new LengthRange(4_000, 6_000);
+    case "feature-review" -> new LengthRange(1_800, 3_400);
+    case "technical-report" -> new LengthRange(1_500, 2_800);
+    case "personal-essay" -> new LengthRange(800, 1_800);
+    default -> throw new IllegalStateException("unreachable content-v3 format: " + format);
+};
+```
+
+- [ ] **Step 4: 运行 GREEN 与既有边界回归**
+
+```powershell
+mvn -q '-Dtest=ContentPackQualityGateTest,ContentPackLoaderTest,ContentPackValidatorTest' test
+cd ../..
+```
+
+Expected: 全部通过；`review` 仍为 450–2,200，`longform-review` 仍为 4,000–6,000。
+
+- [ ] **Step 5: 提交格式质量门**
+
+```powershell
+git add -- apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackQualityGate.java apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackQualityGateTest.java
+git diff --cached --check
+git commit -m "feat: 增加首批扩写文章格式质量门"
+```
+
+### Task 32: 固定第一小批次来源与媒体
+
+**Files:**
+- Modify: `content/seed/content-v3/sources.yml`
+- Modify: `content/seed/content-v3/assets.yml`
+- Create: `content/seed/content-v3/assets/covers/shoushimin-cinematography.webp`
+- Create: `content/seed/content-v3/assets/covers/hyakuemu-one-hundred-meters.webp`
+- Create: `content/seed/content-v3/assets/covers/city-restless-town.webp`
+- Create: `content/seed/content-v3/assets/inline/shoushimin-centered-frame.webp`
+- Create: `content/seed/content-v3/assets/inline/shoushimin-room-distance.webp`
+- Create: `content/seed/content-v3/assets/inline/shoushimin-ordinary-mask.webp`
+- Create: `content/seed/content-v3/assets/inline/hyakuemu-body-lines.webp`
+- Create: `content/seed/content-v3/assets/inline/hyakuemu-rain-sprint.webp`
+- Create: `content/seed/content-v3/assets/inline/hyakuemu-finish.webp`
+- Create: `content/seed/content-v3/assets/inline/city-comedy-impact.webp`
+- Create: `content/seed/content-v3/assets/inline/city-space-elasticity.webp`
+- Create: `content/seed/content-v3/assets/inline/city-line-language.webp`
+- Temporary: `.codex-tmp/seed-content-v3/sources/first-batch-*`
+
+- [ ] **Step 1: 新增三个完整来源卡**
+
+来源卡键和入口固定为：
+
+```text
+shoushimin-cinematography-sakuga
+  https://blog.sakugabooru.com/2025/12/31/shoushimin-series-cinematography/
+  https://shoshimin-anime.com/
+
+hyakuemu-production-sakuga
+  https://blog.sakugabooru.com/2025/12/27/hyakuemu-100-meters-uoto-kenji-iwaisawa/
+  https://hyakuemu-anime.com/
+
+city-animation-production-sakuga
+  https://blog.sakugabooru.com/2025/09/29/city-the-animation-final-production-notes-and-kyoto-animations-future/
+  https://city-the-animation.com/
+```
+
+每张卡记录页面标题、URL、`fetchedAt`、来源类型、可核对事实、观点路线和媒体说明。正文事实必须能回到这六个入口或来源卡继续记录的一手采访。
+
+- [ ] **Step 2: 固定《小市民系列》候选媒体**
+
+通过 `apps/web/scripts/seed/fetch-source-asset.mjs` 下载并逐张查看：
+
+```text
+https://blog.sakugabooru.com/wp-content/uploads/2025/12/oomf1-scaled.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2025/12/kanbe-is-in-the-walls-scaled.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2025/12/normal-oomf-scaled.jpeg
+https://blog.sakugabooru.com/wp-content/uploads/2025/12/oomf-final-scaled.jpg
+```
+
+第一张生成 1200×675 封面，其余三张生成最长边不超过 1600 像素的正文 WebP。若某张不对应正文论点，只能从同一来源页已记录的静态剧照中替换，并把最终 URL 写回 `assets.yml`。
+
+- [ ] **Step 3: 固定《百米。》候选媒体**
+
+```text
+https://blog.sakugabooru.com/wp-content/uploads/2025/12/hyaku1-scaled.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2025/12/hyaku2-scaled.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2025/12/hyaku4-scaled.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2025/12/hyaku9-scaled.jpg
+```
+
+第一张生成封面，其余三张分别服务于身体线条、速度表现和结尾判断。
+
+- [ ] **Step 4: 固定《CITY》候选媒体**
+
+```text
+https://blog.sakugabooru.com/wp-content/uploads/2025/09/homo-loser-niikura-defeats-nose-goblin-in-war-of-attrition-scaled.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2025/09/rikos-educational-corner-scaled.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2025/09/the-springs-in-the-logo-are-also-a-reference-to-the-final-scene-btw.jpeg
+https://blog.sakugabooru.com/wp-content/uploads/2025/09/i-think-tokuyama-drew-it-becaus-everyone-has-city-line-thickness.jpg
+```
+
+逐张检查人物裁切和清晰度；封面必须呈现城市或群像的运动感，不能把单个人物硬裁成头像式构图。正文图分别服务于喜剧节奏、空间变形和统一线条。
+
+- [ ] **Step 5: 写入哈希并校验第一小批次媒体**
+
+```powershell
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --write-hashes
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+```
+
+Expected: 所有新媒体的本地文件、SHA-256、尺寸和内容类型一致，既有 16 个资产继续通过。
+
+### Task 33: 写作第一小批次三篇动漫文章
+
+**Files:**
+- Modify: `content/seed/content-v3/manifest.yml`
+- Modify: `content/seed/content-v3/posts.yml`
+- Create: `content/seed/content-v3/posts/shoushimin-cinematography.md`
+- Create: `content/seed/content-v3/posts/hyakuemu-one-hundred-meters.md`
+- Create: `content/seed/content-v3/posts/city-restless-town.md`
+
+- [ ] **Step 1: 写《小市民系列》的摄影，为什么总让人坐立不安**
+
+使用 `design-sis`、`feature-review` 和 2,400–3,000 个正文汉字。结构固定为四个无编号运动：过度整齐的日常构图；人物与镜头之间被维持的距离；甜点、房间和视线如何积累威胁；回到“普通”作为表演而非结论。H2 为 2–4 个，标题不得采用《末日后酒店》式文学短句。三张正文图分别放在构图、空间和结尾证据之后。
+
+- [ ] **Step 2: 写一百米够跑完一个人的一生吗？——《百米。》观后**
+
+使用 `anime-critic`、`feature-review` 和 2,400–3,000 个正文汉字。正文从一次具体跑步画面进入，依次讨论线条中的身体重量、岩井泽健治对运动的处理、胜负与时间感，再用保留意见结束；不写完整剧情梗概，不把“奔跑等于人生”当万能升华。三张正文图分别支撑身体、速度和最后一次回望。
+
+- [ ] **Step 3: 写关于《CITY》：京都动画怎样画一座停不下来的城**
+
+使用 `design-sis`、`feature-review` 和 2,400–3,200 个正文汉字。与同作者《小市民系列》错开结构：开头直接列三个喜剧瞬间，中段按“人物动作—背景反应—剪辑节拍”拆解，后段讨论京都动画如何统一荒井切利的线条与团队表现。可以使用小清单或短段落，不采用问题逐层回答的形式。
+
+- [ ] **Step 4: 更新文章清单和阶段规模**
+
+为三个 seed key 写完整 YAML：
+
+```text
+shoushimin-cinematography / design-sis / ANIME / feature-review
+hyakuemu-one-hundred-meters / anime-critic / ANIME / feature-review
+city-restless-town / design-sis / ANIME / feature-review
+```
+
+发布时间分别固定为 `2026-06-28T14:17:00Z`、`2026-06-19T10:42:00Z`、`2026-06-03T16:08:00Z`，不使用同一小时或固定间隔。
+
+把 `manifest.yml` 暂时更新为 `expectedPosts: 4`、`expectedCategories: { ANIME: 4 }`，保留《末日后酒店》和 8 个账号。
+
+- [ ] **Step 5: 运行内容扫描和 dry-run**
+
+```powershell
+$posts = @(
+  'content/seed/content-v3/posts/shoushimin-cinematography.md',
+  'content/seed/content-v3/posts/hyakuemu-one-hundred-meters.md',
+  'content/seed/content-v3/posts/city-restless-town.md'
+)
+Select-String -Path $posts -Pattern '本文将|首先|其次|最后|总而言之|真正.*不是.*而是|Sakuga Blog|来源：'
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+git diff --check
+```
+
+Expected: 禁用模式零命中；dry-run 为 `validated`，validation 和 quality warnings/errors 均为空。
+
+- [ ] **Step 6: 提交第一小批次**
+
+```powershell
+git add -- content/seed/content-v3/manifest.yml content/seed/content-v3/posts.yml content/seed/content-v3/sources.yml content/seed/content-v3/assets.yml content/seed/content-v3/posts/shoushimin-cinematography.md content/seed/content-v3/posts/hyakuemu-one-hundred-meters.md content/seed/content-v3/posts/city-restless-town.md content/seed/content-v3/assets/covers/shoushimin-cinematography.webp content/seed/content-v3/assets/covers/hyakuemu-one-hundred-meters.webp content/seed/content-v3/assets/covers/city-restless-town.webp content/seed/content-v3/assets/inline/shoushimin-centered-frame.webp content/seed/content-v3/assets/inline/shoushimin-room-distance.webp content/seed/content-v3/assets/inline/shoushimin-ordinary-mask.webp content/seed/content-v3/assets/inline/hyakuemu-body-lines.webp content/seed/content-v3/assets/inline/hyakuemu-rain-sprint.webp content/seed/content-v3/assets/inline/hyakuemu-finish.webp content/seed/content-v3/assets/inline/city-comedy-impact.webp content/seed/content-v3/assets/inline/city-space-elasticity.webp content/seed/content-v3/assets/inline/city-line-language.webp
+git diff --cached --check
+git commit -m "content: 完成首批制作考察文章"
+```
+
+### Task 34: 完成第二小批次的动漫来源与文章
+
+**Files:**
+- Modify: `content/seed/content-v3/manifest.yml`
+- Modify: `content/seed/content-v3/posts.yml`
+- Modify: `content/seed/content-v3/sources.yml`
+- Modify: `content/seed/content-v3/assets.yml`
+- Create: `content/seed/content-v3/posts/chainsaw-man-reze-rain.md`
+- Create: `content/seed/content-v3/posts/orb-unpersuaded-people.md`
+- Create: `content/seed/content-v3/assets/covers/chainsaw-man-reze-rain.webp`
+- Create: `content/seed/content-v3/assets/covers/orb-unpersuaded-people.webp`
+- Create: `content/seed/content-v3/assets/inline/chainsaw-man-reze-gerbera.webp`
+- Create: `content/seed/content-v3/assets/inline/chainsaw-man-reze-cafe.webp`
+- Create: `content/seed/content-v3/assets/inline/chainsaw-man-reze-rain.webp`
+- Create: `content/seed/content-v3/assets/inline/orb-voices.webp`
+- Create: `content/seed/content-v3/assets/inline/orb-night-sky.webp`
+- Create: `content/seed/content-v3/assets/inline/orb-procession.webp`
+
+- [ ] **Step 1: 建立两篇动漫来源卡**
+
+```text
+chainsaw-man-reze-sakuga
+  https://blog.sakugabooru.com/2026/01/06/chainsaw-man-reze-the-movie-of-the-moment/
+  https://chainsawman.dog/movie_reze/
+
+orb-animation-sakuga
+  https://blog.sakugabooru.com/2025/05/09/chi-orb-the-challenge-to-animate-the-uncompromising/
+  https://anime-chi.jp/
+```
+
+来源卡明确区分可核对事实与文章作者观点；不把来源页的段落顺序复制到中文正文。
+
+- [ ] **Step 2: 固定并查看两组媒体**
+
+《蕾塞篇》候选：
+
+```text
+https://blog.sakugabooru.com/wp-content/uploads/2026/01/finally-a-good-fireworks-movie-with-yonezu-scaled.jpeg
+https://blog.sakugabooru.com/wp-content/uploads/2026/01/white-gerbera-symbolizing-hope-surely-a-happy-movie-scaled.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2026/01/nothing-sad-is-about-to-happen-i-promise-scaled.jpg
+https://i.imgur.com/eOJMdQ6.jpg
+```
+
+《地。》候选：
+
+```text
+https://blog.sakugabooru.com/wp-content/uploads/2025/05/orb2.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2025/05/orb3.jpg
+https://blog.sakugabooru.com/wp-content/uploads/2025/05/so-true-bestie.jpeg
+https://blog.sakugabooru.com/wp-content/uploads/2025/05/orb5.jpg
+```
+
+每篇选择一张 1200×675 封面和三张正文图；蕾塞封面优先雨、夜色或烟火氛围，《地。》封面优先人物与天空的关系。逐张查看后才能写入 `assets.yml`。
+
+- [ ] **Step 3: 写蕾塞篇：那场雨下得实在太久了**
+
+使用 `moyu-master`、`feature-review` 和 2,000–2,600 个正文汉字。以社区口语写三至五个具体画面，允许直接表达喜欢与不满；不按制作人员履历组织，不写“电影成功之处有三点”，结尾停在电话亭、咖啡馆或雨的记忆之一。
+
+文章定义使用 `ANIME`，发布时间固定为 `2026-05-24T12:51:00Z`。
+
+- [ ] **Step 4: 写我喜欢《地。》里那些没有被说服的人**
+
+使用 `indie-dev`、`feature-review` 和 2,000–2,600 个正文汉字。从配音或音乐进入，选择三组“没有被说服”的人物时刻，讨论声音如何保留固执和犹疑；制作信息只服务于听觉判断，不列名单，不写剧情全解。
+
+文章定义使用 `ANIME`，发布时间固定为 `2026-05-08T09:36:00Z`。
+
+- [ ] **Step 5: 更新清单并验证**
+
+把 `manifest.yml` 更新为 `expectedPosts: 6`、`expectedCategories: { ANIME: 6 }`。运行媒体 `--write-hashes`、`--check`、禁用句式扫描和 content-pack dry-run；期望全部通过且无 warning/error。
+
+### Task 35: 写作真实 Redisson 故障复盘
+
+**Files:**
+- Modify: `content/seed/content-v3/manifest.yml`
+- Modify: `content/seed/content-v3/posts.yml`
+- Modify: `content/seed/content-v3/sources.yml`
+- Modify: `content/seed/content-v3/assets.yml`
+- Create: `content/seed/content-v3/posts/redisson-moved-timeout.md`
+- Create: `content/seed/content-v3/assets/covers/redisson-moved-timeout.webp`
+- Create: `content/seed/content-v3/assets/inline/redisson-moved-log.webp`
+- Create: `content/seed/content-v3/assets/inline/redisson-cluster-route.webp`
+- Temporary: `.codex-tmp/seed-content-v3/technical/redisson-5972-*`
+
+- [ ] **Step 1: 固定技术来源与事实边界**
+
+来源卡 `redisson-5972-moved-timeout` 使用：
+
+```text
+https://github.com/redisson/redisson/issues/5972
+https://api.github.com/repos/redisson/redisson/issues/5972
+https://github.com/redisson/redisson/milestone/178
+```
+
+事实锚点固定为 Redis 6.0.11、Redisson 3.30.0、三主三从切换、客户端拓扑未及时刷新、`MOVED`、`Unable to acquire connection`、重启暂时恢复、Issue 关闭并归入 3.33.0 milestone。正文必须明确这是公开 Issue 的排障复盘，不冒充作者本人生产事故。
+
+- [ ] **Step 2: 生成可核对的技术媒体**
+
+封面使用 GitHub Issue 标题、状态与 milestone 的浏览器截图，裁掉用户名和无关导航。正文第一张图把 Issue 中公开日志按原顺序排版为终端截图；第二张图使用 HTML/CSS 绘制三节点路由示意，只标注 `client topology`、`old master`、`new master`、`MOVED`，不得做装饰性信息图。所有生成输入保存在 `.codex-tmp`，正式只提交 WebP 和来源元数据。
+
+- [ ] **Step 3: 写 Redis 明明还活着，为什么请求还是一批批超时**
+
+使用 `night-coder`、`technical-report` 和 1,800–2,400 个正文汉字。结构为：先贴最小日志；解释为什么“加连接池”是第一误判；从 `NodeSource` 和 `redirect=MOVED` 找到拓扑线索；还原主从切换后的请求路径；说明重启为何只暂时有效；以 3.33.0 milestone 和升级验证结束。不得把未在 Issue 中出现的参数、监控数据或修复 commit 写成事实。
+
+文章定义使用 `TECH`，发布时间固定为 `2026-04-27T15:22:00Z`。
+
+- [ ] **Step 4: 更新清单、验证并提交第二小批次**
+
+把 `manifest.yml` 更新为 `expectedPosts: 7`，分类为 `ANIME: 6`、`TECH: 1`。运行目标测试、媒体检查、dry-run 和 `git diff --check`，然后提交：
+
+```powershell
+git add -- content/seed/content-v3/manifest.yml content/seed/content-v3/posts.yml content/seed/content-v3/sources.yml content/seed/content-v3/assets.yml content/seed/content-v3/posts/chainsaw-man-reze-rain.md content/seed/content-v3/posts/orb-unpersuaded-people.md content/seed/content-v3/posts/redisson-moved-timeout.md content/seed/content-v3/assets/covers/chainsaw-man-reze-rain.webp content/seed/content-v3/assets/covers/orb-unpersuaded-people.webp content/seed/content-v3/assets/covers/redisson-moved-timeout.webp content/seed/content-v3/assets/inline/chainsaw-man-reze-gerbera.webp content/seed/content-v3/assets/inline/chainsaw-man-reze-cafe.webp content/seed/content-v3/assets/inline/chainsaw-man-reze-rain.webp content/seed/content-v3/assets/inline/orb-voices.webp content/seed/content-v3/assets/inline/orb-night-sky.webp content/seed/content-v3/assets/inline/orb-procession.webp content/seed/content-v3/assets/inline/redisson-moved-log.webp content/seed/content-v3/assets/inline/redisson-cluster-route.webp
+git diff --cached --check
+git commit -m "content: 完成第二批观后感与后端复盘"
+```
+
+提交前用 `git diff --cached --name-only` 确认只包含本任务两篇动漫、Redisson 文章、对应 YAML 与媒体；不得包含 `.codex-tmp`。
+
+### Task 36: 运行可重复的 RAG 切片实验并成文
+
+**Files:**
+- Modify: `content/seed/content-v3/manifest.yml`
+- Modify: `content/seed/content-v3/posts.yml`
+- Modify: `content/seed/content-v3/sources.yml`
+- Modify: `content/seed/content-v3/assets.yml`
+- Create: `content/seed/content-v3/posts/rag-chunk-size-regression.md`
+- Create: `content/seed/content-v3/assets/covers/rag-chunk-size-regression.webp`
+- Create: `content/seed/content-v3/assets/inline/rag-recall-table.webp`
+- Create: `content/seed/content-v3/assets/inline/rag-failed-query.webp`
+- Temporary: `.codex-tmp/seed-content-v3/technical/rag_chunk_experiment.py`
+- Temporary: `.codex-tmp/seed-content-v3/technical/rag_chunk_results-a.json`
+- Temporary: `.codex-tmp/seed-content-v3/technical/rag_chunk_results-b.json`
+
+- [ ] **Step 1: 固定实验语料和问题集**
+
+语料只读取仓库中以下文件，按 Markdown 标题保留来源路径：
+
+```text
+README.md
+AGENTS.md
+apps/server/README.md
+apps/server/src/main/resources/knowledge/about-me.md
+apps/server/src/main/resources/knowledge/my-home.md
+apps/server/src/main/resources/knowledge/my-world.md
+apps/server/src/main/resources/knowledge/those-stories.md
+```
+
+固定八个查询：站长用户 ID 如何配置、通知为何不用 Kafka、Agent 对话记忆存在哪里、搜索使用什么分词、文章缓存有哪些层、Bangumi 数据如何同步、OSS 上传怎样鉴权、项目为何不用 Neo4j。每个查询在脚本中写出期望命中的文件和标题。
+
+- [ ] **Step 2: 编写无外部模型依赖的基线脚本**
+
+脚本使用 Python 标准库读取 Markdown，以汉字和英文 token 组成简单 TF-IDF 余弦检索；分别测试 `chunk_size=500, overlap=80` 与 `chunk_size=800, overlap=80`，输出每个问题 top-3、Hit@1 和 MRR。固定排序规则为分数降序后按 `source_path + chunk_index` 升序，保证重复运行结果一致。
+
+- [ ] **Step 3: 执行两次并确认确定性**
+
+```powershell
+python .codex-tmp/seed-content-v3/technical/rag_chunk_experiment.py --output .codex-tmp/seed-content-v3/technical/rag_chunk_results-a.json
+python .codex-tmp/seed-content-v3/technical/rag_chunk_experiment.py --output .codex-tmp/seed-content-v3/technical/rag_chunk_results-b.json
+Get-FileHash .codex-tmp/seed-content-v3/technical/rag_chunk_results-a.json
+Get-FileHash .codex-tmp/seed-content-v3/technical/rag_chunk_results-b.json
+```
+
+Expected: 两个 SHA-256 相同。若 800 并未比 500 更差，标题和立场必须跟随真实结果修改，禁止调换标签或删问题制造结论。
+
+- [ ] **Step 4: 写把切片从 500 改到 800 以后，检索反而更差了**
+
+使用 `algo-runner`、`technical-report` 和 1,800–2,600 个正文汉字。正文公开语料、切片、检索算法、八个问题、Hit@1/MRR 和失败样例；明确 TF-IDF 只是无模型基线，不把结果外推到所有 embedding 或 RAG 系统。封面使用真实结果表，正文图展示指标和一个失败查询。
+
+文章定义使用 `TECH`，发布时间固定为 `2026-04-11T11:05:00Z`。
+
+- [ ] **Step 5: 更新来源与媒体元数据**
+
+来源卡记录七个本地文件的 Git commit、实验脚本 SHA-256、结果 JSON SHA-256 和执行时间。媒体由同一结果 JSON 生成；不得手工改图中数值。
+
+### Task 37: 完成游戏体验帖
+
+**Files:**
+- Modify: `content/seed/content-v3/posts.yml`
+- Modify: `content/seed/content-v3/sources.yml`
+- Modify: `content/seed/content-v3/assets.yml`
+- Create: `content/seed/content-v3/posts/urban-myth-search-box.md`
+- Create: `content/seed/content-v3/assets/covers/urban-myth-search-box.webp`
+- Create: `content/seed/content-v3/assets/inline/urban-myth-search-interface.webp`
+- Create: `content/seed/content-v3/assets/inline/urban-myth-dialogue.webp`
+- Create: `content/seed/content-v3/assets/inline/urban-myth-investigation.webp`
+
+- [ ] **Step 1: 建立官方来源卡并固定截图**
+
+```text
+https://umdc.shueisha-games.com/
+https://shueisha-games.com/games/umdc/
+https://store.steampowered.com/app/2089600/Urban_Myth_Dissolution_Center/?l=schinese
+```
+
+只使用官网媒体包、官方页面截图或 Steam 商店官方截图；至少固定一张搜索界面、一张角色对话和一张案件调查画面。避免使用会直接泄露最终谜底的截图。
+
+- [ ] **Step 2: 写《都市传说解体中心》通关后，我还是不敢关掉搜索框**
+
+使用 `moyu-master`、现有 `review` 格式和 1,600–2,200 个正文汉字。开头直接写搜索框和时间线操作，中段讨论网络传言怎样成为推理界面，再写一处喜欢与一处不满；采用低剧透表述，不冒充攻略，不虚构购买平台或通关日期。
+
+文章定义使用 `GAME`，发布时间固定为 `2026-03-29T13:48:00Z`。
+
+- [ ] **Step 3: 检查同作者差异**
+
+对比 `chainsaw-man-reze-rain.md`：标题以外的首段五字片段 Jaccard 不得超过质量门阈值；两篇不能都用雨、夜色或“关掉页面后仍然想起”收束。
+
+### Task 38: 完成《横道世之介》阅读随笔
+
+**Files:**
+- Modify: `content/seed/content-v3/posts.yml`
+- Modify: `content/seed/content-v3/sources.yml`
+- Create: `content/seed/content-v3/posts/yokomichi-yonosuke-after.md`
+
+- [ ] **Step 1: 建立书目信息卡**
+
+来源卡 `yokomichi-yonosuke-book` 固定记录吉田修一、上海人民出版社 2018 年版、译者林雅惠和 ISBN `9787208152038`，书目信息入口为 `https://read.douban.com/ebook/54232408/`。书目信息只用于核对人物和版本，不复制书评或大段原文。该文 `coverAsset: null`、`inlineAssets: []`，不用无关书桌图补位。
+
+- [ ] **Step 2: 写横道世之介离开以后，书里反而更热闹了**
+
+使用 `book-notes`、`personal-essay` 和 1,000–1,600 个正文汉字。只围绕世之介离场后其他人物记忆中的变化写作；允许提及一两个情节事实，但不复述故事，不引用长段原文，不把人物死亡写成人生励志结论。全文最多两个 H2，也可以完全不用标题。
+
+文章定义使用 `LIFE`，发布时间固定为 `2026-03-12T07:19:00Z`。
+
+- [ ] **Step 3: 完成十篇内容清单**
+
+把 `manifest.yml` 更新为：
+
+```yaml
+stage: review
+expectedAccounts: 8
+expectedPosts: 10
+expectedCategories:
+  ANIME: 6
+  TECH: 2
+  GAME: 1
+  LIFE: 1
+```
+
+当前内容包的分类字段是非空字符串且不受 Java 枚举限制，本批阅读随笔固定使用 `LIFE`；不得为本任务新增数据库分类表或枚举。
+
+- [ ] **Step 4: 验证并提交第三小批次**
+
+```powershell
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --write-hashes
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+git diff --check
+```
+
+Expected: `expectedPosts=10`，分类总数为 10，报告 `status=validated` 且 validation/quality/index 错误为空。随后只暂存 Task 36–38 的正式文件并提交：
+
+```powershell
+git add -- content/seed/content-v3/manifest.yml content/seed/content-v3/posts.yml content/seed/content-v3/sources.yml content/seed/content-v3/assets.yml content/seed/content-v3/posts/rag-chunk-size-regression.md content/seed/content-v3/posts/urban-myth-search-box.md content/seed/content-v3/posts/yokomichi-yonosuke-after.md content/seed/content-v3/assets/covers/rag-chunk-size-regression.webp content/seed/content-v3/assets/covers/urban-myth-search-box.webp content/seed/content-v3/assets/inline/rag-recall-table.webp content/seed/content-v3/assets/inline/rag-failed-query.webp content/seed/content-v3/assets/inline/urban-myth-search-interface.webp content/seed/content-v3/assets/inline/urban-myth-dialogue.webp content/seed/content-v3/assets/inline/urban-myth-investigation.webp
+git diff --cached --check
+git commit -m "content: 完成第三批实验与社区随笔"
+```
+
+### Task 39: 生成十篇文章的可视化审阅页
+
+**Files:**
+- Replace temporarily: `.codex-tmp/seed-content-v3/review/index.html`
+- Create temporarily: `.codex-tmp/seed-content-v3/review/posts/<slug>.html`
+- Create temporarily: `.codex-tmp/seed-content-v3/review/coverage.json`
+
+- [ ] **Step 1: 生成总览页**
+
+总览包含十张文章卡：真实作者头像、昵称、标题、分类、正文汉字数、封面和文章链接。卡片顺序按 `publishTime`，不能按类别分组，以便检查真实首页观感。无封面的阅读随笔使用纯文字卡，不生成默认占位图。
+
+- [ ] **Step 2: 生成九篇新增文章全文页**
+
+每页使用与《末日后酒店》一致的站点阅读宽度，但保留文章各自的标题数量、段落节奏和媒体布局。页面不显示来源面板、内部 seed key 或质量扫描结果。
+
+- [ ] **Step 3: 运行浏览器验证**
+
+检查总览页、九篇全文页、8 个头像和全部新媒体返回 HTTP 200；所有 `<img>` 的 `naturalWidth > 0`；浏览器 console error 和 page error 均为 0。把结果写入 `coverage.json`，包括页面数、图片数、失败 URL、各篇汉字数和 H2 数量。
+
+- [ ] **Step 4: 使用可视化辅助做封面总览检查**
+
+在已获用户同意的 visual companion 中展示十张封面/文字卡的总览，不要求用户逐篇确认；此步骤用于发现封面构图、标题句式或作者分布的批量感。发现问题时回到对应文章或媒体任务修正，并重新生成新文件名的总览页。
+
+### Task 40: 完成整批质量审查与最终验证
+
+**Files:**
+- Modify if a finding targets it: `content/seed/content-v3/manifest.yml`
+- Modify if a finding targets it: `content/seed/content-v3/posts.yml`
+- Modify if a finding targets it: `content/seed/content-v3/sources.yml`
+- Modify if a finding targets it: `content/seed/content-v3/assets.yml`
+- Modify if a finding targets it: `content/seed/content-v3/posts/shoushimin-cinematography.md`
+- Modify if a finding targets it: `content/seed/content-v3/posts/hyakuemu-one-hundred-meters.md`
+- Modify if a finding targets it: `content/seed/content-v3/posts/city-restless-town.md`
+- Modify if a finding targets it: `content/seed/content-v3/posts/chainsaw-man-reze-rain.md`
+- Modify if a finding targets it: `content/seed/content-v3/posts/orb-unpersuaded-people.md`
+- Modify if a finding targets it: `content/seed/content-v3/posts/redisson-moved-timeout.md`
+- Modify if a finding targets it: `content/seed/content-v3/posts/rag-chunk-size-regression.md`
+- Modify if a finding targets it: `content/seed/content-v3/posts/urban-myth-search-box.md`
+- Modify if a finding targets it: `content/seed/content-v3/posts/yokomichi-yonosuke-after.md`
+
+- [ ] **Step 1: 运行定向测试**
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=ContentPackValidatorTest,ContentPackQualityGateTest,ContentPackLoaderTest,ContentPackDatabaseWriterTest,ContentPackImportServiceTest' test
+cd ../..
+```
+
+Expected: 全部测试通过，无 failure/error；条件性集成项允许按原规则 skipped。
+
+- [ ] **Step 2: 运行媒体和只读导入验证**
+
+```powershell
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+git diff --check
+```
+
+Expected: 媒体全通过；报告为 `validated`，`validationWarnings`、`qualityWarnings`、`qualityErrors`、`indexFailures` 全为空。
+
+- [ ] **Step 3: 运行跨文编辑扫描**
+
+逐篇检查标题句式、首段、末段、H2 数量和正文长度分布；五篇新增动漫文章不得共享“意象句＋破折号＋作品名”模板，同作者两篇不得共享收束方式。扫描以下模式并逐条人工判定，正文零保留模板命中：
+
+```text
+本文将|首先|其次|最后|综上|总而言之|不难发现|值得一提|真正.*不是.*而是|这意味着|由此可见|让我们
+```
+
+- [ ] **Step 4: 做事实与来源抽查**
+
+每篇至少随机抽取五个事实锚点，回到 `sources.yml` 指向的页面核对。技术文章逐项核对版本、参数、日志和实验 JSON；动漫文章核对人物、集数、制作人员和图片画面。无法核实的句子删除或降格为明确个人判断。
+
+- [ ] **Step 5: 提交最终校验修正**
+
+只有正式内容文件发生修正时才创建提交：
+
+```powershell
+git add -- content/seed/content-v3/manifest.yml content/seed/content-v3/posts.yml content/seed/content-v3/sources.yml content/seed/content-v3/assets.yml content/seed/content-v3/posts/shoushimin-cinematography.md content/seed/content-v3/posts/hyakuemu-one-hundred-meters.md content/seed/content-v3/posts/city-restless-town.md content/seed/content-v3/posts/chainsaw-man-reze-rain.md content/seed/content-v3/posts/orb-unpersuaded-people.md content/seed/content-v3/posts/redisson-moved-timeout.md content/seed/content-v3/posts/rag-chunk-size-regression.md content/seed/content-v3/posts/urban-myth-search-box.md content/seed/content-v3/posts/yokomichi-yonosuke-after.md content/seed/content-v3/assets/covers/shoushimin-cinematography.webp content/seed/content-v3/assets/covers/hyakuemu-one-hundred-meters.webp content/seed/content-v3/assets/covers/city-restless-town.webp content/seed/content-v3/assets/covers/chainsaw-man-reze-rain.webp content/seed/content-v3/assets/covers/orb-unpersuaded-people.webp content/seed/content-v3/assets/covers/redisson-moved-timeout.webp content/seed/content-v3/assets/covers/rag-chunk-size-regression.webp content/seed/content-v3/assets/covers/urban-myth-search-box.webp content/seed/content-v3/assets/inline/shoushimin-centered-frame.webp content/seed/content-v3/assets/inline/shoushimin-room-distance.webp content/seed/content-v3/assets/inline/shoushimin-ordinary-mask.webp content/seed/content-v3/assets/inline/hyakuemu-body-lines.webp content/seed/content-v3/assets/inline/hyakuemu-rain-sprint.webp content/seed/content-v3/assets/inline/hyakuemu-finish.webp content/seed/content-v3/assets/inline/city-comedy-impact.webp content/seed/content-v3/assets/inline/city-space-elasticity.webp content/seed/content-v3/assets/inline/city-line-language.webp content/seed/content-v3/assets/inline/chainsaw-man-reze-gerbera.webp content/seed/content-v3/assets/inline/chainsaw-man-reze-cafe.webp content/seed/content-v3/assets/inline/chainsaw-man-reze-rain.webp content/seed/content-v3/assets/inline/orb-voices.webp content/seed/content-v3/assets/inline/orb-night-sky.webp content/seed/content-v3/assets/inline/orb-procession.webp content/seed/content-v3/assets/inline/redisson-moved-log.webp content/seed/content-v3/assets/inline/redisson-cluster-route.webp content/seed/content-v3/assets/inline/rag-recall-table.webp content/seed/content-v3/assets/inline/rag-failed-query.webp content/seed/content-v3/assets/inline/urban-myth-search-interface.webp content/seed/content-v3/assets/inline/urban-myth-dialogue.webp content/seed/content-v3/assets/inline/urban-myth-investigation.webp apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackQualityGate.java apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackQualityGateTest.java
+git diff --cached --check
+git commit -m "fix: 完成首批扩写内容质量校验"
+```
+
+不得暂存 `.codex-tmp` 或 `.superpowers`。不执行正式 seed，不推送分支。
+
+- [ ] **Step 6: 交付用户审阅并停止**
+
+确认 `git status --short` 为空、暂存区为空、审阅服务仍可访问。向用户提供十篇总览 URL 和九篇全文入口，等待用户逐篇反馈；用户批准前不进入互动设计和余下约三十篇扩写。
