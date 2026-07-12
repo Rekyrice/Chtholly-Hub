@@ -43,8 +43,8 @@
 - **触发入口**：[ActionController](../../apps/server/src/main/java/com/chtholly/counter/api/ActionController.java) 的 `/like`、`/unlike`、`/fav`、`/unfav` → [CounterServiceImpl](../../apps/server/src/main/java/com/chtholly/counter/service/impl/CounterServiceImpl.java)。
 - **同步主链**：Redis Lua 原子切换按用户分片的位图；只有 bit 状态实际变化才构造带 event ID 的 `CounterEvent` 并发布。
 - **异步/缓存**：`KAFKA_ENABLED=true` 时 [KafkaCounterPublisher](../../apps/server/src/main/java/com/chtholly/counter/event/KafkaCounterPublisher.java) 投递 Kafka，由 [CounterAggregationKafkaConsumer](../../apps/server/src/main/java/com/chtholly/counter/event/CounterAggregationKafkaConsumer.java) 处理；默认由 [CounterAggregationSpringConsumer](../../apps/server/src/main/java/com/chtholly/counter/event/CounterAggregationSpringConsumer.java) 进程内处理。[CounterAggregationProcessor](../../apps/server/src/main/java/com/chtholly/counter/event/CounterAggregationProcessor.java) 去重、累加 Redis hash，并每秒刷入 SDS。两种模式都会发布本地事件供点赞通知。
-- **状态**：用户动作幂等状态、聚合桶和最终 SDS 计数都在 Redis；MySQL不作为单次点赞/收藏的同步落点。
-- **失败/降级**：Redis 位图操作失败则请求失败；Kafka 关闭有明确本地通道。Kafka 序列化失败只记录警告，本地通知事件仍发布；聚合消费者依赖 event ID 去重。
+- **状态**：用户点赞/收藏成员关系只存在 Redis bitmap，没有 MySQL 落点；聚合桶和 SDS 计数也在 Redis，SDS 缺失时可由 bitmap 分片计数重建。
+- **失败/降级**：Redis bitmap 操作失败则请求失败，其持久化与备份决定成员关系可靠性。Kafka 关闭有进程内聚合通道，但 Spring 事件不可重放；可选 [CounterRebuildConsumer](../../apps/server/src/main/java/com/chtholly/counter/event/CounterRebuildConsumer.java) 只在 Kafka 与 rebuild 开关同时启用时回放事件重建 SDS，不能重建 bitmap。Kafka 序列化失败只记录警告，本地通知事件仍发布；聚合消费者依赖 event ID 去重。
 - **代表性测试**：[CounterServiceImplBatchTest](../../apps/server/src/test/java/com/chtholly/counter/service/impl/CounterServiceImplBatchTest.java)、[CounterAggregationProcessorTest](../../apps/server/src/test/java/com/chtholly/counter/event/CounterAggregationProcessorTest.java)、[SpringEventCounterPublisherConditionTest](../../apps/server/src/test/java/com/chtholly/counter/event/SpringEventCounterPublisherConditionTest.java)、[CounterGoldenPathIT](../../apps/server/src/test/java/com/chtholly/integration/CounterGoldenPathIT.java)。
 
 ## 5. 关注关系与 Outbox
@@ -99,7 +99,7 @@
 - **异步/缓存**：封禁同步撤销目标用户全部 refresh token；内容治理复用文章缓存失效、Outbox 与 ES 尽力同步路径，没有单独审计队列。
 - **状态**：角色、封禁时间、内容状态和审计日志在 MySQL；refresh token 白名单在 Redis。
 - **失败/降级**：非管理员拒绝；不能封禁自己/站长或移除站长角色。当前 `AdminAuditService` 捕获序列化/插入异常并记录警告，因此审计是 best-effort，失败不会回滚已经完成的治理变更；内容治理的 ES/cache 派生状态仍遵循文章链路边界。
-- **代表性测试**：[RequireRoleAspectTest](../../apps/server/src/test/java/com/chtholly/admin/role/RequireRoleAspectTest.java)、[ProfileControllerTest](../../apps/server/src/test/java/com/chtholly/profile/api/ProfileControllerTest.java)、[PostServiceImplTest](../../apps/server/src/test/java/com/chtholly/post/service/impl/PostServiceImplTest.java)。
+- **代表性测试**：[RequireRoleAspectTest](../../apps/server/src/test/java/com/chtholly/admin/role/RequireRoleAspectTest.java) 只覆盖角色切面；当前 `AdminUserController`、`AdminPostController`、`AdminUserService`、`AdminPostService` 与 `AdminAuditService` 没有直接测试覆盖，这是已知测试缺口。
 
 ## 修改联动
 

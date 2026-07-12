@@ -31,7 +31,7 @@ Chtholly Hub 是 Java 21 + Spring Boot 3.2.4 与 Next.js 16 + Tailwind CSS 4 组
 浏览器
   └─ Next.js Web（apps/web）
        └─ Spring Boot API（apps/server）
-            ├─ MySQL：业务权威数据
+            ├─ MySQL：大多数业务权威数据
             ├─ Redis：缓存、Token、限流与位图状态
             ├─ Elasticsearch：可降级的全文检索
             ├─ Kafka：计数聚合与 Outbox 异步链路
