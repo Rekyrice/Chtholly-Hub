@@ -37,8 +37,7 @@ public record ContentPack(
     }
 
     private static <K, V> Map<K, V> orderedImmutableMap(Map<K, V> values) {
-        Objects.requireNonNull(values, "map");
-        if (values.isEmpty()) {
+        if (values == null || values.isEmpty()) {
             return Map.of();
         }
         Map<K, V> ordered = new LinkedHashMap<>();

@@ -188,6 +188,17 @@ class ContentPackLoaderTest {
         assertThrows(NullPointerException.class, () -> copyWithMaps(loaded, loaded.assets(), sourceNullValue));
     }
 
+    @Test
+    void contentPackNormalizesNullAssetAndSourceMaps() throws Exception {
+        ContentPack loaded = loader.load(fixtureRoot());
+
+        ContentPack withoutAssets = copyWithMaps(loaded, null, loaded.sources());
+        ContentPack withoutSources = copyWithMaps(loaded, loaded.assets(), null);
+
+        assertEquals(Map.of(), withoutAssets.assets());
+        assertEquals(Map.of(), withoutSources.sources());
+    }
+
     private ContentPack copyWithMaps(
             ContentPack loaded,
             Map<String, SeedAssetDefinition> assets,
