@@ -284,6 +284,7 @@
 
   .site-header {
     position: relative;
+    z-index: 1;
     width: 100%;
     height: 480px;
     overflow: hidden;
@@ -309,7 +310,8 @@
     position: absolute;
     inset: 0;
     will-change: transform;
-    background:
+    background-image:
+      var(--site-header-image, linear-gradient(180deg, transparent, transparent)),
       radial-gradient(ellipse at 30% 20%, var(--hero-violet-glow) 0%, transparent 50%),
       radial-gradient(ellipse at 70% 80%, var(--hero-sunset-glow) 0%, transparent 50%),
       linear-gradient(
@@ -320,6 +322,10 @@
         var(--hero-color-sky-light) 80%,
         var(--color-cloud) 100%
       );
+    background-position: var(--site-header-position, center), center, center, center;
+    background-size: cover, auto, auto, auto;
+    background-repeat: no-repeat;
+    filter: blur(var(--site-header-blur, 0px)) saturate(var(--site-header-saturate, 1));
   }
 
   .site-header-particles {
@@ -341,7 +347,17 @@
     position: absolute;
     inset: 0;
     z-index: 2;
-    background: rgb(0 0 0 / var(--blog-header-overlay));
+    background: rgb(0 0 0 / var(--site-header-overlay, var(--blog-header-overlay)));
+  }
+
+  @media (max-width: 767px) {
+    .site-header-bg {
+      background-position:
+        var(--site-header-position-mobile, var(--site-header-position, center)),
+        center,
+        center,
+        center;
+    }
   }
 
   .site-header-content {

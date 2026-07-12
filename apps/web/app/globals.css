@@ -5,6 +5,7 @@
 @import "./styles/community.css";
 @import "./styles/settings.css";
 @import "./styles/responsive.css";
+@import "./styles/route-visuals.css";
 
 @view-transition {
   navigation: auto;

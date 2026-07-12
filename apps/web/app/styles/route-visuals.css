@@ -1,0 +1,155 @@
+@layer utilities {
+  .site-shell--route-visual {
+    isolation: isolate;
+    --surface-nav-alpha: 0.71;
+    --surface-panel-alpha: 0.52;
+    --surface-card-alpha: 0.54;
+    --surface-sidebar-alpha: 0.48;
+    --surface-reading-alpha: 0.78;
+    --surface-auth-alpha: 0.78;
+    --surface-editor-alpha: 0.88;
+    --surface-backdrop-blur: 8px;
+    --surface-border: color-mix(in srgb, var(--color-border) 62%, transparent);
+    --surface-shadow: 0 9px 23px color-mix(in srgb, var(--color-text) 11%, transparent);
+  }
+
+  .route-page-background {
+    position: fixed;
+    inset: 52px 0 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .route-page-background__image {
+    position: absolute;
+    inset: -10px;
+    background-image: var(--route-bg-image);
+    background-position: var(--route-bg-position);
+    background-size: cover;
+    background-repeat: no-repeat;
+    filter: blur(var(--route-bg-blur)) saturate(var(--route-bg-saturate));
+    transform: scale(1.02);
+  }
+
+  .route-page-background__overlay {
+    position: absolute;
+    inset: 0;
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--route-bg-overlay) * 100%),
+      transparent
+    );
+  }
+
+  .site-shell--route-visual .main-content {
+    background: transparent;
+  }
+
+  .site-shell--route-visual .sakuga-navbar {
+    border-bottom-color: var(--surface-border);
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-nav-alpha) * 100%),
+      transparent
+    );
+    box-shadow: 0 7px 18px color-mix(in srgb, var(--color-text) 9%, transparent);
+    backdrop-filter: blur(8px) saturate(0.8);
+    -webkit-backdrop-filter: blur(8px) saturate(0.8);
+  }
+
+  .site-shell--route-visual .sakuga-navbar--scrolled {
+    background: color-mix(in srgb, var(--color-surface) 79%, transparent);
+    box-shadow: 0 9px 22px color-mix(in srgb, var(--color-text) 12%, transparent);
+    backdrop-filter: blur(12px) saturate(0.84);
+    -webkit-backdrop-filter: blur(12px) saturate(0.84);
+  }
+
+  .site-shell--route-visual .post-card,
+  .site-shell--route-visual .hub-recommendation,
+  .site-shell--route-visual .hub-hot-posts,
+  .site-shell--route-visual .hub-observation,
+  .site-shell--route-visual .hub-feed-pagination,
+  .site-shell--route-visual .author-card,
+  .site-shell--route-visual .related-posts,
+  .site-shell--route-visual .post-qna,
+  .site-shell--route-visual .search-sidebar > * {
+    border: 1px solid var(--surface-border);
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-card-alpha) * 100%),
+      transparent
+    );
+    box-shadow: var(--surface-shadow);
+    backdrop-filter: blur(var(--surface-backdrop-blur)) saturate(0.76) brightness(1.02);
+    -webkit-backdrop-filter: blur(var(--surface-backdrop-blur)) saturate(0.76) brightness(1.02);
+  }
+
+  .site-shell--route-visual .hub-sidebar .widget {
+    border: 1px solid var(--surface-border);
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-sidebar-alpha) * 100%),
+      transparent
+    );
+    box-shadow: var(--surface-shadow);
+    backdrop-filter: blur(9px) saturate(0.74) brightness(1.02);
+    -webkit-backdrop-filter: blur(9px) saturate(0.74) brightness(1.02);
+  }
+
+  .site-shell--route-visual .hub-recommendation__content,
+  .site-shell--route-visual .prose-anime {
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-reading-alpha) * 100%),
+      transparent
+    );
+  }
+
+  [data-route-visual="auth"] .post-card {
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-auth-alpha) * 100%),
+      transparent
+    );
+  }
+
+  .site-shell--route-visual .write-preview.prose-anime {
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-editor-alpha) * 100%),
+      transparent
+    );
+  }
+
+  @media (max-width: 767px) {
+    .route-page-background__image {
+      background-position: var(--route-bg-position-mobile);
+    }
+
+    .site-shell--route-visual {
+      --surface-card-alpha: 0.62;
+      --surface-sidebar-alpha: 0.58;
+    }
+
+    .site-shell--route-visual .post-card,
+    .site-shell--route-visual .hub-sidebar .widget {
+      backdrop-filter: blur(7px) saturate(0.72);
+      -webkit-backdrop-filter: blur(7px) saturate(0.72);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .route-page-background__image {
+      transform: none;
+    }
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .site-shell--route-visual {
+      --surface-card-alpha: 0.88;
+      --surface-sidebar-alpha: 0.84;
+      --surface-nav-alpha: 0.9;
+    }
+  }
+}

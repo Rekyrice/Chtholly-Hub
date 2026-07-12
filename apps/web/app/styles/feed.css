@@ -7,7 +7,11 @@
   }
 
   .post-card {
-    background: color-mix(in srgb, var(--color-surface) calc(var(--blog-card-opacity) * 100%), transparent);
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-card-alpha, var(--blog-card-opacity)) * 100%),
+      transparent
+    );
     border-radius: var(--blog-card-radius);
     box-shadow: 0 2px 8px var(--card-shadow);
     margin-bottom: var(--post-card-gap);
@@ -89,6 +93,10 @@
     align-items: start;
   }
 
+  .hub-sidebar {
+    align-self: start;
+  }
+
   .hub-timeline-heading,
   .hub-section-heading {
     margin-bottom: 16px;
@@ -128,7 +136,11 @@
     overflow: hidden;
     border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
     border-radius: 16px;
-    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-card-alpha, 0.88) * 100%),
+      transparent
+    );
     box-shadow: 0 16px 42px color-mix(in srgb, var(--color-text) 8%, transparent);
   }
 
@@ -379,6 +391,12 @@
 
   .hub-feed-list {
     display: grid;
+    align-content: start;
+    gap: var(--post-card-gap);
+  }
+
+  .hub-feed-list .post-card {
+    margin-bottom: 0;
   }
 
   .hub-feed-pagination {
@@ -550,7 +568,11 @@
     margin-bottom: 0;
     border: 1px solid color-mix(in srgb, var(--color-border) 74%, transparent);
     border-radius: 16px;
-    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-sidebar-alpha, 0.92) * 100%),
+      transparent
+    );
     box-shadow: 0 14px 36px color-mix(in srgb, var(--color-text) 7%, transparent);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
