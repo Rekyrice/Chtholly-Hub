@@ -1992,3 +1992,159 @@ Expected: technical Chinese Conventional Commits only, no ignored files forced i
 - [ ] **Step 5: Deliver the verified result**
 
 Report account/post totals, category and format distribution, media/provenance totals, preserved IDs, import/idempotency evidence, test/build results, commit list and explicit confirmation that nothing was pushed.
+
+## 2026-07-12《末日后酒店》长文范文执行修订
+
+Tasks 19–22 暂停。用户否决三篇短样稿作为博客内容标杆；先完成 Tasks 23–26 的单篇长文审阅门。本节与 Task 19 的三篇短样稿要求冲突时以本节为准。
+
+## Task 23: Add the isolated long-form review quality gate
+
+**Files:**
+- Modify: `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackQualityGate.java`
+- Modify: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackQualityGateTest.java`
+
+- [ ] **Step 1: Write exact failing boundaries**
+
+Add four `content-v3` fixtures using format `longform-review`: 3,999 Han characters must fail, 4,000 and 6,000 must pass, and 6,001 must fail. Also assert existing `review` still accepts 450–2,200 only and `community-note` remains 180–700.
+
+- [ ] **Step 2: Run RED**
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=ContentPackQualityGateTest#enforcesContentV3LongformReviewBounds' test
+```
+
+Expected: FAIL because `longform-review` is not yet accepted.
+
+- [ ] **Step 3: Implement the minimal format**
+
+Add `longform-review` to `CONTENT_V3_FORMATS` and map it to `new LengthRange(4_000, 6_000)`. Do not change the bounds for any existing format.
+
+- [ ] **Step 4: Run GREEN and regression**
+
+```powershell
+mvn -q '-Dtest=ContentPackQualityGateTest,ContentPackLoaderTest,ContentPackValidatorTest' test
+```
+
+Expected: all targeted tests pass.
+
+## Task 24: Replace the rejected sample bundle with one sourced long-form bundle
+
+**Files:**
+- Modify: `content/seed/content-v3/manifest.yml`
+- Replace: `content/seed/content-v3/sources.yml`
+- Replace: `content/seed/content-v3/posts.yml`
+- Modify: `content/seed/content-v3/assets.yml`
+- Delete: rejected uncommitted sample Markdown files under `content/seed/content-v3/posts/`
+- Create temporarily: `.codex-tmp/seed-content-v3/sources/apocalypse-hotel-*`
+
+- [ ] **Step 1: Set the single-post review scope**
+
+Set `stage: review`, `expectedPosts: 1`, and `expectedCategories: { ANIME: 1 }`. Keep the eight approved accounts and their avatar assets unchanged. Keep `interactions.yml` empty.
+
+- [ ] **Step 2: Record the exact source cards**
+
+Create source cards for:
+
+- `https://blog.sakugabooru.com/2026/01/02/apocalypse-hotel-and-legacies/`
+- `https://bgm.tv/subject/509986` and the public `rekyrice` collection comment shown on that page
+- `https://www.itmedia.co.jp/news/articles/2509/20/news007.html`
+- `https://www.animenewsnetwork.com/interview/2025-06-24/opening-the-apocalypse-hotel-with-cygamespictures-president-nobuhiro-takenaka-director-kana-shundo-/.225414`
+- `https://nlab.itmedia.co.jp/cont/articles/3456032/`
+- `https://www.animatetimes.com/news/details.php?id=1749194269`
+- `https://gamebiz.jp/news/411946`
+- `https://apocalypse-hotel.jp/`
+
+Fact anchors must cover the project transfer from Liden Films, Takenaka and Murakoshi's reworking, the pandemic delay, Izumi Takemoto's original designs, Kana Shundo's direction, Kouhei Honda's art direction, the episodic structure, and episodes 5/6/11/12. Do not copy Sakuga Blog paragraphs into source-card notes.
+
+- [ ] **Step 3: Fetch the exact eight media sources**
+
+Use `apps/web/scripts/seed/fetch-source-asset.mjs` without overriding `fetchedAt` for:
+
+1. cover: `https://apocalypse-hotel.jp/wp/wp-content/themes/apocalypsehotel/assets/siteinfo/og_image.jpg?v=202504082014`; remove the unrelated TBS `takopi_project` cover declaration and temporary source;
+2. `https://blog.sakugabooru.com/wp-content/uploads/2026/01/apohotel1-scaled.jpg`;
+3. `https://blog.sakugabooru.com/wp-content/uploads/2026/01/apohotel2.jpg`;
+4. `https://blog.sakugabooru.com/wp-content/uploads/2026/01/apohotel3.jpg`;
+5. `https://blog.sakugabooru.com/wp-content/uploads/2026/01/apohotel4.jpg`;
+6. `https://blog.sakugabooru.com/wp-content/uploads/2026/01/apohotel5-scaled.jpg`;
+7. `https://i.imgur.com/37FPqeE.jpg`;
+8. `https://i.imgur.com/U0HYg6m.jpg`.
+
+Inspect every source before accepting it. Use the five Sakuga Blog images for production/design/episode transitions and the two Imgur frames for the broken-tree flowers before and after the finale. Record the Sakuga article as the source page for images 2–8.
+
+- [ ] **Step 4: Declare deterministic media assets**
+
+Create one 1200×675 cover asset and seven inline assets named:
+
+- `apocalypse-hotel-production-history`
+- `apocalypse-hotel-takemoto-designs`
+- `apocalypse-hotel-director-lineage`
+- `apocalypse-hotel-episodic-range`
+- `apocalypse-hotel-finale-legacy`
+- `apocalypse-hotel-tree-before`
+- `apocalypse-hotel-tree-after`
+
+Each inline source becomes a WebP of at most 1,600 pixels wide. Preserve source URL, source page, actual fetch time and usage note.
+
+## Task 25: Write the 4,000–6,000 Han-character model article
+
+**Files:**
+- Create: `content/seed/content-v3/posts/apocalypse-hotel-legacies.md`
+- Replace: `content/seed/content-v3/posts.yml`
+
+- [ ] **Step 1: Create the one post definition**
+
+Use seed key and slug `apocalypse-hotel-legacies`, author `anime-critic`, category `ANIME`, format `longform-review`, the approved cover, and all seven inline assets. Use the title `即使无法生活，也可以停留——《末日后酒店》与那些比世界活得更久的东西`.
+
+- [ ] **Step 2: Write 22–28 natural paragraphs in eight movements**
+
+Write 4,000–6,000 Han characters following the eight-part order in design section 14.3. The production-history sections may translate and localize Sakuga Blog's facts, but must not preserve its paragraph-by-paragraph wording. Attribute no more than one short external quotation. Integrate the `rekyrice` positions explicitly:
+
+- episodic storytelling is both the largest weakness and advantage;
+- episode 5's colored time and Yachiyo's lonely smile;
+- episode 6's hot spring and rainbow;
+- episode 11's post-apocalyptic journey and sense of being alive;
+- episode 12's “人类大笨蛋” and the hotel theme;
+- `即使无法生活，也可以停留` as the final return point.
+
+Do not add a generic recommendation paragraph or a universal “原创动画应该如何” conclusion.
+
+- [ ] **Step 3: Place the seven inline images at evidence boundaries**
+
+Put each image immediately after the paragraph it supports, with a concise Chinese caption and source label. The two tree images must appear as a before/after pair in the finale section. Do not place two images consecutively without prose between them except for that explicit comparison pair.
+
+- [ ] **Step 4: Run authoring scans**
+
+Count Han characters and paragraphs. Search for repeated template phrases, copied English sentence fragments longer than 25 words, uncited production claims and unmatched media keys. Expected: 4,000–6,000 Han characters, 22–28 prose paragraphs, eight media assets including the cover, and zero unresolved references.
+
+## Task 26: Build the single-article review gate and stop
+
+**Files:**
+- Replace temporarily: `.codex-tmp/seed-content-v3/review/index.html`
+
+- [ ] **Step 1: Prepare and verify media**
+
+```powershell
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --write-hashes
+node apps/web/scripts/seed/prepare-content-media.mjs --pack content/seed/content-v3 --check
+```
+
+- [ ] **Step 2: Run content validation**
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=ContentPackQualityGateTest,ContentPackLoaderTest,ContentPackValidatorTest' test
+cd ../..
+.\scripts\dev\run-seed.ps1 -Mode content_pack -DryRun
+git diff --check
+```
+
+Expected: `status=validated`; validation and quality warnings/errors are empty.
+
+- [ ] **Step 3: Render only the model article**
+
+Build `review/index.html` with the complete article, actual cover and seven inline images, captions, the approved author card, Han-character and paragraph counts, and a collapsed source panel. Verify `index.html`, `accounts.html`, the avatar and all eight article assets return HTTP 200 through port 62456.
+
+- [ ] **Step 4: Stop for user review**
+
+Do not stage or commit the quality-gate code, article, media or content-pack data. Ask the user to approve the single long-form article before resuming Task 20.
