@@ -549,11 +549,11 @@
   sourceUrl: local-experiment://rag-chunk-size-regression/cover
   sourcePageUrl: local-experiment://rag-chunk-size-regression
   fetchedAt: 2026-07-13T00:00:00Z
-  usageNote: 由结果 JSON 自动生成的实验摘要，展示固定语料数、问题数、500 与 800 字符方案的真实 Hit@1、MRR 和无模型基线边界；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 a6833367a519a2fd58980d98e4165bda364cc749cbf037a1c750dfab6ccfa089；result SHA-256 cbaed401304e24f5fef848db511d732959303d2598fa455ac8d1431eb5ac6dbe
+  usageNote: 由 tracked results 动态生成实验摘要，展示两种方案的真实 Hit@1、MRR 与无模型边界；evidence：content/seed/content-v3/evidence/rag-chunk-size/experiment.py、content/seed/content-v3/evidence/rag-chunk-size/queries.json、content/seed/content-v3/evidence/rag-chunk-size/results.json、content/seed/content-v3/evidence/rag-chunk-size/visuals.html；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 3512299d52c8ea1aacbb440762c43cd5ad20b93280cfaafd47c7e8ecb43585ab；queries SHA-256 8e55530e8411a02cb4f54365ed418b00e45b978be711907bc0c4d0f48826e83e；result SHA-256 cac91a73bbf5f37fd2a8a259834e7100f4ec02bf5c6485a3fd7efa52a2bd4f62；visuals SHA-256 3c2285e3c224317fa993cfcbc67daef41c788f4b22a5119f9fb7ef00dc6d4178
   sourceFile: rag-chunk-size-regression.png
   file: covers/rag-chunk-size-regression.webp
-  objectKey: seed/content-v3/covers/rag-chunk-size-regression/adcaee7eeaf3539d5295ad3176a6e45fdc5b34ac54acf406f5bb729e806607c4.webp
-  sha256: adcaee7eeaf3539d5295ad3176a6e45fdc5b34ac54acf406f5bb729e806607c4
+  objectKey: seed/content-v3/covers/rag-chunk-size-regression/d4a46b854b535bf5e4d34a3b252ccc9dc6538ca0000e405b03439a53e87f3f35.webp
+  sha256: d4a46b854b535bf5e4d34a3b252ccc9dc6538ca0000e405b03439a53e87f3f35
   contentType: image/webp
   width: 1200
   height: 675
@@ -563,11 +563,11 @@
   sourceUrl: local-experiment://rag-chunk-size-regression/recall-table
   sourcePageUrl: local-experiment://rag-chunk-size-regression
   fetchedAt: 2026-07-13T00:00:00Z
-  usageNote: 由结果 JSON 自动生成的逐问题比较表，展示两种切片方案各自 top 1、expected 排名、Hit@1 与 MRR；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 a6833367a519a2fd58980d98e4165bda364cc749cbf037a1c750dfab6ccfa089；result SHA-256 cbaed401304e24f5fef848db511d732959303d2598fa455ac8d1431eb5ac6dbe
+  usageNote: 由 tracked results 动态生成逐问题表，展示 top 1、answer-bearing relevant rank、Hit@1 与 MRR；evidence：content/seed/content-v3/evidence/rag-chunk-size/experiment.py、content/seed/content-v3/evidence/rag-chunk-size/queries.json、content/seed/content-v3/evidence/rag-chunk-size/results.json、content/seed/content-v3/evidence/rag-chunk-size/visuals.html；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 3512299d52c8ea1aacbb440762c43cd5ad20b93280cfaafd47c7e8ecb43585ab；queries SHA-256 8e55530e8411a02cb4f54365ed418b00e45b978be711907bc0c4d0f48826e83e；result SHA-256 cac91a73bbf5f37fd2a8a259834e7100f4ec02bf5c6485a3fd7efa52a2bd4f62；visuals SHA-256 3c2285e3c224317fa993cfcbc67daef41c788f4b22a5119f9fb7ef00dc6d4178
   sourceFile: rag-recall-table.png
   file: inline/rag-recall-table.webp
-  objectKey: seed/content-v3/inline/rag-recall-table/06df8537dbeab5d52f593a2fd97fdd111342c2ea1decd877e0dfdb6927727f2a.webp
-  sha256: 06df8537dbeab5d52f593a2fd97fdd111342c2ea1decd877e0dfdb6927727f2a
+  objectKey: seed/content-v3/inline/rag-recall-table/060f368f7fcec1c965b5d6f17ac59b95e961af0439affd408ccd7d95805c4f2e.webp
+  sha256: 060f368f7fcec1c965b5d6f17ac59b95e961af0439affd408ccd7d95805c4f2e
   contentType: image/webp
   width: 1600
   height: 1000
@@ -577,11 +577,11 @@
   sourceUrl: local-experiment://rag-chunk-size-regression/rank-change
   sourcePageUrl: local-experiment://rag-chunk-size-regression
   fetchedAt: 2026-07-13T00:00:00Z
-  usageNote: 由结果 JSON 自动生成的真实排名变化案例，展示文章缓存查询在 500 与 800 字符方案中的 top 3、score 和 expected 第 3 到第 4 的变化；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 a6833367a519a2fd58980d98e4165bda364cc749cbf037a1c750dfab6ccfa089；result SHA-256 cbaed401304e24f5fef848db511d732959303d2598fa455ac8d1431eb5ac6dbe
+  usageNote: 由 tracked results 动态生成缓存查询排名变化，展示 top 3 并追加 answer-bearing relevant 第 4 行与 score；evidence：content/seed/content-v3/evidence/rag-chunk-size/experiment.py、content/seed/content-v3/evidence/rag-chunk-size/queries.json、content/seed/content-v3/evidence/rag-chunk-size/results.json、content/seed/content-v3/evidence/rag-chunk-size/visuals.html；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 3512299d52c8ea1aacbb440762c43cd5ad20b93280cfaafd47c7e8ecb43585ab；queries SHA-256 8e55530e8411a02cb4f54365ed418b00e45b978be711907bc0c4d0f48826e83e；result SHA-256 cac91a73bbf5f37fd2a8a259834e7100f4ec02bf5c6485a3fd7efa52a2bd4f62；visuals SHA-256 3c2285e3c224317fa993cfcbc67daef41c788f4b22a5119f9fb7ef00dc6d4178
   sourceFile: rag-failed-query.png
   file: inline/rag-failed-query.webp
-  objectKey: seed/content-v3/inline/rag-failed-query/d5999f7d5159074ee5709049ec6aad69f176cc013021a16c2239879d9d8b62cf.webp
-  sha256: d5999f7d5159074ee5709049ec6aad69f176cc013021a16c2239879d9d8b62cf
+  objectKey: seed/content-v3/inline/rag-failed-query/f39188592ec53cd91132acac39dc5feb8403b80fe8b093faf8094bdeba8314c4.webp
+  sha256: f39188592ec53cd91132acac39dc5feb8403b80fe8b093faf8094bdeba8314c4
   contentType: image/webp
   width: 1600
   height: 900

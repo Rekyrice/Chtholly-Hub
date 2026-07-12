@@ -165,9 +165,9 @@
 - seedKey: rag-chunk-size-regression
   legacySlug: null
   authorSeedKey: algo-runner
-  title: 500 与 800 字符切片：命中率没变，MRR 小幅下降
+  title: 500 与 800 字符切片：Hit@1 没变，MRR 小幅下降
   slug: rag-chunk-size-regression
-  description: 七份本地 Markdown、八个固定问题，对比两种字符切片的命中率、MRR 和逐问排名。
+  description: 冻结七份 Git 语料和答案片段，对比两种字符切片的 Hit@1、MRR 与逐问排名。
   category: TECH
   tags: [RAG, 文档切片, TF-IDF, 检索实验]
   publishTime: 2026-04-11T11:05:00Z
@@ -177,9 +177,9 @@
     - rag-recall-table
     - rag-failed-query
   brief:
-    factAnchors: [7 份本地 Markdown, 8 个固定问题, Markdown heading 分段, Unicode 字符窗口, chunk size 500 与 800, overlap 80, 连续汉字 run 内生成单字与相邻二元组, 英文数字 token, TF-IDF 余弦, top 3, Hit@1 0.375, 500 MRR 0.563782, 800 MRR 0.555804, 文章缓存 expected rank 3 到 4, OSS expected rank 10 到 8, Neo4j expected rank 13 到 14, 无 LLM, 无 embedding]
+    factAnchors: [tracked experiment.py queries.json results.json visuals.html, corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e, 7 个 Git blob SHA-256, 8 个 answer-bearing 标签, path heading evidence substring 同 chunk relevant, Markdown heading 分段, Unicode 字符窗口, chunk size 500 与 800, overlap 80, 连续汉字 run 内二元组, TF-IDF 余弦, top 3, Hit@1 0.375, 500 MRR 0.569139, 800 MRR 0.565179, 文章缓存 relevant rank 3 到 4, OSS 上传方式 rank 7 到 5, Neo4j rank 13 到 14, 无 LLM, 无 embedding]
     voice: kuro_404，公开条件反例和失败项，样本小就不下大结论，像个人实验记录
-    position: 这组无模型基线里两种切片的 Hit@1 均为 0.375，800 字符的 MRR 从 0.563782 降到 0.555804，但逐问同时存在改善与退步，结果不外推到 embedding 或完整 RAG 系统
+    position: 冻结语料与 answer-bearing substring 标签后，两种切片 Hit@1 均为 0.375，800 字符的 MRR 从 0.569139 降到 0.565179；substring relevant 有局限，结果不外推到 embedding 或完整 RAG 系统
     format: technical-report
-    mediaPlan: [真实实验摘要终端式封面, 由结果 JSON 生成的八问首位结果与指标表, 由结果 JSON 生成的文章缓存查询 top 3 与 expected 排名变化]
+    mediaPlan: [由 tracked results 生成的 Hit@1 与 MRR 摘要封面, 由 tracked results 生成的八问 answer-bearing 首位结果表, 缓存查询 top 3 加真实 relevant 第 4 行]
     sources: [rag-chunk-local-experiment]

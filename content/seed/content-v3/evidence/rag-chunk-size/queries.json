@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "queries": [
+    {
+      "id": "site-owner-user-id",
+      "query": "站长用户ID如何配置",
+      "expected_source_path": "apps/server/README.md",
+      "expected_heading": "配置说明",
+      "evidence_substrings": ["`SITE_OWNER_USER_ID` | `1` | 站长用户 ID"]
+    },
+    {
+      "id": "notification-transport",
+      "query": "通知为何不用Kafka",
+      "expected_source_path": "AGENTS.md",
+      "expected_heading": "架构决策",
+      "evidence_substrings": ["通知用 Spring ApplicationEvent（非 Kafka）"]
+    },
+    {
+      "id": "agent-memory-location",
+      "query": "Agent对话记忆存在哪里",
+      "expected_source_path": "AGENTS.md",
+      "expected_heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+      "evidence_substrings": ["`agent/memory` | 内存对话记忆（计划迁移 Redis）"]
+    },
+    {
+      "id": "search-tokenizer",
+      "query": "搜索使用什么分词",
+      "expected_source_path": "AGENTS.md",
+      "expected_heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+      "evidence_substrings": ["`search` | Elasticsearch 全文搜索（IK 分词）"]
+    },
+    {
+      "id": "post-cache-layers",
+      "query": "文章缓存有哪些层",
+      "expected_source_path": "AGENTS.md",
+      "expected_heading": "架构决策",
+      "evidence_substrings": ["多级缓存（Caffeine + Redis） | L1 热 Key（纳秒级）、L2 温数据（毫秒级）、DB 为最终数据源"]
+    },
+    {
+      "id": "bangumi-sync-component",
+      "query": "哪个组件负责 Bangumi 数据同步",
+      "expected_source_path": "AGENTS.md",
+      "expected_heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+      "evidence_substrings": ["`bangumi` | Bangumi API 客户端、本地缓存、番剧数据同步", "`BangumiSyncJob`"]
+    },
+    {
+      "id": "oss-upload-method",
+      "query": "OSS 上传采用什么方式",
+      "expected_source_path": "README.md",
+      "expected_heading": "已实现能力",
+      "evidence_substrings": ["OSS 预签名直传"]
+    },
+    {
+      "id": "knowledge-graph-storage",
+      "query": "项目为何不用Neo4j",
+      "expected_source_path": "AGENTS.md",
+      "expected_heading": "架构决策",
+      "evidence_substrings": ["MySQL 邻接表做知识图谱（非 Neo4j） | 数据量小（数千节点），Java BFS 比 Cypher 更清晰"]
+    }
+  ]
+}
