@@ -126,10 +126,10 @@
   usageNote: 观点路线：按人物动作、背景反应与剪辑节拍拆解城市喜剧，再回到团队统一的线条语言；媒体说明：用于核对来源页静态剧照，线条图因原候选误指展览宣传图而改用同页 city-end 静态画面
 - key: city-animation-production-official
   type: official-site
-  title: 『CITY THE ANIMATION』公式サイト
-  pageUrl: https://city-the-animation.com/
+  title: STAFF・CAST | 『CITY THE ANIMATION』公式サイト
+  pageUrl: https://city-the-animation.com/staff/
   author: CITY THE ANIMATION 製作委員会
-  fetchedAt: 2026-07-12T14:29:44.100Z
-  factAnchors: [作品官方标题为CITY THE ANIMATION, 官方站记录Blu-ray与DVD发行状态, 官方站记录Prime Video配信状态]
+  fetchedAt: 2026-07-12T14:58:59.084Z
+  factAnchors: [原作あらゐけいいち《CITY》, 监督石立太一, 角色设计与总作画监督徳山珠美, 动画制作京都アニメーション]
   quote: null
-  usageNote: 观点路线：仅核对作品身份与官方发布状态，不据此推导制作评价；媒体说明：不直接取图，媒体统一回到已记录的 Sakuga Blog 来源页
+  usageNote: 观点路线：核对原作与核心制作阵容，为人物动作、团队表现和线条统一性的分析提供官方事实边界；媒体说明：不直接取图，媒体统一回到已记录的 Sakuga Blog 来源页

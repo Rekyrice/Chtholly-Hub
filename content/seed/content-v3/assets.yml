@@ -308,14 +308,14 @@
   usage: inline
 - key: hyakuemu-rain-sprint
   source: public-web
-  sourceUrl: https://blog.sakugabooru.com/wp-content/uploads/2025/12/hyaku4-scaled.jpg
+  sourceUrl: https://blog.sakugabooru.com/wp-content/uploads/2025/12/hyaku5-scaled.jpg
   sourcePageUrl: https://blog.sakugabooru.com/2025/12/27/hyakuemu-100-meters-uoto-kenji-iwaisawa/
-  fetchedAt: 2026-07-12T14:31:24.815Z
-  usageNote: 正文以灰冷雨赛前走向跑道的群体背影连接速度、场地和等待发令的时间感
-  sourceFile: hyaku4.jpg
+  fetchedAt: 2026-07-12T15:00:06.946Z
+  usageNote: 正文以奔跑者前倾的身体、飞散头发和运动失焦背景支撑冲刺速度与身体负荷分析
+  sourceFile: hyaku5.jpg
   file: inline/hyakuemu-rain-sprint.webp
-  objectKey: seed/content-v3/inline/hyakuemu-rain-sprint/b5a86851507cb76272094c79b8d43244acba231b2535ab6aa38a3e0132df7048.webp
-  sha256: b5a86851507cb76272094c79b8d43244acba231b2535ab6aa38a3e0132df7048
+  objectKey: seed/content-v3/inline/hyakuemu-rain-sprint/cd8f3eb1b15400e3d2c627b41e15f2cd567e266c98e150f96084cfa15ddfe9a4.webp
+  sha256: cd8f3eb1b15400e3d2c627b41e15f2cd567e266c98e150f96084cfa15ddfe9a4
   contentType: image/webp
   width: 1600
   height: 900
@@ -381,7 +381,7 @@
   sourceUrl: https://blog.sakugabooru.com/wp-content/uploads/2025/09/city-end-scaled.jpg
   sourcePageUrl: https://blog.sakugabooru.com/2025/09/29/city-the-animation-final-production-notes-and-kyoto-animations-future/
   fetchedAt: 2026-07-12T14:33:34.431Z
-  usageNote: 正文以统一粗线条串联建筑、人物群像和弹簧状动势；替换原候选，因原 URL 实际返回带展览标识且不对应 CITY 线条分析的宣传拼图
+  usageNote: 正文以统一粗线条串联建筑、人物群像和弹簧状动势
   sourceFile: city-end.jpg
   file: inline/city-line-language.webp
   objectKey: seed/content-v3/inline/city-line-language/c3a0bfe51c3d034336826a2eb34cb45aa4ab912b73ae8f8698e9e129158a547c.webp
