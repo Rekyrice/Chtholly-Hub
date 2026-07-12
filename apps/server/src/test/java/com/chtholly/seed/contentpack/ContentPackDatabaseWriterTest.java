@@ -1,5 +1,6 @@
 package com.chtholly.seed.contentpack;
 
+import com.chtholly.config.SiteProperties;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.SeedCommentRow;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.SeedFollowRow;
@@ -69,7 +70,7 @@ class ContentPackDatabaseWriterTest {
     @BeforeEach
     void setUp() {
         writer = new ContentPackDatabaseWriter(
-                mapper, idGenerator, tagService, new ObjectMapper().findAndRegisterModules());
+                mapper, idGenerator, tagService, new ObjectMapper().findAndRegisterModules(), siteProperties(1L));
         lenient().when(mapper.updateIdentityHash(any(), any(), any(), any(), any(), any())).thenReturn(1);
     }
 
@@ -136,6 +137,55 @@ class ContentPackDatabaseWriterTest {
         verify(tagService).syncPublishedPostTags(42L, List.of(), List.of("Java", "MySQL"));
         assertThat(result.changedPostIds()).containsExactly(101L);
         assertThat(result.createdPostCountsByAuthor()).containsEntry(42L, 1);
+    }
+
+    @Test
+    void givenSiteOwnerPostAuthor_whenWrite_thenUsesConfiguredOwnerIdWithoutSeedAccount() {
+        writer = new ContentPackDatabaseWriter(
+                mapper, idGenerator, tagService, new ObjectMapper().findAndRegisterModules(), siteProperties(7L));
+        when(mapper.findIdentity(NAMESPACE, "POST", "post-one")).thenReturn(null);
+        when(mapper.findLegacyPostId("legacy-post-one")).thenReturn(null);
+        when(idGenerator.nextId()).thenReturn(101L);
+        when(mapper.findPostStateById(101L)).thenReturn(null);
+
+        WriteResult result = writer.write(
+                pack(List.of(), List.of(post("post-one", "site-owner")), List.of(), List.of()),
+                published("post-one"));
+
+        ArgumentCaptor<SeedPostRow> row = ArgumentCaptor.forClass(SeedPostRow.class);
+        verify(mapper).insertSeedPost(row.capture());
+        assertThat(row.getValue().creatorId()).isEqualTo(7L);
+        assertThat(result.identities().accountIds()).isEmpty();
+        verify(mapper, never()).insertSeedUser(any());
+        verify(mapper, never()).updateSeedUserById(any());
+    }
+
+    @Test
+    void givenNonPositiveOwnerId_whenWritingSiteOwnerPost_thenFailsBeforePostMutation() {
+        writer = new ContentPackDatabaseWriter(
+                mapper, idGenerator, tagService, new ObjectMapper().findAndRegisterModules(), siteProperties(0L));
+        lenient().when(mapper.findIdentity(NAMESPACE, "ACCOUNT", "author"))
+                .thenReturn(identity("ACCOUNT", "author", 42L, null));
+        lenient().when(mapper.seedUserExistsById(42L)).thenReturn(true);
+
+        assertThatThrownBy(() -> writer.write(
+                pack(List.of(account("author")), List.of(post("post-one", "site-owner")), List.of(), List.of()),
+                published("post-one")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ownerUserId");
+
+        verifyNoInteractions(mapper, tagService, idGenerator);
+    }
+
+    @Test
+    void givenSiteOwnerDeclaredAsSeedAccount_whenWrite_thenRejectsBeforeAnyAccountOrFollowMutation() {
+        assertThatThrownBy(() -> writer.write(
+                pack(List.of(account("site-owner")), List.of(), List.of(), List.of()),
+                publishedWithSiteOwnerAvatar()))
+                .isInstanceOfAny(IllegalArgumentException.class, IllegalStateException.class)
+                .hasMessageContaining("site-owner");
+
+        verifyNoInteractions(mapper, tagService, idGenerator);
     }
 
     @Test
@@ -433,7 +483,17 @@ class ContentPackDatabaseWriterTest {
                 Map.of(), List.of(), NAMESPACE, "lease");
     }
 
+    private PublishedContent publishedWithSiteOwnerAvatar() {
+        return new PublishedContent(Map.of(
+                "avatar-site-owner", asset("avatar-site-owner", "/media/avatar-site-owner.webp")),
+                Map.of(), List.of(), NAMESPACE, "lease");
+    }
+
     private PublishedAsset asset(String key, String url) {
         return new PublishedAsset(key, "objects/" + key, url, "a".repeat(64), "image/webp", 10L, false);
+    }
+
+    private SiteProperties siteProperties(long ownerUserId) {
+        return new SiteProperties(ownerUserId, 888888888888888888L, "", "rekyrice", "rekyrice");
     }
 }

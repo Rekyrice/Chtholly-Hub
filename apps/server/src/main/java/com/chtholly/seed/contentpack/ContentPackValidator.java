@@ -34,6 +34,7 @@ import org.springframework.stereotype.Component;
 @Component
 public final class ContentPackValidator {
 
+    static final String SITE_OWNER_AUTHOR = "site-owner";
     private static final Pattern HANDLE_PATTERN = Pattern.compile("[A-Za-z0-9_]{3,64}");
     private static final Set<String> STAGES = Set.of("review", "complete");
     private static final Set<String> REACTION_TYPES = Set.of("like", "fav");
@@ -104,6 +105,9 @@ public final class ContentPackValidator {
         addDuplicates(pack.accounts(), SeedAccountDefinition::handle, this::foldDatabaseIdentifier,
                 "duplicate account handle: ", errors);
         for (SeedAccountDefinition account : pack.accounts()) {
+            if (SITE_OWNER_AUTHOR.equals(account.seedKey())) {
+                errors.add("reserved account seedKey: " + SITE_OWNER_AUTHOR);
+            }
             if (account.handle() == null || !HANDLE_PATTERN.matcher(account.handle()).matches()) {
                 errors.add("invalid account handle: " + account.seedKey());
             }
@@ -120,7 +124,7 @@ public final class ContentPackValidator {
                 "duplicate post slug: ", errors);
         Set<String> accountKeys = keys(pack.accounts(), SeedAccountDefinition::seedKey);
         for (SeedPostDefinition post : pack.posts()) {
-            if (!accountKeys.contains(post.authorSeedKey())) {
+            if (!isDeclaredPostAuthor(accountKeys, post.authorSeedKey())) {
                 errors.add("missing post author: " + post.seedKey() + " -> " + post.authorSeedKey());
             }
             if (post.coverAsset() != null && !post.coverAsset().isBlank()
@@ -150,6 +154,10 @@ public final class ContentPackValidator {
                 validatePostSources(pack, post, errors);
             }
         }
+    }
+
+    private boolean isDeclaredPostAuthor(Set<String> accountKeys, String authorSeedKey) {
+        return SITE_OWNER_AUTHOR.equals(authorSeedKey) || accountKeys.contains(authorSeedKey);
     }
 
     private void validateAssets(ContentPack pack, List<String> errors) {

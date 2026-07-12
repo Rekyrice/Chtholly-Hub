@@ -5,6 +5,7 @@ import com.chtholly.seed.contentpack.model.ContentPackManifest;
 import com.chtholly.seed.contentpack.model.SeedAccountDefinition;
 import com.chtholly.seed.contentpack.model.SeedAssetDefinition;
 import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
+import com.chtholly.seed.contentpack.model.SeedFollowDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
 import com.chtholly.seed.contentpack.model.SeedSourceDefinition;
 import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
@@ -174,6 +175,79 @@ class ContentPackValidatorTest {
         ContentPackValidator.ValidationResult result = validator.validate(pack);
 
         assertEquals(java.util.List.of(), result.warnings());
+    }
+
+    @Test
+    void acceptsSiteOwnerAsPostAuthorWithoutDeclaredSeedAccount() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedPostDefinition post = withAuthor(loaded.posts().getFirst(), "site-owner");
+        ContentPack pack = new ContentPack(loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(),
+                List.of(post), loaded.comments(), loaded.follows(), loaded.reactions(), loaded.views());
+
+        ContentPackValidator.ValidationResult result = validator.validate(pack);
+
+        assertEquals(List.of(), result.warnings());
+    }
+
+    @Test
+    void rejectsSiteOwnerOutsidePostAuthorReferences() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedCommentDefinition originalComment = loaded.comments().getFirst();
+        SeedCommentDefinition comment = new SeedCommentDefinition(
+                originalComment.seedKey(), originalComment.legacyOrdinal(), originalComment.postSeedKey(),
+                "site-owner", originalComment.parentSeedKey(), originalComment.content(), originalComment.createdAt());
+        SeedFollowDefinition originalFollow = loaded.follows().getFirst();
+        SeedFollowDefinition follow = new SeedFollowDefinition(
+                originalFollow.seedKey(), "site-owner", originalFollow.toAccountSeedKey(), originalFollow.createdAt());
+        SeedReactionDefinition originalReaction = loaded.reactions().getFirst();
+        SeedReactionDefinition reaction = new SeedReactionDefinition(
+                originalReaction.seedKey(), originalReaction.postSeedKey(), "site-owner", originalReaction.type());
+        ContentPack pack = new ContentPack(loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(),
+                loaded.posts(), List.of(comment), List.of(follow), List.of(reaction), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("missing comment author: " + comment.seedKey() + " -> site-owner"));
+        assertTrue(exception.getMessage().contains("missing follow source: " + follow.seedKey() + " -> site-owner"));
+        assertTrue(exception.getMessage().contains("missing reaction account: "
+                + reaction.seedKey() + " -> site-owner"));
+    }
+
+    @Test
+    void rejectsUnknownOrdinaryPostAuthor() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedPostDefinition post = withAuthor(loaded.posts().getFirst(), "absent-author");
+        ContentPack pack = new ContentPack(loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(),
+                List.of(post), loaded.comments(), loaded.follows(), loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("missing post author: " + post.seedKey() + " -> absent-author"));
+    }
+
+    @Test
+    void rejectsSiteOwnerAsDeclaredSeedAccount() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedAccountDefinition original = loaded.accounts().getFirst();
+        SeedAccountDefinition reserved = new SeedAccountDefinition(
+                "site-owner", null, original.nickname(), "reserved_site_owner", original.bio(),
+                original.avatarAsset(), original.gender(), original.birthday(), original.school(),
+                original.tags(), original.voice());
+        var accounts = new java.util.ArrayList<>(loaded.accounts());
+        accounts.add(reserved);
+        ContentPack pack = new ContentPack(loaded.root(),
+                new ContentPackManifest(loaded.manifest().version(), loaded.manifest().namespace(),
+                        loaded.manifest().stage(), accounts.size(), loaded.manifest().expectedPosts(),
+                        loaded.manifest().expectedCategories()),
+                List.copyOf(accounts), loaded.assets(), loaded.posts(), loaded.comments(), loaded.follows(),
+                loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("reserved account seedKey: site-owner"));
     }
 
     @Test
@@ -392,6 +466,33 @@ class ContentPackValidatorTest {
         return new SeedAssetDefinition(key, source, sourceUrl, sourcePageUrl, original.fetchedAt(), usageNote,
                 sourceFile, original.file(), original.objectKey(), original.sha256(), original.contentType(),
                 original.width(), original.height(), original.usage());
+    }
+
+    private ContentPack normalizedValidPack() throws Exception {
+        ContentPack loaded = loader.load(fixtureRoot("valid"));
+        var accounts = loaded.accounts().stream()
+                .map(account -> new SeedAccountDefinition(
+                        account.seedKey(), account.legacyHandle(), account.nickname(), account.handle().replace('-', '_'),
+                        account.bio(), account.avatarAsset(), account.gender(), account.birthday(), account.school(),
+                        account.tags(), account.voice()))
+                .toList();
+        var reactions = loaded.reactions().stream()
+                .map(reaction -> new SeedReactionDefinition(
+                        reaction.seedKey(), reaction.postSeedKey(), reaction.accountSeedKey(),
+                        reaction.type().toLowerCase()))
+                .toList();
+        return new ContentPack(loaded.root(),
+                new ContentPackManifest(loaded.manifest().version(), loaded.manifest().namespace(), "review",
+                        loaded.manifest().expectedAccounts(), loaded.manifest().expectedPosts(),
+                        loaded.manifest().expectedCategories()),
+                accounts, loaded.assets(), loaded.posts(), loaded.comments(), loaded.follows(), reactions, loaded.views());
+    }
+
+    private SeedPostDefinition withAuthor(SeedPostDefinition original, String authorSeedKey) {
+        return new SeedPostDefinition(original.seedKey(), original.legacySlug(), authorSeedKey,
+                original.title(), original.slug(), original.description(), original.category(), original.tags(),
+                original.publishTime(), original.markdownFile(), original.coverAsset(), original.inlineAssets(),
+                original.brief(), original.markdown());
     }
 
     private ContentPack contentV3(ContentPack loaded, Map<String, SeedSourceDefinition> sources,

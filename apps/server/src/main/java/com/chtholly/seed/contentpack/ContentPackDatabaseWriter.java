@@ -1,5 +1,6 @@
 package com.chtholly.seed.contentpack;
 
+import com.chtholly.config.SiteProperties;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.seed.contentpack.ContentPackMapper.FollowState;
 import com.chtholly.seed.contentpack.ContentPackMapper.PostState;
@@ -54,6 +55,7 @@ public class ContentPackDatabaseWriter {
     private final SnowflakeIdGenerator idGenerator;
     private final TagService tagService;
     private final ObjectMapper objectMapper;
+    private final SiteProperties siteProperties;
 
     /**
      * Creates the transactional content-pack database boundary.
@@ -62,16 +64,19 @@ public class ContentPackDatabaseWriter {
      * @param idGenerator stable ID generator for new entities
      * @param tagService published tag usage reconciler
      * @param objectMapper JSON serializer for database columns and identity metadata
+     * @param siteProperties site-level identities used by reserved content-pack authors
      */
     public ContentPackDatabaseWriter(
             ContentPackMapper mapper,
             SnowflakeIdGenerator idGenerator,
             TagService tagService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            SiteProperties siteProperties) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.idGenerator = Objects.requireNonNull(idGenerator, "idGenerator");
         this.tagService = Objects.requireNonNull(tagService, "tagService");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.siteProperties = Objects.requireNonNull(siteProperties, "siteProperties");
     }
 
     /**
@@ -85,6 +90,7 @@ public class ContentPackDatabaseWriter {
     public WriteResult write(ContentPack pack, PublishedContent published) {
         Objects.requireNonNull(pack, "pack");
         Objects.requireNonNull(published, "published");
+        requireValidReservedIdentities(pack);
         ContentPackValidator.requireValidCommentGraph(pack.comments());
         String namespace = requireText(pack.manifest().namespace(), "namespace");
         String version = requireText(pack.manifest().version(), "pack version");
@@ -101,6 +107,21 @@ public class ContentPackDatabaseWriter {
                 new ResolvedIdentities(namespace, accountIds, posts.postIds()),
                 posts.changedPostIds(),
                 posts.createdPostCountsByAuthor());
+    }
+
+    private void requireValidReservedIdentities(ContentPack pack) {
+        for (SeedAccountDefinition account : pack.accounts()) {
+            if (ContentPackValidator.SITE_OWNER_AUTHOR.equals(account.seedKey())) {
+                // 写库边界必须独立防御，避免绕过校验器时把真实站长别名落成 SeedUser。
+                throw new IllegalArgumentException(
+                        "reserved account seedKey: " + ContentPackValidator.SITE_OWNER_AUTHOR);
+            }
+        }
+        boolean usesSiteOwner = pack.posts().stream()
+                .anyMatch(post -> ContentPackValidator.SITE_OWNER_AUTHOR.equals(post.authorSeedKey()));
+        if (usesSiteOwner) {
+            requireSiteOwnerUserId();
+        }
     }
 
     private Map<String, Long> writeAccounts(
@@ -144,7 +165,7 @@ public class ContentPackDatabaseWriter {
         List<Long> changedPostIds = new ArrayList<>();
         Map<Long, Integer> createdCounts = new LinkedHashMap<>();
         for (SeedPostDefinition post : pack.posts()) {
-            long creatorId = requireIdentity(accountIds, post.authorSeedKey(), "post author");
+            long creatorId = resolvePostAuthorId(accountIds, post.authorSeedKey());
             SeedContentIdentity before = mapper.findIdentity(namespace, POST, post.seedKey());
             long postId = resolver.resolvePostId(post, version);
             PostState existing = mapper.findPostStateById(postId);
@@ -175,6 +196,22 @@ public class ContentPackDatabaseWriter {
             changedPostIds.add(postId);
         }
         return new PostWriteState(postIds, changedPostIds, createdCounts);
+    }
+
+    private long resolvePostAuthorId(Map<String, Long> accountIds, String authorSeedKey) {
+        if (!ContentPackValidator.SITE_OWNER_AUTHOR.equals(authorSeedKey)) {
+            return requireIdentity(accountIds, authorSeedKey, "post author");
+        }
+        return requireSiteOwnerUserId();
+    }
+
+    private long requireSiteOwnerUserId() {
+        long ownerUserId = siteProperties.ownerUserId();
+        if (ownerUserId <= 0) {
+            // 保留作者必须映射到已配置的真实站长，禁止悄悄生成 Seed 账号或无效外键。
+            throw new IllegalStateException("site.ownerUserId must be positive for site-owner post author");
+        }
+        return ownerUserId;
     }
 
     private void writeComments(
