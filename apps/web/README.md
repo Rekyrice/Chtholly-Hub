@@ -24,7 +24,7 @@
 
 ## 环境变量
 
-环境变量模板统一在仓库根目录 [`.env.example`](../../.env.example)：
+变量合同统一记录在仓库根目录 [`.env.example`](../../.env.example)。仓库的 PowerShell 启动脚本会读取根 `.env`；Next.js 自身只从应用目录或进程环境取值，裸 `npm run dev` 与 `npm run build` 不会自动读取父目录的根 `.env`。
 
 | 变量 | 用途 | 缺省行为 |
 |------|------|----------|
@@ -37,21 +37,26 @@
 
 ## 本地启动与验证
 
-在仓库根目录准备 `.env` 并先启动后端，然后：
+在仓库根目录准备 `.env` 并先启动后端。首次安装依赖：
 
 ```bash
 cd apps/web
 npm install
-npm run dev
 ```
 
-前端默认访问 `http://localhost:3000`，Spring Boot 默认访问 `http://localhost:8888`。
+Windows/PowerShell 推荐回到仓库根目录运行脚本；它先加载根 `.env`，再进入 `apps/web` 启动 Next.js：
+
+```powershell
+.\scripts\dev\start-frontend.ps1
+```
+
+其他系统或需要裸 npm 命令时，把前端变量写入被 Git 忽略的 `apps/web/.env.local`，或在终端/CI 中显式注入，再进入 `apps/web` 运行 `npm run dev`。前端默认访问 `http://localhost:3000`，Spring Boot 默认访问 `http://localhost:8888`。
 
 ```bash
 # 一次性运行全部 Vitest
 npm run test:run
 
-# 生产构建，包含类型、路由和 Server/Client 边界验证
+# 生产构建；先通过 apps/web/.env.local 或终端/CI 注入所需前端变量
 npm run build
 
 # 运行已构建的 standalone-compatible Next 服务

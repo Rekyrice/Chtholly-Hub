@@ -41,13 +41,16 @@ Copy-Item .env.example .env
 .\scripts\dev\start-backend.ps1
 ```
 
-启动前端（默认 `http://localhost:3000`）：
+安装依赖后，从仓库根目录启动前端（脚本会加载根 `.env`，默认 `http://localhost:3000`）：
 
 ```powershell
 cd apps/web
 npm install
-npm run dev
+cd ../..
+.\scripts\dev\start-frontend.ps1
 ```
+
+Next.js 不会为裸 `npm run dev` 自动读取父目录的根 `.env`。其他系统请把前端变量放入被忽略的 `apps/web/.env.local`，或注入当前进程后再在 `apps/web` 运行 `npm run dev`。
 
 ## 文档导航
 

@@ -19,6 +19,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `app/(site)` 默认使用 Server Components；公共读取优先由页面直接调用 `lib/services/*Service.ts`。需要 ISR 时由路由显式声明 `revalidate`。
 - 仅在浏览器事件、hooks、`localStorage`、WebSocket、Pixi/Live2D 或认证写操作确有需要时加入 `"use client"`，并把 Client 边界压到最小交互组件。
 - API 传输统一经 `lib/services/apiClient.ts`，领域 endpoint 放在 `lib/services`；浏览器走相对路径与 rewrite，RSC 走 `API_SERVER_URL`。不要在组件内另写 fetch/刷新协议。
+- 裸 `npm run dev` 与 `npm run build` 不会读取父目录的根 `.env`；本地裸 npm 使用被忽略的 `apps/web/.env.local` 或进程环境，PowerShell 启动则从仓库根运行 `scripts/dev/start-frontend.ps1`。
 - 请求/响应和共享领域类型放在 `lib/types`；认证持久化与订阅放在 `lib/auth`。不要在页面或组件中复制类型与 token 逻辑。
 - 通用交互组件放 `components/ui`，站点业务组件放 `components/site`，Agent 放 `components/agent`，写作子组件放 `components/write`。
 

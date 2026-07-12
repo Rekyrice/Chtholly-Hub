@@ -83,7 +83,7 @@ Core 包括交互入口、上下文合同、运行时、工具合同、会话记
 
 ### Memory 与 Experience
 
-- [`AgentMemoryStore`](../../apps/server/src/main/java/com/chtholly/agent/memory/AgentMemoryStore.java) 以 `userId + chatSessionId` 为键，Redis List 是跨进程会话数据，Caffeine 只加速热会话；写入用 `RPUSH + LTRIM`，读写刷新 TTL。它仅在 `llm.enabled=true` 时注册，并直接依赖 Redis，没有另一套内存持久化降级实现。
+- [`AgentMemoryStore`](../../apps/server/src/main/java/com/chtholly/agent/memory/AgentMemoryStore.java) 以 `userId + chatSessionId` 为键，Redis List 是跨进程会话数据，Caffeine 只加速热会话；写入用 `RPUSH + LTRIM`，写入和 Redis 冷读会刷新 Redis TTL。Caffeine 热读只刷新本地 `expireAfterAccess`，不访问 Redis，因此持续命中本地缓存时 Redis key 仍可能过期。它仅在 `llm.enabled=true` 时注册，并直接依赖 Redis，没有另一套内存持久化降级实现。
 - [`AgentConversationMemory`](../../apps/server/src/main/java/com/chtholly/agent/memory/AgentConversationMemory.java) 是单轮使用的会话视图；长期程序性知识由 [`ProceduralMemoryService`](../../apps/server/src/main/java/com/chtholly/agent/memory/ProceduralMemoryService.java) 承担并受 Learning 扩展控制。
 - Experience 是可选的长期经历域，入口包括 [`ExperienceGenerator`](../../apps/server/src/main/java/com/chtholly/agent/experience/ExperienceGenerator.java)、[`ExperienceService`](../../apps/server/src/main/java/com/chtholly/agent/cognitive/ExperienceService.java) 与 [`AgentExperienceController`](../../apps/server/src/main/java/com/chtholly/agent/api/AgentExperienceController.java)。它与聊天历史不是同一存储概念。
 
