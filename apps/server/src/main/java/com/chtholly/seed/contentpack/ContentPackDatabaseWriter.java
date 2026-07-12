@@ -275,7 +275,9 @@ public class ContentPackDatabaseWriter {
     static String contentHash(SeedPostDefinition post, long creatorId, PublishedContent published) {
         PublishedAsset markdown = requireMarkdown(published, post.seedKey());
         List<String> mediaHashes = new ArrayList<>();
-        mediaHashes.add(requireAsset(published, post.coverAsset(), "cover for " + post.seedKey()).sha256());
+        if (post.coverAsset() != null && !post.coverAsset().isBlank()) {
+            mediaHashes.add(requireAsset(published, post.coverAsset(), "cover for " + post.seedKey()).sha256());
+        }
         for (String inline : post.inlineAssets()) {
             mediaHashes.add(requireAsset(published, inline, "inline asset for " + post.seedKey()).sha256());
         }
@@ -288,7 +290,9 @@ public class ContentPackDatabaseWriter {
 
     private List<String> imageUrls(SeedPostDefinition post, PublishedContent published) {
         List<String> urls = new ArrayList<>();
-        urls.add(requireAsset(published, post.coverAsset(), "cover for " + post.seedKey()).publicUrl());
+        if (post.coverAsset() != null && !post.coverAsset().isBlank()) {
+            urls.add(requireAsset(published, post.coverAsset(), "cover for " + post.seedKey()).publicUrl());
+        }
         for (String inline : post.inlineAssets()) {
             urls.add(requireAsset(published, inline, "inline asset for " + post.seedKey()).publicUrl());
         }

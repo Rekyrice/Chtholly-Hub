@@ -1,6 +1,7 @@
 package com.chtholly.seed.contentpack;
 
 import com.chtholly.seed.contentpack.model.ContentPack;
+import com.chtholly.seed.contentpack.model.SeedSourceDefinition;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -11,6 +12,7 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -35,6 +37,7 @@ class ContentPackLoaderTest {
         assertTrue(pack.posts().getFirst().brief().mediaPlan().contains("告警曲线截图"));
         assertTrue(pack.posts().getFirst().brief().sources().contains("应用日志"));
         assertTrue(pack.assets().containsKey("avatar-night-coder"));
+        assertEquals("official-doc", pack.sources().get("spring-observability").type());
         assertEquals(1, pack.comments().size());
         assertEquals(1, pack.follows().size());
         assertEquals(1, pack.reactions().size());
@@ -78,10 +81,22 @@ class ContentPackLoaderTest {
         assertThrows(UnsupportedOperationException.class, () -> brief.sources().add("mutable"));
         assertThrows(UnsupportedOperationException.class, () -> pack.accounts().add(account));
         assertThrows(UnsupportedOperationException.class, () -> pack.assets().put("mutable", pack.assets().values().iterator().next()));
+        assertThrows(UnsupportedOperationException.class, () -> pack.sources().put("mutable", pack.sources().values().iterator().next()));
+        assertThrows(UnsupportedOperationException.class,
+                () -> pack.sources().values().iterator().next().factAnchors().add("mutable"));
+    }
+
+    @Test
+    void sourceDefinitionNormalizesNullFactAnchors() {
+        SeedSourceDefinition source = new SeedSourceDefinition(
+                "source", "official-doc", "title", "https://example.com", "author",
+                Instant.parse("2026-07-01T00:00:00Z"), null, null, "verification");
+
+        assertEquals(java.util.List.of(), source.factAnchors());
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"manifest.yml", "accounts.yml", "assets.yml", "posts.yml", "interactions.yml"})
+    @ValueSource(strings = {"manifest.yml", "accounts.yml", "assets.yml", "sources.yml", "posts.yml", "interactions.yml"})
     void rejectsNullYamlRootWithFileContext(String fileName, @TempDir Path tempDir) throws Exception {
         copyFixture(fixtureRoot(), tempDir);
         Files.writeString(tempDir.resolve(fileName), "null\n", StandardCharsets.UTF_8);

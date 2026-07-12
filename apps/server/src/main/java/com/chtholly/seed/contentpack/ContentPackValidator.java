@@ -3,6 +3,7 @@ package com.chtholly.seed.contentpack;
 import com.chtholly.seed.contentpack.model.ContentPack;
 import com.chtholly.seed.contentpack.model.ContentPackManifest;
 import com.chtholly.seed.contentpack.model.SeedAccountDefinition;
+import com.chtholly.seed.contentpack.model.SeedAssetDefinition;
 import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
 import com.chtholly.seed.contentpack.model.SeedFollowDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
@@ -47,6 +48,7 @@ public final class ContentPackValidator {
 
         validateManifest(pack, errors);
         validateAccounts(pack, errors);
+        validateAssets(pack, errors);
         validatePosts(pack, errors);
         validateComments(pack, errors);
         validateReactions(pack, errors);
@@ -116,7 +118,8 @@ public final class ContentPackValidator {
             if (!accountKeys.contains(post.authorSeedKey())) {
                 errors.add("missing post author: " + post.seedKey() + " -> " + post.authorSeedKey());
             }
-            if (!pack.assets().containsKey(post.coverAsset())) {
+            if (post.coverAsset() != null && !post.coverAsset().isBlank()
+                    && !pack.assets().containsKey(post.coverAsset())) {
                 errors.add("missing cover asset: " + post.seedKey() + " -> " + post.coverAsset());
             }
             for (String inlineAsset : post.inlineAssets()) {
@@ -138,7 +141,63 @@ public final class ContentPackValidator {
             if (post.publishTime() == null) {
                 errors.add("missing timestamp: post " + post.seedKey());
             }
+            if (isContentV3(pack)) {
+                validatePostSources(pack, post, errors);
+            }
         }
+    }
+
+    private void validateAssets(ContentPack pack, List<String> errors) {
+        for (SeedAssetDefinition asset : pack.assets().values()) {
+            if (containsForbiddenAssetMarker(asset.source())
+                    || containsForbiddenAssetMarker(asset.sourceUrl())
+                    || containsForbiddenAssetMarker(asset.sourcePageUrl())) {
+                errors.add("AI-generated asset forbidden: " + asset.key());
+            }
+            boolean webAsset = "public-web".equalsIgnoreCase(asset.source()) || isHttpUrl(asset.sourceUrl());
+            if (isContentV3(pack) && webAsset) {
+                requireNonblank(asset.sourcePageUrl(), "missing asset source page: " + asset.key(), errors);
+                if (asset.fetchedAt() == null) {
+                    errors.add("missing asset fetched timestamp: " + asset.key());
+                }
+                requireNonblank(asset.usageNote(), "missing asset usage note: " + asset.key(), errors);
+            }
+        }
+    }
+
+    private void validatePostSources(ContentPack pack, SeedPostDefinition post, List<String> errors) {
+        List<String> sources = post.brief() == null ? List.of() : post.brief().sources();
+        if (sources.isEmpty()) {
+            errors.add("missing post source: " + post.seedKey());
+            return;
+        }
+        for (String source : sources) {
+            if (!pack.sources().containsKey(source)) {
+                errors.add("missing post source: " + post.seedKey() + " -> " + source);
+            }
+        }
+    }
+
+    private boolean containsForbiddenAssetMarker(String value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT);
+        return normalized.contains("openai-imagegen")
+                || normalized.contains("generated:")
+                || normalized.contains("gocrazyai");
+    }
+
+    private boolean isHttpUrl(String value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("http://") || normalized.startsWith("https://");
+    }
+
+    private boolean isContentV3(ContentPack pack) {
+        return pack.manifest() != null && "content-v3".equals(pack.manifest().version());
     }
 
     private void validateComments(ContentPack pack, List<String> errors) {

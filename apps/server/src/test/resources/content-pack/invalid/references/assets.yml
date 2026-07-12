@@ -1,5 +1,9 @@
 - key: cover
   source: local
+  sourceUrl: null
+  sourcePageUrl: null
+  fetchedAt: null
+  usageNote: null
   file: covers/cover.png
   objectKey: seed/test/cover.png
   sha256: fixture

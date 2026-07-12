@@ -72,7 +72,8 @@ class ContentPackMediaPublisherTest {
     void givenHashMismatch_whenPublish_thenDoesNotTouchStorage() throws Exception {
         SeedAssetDefinition valid = writeAsset("avatar-night", "media/avatar.webp", WEBP);
         SeedAssetDefinition wrong = new SeedAssetDefinition(
-                valid.key(), valid.source(), valid.sourceUrl(), valid.sourceFile(), valid.file(),
+                valid.key(), valid.source(), valid.sourceUrl(), valid.sourcePageUrl(), valid.fetchedAt(),
+                valid.usageNote(), valid.sourceFile(), valid.file(),
                 valid.objectKey(), "0".repeat(64), valid.contentType(), valid.width(), valid.height(), valid.usage());
 
         assertThatThrownBy(() -> publisher.publish(root, wrong))
@@ -97,7 +98,8 @@ class ContentPackMediaPublisherTest {
     void givenObjectKeyWithoutHash_whenPublish_thenDoesNotTouchStorage() throws Exception {
         SeedAssetDefinition valid = writeAsset("avatar-night", "media/avatar.webp", WEBP);
         SeedAssetDefinition unsafe = new SeedAssetDefinition(
-                valid.key(), valid.source(), valid.sourceUrl(), valid.sourceFile(), valid.file(),
+                valid.key(), valid.source(), valid.sourceUrl(), valid.sourcePageUrl(), valid.fetchedAt(),
+                valid.usageNote(), valid.sourceFile(), valid.file(),
                 "seed/content-v2/avatars/avatar-night.webp", valid.sha256(), valid.contentType(),
                 valid.width(), valid.height(), valid.usage());
 
@@ -358,7 +360,7 @@ class ContentPackMediaPublisherTest {
 
     private SeedAssetDefinition asset(String key, String file, String objectKey, String hash) {
         return new SeedAssetDefinition(
-                key, "local", null, "source.png", file, objectKey, hash,
+                key, "local", null, null, null, null, "source.png", file, objectKey, hash,
                 "image/webp", 512, 512, "avatar");
     }
 

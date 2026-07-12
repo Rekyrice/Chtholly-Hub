@@ -139,6 +139,27 @@ class ContentPackDatabaseWriterTest {
     }
 
     @Test
+    void givenPostWithoutCoverOrInlineMedia_whenWrite_thenPersistsEmptyImageListAndStableHash() {
+        stubAccount("author", 42L);
+        when(mapper.findIdentity(NAMESPACE, "POST", "post-one")).thenReturn(null);
+        when(mapper.findLegacyPostId("legacy-post-one")).thenReturn(null);
+        when(idGenerator.nextId()).thenReturn(101L);
+        when(mapper.findPostStateById(101L)).thenReturn(null);
+        SeedPostDefinition base = post("post-one", "author");
+        SeedPostDefinition noMedia = new SeedPostDefinition(
+                base.seedKey(), base.legacySlug(), base.authorSeedKey(), base.title(), base.slug(), base.description(),
+                base.category(), base.tags(), base.publishTime(), base.markdownFile(), null, List.of(), base.brief(),
+                base.markdown());
+
+        writer.write(pack(List.of(account("author")), List.of(noMedia), List.of(), List.of()), published("post-one"));
+
+        ArgumentCaptor<SeedPostRow> row = ArgumentCaptor.forClass(SeedPostRow.class);
+        verify(mapper).insertSeedPost(row.capture());
+        assertThat(row.getValue().imgUrlsJson()).isEqualTo("[]");
+        assertThat(ContentPackDatabaseWriter.contentHash(noMedia, 42L, published("post-one"))).isNotBlank();
+    }
+
+    @Test
     void givenLegacyAndNestedComments_whenWrite_thenReusesLegacyIdAndResolvesParentFirst() {
         stubAccount("author", 42L);
         stubAccount("reader", 43L);

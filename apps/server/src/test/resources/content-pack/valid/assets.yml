@@ -1,6 +1,9 @@
 - key: avatar-night-coder
   source: local
   sourceUrl: null
+  sourcePageUrl: null
+  fetchedAt: null
+  usageNote: null
   sourceFile: avatar-source.png
   file: avatars/night-coder.png
   objectKey: seed/content-v2/avatars/night-coder.png

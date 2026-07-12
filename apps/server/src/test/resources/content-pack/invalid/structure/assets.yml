@@ -1,5 +1,9 @@
 - key: avatar-01
   source: local
+  sourceUrl: null
+  sourcePageUrl: null
+  fetchedAt: null
+  usageNote: null
   file: avatars/avatar-01.png
   objectKey: seed/test/avatar-01.png
   sha256: fixture

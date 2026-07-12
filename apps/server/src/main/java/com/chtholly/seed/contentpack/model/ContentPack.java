@@ -12,6 +12,7 @@ public record ContentPack(
         ContentPackManifest manifest,
         List<SeedAccountDefinition> accounts,
         Map<String, SeedAssetDefinition> assets,
+        Map<String, SeedSourceDefinition> sources,
         List<SeedPostDefinition> posts,
         List<SeedCommentDefinition> comments,
         List<SeedFollowDefinition> follows,
@@ -24,10 +25,27 @@ public record ContentPack(
     public ContentPack {
         accounts = accounts == null ? List.of() : List.copyOf(accounts);
         assets = assets == null ? Map.of() : Map.copyOf(assets);
+        sources = sources == null ? Map.of() : Map.copyOf(sources);
         posts = posts == null ? List.of() : List.copyOf(posts);
         comments = comments == null ? List.of() : List.copyOf(comments);
         follows = follows == null ? List.of() : List.copyOf(follows);
         reactions = reactions == null ? List.of() : List.copyOf(reactions);
         views = views == null ? List.of() : List.copyOf(views);
+    }
+
+    /**
+     * Creates a legacy content pack without structured source cards.
+     */
+    public ContentPack(
+            Path root,
+            ContentPackManifest manifest,
+            List<SeedAccountDefinition> accounts,
+            Map<String, SeedAssetDefinition> assets,
+            List<SeedPostDefinition> posts,
+            List<SeedCommentDefinition> comments,
+            List<SeedFollowDefinition> follows,
+            List<SeedReactionDefinition> reactions,
+            List<SeedViewDefinition> views) {
+        this(root, manifest, accounts, assets, Map.of(), posts, comments, follows, reactions, views);
     }
 }

@@ -8,6 +8,7 @@ import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
 import com.chtholly.seed.contentpack.model.SeedFollowDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
 import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
+import com.chtholly.seed.contentpack.model.SeedSourceDefinition;
 import com.chtholly.seed.contentpack.model.SeedViewDefinition;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Loads the five YAML documents and referenced Markdown files of a seed content pack.
+ * Loads the six YAML documents and referenced Markdown files of a seed content pack.
  */
 @Component
 public final class ContentPackLoader {
@@ -32,6 +33,8 @@ public final class ContentPackLoader {
     private static final TypeReference<List<SeedAccountDefinition>> ACCOUNTS_TYPE = new TypeReference<>() {
     };
     private static final TypeReference<List<SeedAssetDefinition>> ASSETS_TYPE = new TypeReference<>() {
+    };
+    private static final TypeReference<List<SeedSourceDefinition>> SOURCES_TYPE = new TypeReference<>() {
     };
     private static final TypeReference<List<SeedPostDefinition>> POSTS_TYPE = new TypeReference<>() {
     };
@@ -48,7 +51,7 @@ public final class ContentPackLoader {
     /**
      * Loads a content pack rooted at the supplied directory.
      *
-     * @param root directory containing the five required YAML files
+     * @param root directory containing the six required YAML files
      * @return immutable content-pack input with hydrated Markdown
      * @throws IllegalArgumentException when a referenced path escapes the pack root
      * @throws UncheckedIOException when a required file cannot be read
@@ -58,10 +61,12 @@ public final class ContentPackLoader {
         ContentPackManifest manifest = readYaml(normalizedRoot, "manifest.yml", ContentPackManifest.class);
         List<SeedAccountDefinition> accounts = readYaml(normalizedRoot, "accounts.yml", ACCOUNTS_TYPE);
         List<SeedAssetDefinition> assetDefinitions = readYaml(normalizedRoot, "assets.yml", ASSETS_TYPE);
+        List<SeedSourceDefinition> sourceDefinitions = readYaml(normalizedRoot, "sources.yml", SOURCES_TYPE);
         List<SeedPostDefinition> postDefinitions = readYaml(normalizedRoot, "posts.yml", POSTS_TYPE);
         Interactions interactions = readYaml(normalizedRoot, "interactions.yml", Interactions.class);
 
         Map<String, SeedAssetDefinition> assets = indexAssets(assetDefinitions);
+        Map<String, SeedSourceDefinition> sources = indexSources(sourceDefinitions);
         List<SeedPostDefinition> posts = postDefinitions.stream()
                 .map(post -> withMarkdown(normalizedRoot, post))
                 .toList();
@@ -71,6 +76,7 @@ public final class ContentPackLoader {
                 manifest,
                 accounts,
                 assets,
+                sources,
                 posts,
                 interactions.comments(),
                 interactions.follows(),
@@ -103,6 +109,14 @@ public final class ContentPackLoader {
             definitions.forEach(asset -> assets.put(asset.key(), asset));
         }
         return assets;
+    }
+
+    private Map<String, SeedSourceDefinition> indexSources(List<SeedSourceDefinition> definitions) {
+        Map<String, SeedSourceDefinition> sources = new LinkedHashMap<>();
+        if (definitions != null) {
+            definitions.forEach(source -> sources.put(source.key(), source));
+        }
+        return sources;
     }
 
     private <T> T readYaml(Path root, String relative, Class<T> type) {
