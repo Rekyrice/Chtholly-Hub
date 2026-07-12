@@ -1,9 +1,11 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SiteChrome from "@/components/site/SiteChrome";
-import type { VisualBackground } from "@/lib/route-visuals";
+import type { PageVisualBackground, RouteVisualConfig } from "@/lib/route-visuals";
 
 const navigation = vi.hoisted(() => ({ pathname: "/hub" }));
+const headerEffects = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
@@ -13,13 +15,27 @@ vi.mock("@/components/site/Footer", () => ({ default: () => <div data-testid="fo
 vi.mock("@/components/site/MobileBottomNav", () => ({ default: () => <div data-testid="mobile-nav" /> }));
 vi.mock("@/components/site/Navbar", () => ({ default: () => <div data-testid="navbar" /> }));
 vi.mock("@/components/site/SiteHeader", () => ({
-  default: ({ background }: { background?: VisualBackground }) => (
-    <div data-testid="site-header">{background?.image ?? "no-header-background"}</div>
+  default: ({ onQuoteChange }: { onQuoteChange?: (index: number) => void }) => (
+    <MockHeader onQuoteChange={onQuoteChange} />
   ),
 }));
+
+function MockHeader({ onQuoteChange }: { onQuoteChange?: (index: number) => void }) {
+  useEffect(() => {
+    headerEffects();
+    onQuoteChange?.(0);
+  }, [onQuoteChange]);
+  return (
+    <button data-testid="site-header" onClick={() => onQuoteChange?.(2)}>
+      header
+    </button>
+  );
+}
 vi.mock("@/components/site/RoutePageBackground", () => ({
-  default: ({ background }: { background: VisualBackground }) => (
-    <div data-testid="route-page-background">{background.image}</div>
+  default: ({ background, activeIndex }: { background: PageVisualBackground; activeIndex?: number }) => (
+    <div data-testid="route-page-background" data-active-index={activeIndex}>
+      {background.images[activeIndex ?? 0]}
+    </div>
   ),
 }));
 vi.mock("@/components/agent/AgentPageBackground", () => ({
@@ -34,6 +50,7 @@ describe("SiteChrome", () => {
 
   beforeEach(() => {
     navigation.pathname = "/hub";
+    headerEffects.mockClear();
   });
 
   it("does not own the floating Agent runtime on ordinary pages", () => {
@@ -49,7 +66,7 @@ describe("SiteChrome", () => {
     { path: "/write", visual: "write", header: false, footer: false, agentBackground: false },
     { path: "/agent", visual: null, header: false, footer: false, agentBackground: true },
     { path: "/chtholly", visual: null, header: false, footer: true, agentBackground: false },
-    { path: "/admin", visual: null, header: true, footer: true, agentBackground: false },
+    { path: "/admin", visual: "admin", header: true, footer: true, agentBackground: false },
   ] as const;
 
   it.each(routeCases)("preserves the shell contract for $path", ({ path, visual, header, footer, agentBackground }) => {
@@ -69,7 +86,7 @@ describe("SiteChrome", () => {
     if (visual) {
       expect(shell).toHaveClass("site-shell--route-visual");
       expect(shell).toHaveAttribute("data-route-visual", visual);
-      expect(screen.getByTestId("route-page-background")).toHaveTextContent(`/${visual === "write" ? "write-workspace" : `${visual}-content`}.webp`);
+      expect(screen.getByTestId("route-page-background")).toHaveAttribute("data-active-index", "0");
     } else {
       expect(shell).not.toHaveClass("site-shell--route-visual");
       expect(shell).not.toHaveAttribute("data-route-visual");
@@ -92,16 +109,17 @@ describe("SiteChrome", () => {
     render(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
 
     const shellChildren = Array.from(screen.getByTestId("navbar").parentElement!.children);
+    const background = screen.getByTestId("route-page-background");
     const header = screen.getByTestId("site-header");
     const main = screen.getByRole("main");
     const wrapper = main.parentElement!;
-    expect(shellChildren.indexOf(screen.getByTestId("navbar"))).toBeLessThan(shellChildren.indexOf(header.previousElementSibling!));
-    expect(shellChildren.indexOf(header.previousElementSibling!)).toBeLessThan(shellChildren.indexOf(header));
+    expect(shellChildren.indexOf(screen.getByTestId("navbar"))).toBeLessThan(1);
+    expect(1).toBeLessThan(shellChildren.indexOf(background));
+    expect(shellChildren.indexOf(background)).toBeLessThan(shellChildren.indexOf(header));
     expect(shellChildren.indexOf(header)).toBeLessThan(shellChildren.indexOf(wrapper));
     expect(shellChildren.indexOf(wrapper)).toBeLessThan(shellChildren.indexOf(screen.getByTestId("mobile-nav")));
 
     const wrapperChildren = Array.from(wrapper.children);
-    expect(wrapperChildren.indexOf(screen.getByTestId("route-page-background"))).toBeLessThan(wrapperChildren.indexOf(main));
     expect(wrapperChildren.indexOf(main)).toBeLessThan(wrapperChildren.indexOf(screen.getByTestId("footer").parentElement!));
   });
 
@@ -116,9 +134,7 @@ describe("SiteChrome", () => {
     navigation.pathname = "/write";
     rerender(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
     main = screen.getByRole("main");
-    expect(Array.from(main.parentElement!.children).indexOf(screen.getByTestId("route-page-background"))).toBeLessThan(
-      Array.from(main.parentElement!.children).indexOf(main),
-    );
+    expect(screen.getByTestId("route-page-background")).toBeInTheDocument();
     expect(screen.queryByTestId("footer")).not.toBeInTheDocument();
   });
 
@@ -142,21 +158,42 @@ describe("SiteChrome", () => {
     expect(screen.getByTestId("content").parentElement).toHaveClass("max-w-6xl");
   });
 
-  it("keeps the shared white-background hero across decorated ordinary routes", () => {
+  it("drives Hub images from quotes and resets the index when the route changes", () => {
     navigation.pathname = "/hub";
     const { rerender } = render(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
-    expect(screen.getByTestId("site-header")).toHaveTextContent("/hub-hero.webp");
+    fireEvent.click(screen.getByTestId("site-header"));
+    expect(screen.getByTestId("route-page-background")).toHaveAttribute("data-active-index", "2");
 
     navigation.pathname = "/search";
     rerender(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
-    expect(screen.getByTestId("site-header")).toHaveTextContent("/hub-hero.webp");
+    expect(screen.getByTestId("route-page-background")).toHaveAttribute("data-active-index", "0");
 
-    navigation.pathname = "/login";
+    navigation.pathname = "/hub";
     rerender(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
-    expect(screen.getByTestId("site-header")).toHaveTextContent("/hub-hero.webp");
+    expect(screen.getByTestId("route-page-background")).toHaveAttribute("data-active-index", "0");
+  });
 
-    navigation.pathname = "/admin";
-    rerender(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
-    expect(screen.getByTestId("site-header")).toHaveTextContent("no-header-background");
+  it("keeps the quote callback stable when the typewriter reports the same index", () => {
+    render(<SiteChrome><span>content</span></SiteChrome>);
+
+    expect(headerEffects).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses an explicit visual override", () => {
+    const visualOverride: RouteVisualConfig = {
+      id: "preview",
+      page: {
+        images: ["/preview.webp"],
+        positionDesktop: "center",
+        positionMobile: "center",
+        overlayAlpha: 0.2,
+        blurPx: 0,
+        saturate: 1,
+      },
+    };
+
+    render(<SiteChrome visualOverride={visualOverride}><span>content</span></SiteChrome>);
+    expect(screen.getByTestId("route-page-background")).toHaveTextContent("/preview.webp");
+    expect(screen.getByTestId("navbar").parentElement).toHaveAttribute("data-route-visual", "preview");
   });
 });

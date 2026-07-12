@@ -30,6 +30,16 @@
     background-repeat: no-repeat;
     filter: blur(var(--route-bg-blur)) saturate(var(--route-bg-saturate));
     transform: scale(1.02);
+    opacity: 0;
+    transition: opacity 0.72s ease;
+  }
+
+  .route-page-background__image--active {
+    opacity: 1;
+  }
+
+  .route-page-background__image--previous-visible {
+    opacity: 1;
   }
 
   .route-page-background__overlay {
@@ -43,6 +53,10 @@
   }
 
   .site-shell--route-visual .main-content {
+    background: transparent;
+  }
+
+  .site-shell--route-visual .site-header-bg {
     background: transparent;
   }
 
@@ -106,7 +120,8 @@
     );
   }
 
-  [data-route-visual="auth"] .post-card {
+  [data-route-visual="login"] .post-card,
+  [data-route-visual="reset-password"] .post-card {
     background: color-mix(
       in srgb,
       var(--color-surface) calc(var(--surface-auth-alpha) * 100%),
@@ -142,6 +157,7 @@
   @media (prefers-reduced-motion: reduce) {
     .route-page-background__image {
       transform: none;
+      transition: none;
     }
   }
 

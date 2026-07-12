@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import { usePathname } from "next/navigation";
 import Footer from "@/components/site/Footer";
 import MobileBottomNav from "@/components/site/MobileBottomNav";
@@ -8,13 +9,44 @@ import RoutePageBackground from "@/components/site/RoutePageBackground";
 import SiteHeader from "@/components/site/SiteHeader";
 import AgentPageBackground from "@/components/agent/AgentPageBackground";
 import { getAgentRuntimePolicy } from "@/components/agent/agentRuntimePolicy";
-import { SITE_HEADER_BACKGROUND, getRouteVisualConfig } from "@/lib/route-visuals";
+import { getRouteVisualConfig } from "@/lib/route-visuals";
+import type { RouteVisualConfig } from "@/lib/route-visuals";
 import { cn } from "@/lib/utils";
 
-export default function SiteChrome({ children }: { children: React.ReactNode }) {
+type SiteChromeProps = {
+  children: React.ReactNode;
+  visualOverride?: RouteVisualConfig;
+};
+
+type RouteVisualLayersProps = {
+  routeVisual: RouteVisualConfig | null;
+  showHeader: boolean;
+};
+
+function RouteVisualLayers({ routeVisual, showHeader }: RouteVisualLayersProps) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const handleQuoteChange = useCallback((index: number) => {
+    setActiveIndex((current) => current === index ? current : index);
+  }, []);
+
+  return (
+    <>
+      {routeVisual && (
+        <RoutePageBackground background={routeVisual.page} activeIndex={activeIndex} />
+      )}
+      {showHeader && (
+        <SiteHeader
+          onQuoteChange={routeVisual?.id === "hub" ? handleQuoteChange : undefined}
+        />
+      )}
+    </>
+  );
+}
+
+export default function SiteChrome({ children, visualOverride }: SiteChromeProps) {
   const pathname = usePathname();
   const policy = getAgentRuntimePolicy(pathname);
-  const routeVisual = getRouteVisualConfig(pathname);
+  const routeVisual = visualOverride ?? getRouteVisualConfig(pathname);
   const isChthollyRoom = pathname === "/chtholly";
   const isFocusedPage = policy.agentWorkspace || policy.writeWorkspace;
 
@@ -29,12 +61,13 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
     >
       <Navbar />
       <div className="h-[52px]" />
-      {!isFocusedPage && !isChthollyRoom && (
-        <SiteHeader background={routeVisual ? SITE_HEADER_BACKGROUND : undefined} />
-      )}
+      <RouteVisualLayers
+        key={`${pathname}:${routeVisual?.id ?? "none"}`}
+        routeVisual={routeVisual}
+        showHeader={!isFocusedPage && !isChthollyRoom}
+      />
       <div className={cn("relative", policy.agentWorkspace ? "h-[calc(100vh-52px)] min-h-0 overflow-hidden" : "flex-1")}>
         {policy.agentWorkspace && <AgentPageBackground />}
-        {routeVisual && <RoutePageBackground background={routeVisual.page} />}
         <main
           className={cn(
             "main-content relative z-10",

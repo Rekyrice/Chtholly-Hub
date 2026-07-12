@@ -34,6 +34,17 @@ describe("route visual style contract", () => {
     expect(visuals).not.toMatch(/\.site-shell--route-visual\s+(?:\.site-footer|footer)\s*\{[^}]*background:\s*transparent/);
   });
 
+  it("crossfades image layers and disables the transition for reduced motion", () => {
+    expect(visuals).toMatch(/\.route-page-background\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*52px 0 0/);
+    expect(visuals).toMatch(/\.route-page-background__image\s*\{[^}]*opacity:\s*0;[^}]*transition:\s*opacity/);
+    expect(visuals).toMatch(/\.route-page-background__image--active\s*\{[^}]*opacity:\s*1/);
+    expect(visuals).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.route-page-background__image\s*\{[^}]*transition:\s*none/);
+  });
+
+  it("lets route artwork continue through the transparent header", () => {
+    expect(visuals).toMatch(/\.site-shell--route-visual \.site-header-bg\s*\{[^}]*background:\s*transparent/);
+  });
+
   it("preserves both navbar states", () => {
     expect(visuals).toMatch(/\.site-shell--route-visual \.sakuga-navbar\s*\{[\s\S]*?--surface-nav-alpha/);
     expect(visuals).toMatch(/\.site-shell--route-visual \.sakuga-navbar--scrolled\s*\{/);
@@ -66,7 +77,8 @@ describe("route visual style contract", () => {
     expect(settings).toMatch(/\.settings-loading,[^{]*\.settings-form-panel\s*\{[^}]*--surface-auth-alpha/);
     expect(settings).not.toMatch(/\.settings-menu\s*\{[^}]*background:/);
     expect(settings).toMatch(/\.settings-menu__item:hover\s*\{[^}]*box-shadow:\s*var\(--surface-shadow\)/);
-    expect(visuals).toMatch(/\[data-route-visual="auth"\] \.post-card\s*\{[^}]*--surface-auth-alpha/);
+    expect(visuals).toMatch(/\[data-route-visual="login"\] \.post-card,[\s\S]*?\[data-route-visual="reset-password"\] \.post-card\s*\{[^}]*--surface-auth-alpha/);
+    expect(visuals).not.toContain('[data-route-visual="auth"]');
     expect(visuals).toMatch(/\.write-preview\.prose-anime\s*\{[^}]*--surface-editor-alpha/);
   });
 
