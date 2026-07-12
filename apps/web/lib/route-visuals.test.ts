@@ -2,118 +2,107 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { ROUTE_VISUALS, SITE_HEADER_BACKGROUND, getRouteVisualConfig } from "./route-visuals";
+import { NOT_FOUND_VISUAL, ROUTE_VISUALS, getRouteVisualConfig } from "./route-visuals";
 
 describe("route visuals", () => {
   const routeCases = [
-    ["/hub", "hub", "hub-content.webp"],
-    ["/hub/topic", "hub", "hub-content.webp"],
-    ["/search", "search", "search-content.webp"],
-    ["/search/results", "search", "search-content.webp"],
-    ["/write", "write", "write-workspace.webp"],
-    ["/write/draft", "write", "write-workspace.webp"],
-    ["/login", "auth", "auth-arrival.webp"],
-    ["/reset-password/token", "auth", "auth-arrival.webp"],
-    ["/about", "about", "about-community.webp"],
-    ["/about/team", "about", "about-community.webp"],
-    ["/user/alice", "profile", "profile-personal.webp"],
-    ["/profile/edit", "profile", "profile-personal.webp"],
-    ["/settings", "settings", "settings-calm.webp"],
-    ["/settings/account", "settings", "settings-calm.webp"],
-    ["/archive", "archive", "archive-hall.webp"],
-    ["/archive/2026", "archive", "archive-hall.webp"],
-    ["/tag/typescript", "tag", "tag-trace.webp"],
-    ["/post/hello-world", "post", "post-ruins.webp"],
+    ["/hub", "hub", ["hub-01.webp", "hub-02.webp", "hub-03.webp"]],
+    ["/search", "search", ["search.webp"]],
+    ["/write", "write", ["write.webp"]],
+    ["/login", "login", ["login.webp"]],
+    ["/reset-password", "reset-password", ["reset-password.webp"]],
+    ["/about", "about", ["about.webp"]],
+    ["/user", "user", ["user.webp"]],
+    ["/profile", "profile", ["search.webp"]],
+    ["/settings", "settings", ["settings.webp"]],
+    ["/archive", "archive", ["archive.webp"]],
+    ["/tag", "tag", ["tag.webp"]],
+    ["/post", "post", ["post.webp"]],
+    ["/admin", "admin", ["admin.webp"]],
   ] as const;
 
-  it.each(routeCases)(
-    "maps %s to %s",
-    (pathname, expectedId, expectedPageFile) => {
-      const config = getRouteVisualConfig(pathname);
+  it.each(routeCases)("maps %s to %s", (pathname, expectedId, expectedFiles) => {
+    const config = getRouteVisualConfig(pathname);
 
-      expect(config?.id).toBe(expectedId);
-      expect(config?.page.image.split("/").at(-1)).toBe(expectedPageFile);
-    },
-  );
-
-  it("keeps one shared white-background image in every ordinary site header", () => {
-    expect(SITE_HEADER_BACKGROUND.image).toBe("/images/site/backgrounds/hub-hero.webp");
-    expect(SITE_HEADER_BACKGROUND.positionDesktop).toBe("52% 0%");
-    expect(SITE_HEADER_BACKGROUND.positionMobile).toBe("72% 0%");
+    expect(config?.id).toBe(expectedId);
+    expect(config?.page.images.map((image) => image.split("/").at(-1))).toEqual(expectedFiles);
   });
 
-  it("keeps the writing subject visible near the top of its page background", () => {
-    const write = ROUTE_VISUALS.find(({ id }) => id === "write");
-
-    expect(write?.page.positionDesktop).toBe("50% 4%");
-    expect(write?.page.positionMobile).toBe("52% 0%");
-    expect(write?.page.overlayAlpha).toBe(0.16);
-  });
-
-  it.each(["/", "/agent", "/agent/history", "/chtholly", "/admin", "/admin/posts"])(
+  it.each(["/", "/agent", "/agent/history", "/chtholly", "/chtholly/chat"])(
     "does not decorate excluded route %s",
     (pathname) => {
       expect(getRouteVisualConfig(pathname)).toBeNull();
     },
   );
 
-  it.each(["/searching", "/writing", "/administrator"])(
+  it.each(["/searching", "/writing", "/administrator", "/profiles"])(
     "does not match colliding prefix %s",
     (pathname) => {
       expect(getRouteVisualConfig(pathname)).toBeNull();
     },
   );
 
-  it("assigns one formal page image to each visual id", () => {
-    const pageImages = ROUTE_VISUALS.map(({ page }) => page.image);
+  it.each([
+    ["/hub/topic", "hub"],
+    ["/reset-password/token", "reset-password"],
+    ["/user/alice", "user"],
+    ["/admin/posts", "admin"],
+  ])("matches nested route %s", (pathname, expectedId) => {
+    expect(getRouteVisualConfig(pathname)?.id).toBe(expectedId);
+  });
 
+  it("exports the dedicated not-found visual", () => {
+    expect(NOT_FOUND_VISUAL.id).toBe("not-found");
+    expect(NOT_FOUND_VISUAL.page.images).toEqual([
+      "/images/site/backgrounds/not-found.webp",
+    ]);
+  });
+
+  it("assigns a unique id and only formal image paths to each visual", () => {
     const ids = new Set(ROUTE_VISUALS.map(({ id }) => id));
 
     expect(ids.size).toBe(ROUTE_VISUALS.length);
-    expect(new Set(pageImages).size).toBe(ROUTE_VISUALS.length);
-    for (const image of pageImages) {
-      expect(image).toMatch(/^\/images\/site\/backgrounds\//);
-      expect(image).not.toContain("_incoming");
+    for (const { page } of [...ROUTE_VISUALS, NOT_FOUND_VISUAL]) {
+      expect(page.images.length).toBeGreaterThan(0);
+      for (const image of page.images) {
+        expect(image).toMatch(/^\/images\/site\/backgrounds\//);
+        expect(image).not.toContain("_incoming");
+      }
     }
   });
 
   it("deeply freezes the exported visual configuration graph", () => {
     expect(Object.isFrozen(ROUTE_VISUALS)).toBe(true);
 
-    for (const config of ROUTE_VISUALS) {
+    for (const config of [...ROUTE_VISUALS, NOT_FOUND_VISUAL]) {
       expect(Object.isFrozen(config)).toBe(true);
       expect(Object.isFrozen(config.page)).toBe(true);
+      expect(Object.isFrozen(config.page.images)).toBe(true);
     }
-    expect(Object.isFrozen(SITE_HEADER_BACKGROUND)).toBe(true);
-  });
-
-  it.each([
-    "/hub",
-    "/search",
-    "/write",
-    "/login",
-    "/reset-password",
-    "/about",
-    "/user/example",
-    "/profile/edit",
-    "/settings",
-    "/archive",
-    "/tag/example",
-    "/post/example",
-  ])("decorates current representative route %s", (pathname) => {
-    expect(getRouteVisualConfig(pathname)).not.toBeNull();
   });
 
   it.each([
     ["/hub/", "hub"],
     ["/write/", "write"],
+    ["/admin/", "admin"],
   ])("matches trailing slash route %s", (pathname, expectedId) => {
     expect(getRouteVisualConfig(pathname)?.id).toBe(expectedId);
   });
 
+  it("uses conservative, complete page focal parameters", () => {
+    for (const { page } of [...ROUTE_VISUALS, NOT_FOUND_VISUAL]) {
+      expect(page.positionDesktop).toBeTruthy();
+      expect(page.positionMobile).toBeTruthy();
+      expect(page.overlayAlpha).toBeGreaterThanOrEqual(0);
+      expect(page.overlayAlpha).toBeLessThanOrEqual(1);
+      expect(page.blurPx).toBeGreaterThanOrEqual(0);
+      expect(page.saturate).toBeGreaterThan(0);
+    }
+  });
+
   it("references public files that exist", () => {
     const images = new Set(
-      [SITE_HEADER_BACKGROUND.image, ...ROUTE_VISUALS.map(({ page }) => page.image)],
+      [...ROUTE_VISUALS, NOT_FOUND_VISUAL].flatMap(({ page }) => page.images),
     );
 
     for (const image of images) {
