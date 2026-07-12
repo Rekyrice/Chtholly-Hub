@@ -99,7 +99,7 @@
   authorSeedKey: moyu-master
   title: 蕾塞篇：那场雨下得实在太久了
   slug: chainsaw-man-reze-rain
-  description: 从电话亭的雨、祭典烟火和空站台写《链锯人 蕾塞篇》里那段借来的青春，也保留对后半段动作过饱的意见。
+  description: 从雨窗白花、暮色海边和空站台回想蕾塞，也直说对撒娇笑点与过饱动作戏的嫌弃。
   category: ANIME
   tags: [链锯人 蕾塞篇, 蕾塞, 动画电影, 观后感]
   publishTime: 2026-05-24T12:51:00Z
@@ -110,11 +110,11 @@
     - chainsaw-man-reze-seaside
     - chainsaw-man-reze-platform
   brief:
-    factAnchors: [电话亭雨夜相遇, 白花与红花, 夜间泳池, 校园与咖啡馆, 祭典烟火, 海中锁链, 海边告别, 蕾塞折返, 空站台, 电次在咖啡馆等待, 吉原达矢, 牛尾宪辅]
+    factAnchors: [电话亭里的相遇, 空教室, 雨窗前拿花的蕾塞, 泳池, 祭典, 海边, 蕾塞折返, 空站台, 玛奇玛]
     voice: 摸鱼大师，像社区里刚看完片的人聊天，喜欢就直说，动作看累了也直说，不摆制作履历
-    position: 雨、泳池与烟火把一段被操控的相遇拍成双方都曾认真相信的短暂青春，影片的动作奇观很痛快，也会在过饱时挤掉人物受伤的重量
+    position: 蕾塞的真心无需按比例结算，雨窗、海边与站台已经让短暂相处成立；后半段动作戏很爽也太满，挡住人物时就该直接嫌弃
     format: feature-review
-    mediaPlan: [烟火下两人剪影作氛围封面, 雨窗前蕾塞持白花对应相遇与表演松动, 暮色海边远景对应战后短暂停顿, 空站台与列车对应蕾塞折返]
+    mediaPlan: [烟火下两人剪影只作氛围封面, 雨窗前蕾塞持白花对应短暂开心, 暮色海边远景对应没说清的告别, 空站台与列车对应蕾塞独自折返]
     sources: [chainsaw-man-reze-sakuga, chainsaw-man-reze-official]
 
 - seedKey: orb-unpersuaded-people
@@ -122,20 +122,20 @@
   authorSeedKey: indie-dev
   title: 我喜欢《地。》里那些没有被说服的人
   slug: orb-unpersuaded-people
-  description: 从配音、停顿和牛尾宪辅的音乐进入《地。》，听拉法尔、奥克兹、约兰妲与诺瓦克怎样保留固执和犹疑。
+  description: 从诺瓦克的日常问话、奥克兹赴刑前仰望与终局教堂进入《地。》，聊声音怎样保留恐惧、固执和迟到的动摇。
   category: ANIME
   tags: [地。―关于地球的运动―, 配音, 牛尾宪辅, 动画观后感]
   publishTime: 2026-05-08T09:36:00Z
   markdownFile: posts/orb-unpersuaded-people.md
   coverAsset: orb-unpersuaded-people-cover
   inlineAssets:
-    - orb-voices
-    - orb-night-sky
     - orb-procession
+    - orb-night-sky
+    - orb-voices
   brief:
-    factAnchors: [拉法尔与胡贝特仰望星空, 拉法尔置身火光, 奥克兹与巴德尼的夜行, 第五集暗夜与星光, 约兰妲的研究处境, 诺瓦克的审问与父女关系, 跨世代记录接力, 清水健一, 牛尾宪辅, 坂本真绫, 津田健次郎, MADHOUSE]
+    factAnchors: [诺瓦克审问胡贝特与拉法尔, 拉法尔接受判决后服毒死亡, 奥克兹与巴德尼同行, 奥克兹与巴德尼赴刑前仰望星空, 终局燃烧教堂, 诺瓦克眼前再次出现拉法尔形象, 坂本真绫, 津田健次郎, 小野贤章, 牛尾宪辅]
     voice: 耳机线打结，更留意音色、气息、停顿和配乐进入时机，但仍像普通动画社区用户说个人好恶
-    position: 《地。》的声音没有把信念唱成无杂质的英雄宣言，而是在三组不肯被说服的人物时刻里保留恐惧、迟疑、自负与代价
+    position: 三组具体声音记忆让坚持带着怕死、疲惫和迟到的动摇，台词与配乐过满时也会直说不喜欢，不替诺瓦克的醒悟结账
     format: feature-review
-    mediaPlan: [星空下两人握手作人物与天空关系的封面, 火光中独站人物对应拉法尔声线里的恐惧与固执, 原作黑白星空画格对照动画如何用停顿控制一句美的时长, 三名披风人物奔向暮色对应跨代接力]
+    mediaPlan: [星空下两人握手作人物与天空关系的封面, 三名披风人物暮色行进对应脚步与短暂沉默, 原作黑白星空画格短暂对照奥克兹赴刑前仰望, 火光中拉法尔形象对应诺瓦克终局记忆]
     sources: [orb-animation-sakuga, orb-animation-official]
