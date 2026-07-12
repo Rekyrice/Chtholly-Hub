@@ -1,5 +1,8 @@
 package com.chtholly.agent.proactive;
 
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
+
 import com.chtholly.agent.cognitive.ExperienceService;
 import com.chtholly.agent.cognitive.Observation;
 import com.chtholly.agent.notification.Notification;
@@ -17,6 +20,8 @@ import java.util.List;
 
 /** Handles emotionally motivated proactive messages and ambient thoughts. */
 @Service
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 public class EmotionalProactiveService {
     private final CharacterStateService characterStateService;
     private final NotificationService notificationService;

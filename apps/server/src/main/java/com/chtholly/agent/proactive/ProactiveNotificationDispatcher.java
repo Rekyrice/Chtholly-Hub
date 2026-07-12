@@ -1,5 +1,8 @@
 package com.chtholly.agent.proactive;
 
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
+
 import com.chtholly.agent.notification.Notification;
 import com.chtholly.agent.notification.NotificationService;
 import com.chtholly.agent.state.BehaviorProb;
@@ -14,6 +17,8 @@ import java.util.concurrent.ThreadLocalRandom;
  * 统一主动推送出口：频率上限 + BehaviorProb 概率门控。
  */
 @Component
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 @RequiredArgsConstructor
 public class ProactiveNotificationDispatcher {
 

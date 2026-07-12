@@ -1,5 +1,8 @@
 package com.chtholly.agent.proactive;
 
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
+
 import com.chtholly.agent.state.CharacterStateService;
 import com.chtholly.post.service.PostService;
 import com.chtholly.recommendation.UserInterestProfile;
@@ -25,6 +28,8 @@ import java.util.Set;
  * 基于 CharacterState Redis 索引与兴趣画像的用户活动数据源。
  */
 @Component
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 @RequiredArgsConstructor
 public class CharacterStateUserActivityProvider implements ProactiveTriggerEngine.UserActivityProvider {
 

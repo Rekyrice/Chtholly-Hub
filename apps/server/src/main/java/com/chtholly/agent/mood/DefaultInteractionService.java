@@ -1,5 +1,8 @@
 package com.chtholly.agent.mood;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -12,6 +15,8 @@ import java.time.Duration;
  * backed implementation later.
  */
 @Service
+@AgentExtensionComponent
+@ConditionalOnProperty(prefix = "agent.extensions.mood", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class DefaultInteractionService implements InteractionService {
 
     /**

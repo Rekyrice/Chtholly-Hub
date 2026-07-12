@@ -24,6 +24,7 @@ class AgentDomainConfigTest {
 
         assertThat(config.systemPrompt().errorFallback()).contains("稍后再试");
         assertThat(config.errors().questionEmpty()).isEqualTo("问题不能为空");
+        assertThat(config.errors().modelCallInterrupted()).isEqualTo("模型调用被中断");
         assertThat(config.bangumi().searchKeywords()).contains("番剧", "动画");
         assertThat(config.context().userLabel()).isEqualTo("User:");
         assertThat(AgentDomainConfig.class.isRecord()).isTrue();

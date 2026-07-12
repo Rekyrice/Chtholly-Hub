@@ -1,4 +1,4 @@
-package com.chtholly.agent.content;
+package com.chtholly.content;
 
 /**
  * Entity extracted from a post body.

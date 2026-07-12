@@ -1,5 +1,8 @@
 package com.chtholly.agent.graph;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +23,8 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Service
+@AgentExtensionComponent
+@ConditionalOnProperty(prefix = "agent.extensions.graph", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class KnowledgeGraphExtractionService {
 
     private static final Pattern WORK_PATTERN = Pattern.compile("《([^》]{1,80})》");

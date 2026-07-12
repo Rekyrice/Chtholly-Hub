@@ -14,6 +14,7 @@ import com.chtholly.agent.state.Relationship;
 import ch.qos.logback.classic.Level;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
 import java.time.Instant;
 import java.util.List;
@@ -111,6 +112,30 @@ class AnchorManagerTest {
                 stateService).buildContext(7L, "ws-1");
 
         assertThat(context.episodic()).isEmpty();
+        assertThat(context.relational()).isSameAs(state);
+    }
+
+    @Test
+    void buildContextUsesEmptyProceduralAnchorWhenInsightExtensionIsDisabled() {
+        CharacterSoulService soulService = mock(CharacterSoulService.class);
+        KnowledgeService knowledgeService = mock(KnowledgeService.class);
+        CharacterStateService stateService = mock(CharacterStateService.class);
+        CharacterState state = state(0.2, 3);
+
+        when(soulService.getSoulContent()).thenReturn("identity");
+        when(knowledgeService.getRelevantKnowledge(7L, "ws-1")).thenReturn(List.of("semantic"));
+        when(stateService.load(7L)).thenReturn(state);
+
+        AnchorContext context = new AnchorManager(
+                soulService,
+                new StaticListableBeanFactory().getBeanProvider(AgentMemoryStore.class),
+                knowledgeService,
+                new StaticListableBeanFactory().getBeanProvider(InsightService.class),
+                stateService).buildContext(7L, "ws-1");
+
+        assertThat(context.soul()).isEqualTo("identity");
+        assertThat(context.semantic()).containsExactly("semantic");
+        assertThat(context.procedural()).isEmpty();
         assertThat(context.relational()).isSameAs(state);
     }
 

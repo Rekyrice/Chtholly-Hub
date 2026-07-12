@@ -1,6 +1,11 @@
 package com.chtholly.agent.content;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import com.chtholly.common.scheduler.DistributedLockService;
+import com.chtholly.content.ContentAnalysis;
+import com.chtholly.content.Entity;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.service.PostService;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -37,6 +42,8 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
+@AgentExtensionComponent
+@ConditionalOnProperty(prefix = "agent.extensions.content", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class TopicClusteringService {
 
     static final String TOPICS_KEY = "agent:topic-clusters";

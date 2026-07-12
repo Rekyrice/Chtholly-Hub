@@ -1,5 +1,7 @@
 package com.chtholly.agent.comment;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+
 import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.comment.mapper.CommentMapper;
 import com.chtholly.comment.model.CommentRow;
@@ -16,6 +18,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,7 +36,9 @@ import java.util.List;
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
+@AgentExtensionComponent
+@ConditionalOnProperty(prefix = "agent.extensions.community-actions", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnExpression("${llm.enabled:false}")
 public class CommentGenerationService {
 
     private static final double VALUE_GATE_THRESHOLD = 0.7;

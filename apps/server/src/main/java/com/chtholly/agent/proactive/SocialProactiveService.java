@@ -1,5 +1,8 @@
 package com.chtholly.agent.proactive;
 
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
+
 import com.chtholly.agent.notification.Notification;
 import com.chtholly.agent.notification.NotificationChannel;
 import com.chtholly.post.service.PostService;
@@ -27,6 +30,8 @@ import java.util.Set;
 /** Handles interest-based introductions and new-resident greetings. */
 @Slf4j
 @Service
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 public class SocialProactiveService {
     private static final String INTEREST_MATCH_KEY_PREFIX = "agent:interest-match:";
     private static final String NEW_RESIDENT_KEY_PREFIX = "agent:new-resident-intro:";

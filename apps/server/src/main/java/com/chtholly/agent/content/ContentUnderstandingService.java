@@ -1,11 +1,17 @@
 package com.chtholly.agent.content;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.chtholly.agent.graph.KnowledgeExtractionResult;
 import com.chtholly.agent.graph.KnowledgeGraphExtractionService;
 import com.chtholly.agent.graph.KnowledgeGraphService;
+import com.chtholly.content.ContentAnalysis;
+import com.chtholly.content.ContentIntelligenceReader;
+import com.chtholly.content.Entity;
+import com.chtholly.content.RelatedPostDto;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.model.Post;
 import com.chtholly.post.service.PostService;
@@ -15,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -38,7 +45,13 @@ import java.util.Set;
  */
 @Slf4j
 @Service
-public class ContentUnderstandingService {
+@AgentExtensionComponent
+@ConditionalOnProperty(
+        prefix = "agent.extensions.content",
+        name = "enabled",
+        havingValue = "true",
+        matchIfMissing = true)
+public class ContentUnderstandingService implements ContentIntelligenceReader {
 
     private static final String INDEX = "chtholly_content_index";
 
@@ -121,6 +134,7 @@ public class ContentUnderstandingService {
      * @param postId post ID
      * @return analysis or null
      */
+    @Override
     public ContentAnalysis getAnalysis(Long postId) {
         if (postId == null) {
             return null;
@@ -134,6 +148,7 @@ public class ContentUnderstandingService {
      * @param slug post URL slug
      * @return analysis or null
      */
+    @Override
     public ContentAnalysis getAnalysisBySlug(String slug) {
         if (slug == null || slug.isBlank()) {
             return null;
@@ -147,6 +162,7 @@ public class ContentUnderstandingService {
      * @param postId source post ID
      * @return related post list
      */
+    @Override
     public List<RelatedPostDto> getRelatedPosts(Long postId) {
         ContentAnalysis analysis = getAnalysis(postId);
         if (analysis == null || analysis.relatedPostIds() == null || analysis.relatedPostIds().isEmpty()) {

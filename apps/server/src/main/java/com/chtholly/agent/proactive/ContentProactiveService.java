@@ -1,5 +1,8 @@
 package com.chtholly.agent.proactive;
 
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
+
 import com.chtholly.agent.notification.Notification;
 import com.chtholly.agent.notification.NotificationChannel;
 import com.chtholly.counter.service.CounterService;
@@ -26,6 +29,8 @@ import java.util.stream.Collectors;
 /** Handles proactive article digests, curation, unread content and rising posts. */
 @Slf4j
 @Service
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 public class ContentProactiveService {
     private static final String CURATION_PUSH_KEY = "agent:curation:last-push";
     private static final String RISING_STAR_KEY_PREFIX = "agent:rising-star:";
