@@ -145,7 +145,7 @@
   authorSeedKey: night-coder
   title: Redis 明明还活着，为什么请求还是一批批超时
   slug: redisson-moved-timeout
-  description: 复盘 redisson/redisson #5972 的公开排障记录，从误导性的连接池提示、NodeSource 与 MOVED 还原主从切换后的旧拓扑请求路径。
+  description: 主从切换恢复后仍有请求成批超时。沿 MOVED 重定向和客户端旧拓扑映射，复盘公开记录能确认到哪里。
   category: TECH
   tags: [Redisson, Redis Cluster, MOVED, 故障复盘]
   publishTime: 2026-04-27T15:22:00Z
