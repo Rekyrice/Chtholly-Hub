@@ -10,28 +10,6 @@
     overflow: hidden;
   }
 
-  .not-found-background {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-  }
-
-  .not-found-background__image {
-    position: absolute;
-    inset: -12px;
-    background-image: url("/images/landing/default.jpg");
-    background-size: cover;
-    background-position: center;
-    filter: blur(8px);
-    transform: scale(1.02);
-  }
-
-  .not-found-background__scrim {
-    position: absolute;
-    inset: 0;
-    background: rgb(255 255 255 / 60%);
-  }
-
   .not-found-content {
     position: relative;
     z-index: 1;

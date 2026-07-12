@@ -20,7 +20,7 @@
   .landing-background__image {
     position: absolute;
     inset: 0;
-    background-image: url("/images/landing/default.jpg");
+    background-image: url("/images/landing/home.webp");
     background-size: cover;
     background-position: center;
     animation: landing-zoom 60s ease-in-out infinite alternate;

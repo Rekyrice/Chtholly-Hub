@@ -5,7 +5,7 @@ import LandingTypewriter from "@/components/site/LandingTypewriter";
 import { siteUrl } from "@/lib/site-url";
 
 const landingDescription = "一个有灵魂的内容空间——灵魂是珂朵莉";
-const landingImage = "/images/landing/default.jpg";
+const landingImage = "/images/landing/home.webp";
 
 export const metadata: Metadata = {
   metadataBase: siteUrl,
