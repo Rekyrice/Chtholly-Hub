@@ -262,21 +262,29 @@ def remove_readonly(function, path, _error_info):
 
 
 def run_self_tests(repo_root):
+    passed = 0
+
+    def verify(condition, label):
+        nonlocal passed
+        if not condition:
+            raise AssertionError("self-test failed: " + label)
+        passed += 1
+
     query = {"expected_source_path": "doc.md", "expected_heading": "H", "evidence_substrings": ["答案片段"]}
-    assert not is_relevant({"source_path": "doc.md", "heading": "H", "text": "同标题无答案"}, query)
-    assert is_relevant({"source_path": "doc.md", "heading": "H", "text": "包含答案片段"}, query)
+    verify(not is_relevant({"source_path": "doc.md", "heading": "H", "text": "同标题无答案"}, query), "same heading without evidence")
+    verify(is_relevant({"source_path": "doc.md", "heading": "H", "text": "包含答案片段"}, query), "same heading with evidence")
     split = {"expected_source_path": "doc.md", "expected_heading": "H", "evidence_substrings": ["完整答案"]}
-    assert not any(is_relevant(chunk, split) for chunk in [
+    verify(not any(is_relevant(chunk, split) for chunk in [
         {"source_path": "doc.md", "heading": "H", "text": "完整"},
         {"source_path": "doc.md", "heading": "H", "text": "答案"},
-    ])
-    assert "中文" in tokenize("中文")
+    ]), "evidence split across chunks")
+    verify("中文" in tokenize("中文"), "contiguous Han bigram")
     for separated in ("中 abc 文", "中，文", "中\n文"):
-        assert "中文" not in tokenize(separated)
+        verify("中文" not in tokenize(separated), "Han bigram boundary: " + repr(separated))
     headings = [heading for heading, _ in parse_sections(
         "# Root\n```powershell\n# fake heading\n```\n## Real\nbody\n"
     )]
-    assert headings == ["Root", "Real"]
+    verify(headings == ["Root", "Real"], "fenced fake heading")
     temp_parent = repo_root / ".codex-tmp"
     temp_parent.mkdir(exist_ok=True)
     directory = tempfile.mkdtemp(dir=str(temp_parent))
@@ -291,10 +299,10 @@ def run_self_tests(repo_root):
         commit = git_output(fixture, "rev-parse", "HEAD").decode("utf-8").strip()
         before = read_git_blob(fixture, commit, "doc.md")
         (fixture / "doc.md").write_text("# H\n工作树变化\n", encoding="utf-8")
-        assert read_git_blob(fixture, commit, "doc.md") == before
+        verify(read_git_blob(fixture, commit, "doc.md") == before, "git blob ignores worktree change")
     finally:
         shutil.rmtree(directory, onerror=remove_readonly)
-    print("self-tests: 8 passed")
+    print("self-tests: " + str(passed) + " passed")
 
 
 def main():
