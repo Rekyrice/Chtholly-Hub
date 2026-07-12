@@ -13,13 +13,16 @@ describe("route visual style contract", () => {
   });
 
   it("defines one shared high-transparency surface system", () => {
-    expect(globals).toContain("--surface-nav-alpha: 0.71");
-    expect(globals).toContain("--surface-panel-alpha: 0.52");
-    expect(globals).toContain("--surface-card-alpha: 0.54");
-    expect(globals).toContain("--surface-sidebar-alpha: 0.48");
-    expect(globals).toContain("--surface-reading-alpha: 0.78");
-    expect(globals).toContain("--surface-backdrop-blur: 8px");
+    expect(globals).not.toContain("--surface-card-alpha");
+    expect(visuals).toMatch(/\.site-shell--route-visual\s*\{[\s\S]*?--surface-nav-alpha:\s*0\.71;[\s\S]*?--surface-panel-alpha:\s*0\.52;[\s\S]*?--surface-card-alpha:\s*0\.54;[\s\S]*?--surface-sidebar-alpha:\s*0\.48;[\s\S]*?--surface-reading-alpha:\s*0\.78;[\s\S]*?--surface-backdrop-blur:\s*8px;/);
     expect(visuals).not.toMatch(/data-route-visual[^\{]*\{[^}]*--color-/);
+  });
+
+  it("applies the no-blur readability fallback after mobile transparency overrides", () => {
+    expect(visuals.lastIndexOf("@supports not")).toBeGreaterThan(
+      visuals.lastIndexOf("@media (max-width: 767px)"),
+    );
+    expect(visuals).toMatch(/@supports not[\s\S]*?--surface-card-alpha:\s*0\.88;[\s\S]*?--surface-sidebar-alpha:\s*0\.84;/);
   });
 
   it("keeps the page image visible without sacrificing footer readability", () => {

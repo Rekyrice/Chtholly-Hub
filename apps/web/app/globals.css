@@ -140,18 +140,6 @@
   --navbar-glass-bg: rgb(255 255 255 / 72%);
   --navbar-shadow-scrolled: color-mix(in srgb, var(--color-text) 8%, transparent);
 
-  /* 路由背景上的统一通透表面 */
-  --surface-nav-alpha: 0.71;
-  --surface-panel-alpha: 0.52;
-  --surface-card-alpha: 0.54;
-  --surface-sidebar-alpha: 0.48;
-  --surface-reading-alpha: 0.78;
-  --surface-auth-alpha: 0.78;
-  --surface-editor-alpha: 0.88;
-  --surface-backdrop-blur: 8px;
-  --surface-border: color-mix(in srgb, var(--color-border) 62%, transparent);
-  --surface-shadow: 0 9px 23px color-mix(in srgb, var(--color-text) 11%, transparent);
-
   /* 兼容旧变量名 */
   --blog-primary: var(--color-sky);
   --background: var(--color-cloud);

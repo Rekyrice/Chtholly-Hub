@@ -1,6 +1,16 @@
 @layer utilities {
   .site-shell--route-visual {
     isolation: isolate;
+    --surface-nav-alpha: 0.71;
+    --surface-panel-alpha: 0.52;
+    --surface-card-alpha: 0.54;
+    --surface-sidebar-alpha: 0.48;
+    --surface-reading-alpha: 0.78;
+    --surface-auth-alpha: 0.78;
+    --surface-editor-alpha: 0.88;
+    --surface-backdrop-blur: 8px;
+    --surface-border: color-mix(in srgb, var(--color-border) 62%, transparent);
+    --surface-shadow: 0 9px 23px color-mix(in srgb, var(--color-text) 11%, transparent);
   }
 
   .route-page-background {
@@ -96,14 +106,6 @@
     );
   }
 
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .site-shell--route-visual {
-      --surface-card-alpha: 0.88;
-      --surface-sidebar-alpha: 0.84;
-      --surface-nav-alpha: 0.9;
-    }
-  }
-
   @media (max-width: 767px) {
     .route-page-background__image {
       background-position: var(--route-bg-position-mobile);
@@ -118,6 +120,14 @@
   @media (prefers-reduced-motion: reduce) {
     .route-page-background__image {
       transform: none;
+    }
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .site-shell--route-visual {
+      --surface-card-alpha: 0.88;
+      --surface-sidebar-alpha: 0.84;
+      --surface-nav-alpha: 0.9;
     }
   }
 }
