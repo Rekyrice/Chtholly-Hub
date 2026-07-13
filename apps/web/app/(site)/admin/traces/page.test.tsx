@@ -1,7 +1,7 @@
-import { act, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import TraceDashboardPage from "@/app/(site)/admin/traces/page";
 
 const traceMocks = vi.hoisted(() => ({
@@ -34,7 +34,55 @@ vi.mock("recharts", () => {
 });
 
 describe("TraceDashboardPage hydration", () => {
+  beforeEach(() => {
+    traceMocks.getTraceStats.mockResolvedValue({
+      totalExecutions: 10,
+      successCount: 6,
+      failureCount: 2,
+      timeoutCount: 1,
+      abortedCount: 1,
+      successRate: 60,
+      avgDurationMs: 1200,
+      p95DurationMs: 2600,
+      executionTrend: [],
+      tokenTrend: [],
+      topFailurePatterns: [],
+    });
+    traceMocks.getTracePatterns.mockResolvedValue([
+      {
+        patternKey: "tool:search:timeout",
+        occurrenceCount: 2,
+        sampleTraceIds: ["trace-123"],
+        resolutionHint: "检查工具超时",
+      },
+    ]);
+    traceMocks.getTokenTrends.mockResolvedValue([]);
+    traceMocks.list.mockResolvedValue({
+      items: [
+        {
+          correlationId: "trace-123",
+          userId: 7,
+          sessionId: "session",
+          status: "FAILURE",
+          durationMs: 1200,
+          startedAt: "2026-07-13T00:00:00Z",
+          finishedAt: "2026-07-13T00:00:01Z",
+          stepsCount: 2,
+          inputTokens: 20,
+          outputTokens: 10,
+          errorMessage: "timeout",
+        },
+      ],
+      page: 0,
+      size: 10,
+      total: 21,
+      hasMore: true,
+    });
+    window.history.replaceState(null, "", "/admin/traces");
+  });
+
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     document.body.innerHTML = "";
@@ -72,5 +120,30 @@ describe("TraceDashboardPage hydration", () => {
     act(() => root.unmount());
     container.remove();
     consoleError.mockRestore();
+  });
+
+  it("shows explicit status layers, filters and links to trace details", async () => {
+    render(<TraceDashboardPage />);
+
+    expect(await screen.findByText("失败执行")).toBeInTheDocument();
+    expect(screen.getByText("超时执行")).toBeInTheDocument();
+    expect(screen.getByText("中止执行")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "trace-123" })).toHaveAttribute(
+      "href",
+      "/admin/traces/trace-123",
+    );
+    expect(screen.getByRole("link", { name: "查看样本 trace-123" })).toHaveAttribute(
+      "href",
+      "/admin/traces/trace-123",
+    );
+
+    fireEvent.change(screen.getByLabelText("Trace 状态"), { target: { value: "TIMEOUT" } });
+
+    await waitFor(() => {
+      expect(traceMocks.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: "TIMEOUT", page: 0 }),
+      );
+    });
+    expect(screen.getByRole("button", { name: "下一页" })).toBeEnabled();
   });
 });

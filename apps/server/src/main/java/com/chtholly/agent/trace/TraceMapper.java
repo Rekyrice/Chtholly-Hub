@@ -15,10 +15,17 @@ public interface TraceMapper {
 
     List<ExecutionTraceRow> list(@Param("status") String status,
                                  @Param("userId") Long userId,
+                                 @Param("from") Instant from,
+                                 @Param("to") Instant to,
+                                 @Param("correlationId") String correlationId,
                                  @Param("limit") int limit,
                                  @Param("offset") int offset);
 
-    long count(@Param("status") String status, @Param("userId") Long userId);
+    long count(@Param("status") String status,
+               @Param("userId") Long userId,
+               @Param("from") Instant from,
+               @Param("to") Instant to,
+               @Param("correlationId") String correlationId);
 
     List<ExecutionTraceRow> findUnanalyzedByStatus(@Param("status") String status, @Param("limit") int limit);
 

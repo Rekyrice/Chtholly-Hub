@@ -189,4 +189,31 @@ class TraceQueryServiceTest {
                     assertThat(event.sequence()).isNull();
                 });
     }
+
+    @Test
+    void listTracesPassesExactCorrelationAndDateFiltersToMapper() {
+        Instant from = Instant.parse("2026-07-01T00:00:00Z");
+        Instant to = Instant.parse("2026-07-10T00:00:00Z");
+        when(traceMapper.list(
+                TraceStatus.FAILURE.name(), 42L, from, to, "corr-exact", 25, 50))
+                .thenReturn(List.of());
+        when(traceMapper.count(
+                TraceStatus.FAILURE.name(), 42L, from, to, "corr-exact"))
+                .thenReturn(0L);
+
+        var response = service.listTraces(
+                2,
+                25,
+                TraceStatus.FAILURE.name(),
+                42L,
+                from,
+                to,
+                "corr-exact");
+
+        assertThat(response.items()).isEmpty();
+        verify(traceMapper).list(
+                TraceStatus.FAILURE.name(), 42L, from, to, "corr-exact", 25, 50);
+        verify(traceMapper).count(
+                TraceStatus.FAILURE.name(), 42L, from, to, "corr-exact");
+    }
 }

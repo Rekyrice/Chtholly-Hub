@@ -18,12 +18,23 @@ function rangeQuery(from?: string, to?: string) {
 }
 
 export const traceService = {
-  list(params: { page?: number; size?: number; status?: string; userId?: number } = {}) {
+  list(params: {
+    page?: number;
+    size?: number;
+    status?: string;
+    userId?: number;
+    from?: string;
+    to?: string;
+    correlationId?: string;
+  } = {}) {
     const search = new URLSearchParams();
     search.set("page", String(params.page ?? 0));
     search.set("size", String(params.size ?? 20));
     if (params.status) search.set("status", params.status);
     if (params.userId != null) search.set("userId", String(params.userId));
+    if (params.from) search.set("from", params.from);
+    if (params.to) search.set("to", params.to);
+    if (params.correlationId) search.set("correlationId", params.correlationId);
     return apiFetch<TraceListResponse>(`${TRACE_PREFIX}?${search.toString()}`);
   },
 
