@@ -1,8 +1,7 @@
-import Link from "next/link";
 import "../../styles/agent.css";
-import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import ChthollyExperienceTimeline from "@/components/site/ChthollyExperienceTimeline";
 import ChthollyRecommendationShelf from "@/components/site/ChthollyRecommendationShelf";
+import ChthollyRoomHero from "@/components/site/ChthollyRoomHero";
 import ChthollyTopicWindow from "@/components/site/ChthollyTopicWindow";
 import { agentService } from "@/lib/services/agentService";
 import { postService } from "@/lib/services/postService";
@@ -30,29 +29,38 @@ export default async function ChthollyRoom() {
 
   return (
     <div className="chtholly-room">
-      <section className="room-zone room-zone--door">
-        <ChthollyIllustration size="lg" mood={mood} timeOfDay={timeOfDay} />
-        <p className="room-mood">{getMoodMessage(mood, timeOfDay)}</p>
-        <Link href="/agent" className="room-chat-btn">
-          和她聊天
-        </Link>
-      </section>
+      <ChthollyRoomHero
+        mood={mood}
+        message={getMoodMessage(mood, timeOfDay)}
+        timeOfDay={timeOfDay}
+      />
 
-      <section className="room-zone room-zone--desk">
-        <h2>她最近在想什么</h2>
-        <ChthollyExperienceTimeline timeline={timeline} />
-      </section>
+      <div className="chtholly-room-content-grid">
+        <section className="chtholly-room-panel chtholly-room-experience">
+          <RoomPanelHeading eyebrow="MEMORY" title="她最近在想什么" />
+          <ChthollyExperienceTimeline timeline={timeline} />
+        </section>
 
-      <section className="room-zone room-zone--window">
-        <h2>她注意到的主题</h2>
-        <ChthollyTopicWindow topics={topics} />
-      </section>
+        <section className="chtholly-room-panel chtholly-room-topic">
+          <RoomPanelHeading eyebrow="TOPICS" title="她注意到的主题" />
+          <ChthollyTopicWindow topics={topics} />
+        </section>
 
-      <section className="room-zone room-zone--shelf">
-        <h2>她留下的推荐</h2>
-        <ChthollyRecommendationShelf items={feedItems} />
-      </section>
+        <section className="chtholly-room-panel chtholly-room-recommendation">
+          <RoomPanelHeading eyebrow="BOOKSHELF" title="她留下的推荐" />
+          <ChthollyRecommendationShelf items={feedItems} />
+        </section>
+      </div>
     </div>
+  );
+}
+
+function RoomPanelHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return (
+    <header className="chtholly-room-panel__heading">
+      <span>{eyebrow}</span>
+      <h2>{title}</h2>
+    </header>
   );
 }
 

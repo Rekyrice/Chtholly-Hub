@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ChthollyRoom from "@/app/(site)/chtholly/page";
@@ -81,5 +82,23 @@ describe("ChthollyRoom", () => {
     expect(screen.getByText("她注意到的主题")).toBeInTheDocument();
     expect(screen.getByText("她留下的推荐")).toBeInTheDocument();
     expect(screen.getByText("窗边暂时没有新的话题。")).toBeInTheDocument();
+  });
+
+  it("uses one hero and a strict desktop content grid", async () => {
+    const { container } = render(await ChthollyRoom());
+
+    expect(container.querySelectorAll(".chtholly-room-hero")).toHaveLength(1);
+    const grid = container.querySelector(".chtholly-room-content-grid");
+    expect(grid).not.toBeNull();
+    expect(grid?.querySelector(".chtholly-room-experience")).not.toBeNull();
+    expect(grid?.querySelector(".chtholly-room-topic")).not.toBeNull();
+    expect(grid?.querySelector(".chtholly-room-recommendation")).not.toBeNull();
+  });
+
+  it("keeps the experience panel aligned across both right-hand rows", () => {
+    const css = readFileSync("app/styles/community.css", "utf8");
+
+    expect(css).toContain("grid-template-rows: repeat(2, minmax(0, 1fr))");
+    expect(css).toContain("grid-row: 1 / span 2");
   });
 });
