@@ -9,7 +9,8 @@
 | 理解系统边界与依赖 | [架构首页](architecture/README.md) | [后端领域地图](architecture/backend.md)、[前端架构](architecture/frontend.md)、[Agent 系统](architecture/agent-system.md)、[数据与存储](architecture/data-and-storage.md) |
 | 修改后端业务 | [后端局部规则](../apps/server/AGENTS.md) | [后端领域地图](architecture/backend.md)、[核心请求链路](architecture/request-flows.md) |
 | 修改前端 UI | [前端局部规则](../apps/web/AGENTS.md) | [前端架构](architecture/frontend.md)、[前端应用入口](../apps/web/README.md) |
-| 修改角色 Agent | [Agent 系统](architecture/agent-system.md) | [后端局部规则](../apps/server/AGENTS.md)、[核心请求链路](architecture/request-flows.md#8-agent-websocket上下文工具与记忆) |
+| 理解 Agent 产品定位与演进 | [Agent 产品定位与演进设计](design/2026-07-13-agent-product-positioning-and-evolution-design.md) | [Agent 系统](architecture/agent-system.md)、[核心请求链路](architecture/request-flows.md#8-agent-websocket上下文工具与记忆) |
+| 修改角色 Agent | [Agent 系统](architecture/agent-system.md) | [Agent 产品定位与演进设计](design/2026-07-13-agent-product-positioning-and-evolution-design.md)、[后端局部规则](../apps/server/AGENTS.md)、[核心请求链路](architecture/request-flows.md#8-agent-websocket上下文工具与记忆) |
 | 修改数据库或外部存储 | [数据与存储](architecture/data-and-storage.md) | [数据库](development/database.md)、[核心请求链路](architecture/request-flows.md) |
 | 搭建开发环境或验证改动 | [开发指南](development/README.md) | [配置](development/configuration.md)、[测试与验证](development/testing.md) |
 | 部署与排障 | [生产部署](operations/deployment.md) | [Docker 操作入口](../docker/README.md)、[脚本入口](../scripts/README.md) |
@@ -17,6 +18,7 @@
 ## 按主题阅读
 
 - [Architecture](architecture/README.md)：稳定的系统边界与组件关系；继续阅读[后端领域地图](architecture/backend.md)、[前端架构](architecture/frontend.md)、[Agent 系统](architecture/agent-system.md)、[数据与存储](architecture/data-and-storage.md)和[核心请求链路](architecture/request-flows.md)。
+- [Design](design/2026-07-13-agent-product-positioning-and-evolution-design.md)：Agent 的产品定位、单 Agent 决策、能力分层和演进门槛；具体运行结构继续阅读 [Agent 系统](architecture/agent-system.md)。
 - [Development](development/README.md)：本地工具链、启动与继续阅读入口；专章包括[测试与验证](development/testing.md)、[配置](development/configuration.md)和[数据库](development/database.md)。
 - [Operations](operations/deployment.md)：生产 Compose、代理、初始化、验证与回滚边界。
 
