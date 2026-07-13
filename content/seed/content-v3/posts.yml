@@ -226,3 +226,203 @@
     format: personal-essay
     mediaPlan: []
     sources: [yokomichi-yonosuke-book, yokomichi-yonosuke-primary-text]
+
+- seedKey: shiboyugi-laugh-before-danger
+  legacySlug: null
+  authorSeedKey: anime-critic
+  title: 《靠死亡游戏混饭吃》的房间里，笑声总比危险先到
+  slug: shiboyugi-laugh-before-danger
+  description: 危险还没发生，房间、监控与声音已经决定了女孩们怎样看见彼此。
+  category: ANIME
+  tags: [靠死亡游戏混饭吃, 死亡游戏, 动画演出, 声音设计]
+  publishTime: 2026-06-28T14:16:00Z
+  markdownFile: posts/shiboyugi-laugh-before-danger.md
+  coverAsset: shiboyugi-laugh-before-danger-cover
+  inlineAssets: [shiboyugi-mineral-eyes, shiboyugi-color-silhouettes]
+  brief:
+    factAnchors: [靠死亡游戏混饭吃, 监控和窥视构图, 窄画幅制造压迫, 虹膜叠加矿物显微摄影, 无五官彩色剪影, 墙后声音被闷住, Hewa制作三维环境参考, 死亡常从远处呈现, 章节编号参与节奏]
+    voice: 看完几集后的深夜长帖，从一阵笑声和一间房写起，不替角色总结人生
+    position: 职业玩家设定没有让死亡变轻；镜头保持距离，反而拒绝把角色的死只做成观众奖励
+    format: personal-essay
+    mediaPlan: [俯视房间作氛围封面, 屏幕与角色同框, 彩色无脸剪影]
+    sources: [shiboyugi-sakuga-production, shiboyugi-official]
+
+- seedKey: takopi-sorry-is-not-enough
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 《章鱼哔的原罪》第四话之后，我才发现“对不起”根本不够用
+  slug: takopi-sorry-is-not-enough
+  description: 第四话没有把道歉当成句号。直树听不进声音，润也从高处蹲下来，而已经发生的事仍留在原处。
+  category: ANIME
+  tags: [章鱼哔的原罪, 第四话, 动画演出, 沟通]
+  publishTime: 2026-06-20T10:42:00Z
+  markdownFile: posts/takopi-sorry-is-not-enough.md
+  coverAsset: takopi-sorry-is-not-enough-cover
+  inlineAssets: [takopi-naoki-shock, takopi-brothers-distance]
+  brief:
+    factAnchors: [两卷十六话改为六集, 单集时长不固定, 第四话东君的救济, 尸体被发现, 直树的断裂感, 润也起初以压迫性高位出现, 背景与机位表现距离, 润也转为倾听]
+    voice: 读完原作又看动画的普通观众，只抓住一句说不出口的道歉和兄弟间的高度变化
+    position: 道歉有用但不能替代倾听，更不能把受害者变成帮助别人完成成长的工具
+    format: personal-essay
+    mediaPlan: [直树被拉住的低角度场面作封面, 变形教室里的喘息, 润也的疲惫近景]
+    sources: [takopi-sakuga-production, takopi-official-story-04]
+
+- seedKey: kisekoi-season-two-beyond-cute
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 喜多川海梦没有被第二季困在“可爱”里
+  slug: kisekoi-season-two-beyond-cute
+  description: 海梦依然漂亮，但第二季把镜头往旁边挪开，才让她如何对待五条、甘音和其他同好变得清楚。
+  category: ANIME
+  tags: [更衣人偶坠入爱河, 喜多川海梦, Cosplay, 动画评论]
+  publishTime: 2026-06-08T16:35:00Z
+  markdownFile: posts/kisekoi-season-two-beyond-cute.md
+  coverAsset: kisekoi-season-two-beyond-cute-cover
+  inlineAssets: [kisekoi-halloween, kisekoi-amane-crossplay, kisekoi-cosplay-community]
+  brief:
+    factAnchors: [第二季, 第十三话万圣节, 五条身处热闹人群的不安, 朋友询问两人是否交往, 第十四话天野甘音的女装回忆, 服装随身体变化, 同好年龄与性别边界扩大]
+    voice: 动漫社区长帖，承认自己先被海梦吸引，再慢慢把视线挪到她周围的人
+    position: 第二季没有削弱海梦的可爱，而是用她如何给别人留位置，为可爱补上了看不见的缝线
+    format: feature-review
+    mediaPlan: [第二季制作图拼贴封面, 海梦与朋友合影, 礼服设计图, 五条与海梦制作过程拼贴]
+    sources: [kisekoi-season2-sakuga, kisekoi-official]
+
+- seedKey: look-back-lines-in-the-rain
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 雨落下来以后，线稿还在往前走——《蓦然回首》的动画为什么离人这么近
+  slug: look-back-lines-in-the-rain
+  description: 从藤野的雨中奔跑写到京本的房间：保留下来的抖动、差异和未完成感，让画纸两边的人仍然靠得很近。
+  category: ANIME
+  tags: [蓦然回首, 押山清高, 作画, 动画电影]
+  publishTime: 2026-05-19T12:08:00Z
+  markdownFile: posts/look-back-lines-in-the-rain.md
+  coverAsset: look-back-lines-in-the-rain-cover
+  inlineAssets: [look-back-running-lines, look-back-drawing-room, look-back-fujino-kyomoto]
+  brief:
+    factAnchors: [藤野在跑, 京本长期待在房间, 押山清高担任监督脚本角色设计, Studio Durian, 保留关键动画线条, 押山承担大量关键动画并任唯一作画监督, 奔跑段落扩展, 另一张四格漫画]
+    voice: 喜欢画画的人写的观后随笔，注意桌面、手腕、房门和线条，不把加班写成天才神话
+    position: 创作不能复活谁也不能证明失去值得，它只在无法继续时提供一个再次握笔的动作
+    format: personal-essay
+    mediaPlan: [两只手靠近的明亮画面作封面, 不同线条的两张脸, 凌乱画桌, 堆满画册的房间]
+    sources: [look-back-sakuga-production, look-back-official]
+
+- seedKey: bocchi-song-leaves-the-room
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 当一首歌终于从房间里走出去
+  slug: bocchi-song-leaves-the-room
+  description: 一里没有因街演摆脱恐惧，只让声音先走出去，再学会听见队友。
+  category: ANIME
+  tags: [孤独摇滚, 后藤一里, 结束乐队, 乐队动画]
+  publishTime: 2026-04-03T09:26:00Z
+  markdownFile: posts/bocchi-song-leaves-the-room.md
+  coverAsset: bocchi-song-leaves-the-room-cover
+  inlineAssets: [bocchi-street-one-eye, bocchi-first-concert, bocchi-kita-support]
+  brief:
+    factAnchors: [第六话, 一只眼睛在演出前被头发遮住, 贴近吉他的虚拟机位, 第八话首次Live, 第一首僵硬而第二首逐渐同步, 虹夏认出guitarhero, 第十二话设备故障, 喜多用演奏支撑]
+    voice: 玩过一点乐器的人重看单集，既记演出也记演出结束后的尴尬
+    position: 成长不是症状消失；房间也不是反派，重要的是声音能否出去并带着别人的节拍回来
+    format: personal-essay
+    mediaPlan: [背琴望天作封面, 一里与广井坐在街边, 第八话舞台上的鼓手, 舞台上的喜多]
+    sources: [bocchi-sakuga-production, bocchi-official-story]
+
+- seedKey: cowboy-bebop-ballad-of-fallen-angels-rain
+  legacySlug: null
+  authorSeedKey: site-owner
+  title: 深夜重看《Cowboy Bebop》第五话，最先回来的是那段雨声
+  slug: cowboy-bebop-ballad-of-fallen-angels-rain
+  description: 两首歌陪斯派克走进教堂又落下，最后只剩一只飞出去的枕头。
+  category: ANIME
+  tags: [Cowboy Bebop, 堕天使们的歌谣, 菅野洋子, 动画音乐]
+  publishTime: 2026-03-21T18:54:00Z
+  markdownFile: posts/cowboy-bebop-ballad-of-fallen-angels-rain.md
+  coverAsset: cowboy-bebop-ballad-cover
+  inlineAssets: [cowboy-bebop-rain-cathedral, cowboy-bebop-green-bird-fall]
+  brief:
+    factAnchors: [第五话, Spike走向教堂时播放Rain, 教堂对峙Vicious, Spike穿过彩窗坠落时播放Green Bird, 回忆以碎片出现, 醒来后向唱歌的Faye扔枕头, 单元剧制作背景]
+    voice: 管理员账号的短篇深夜重看记录，少解释设定，沿两首歌和一个枕头走完
+    position: 名场面的重量不只在彩窗碎裂，而在音乐让过去回来以后，角色仍能暂时回到吵闹日常
+    format: personal-essay
+    mediaPlan: [空教堂作氛围封面, 彩窗前的高位对峙, Spike与Vicious近距离僵持]
+    sources: [cowboy-bebop-sakuga-roundtable, cowboy-bebop-official, cowboy-bebop-episode5-gallery]
+
+- seedKey: thread-pool-queue-before-max
+  legacySlug: null
+  authorSeedKey: night-coder
+  title: 我把 maxPoolSize 调到 64，任务还是先在队列里等死了
+  slug: thread-pool-queue-before-max
+  description: 同样是 core=4、max=64，两种队列却跑出 4 和 32 个线程。
+  category: TECH
+  tags: [Java, ThreadPoolExecutor, 线程池, 性能排查]
+  publishTime: 2026-06-14T13:12:00Z
+  markdownFile: posts/thread-pool-queue-before-max.md
+  coverAsset: thread-pool-queue-before-max-cover
+  inlineAssets: [thread-pool-queue-chart]
+  brief:
+    factAnchors: [Java 21.0.11, ThreadPoolExecutor, corePoolSize 4, maximumPoolSize 64, 40个闩锁任务, 无界LinkedBlockingQueue线程4队列36, ArrayBlockingQueue容量8线程32队列8, 两组拒绝0, tracked Java source and JSON]
+    voice: 后端开发者的一次配置误判复盘，先承认把64改成96没用，再用最小实验把路径跑出来
+    position: maximumPoolSize没有失效，是无界队列让非核心线程创建分支没有机会执行；改有界队列仍需结合下游容量与拒绝策略
+    format: technical-report
+    mediaPlan: [实验对比图裁切作封面, 完整对比图放在结果表后]
+    sources: [thread-pool-jdk21-docs, thread-pool-local-experiment]
+
+- seedKey: agent-tool-description-ablation
+  legacySlug: null
+  authorSeedKey: algo-runner
+  title: 工具说明砍掉一半以后，Agent 反而少选错了几次
+  slug: agent-tool-description-ablation
+  description: 六个工具、二十四条提示：说明从 543 字减到 182 字，错误少了十一次。
+  category: TECH
+  tags: [Agent, Tool Calling, 提示词, 消融实验]
+  publishTime: 2026-05-08T07:47:00Z
+  markdownFile: posts/agent-tool-description-ablation.md
+  coverAsset: agent-tool-description-ablation-cover
+  inlineAssets: [agent-tool-description-chart]
+  brief:
+    factAnchors: [六个工具, 二十四条冻结提示, deterministic lexical overlap selector, 长说明543字符, 短说明182字符, 减少66.5%, 长说明正确12错误12, 短说明正确23错误1, 全部逐题预测已跟踪, 非LLM基准]
+    voice: 做完小实验后写的实用笔记，保留剩下的一条错误，也主动限制结论
+    position: 工具描述要保留改变路由决策和参数填写的约束，删除在多个工具中重复的工作流背景；词面代理结果只用于发现污染，不等于真实模型评测
+    format: technical-report
+    mediaPlan: [两版本正确数对比裁切作封面, 完整图注明非LLM基准]
+    sources: [agent-tool-description-local-experiment]
+
+- seedKey: 1000xresist-words-arrive-late
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 《1000xRESIST》没有把真相藏到最后，它只是让每句话都晚了一点
+  slug: 1000xresist-words-arrive-late
+  description: Watcher 很早就看见裂缝，真正迟到的是理解；旧话总在几章后突然变重。
+  category: GAME
+  tags: [1000xRESIST, 独立游戏, 叙事游戏, 科幻]
+  publishTime: 2026-04-18T15:03:00Z
+  markdownFile: posts/1000xresist-words-arrive-late.md
+  coverAsset: 1000xresist-words-arrive-late-cover
+  inlineAssets: [1000xresist-memory-walk, 1000xresist-sisters, 1000xresist-red-room]
+  brief:
+    factAnchors: [Watcher, ALLMOTHER, 地下果园, 外来生物带来的疾病, 克隆姐妹与岗位称呼, 进入记忆, 非线性场景转换, Iris家庭, 英语与广东话, 真实影像进入三维叙事, 选择后果延迟]
+    voice: 通关后在游戏社区写的长帖，承认自己起初只等反转，后来被前面轻轻说过的话追上
+    position: 游戏的力量不在最后揭晓谜底，而在信息已经出现后，让关系与理解过几章才跟上
+    format: personal-essay
+    mediaPlan: [雾中对话作封面, 白色记忆空间, 同脸姐妹, 红色房间的旧秩序]
+    sources: [1000xresist-steam, 1000xresist-unity-talk]
+
+- seedKey: night-sign-exposure
+  legacySlug: null
+  authorSeedKey: photo-walker
+  title: 夜里拍亮招牌，我会先把字压暗一点
+  slug: night-sign-exposure
+  description: 夜景不必把每块阴影拉亮。先让灯箱里的字回来，再决定快门、白平衡和哪些黑色应该留下。
+  category: LIFE
+  tags: [夜景摄影, 街头摄影, 曝光, 白平衡]
+  publishTime: 2026-03-06T11:31:00Z
+  markdownFile: posts/night-sign-exposure.md
+  coverAsset: night-sign-exposure-cover
+  inlineAssets: [night-sign-highlights, night-sign-shutter, night-sign-white-balance]
+  brief:
+    factAnchors: [亮招牌点测光, exposure compensation minus 0.7 to minus 1.7 EV as starting range, 高光警告与直方图, 手持1/15到1/60取舍, RAW, 3800K到4300K起点, 红色灯箱先丢颜色层次, 保留真实黑, 示例图ISO50 0.2秒 f7.1 12毫米]
+    voice: 拍过一阵夜街以后留下的经验帖，不冒充器材评测，不把公开例图说成自己拍摄
+    position: 夜景最重要的不是把街道整体提亮，而是保护发光文字的边缘、颜色和笔画，再有意识地决定人流与暗部
+    format: personal-essay
+    mediaPlan: [较暗旧夜街作封面, 车流与灯箱层次, 人流拖影和稳定文字, 竖向灯牌色温]
+    sources: [night-sign-tokyo-2006, night-sign-yasukuni-vehicles, night-sign-kabukicho-gate, night-sign-shinjuku-2004]

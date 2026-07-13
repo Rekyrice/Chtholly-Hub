@@ -1,0 +1,10 @@
+{
+  "experiment": "thread-pool-queue-before-max",
+  "javaVersion": "21.0.11",
+  "generatedAt": "2026-07-13T15:24:51.809225400Z",
+  "configuration": {"corePoolSize": 4, "maximumPoolSize": 64, "submitted": 40},
+  "snapshots": [
+    {"queue": "LinkedBlockingQueue(unbounded)", "submitted": 40, "poolSize": 4, "largestPoolSize": 4, "activeCount": 4, "queued": 36, "rejected": 0},
+    {"queue": "ArrayBlockingQueue(8)", "submitted": 40, "poolSize": 32, "largestPoolSize": 32, "activeCount": 32, "queued": 8, "rejected": 0}
+  ]
+}

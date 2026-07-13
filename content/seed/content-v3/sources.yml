@@ -232,3 +232,201 @@
   factAnchors: [祥子在非洲难民营工作, 法国同事西尔维, 四驱车返回职员驻地, 谈起各自从前的男友, 世之介夏天去加藤住处吹空调, 明明睡过床却装作睡地板, 午夜公园长凳上的西瓜, 多年后的加藤笑起来]
   quote: null
   usageNote: 具体人物、未来插叙与两处场景依据上海人民出版社 2018 年林雅惠译本的原作阅读记录；pageUrl 只用于定位该版电子书与书目信息，公开零售页本身不独立证明非试读章节内容；不保存或引用长段原文
+- key: shiboyugi-sakuga-production
+  type: production-article
+  title: Shiboyugi — Souta Ueno
+  pageUrl: https://blog.sakugabooru.com/2026/04/10/shiboyugi-souta-ueno/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [上野壮大担任监督, 眼睛特写叠加矿物显微摄影, 无五官彩色剪影, 宽银幕与更窄画幅, 观众监视视角, Hewa制作3D环境参考, 墙后声音与赤脚音效, 死亡经常从远处呈现, 章节编号参与节奏]
+  quote: null
+  usageNote: 核对制作方法、空间与声音设计；正文独立组织，不翻译或复刻原文段落，配图保存公开文章中的动画画面
+- key: shiboyugi-official
+  type: official-site
+  title: TVアニメ「死亡遊戯で飯を食う。」公式サイト
+  pageUrl: https://shiboyugi-anime.com/
+  author: 鵜飼有志 / KADOKAWA / 「死亡遊戯で飯を食う。」製作委員会
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [主人公幽鬼, 以死亡游戏为生, 动画制作Studio DEEN]
+  quote: null
+  usageNote: 核对作品中文语境、主人公与动画制作信息
+- key: takopi-sakuga-production
+  type: production-article
+  title: Takopi's Original Sin Production Notes
+  pageUrl: https://blog.sakugabooru.com/2025/08/15/takopis-original-sin-production-notes-the-lengthy-road-to-proper-communication/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [两卷十六话改编为六集, 单集时长不固定, 第四话由大嶋博之主导分镜与演出, 直树获知尸体被发现后的断裂感, 背景动画表现距离, 润也从压迫性高位变为与弟弟平视]
+  quote: null
+  usageNote: 核对改编结构与第四话视听处理；正文从道歉和倾听切入，不沿用原文章法
+- key: takopi-official-story-04
+  type: official-episode-page
+  title: アニメ「タコピーの原罪」第4話 東くんの救済
+  pageUrl: https://www.tbs.co.jp/anime/takopi_project/story/story04.html
+  author: TBS / タイザン5 / 集英社・「タコピーの原罪」製作委員会
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [第四话标题东君的救济, 犯人搜寻开始, 直树对兄长润也有强烈自卑, 四张官方场面图]
+  quote: null
+  usageNote: 核对第四话梗概并使用三张官方场面图，图片不含结局信息
+- key: kisekoi-season2-sakuga
+  type: production-article
+  title: The Exceptional Growth Of My Dress-Up Darling Season 2
+  pageUrl: https://blog.sakugabooru.com/2025/10/08/the-exceptional-growth-of-my-dress-up-darling-kisekoi-season-2/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [筱原启辅担任监督, 山本ゆうすけ参与系列监督工作, 第十三话万圣节与五条的不安, 第十四话天野甘音的女装回忆, PrezHost剧中作品, 第二季扩大年龄性别与兴趣边界]
+  quote: null
+  usageNote: 核对第二季各段主题和制作分工；正文以海梦是否被困在可爱形象里为独立主线
+- key: kisekoi-official
+  type: official-site
+  title: TVアニメ「その着せ替え人形は恋をする」公式サイト
+  pageUrl: https://bisquedoll-anime.com/
+  author: 福田晋一 / SQUARE ENIX・「着せ恋」製作委員会
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [喜多川海梦, 五条新菜, 电视动画第二季]
+  quote: null
+  usageNote: 核对角色名与第二季作品信息
+- key: look-back-sakuga-production
+  type: production-article
+  title: Look Back — An Exceptional Production To Embrace The Paradox Of The Artist
+  pageUrl: https://blog.sakugabooru.com/2024/06/13/look-back-an-exceptional-production-to-embrace-the-paradox-of-the-artist-annecy-2024/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [押山清高担任监督脚本角色设计, Studio Durian, 保留原画线条, 押山承担约半数关键动画, 唯一作画监督, 为他人准备设定但自己不总参照, 奔跑段落在动画中扩展]
+  quote: null
+  usageNote: 核对作画方法与制作分工；不美化超负荷劳动，配图用于讨论线条、桌面与房间
+- key: look-back-official
+  type: official-site
+  title: 劇場アニメ「ルックバック」公式サイト
+  pageUrl: https://lookback-anime.com/
+  author: 藤本タツキ / 集英社・「ルックバック」製作委員会
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [藤野与京本, 押山清高担任监督脚本角色设计, Studio Durian制作]
+  quote: null
+  usageNote: 核对人物、主创与制作公司
+- key: bocchi-sakuga-production
+  type: production-article
+  title: Bocchi the Rock! Complete Production Notes
+  pageUrl: https://blog.sakugabooru.com/2022/12/26/bocchi-the-rock-complete-production-notes-and-final-impressions/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [斋藤圭一郎担任监督, 第六话街头演出使用贴近吉他的虚拟机位, 一只眼睛在演出前被头发遮住, 第八话两次演出以相近构图呈现身体变化, 第十二话喜多以演奏接住设备故障]
+  quote: null
+  usageNote: 核对第六、第八与第十二话的演出处理；正文以声音离开房间又回来为独立主线
+- key: bocchi-official-story
+  type: official-episode-pages
+  title: TVアニメ「ぼっち・ざ・ろっく！」STORY
+  pageUrl: https://bocchi.rocks/tv/story/
+  author: はまじあき / 芳文社・アニプレックス
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [第六话街头演出, 第八话首次Live, 第十二话学园祭, 官方场面图]
+  quote: null
+  usageNote: 使用第六话与第八话官方场面图，核对故事节点，不引用官方文案
+- key: cowboy-bebop-sakuga-roundtable
+  type: creator-roundtable
+  title: Cowboy Bebop 20th Anniversary Roundtable
+  pageUrl: https://blog.sakugabooru.com/2018/07/24/cowboy-bebop-20th-anniversary-roundtable-masahiko-minami-x-shinichiro-watanabe-x-keiko-nobumoto/
+  author: Masahiko Minami / Shinichiro Watanabe / Keiko Nobumoto
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [南雅彦渡边信一郎信本敬子圆桌, 企划最初与飞船玩具推广有关, 万代退出后由Bandai Visual继续, 单元剧每集追求不同气质, 主创维持角色说话方式, 不稳定前景使单集带有最后一集般的决绝]
+  quote: null
+  usageNote: 核对企划和单元剧制作背景；正文只保留与第五话观看感受有关的事实
+- key: cowboy-bebop-official
+  type: official-site
+  title: カウボーイビバップ | サンライズワールド
+  pageUrl: https://www.sunrise-world.net/titles/pickup_041.php
+  author: サンライズ
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [1998年电视动画, 全二十六话WOWOW版, 监督渡边信一郎, 音乐菅野洋子与SEATBELTS]
+  quote: null
+  usageNote: 核对作品、话数与主创信息
+- key: cowboy-bebop-episode5-gallery
+  type: community-screenshot-gallery
+  title: Cowboy Bebop Page 5 — Ballad Of Fallen Angels
+  pageUrl: https://www.inetres.com/gp/anime/bebop/index05.html
+  author: Gary W. Cooke
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [第五话教堂内部, Spike与Vicious在彩窗前对峙, 原始动画画面版权归Sunrise]
+  quote: null
+  usageNote: 保存三张低分辨率第五话场面帧，只用于私人站点文章中的画面讨论，不冒充官方图片库
+- key: thread-pool-jdk21-docs
+  type: official-documentation
+  title: ThreadPoolExecutor (Java SE 21 & JDK 21)
+  pageUrl: https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/ThreadPoolExecutor.html
+  author: Oracle
+  fetchedAt: 2026-07-13T15:30:00.000Z
+  factAnchors: [corePoolSize与maximumPoolSize, 核心线程忙时优先尝试排队, 队列无法接收任务后才创建非核心线程, 无界队列会使maximumPoolSize没有实际效果, 饱和后执行拒绝策略]
+  quote: null
+  usageNote: 核对ThreadPoolExecutor.execute的线程与队列决策顺序，不引用长段文档
+- key: thread-pool-local-experiment
+  type: reproducible-local-experiment
+  title: ThreadPoolExecutor queue-before-max local experiment
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/thread-pool-queue-before-max
+  author: night-coder
+  fetchedAt: 2026-07-13T15:24:51.809Z
+  factAnchors: [Java 21.0.11, corePoolSize 4, maximumPoolSize 64, 同时提交40个被闩锁阻塞任务, 无界LinkedBlockingQueue运行4排队36, ArrayBlockingQueue容量8运行32排队8, 两组均拒绝0, 源码与原始JSON已跟踪]
+  quote: null
+  usageNote: 文章中的数字、表格和图表全部来自跟踪实验；只验证队列决策顺序，不外推业务线程池容量
+- key: agent-tool-description-local-experiment
+  type: reproducible-local-experiment
+  title: Agent tool description ablation
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/agent-tool-description-ablation
+  author: algo-runner
+  fetchedAt: 2026-07-13T15:26:00.000Z
+  factAnchors: [六个工具, 每个工具四条冻结提示共24条, 确定性中文字符二元组与英文token重叠选择器, 长说明543字符, 短说明182字符, 字符减少66.5%, 长说明正确12错误12, 短说明正确23错误1, 不是LLM基准]
+  quote: null
+  usageNote: 文章明确限定为词面路由代理的前置消融；数据、工具说明、用例和逐题预测均已跟踪
+- key: 1000xresist-steam
+  type: official-store-page
+  title: 1000xRESIST on Steam
+  pageUrl: https://store.steampowered.com/app/1675830/1000xRESIST/?l=schinese
+  author: sunset visitor 斜陽過客 / Fellow Traveller
+  fetchedAt: 2026-07-13T14:30:00.000Z
+  factAnchors: [叙事冒险, Watcher, ALLMOTHER, 地下果园, 外来生物与疾病, 进入记忆, 十个章节, sunset visitor开发, Fellow Traveller发行]
+  quote: null
+  usageNote: 核对官方故事简介和产品信息，并保存四张官方商店截图；正文基于完整游玩后的个人理解，不复写商店文案
+- key: 1000xresist-unity-talk
+  type: creator-talk
+  title: Narrative Game Design in 1000xRESIST
+  pageUrl: https://unity.com/resources/1000xresist-narrative-game-design
+  author: Remy Siu / Nicole MacDougall / sunset visitor / Unity
+  fetchedAt: 2026-07-13T14:30:00.000Z
+  factAnchors: [团队有游戏之外的艺术背景, 使用场景工具在关键故事时刻之间跳转检查变化, 叙事和场景制作方法]
+  quote: null
+  usageNote: 只核对团队背景与非线性场景制作思路，不引用访谈原句
+- key: night-sign-kabukicho-gate
+  type: cc-photograph
+  title: Kabukicho red gate and colorful neon street signs at night
+  pageUrl: https://commons.wikimedia.org/wiki/File:Kabukicho_red_gate_and_colorful_neon_street_signs_at_night,_Shinjuku,_Tokyo,_Japan.jpg
+  author: Basile Morin
+  fetchedAt: 2026-07-13T14:50:00.000Z
+  factAnchors: [2019年6月6日, Canon EOS 5D Mark IV, 0.4秒, f8, ISO50, CC BY-SA 4.0]
+  quote: null
+  usageNote: 用作人流轻微拖影与灯牌文字仍清楚的例图；图片裁切压缩，署名与许可保存在来源记录
+- key: night-sign-yasukuni-vehicles
+  type: cc-photograph
+  title: Yasukuni-dori Avenue at night with vehicles and colorful neon street signs
+  pageUrl: https://commons.wikimedia.org/wiki/File:Yasukuni-dori_Avenue_at_night_with_vehicles_and_colorful_neon_street_signs,_Shinjuku,_Tokyo,_Japan.jpg
+  author: Basile Morin
+  fetchedAt: 2026-07-13T14:50:00.000Z
+  factAnchors: [2019年6月6日, Canon EOS 5D Mark IV, 0.2秒, f7.1, ISO50, 12毫米, CC BY-SA 4.0]
+  quote: null
+  usageNote: 用作招牌、车灯与黑色天空同时保留层次的例图；文章不声称由发帖账号拍摄
+- key: night-sign-tokyo-2006
+  type: cc-photograph
+  title: Neon street in Tokyo Japan
+  pageUrl: https://commons.wikimedia.org/wiki/File:Neon-street-in-Tokyo-Japan.jpg
+  author: Acediscovery
+  fetchedAt: 2026-07-13T14:50:00.000Z
+  factAnchors: [2006年4月29日, 东京夜间街道, 1600乘1155, 自有作品, 开放许可见文件页]
+  quote: null
+  usageNote: 较暗的旧数码夜景作为封面，保留黑色天空和未被统一校白的灯牌
+- key: night-sign-shinjuku-2004
+  type: cc-photograph
+  title: Shinjuku neon Tokyo
+  pageUrl: https://commons.wikimedia.org/wiki/File:Shinjuku-neon_Tokyo.jpg
+  author: Michael Reeve
+  fetchedAt: 2026-07-13T14:50:00.000Z
+  factAnchors: [2004年4月1日, 靖国通霓虹灯, 500乘667, GFDL与CC BY-SA 3.0兼容许可]
+  quote: null
+  usageNote: 用作纵向堆叠灯牌与不同色温的例图，保留原图比例
