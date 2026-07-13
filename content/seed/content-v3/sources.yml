@@ -430,3 +430,166 @@
   factAnchors: [2004年4月1日, 靖国通霓虹灯, 500乘667, GFDL与CC BY-SA 3.0兼容许可]
   quote: null
   usageNote: 用作纵向堆叠灯牌与不同色温的例图，保留原图比例
+
+- key: dandadan-episode-seven-official
+  type: official-episode-page
+  title: TVアニメ『ダンダダン』第7話「あたしはばあちゃんを忘れないよ」
+  pageUrl: https://anime-dandadan.com/story/ep07/
+  author: ダンダダン製作委員会
+  fetchedAt: 2026-07-14T00:40:00.000Z
+  factAnchors: [第七话剧情简介, 爱罗失去生命反应, 杂技长发女提出救回爱罗的方法, 四张官方剧照]
+  quote: null
+  usageNote: 核对第七话事件顺序并保存官方剧照，正文以观看感受为主
+- key: dandadan-production-notes
+  type: production-analysis
+  title: An Animator’s Hand Toward A Kinder World — Dandadan Production Notes 05–07
+  pageUrl: https://blog.sakugabooru.com/2024/11/21/an-animators-hand-toward-a-kinder-world-dandadan-production-notes-05-07/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T00:42:00.000Z
+  factAnchors: [第七话分镜与作画监督榎本柊斗, 演出松永浩太郎, 动画扩写杂技长发女过去, 舞蹈与手臂动作母题]
+  quote: null
+  usageNote: 核对单集主创与动画扩写方向；正文重新组织为爱罗视角的单集评论
+- key: makeine-official-story
+  type: official-episode-page
+  title: TVアニメ「負けヒロインが多すぎる！」STORY
+  pageUrl: https://makeine-anime.com/story/
+  author: マケイン応援委員会
+  fetchedAt: 2026-07-14T00:48:00.000Z
+  factAnchors: [第一话与第四话剧情, 八奈见杏菜, 温水和彦, 官方场面剧照]
+  quote: null
+  usageNote: 核对人物、话数与场面图，正文不复写官方简介
+- key: makeine-production-notes
+  type: production-analysis
+  title: The Grounded Worldview of the Losing Heroines — Makeine Production Notes
+  pageUrl: https://blog.sakugabooru.com/2024/09/30/the-grounded-worldview-of-the-losing-heroines-makeine-production-notes/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T00:50:00.000Z
+  factAnchors: [导演北村翔太郎, 丰桥取景, 多次实地勘景, 本地食品包装, 绿蓝夏日色彩与暖色活动室]
+  quote: null
+  usageNote: 核对地方景观与色彩设计背景；正文聚焦八奈见的食欲和时间感
+- key: kusuriya-official-episodes
+  type: official-episode-page
+  title: TVアニメ『薬屋のひとりごと』第一期各話あらすじ
+  pageUrl: https://kusuriyanohitorigoto.jp/season1/episodes/
+  author: 「薬屋のひとりごと」製作委員会
+  fetchedAt: 2026-07-14T00:56:00.000Z
+  factAnchors: [第六话园游会试毒, 第九话军官之死, 第二十四话罗汉与凤仙, 官方剧照]
+  quote: null
+  usageNote: 核对三话事件与保存场面图，正文只讨论猫猫延迟说出结论的习惯
+- key: kusuriya-production-notes
+  type: production-analysis
+  title: The Methodical Production of Kusuriya no Hitorigoto
+  pageUrl: https://blog.sakugabooru.com/2024/05/10/the-methodical-production-of-kusuriya-no-hitorigoto-how-to-create-a-system-of-holistic-excellence-in-anime/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T00:58:00.000Z
+  factAnchors: [导演与系列构成长沼范裕, 第一季二十四话, 凯文·彭金, 桶狭间有沙, 神前晓, 单元谜案与主线相连]
+  quote: null
+  usageNote: 核对主创、音乐与整季结构，正文改从人物的沉默与边界切入
+- key: euphonium-third-season-official
+  type: official-episode-page
+  title: TVアニメ『響け！ユーフォニアム３』第十二回・最終回あらすじ
+  pageUrl: https://tv3rd.anime-eupho.com/story/13/
+  author: 京都アニメーション
+  fetchedAt: 2026-07-14T01:02:00.000Z
+  factAnchors: [最终试奏, 全国大赛, 北宇治获得金奖, 第十二话与最终话官方剧照]
+  quote: null
+  usageNote: 核对最终两话事件顺序并保存官方场面图
+- key: euphonium-final-production-notes
+  type: production-analysis
+  title: "Kyoto Animation and Hibike! Euphonium: From the Past to the Future"
+  pageUrl: https://blog.sakugabooru.com/2024/07/19/kyoto-animation-and-hibike-euphonium-from-the-past-to-the-future-final-production-notes/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T01:04:00.000Z
+  factAnchors: [京都动画制作体系, 第三季最终两话, 系列过去场面的回返, 演奏与角色选择]
+  quote: null
+  usageNote: 核对终章制作背景，正文以久美子的愿望和社团原则冲突为中心
+- key: kimi-no-iro-official
+  type: official-site
+  title: 映画『きみの色』公式サイト
+  pageUrl: https://kiminoiro.jp/
+  author: 「きみの色」製作委員会
+  fetchedAt: 2026-07-14T01:08:00.000Z
+  factAnchors: [导演山田尚子, 编剧吉田玲子, 音乐牛尾宪辅, 日暮登子, 作永きみ, 影平留依]
+  quote: null
+  usageNote: 核对人物与主创，正文不复写官方宣传文案
+- key: kimi-no-iro-annecy-notes
+  type: festival-production-analysis
+  title: Kimi no Iro — Naoko Yamada’s Love Spins Round and Round
+  pageUrl: https://blog.sakugabooru.com/2024/06/21/kimi-no-iro-the-colors-within-naoko-yamadas-love-spins-round-and-round-annecy-2024/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T01:10:00.000Z
+  factAnchors: [登子看见他人颜色, 红粉色的登子, 蓝色的きみ, 绿色的留依, 三色加法混成白色, 旧教堂乐队]
+  quote: null
+  usageNote: 核对颜色设计和乐队设定；正文围绕数拍与共同开始重新组织
+- key: mononoke-movie-official
+  type: official-site
+  title: 『劇場版モノノ怪』公式サイト
+  pageUrl: https://www.mononoke-movie.com/
+  author: ツインエンジン
+  fetchedAt: 2026-07-14T01:14:00.000Z
+  factAnchors: [唐伞, 大奥, 卖药郎, 形真理, 官方主视觉与画廊剧照]
+  quote: null
+  usageNote: 核对作品设定并保存主视觉和三张官方画廊图
+- key: mononoke-avantgarde-notes
+  type: director-style-analysis
+  title: The Evolution of Kenji Nakamura’s Avantgarde Creation
+  pageUrl: https://blog.sakugabooru.com/2024/12/30/the-evolution-of-kenji-nakamuras-avantgarde-creation-15-years-between-kuuchuu-buranko-and-mononoke-the-movie/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T01:16:00.000Z
+  factAnchors: [导演中村健治, 加法式画面密度, 浮世绘与平面纹样, 拉门作为视觉标点, 个体局部正确合成整体悲剧]
+  quote: null
+  usageNote: 核对导演风格与制度主题；正文以大奥的颜色和空间为线索重新写作
+- key: python-asyncio-docs
+  type: official-documentation
+  title: Python 3 asyncio — Asynchronous I/O
+  pageUrl: https://docs.python.org/3/library/asyncio.html
+  author: Python Software Foundation
+  fetchedAt: 2026-07-14T01:20:00.000Z
+  factAnchors: [事件循环, asyncio.sleep, run_in_executor, 协作式调度, Python 3.7兼容写法]
+  quote: null
+  usageNote: 核对asyncio调度与兼容接口，不引用长段文档
+- key: python-async-blocking-local-experiment
+  type: reproducible-local-experiment
+  title: Python async blocking call comparison
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/python-async-blocking-call
+  author: night-coder
+  fetchedAt: 2026-07-14T01:22:00.000Z
+  factAnchors: [Python 3.7.0, 五十个并发任务, 单任务等待五十毫秒, 五轮, 直调阻塞中位3.094287秒, 协作等待中位0.062620秒, 线程池转移中位0.064977秒]
+  quote: null
+  usageNote: 文章中的耗时与图表全部来自跟踪源码和原始JSON；只验证等待是否串行，不外推业务吞吐
+- key: agent-memory-recency-local-experiment
+  type: reproducible-local-experiment
+  title: Agent memory recency conflict experiment
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/agent-memory-recency-experiment
+  author: algo-runner
+  fetchedAt: 2026-07-14T01:24:00.000Z
+  factAnchors: [二十四条记忆, 十二条活跃记忆, 二十四条冻结查询, 基线正确7错误17, 新旧关系消解后正确20错误4, 旧值误召回从17降到0, 确定性词面代理, 不是LLM或embedding基准]
+  quote: null
+  usageNote: 数据集、查询、源码、逐题预测和预实验限制均已跟踪；结论只针对已知supersedes关系
+- key: lorelei-steam
+  type: official-store-page
+  title: Lorelei and the Laser Eyes on Steam
+  pageUrl: https://store.steampowered.com/app/2008920/Lorelei_and_the_Laser_Eyes/
+  author: Simogo / Annapurna Interactive
+  fetchedAt: 2026-07-14T01:27:00.000Z
+  factAnchors: [非线性解谜, 黑白视觉, 庄园, 数字与文件谜题, 四张Steam官方截图]
+  quote: null
+  usageNote: 核对产品信息并保存四张官方截图，正文基于游玩后的纸笔记录习惯
+- key: lorelei-simogo-official
+  type: official-creator-page
+  title: Lorelei and the Laser Eyes — Simogo
+  pageUrl: https://simogo.com/work/loreleiandthelasereyes/
+  author: Simogo
+  fetchedAt: 2026-07-14T01:28:00.000Z
+  factAnchors: [Simogo开发, 庄园探索, 视觉与叙事谜题, 玩家自行连接信息]
+  quote: null
+  usageNote: 核对开发者与作品定位，不复写宣传语
+- key: curry-wikimedia-images
+  type: open-license-image-set
+  title: Curry and onion photographs on Wikimedia Commons
+  pageUrl: https://commons.wikimedia.org/wiki/File:Beef_curry_rice_003.jpg
+  author: Ocdp / HungryHuy / DocteurCosmos / Veikko Mäkelä
+  fetchedAt: 2026-07-14T01:30:00.000Z
+  factAnchors: [咖喱饭照片CC0, 洋葱砧板照片CC BY 2.0, 炒洋葱照片CC BY-SA 3.0, 锅中咖喱照片CC BY-SA 4.0]
+  quote: null
+  usageNote: 四张开放许可食物照片用于封面与过程插图；逐图原页、作者和许可保存在assets.yml

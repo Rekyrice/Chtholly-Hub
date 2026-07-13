@@ -426,3 +426,203 @@
     format: personal-essay
     mediaPlan: [较暗旧夜街作封面, 车流与灯箱层次, 人流拖影和稳定文字, 竖向灯牌色温]
     sources: [night-sign-tokyo-2006, night-sign-yasukuni-vehicles, night-sign-kabukicho-gate, night-sign-shinjuku-2004]
+
+- seedKey: dandadan-fireworks-aira-episode-seven
+  legacySlug: null
+  authorSeedKey: anime-critic
+  title: 烟花落下来时，爱罗已经没有地方可以回去了——《胆大党》第七话
+  slug: dandadan-fireworks-aira-episode-seven
+  description: 从舞蹈、手臂和粉色光点，回看爱罗与杂技长发女那次无法延长的拥抱。
+  category: ANIME
+  tags: [胆大党, 爱罗, 杂技长发女, 单集评论]
+  publishTime: 2026-07-10T13:26:00Z
+  markdownFile: posts/dandadan-fireworks-aira-episode-seven.md
+  coverAsset: dandadan-fireworks-cover
+  inlineAssets: [dandadan-aira-face, dandadan-silky-light, dandadan-mother-run]
+  brief:
+    factAnchors: [第七话, 爱罗, 杂技长发女, 榎本柊斗, 松永浩太郎, 粉色光点, 生命交出去, 手臂, 舞蹈, 无法延长的拥抱]
+    voice: 看完单集后立刻重看的动画观众，先记动作和颜色，再承认这并不是圆满
+    position: 扩写的母女回忆让妖怪的身体语言从恐怖转为迟到的拥抱，牺牲救回爱罗却没有抵消任何一方的失去
+    format: personal-essay
+    mediaPlan: [爱罗倒地的暗色场面作封面, 爱罗仰视妖怪, 粉色光中的拥抱, 母亲奔跑]
+    sources: [dandadan-episode-seven-official, dandadan-production-notes]
+
+- seedKey: makeine-anna-summer-eaten
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 八奈见杏菜的夏天，大概有一半是吃掉的
+  slug: makeine-anna-summer-eaten
+  description: 失恋、便当债和丰桥的暑气混在一起，八奈见总能在最难堪的时候再吃一口。
+  category: ANIME
+  tags: [败犬女主太多了, 八奈见杏菜, 丰桥, 青春动画]
+  publishTime: 2026-07-06T08:43:00Z
+  markdownFile: posts/makeine-anna-summer-eaten.md
+  coverAsset: makeine-summer-cover
+  inlineAssets: [makeine-anna-smile, makeine-corridor, makeine-stairwell]
+  brief:
+    factAnchors: [八奈见杏菜, 温水, 袴田草介, 姬宫华恋, 便当抵债, 丰桥, 北村翔太郎, 黑雷巧克力, 初恋汽水, 第四话]
+    voice: 喜欢八奈见不体面的普通观众，把吃饭当作人物节拍，不把失恋写成治愈教程
+    position: 食欲让八奈见的难过保留生活中的狼狈与反复，饭盒债务也为她和温水提供了无需过早命名的相处理由
+    format: personal-essay
+    mediaPlan: [桌面伏睡作封面, 活动室笑脸, 夏日走廊, 强光楼梯间]
+    sources: [makeine-official-story, makeine-production-notes]
+
+- seedKey: kusuriya-maomao-after-crowd
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 猫猫为什么总要等人散了才说答案
+  slug: kusuriya-maomao-after-crowd
+  description: 后宫里的真相落错位置也会伤人；猫猫先看身体和席位，最后才决定该告诉谁。
+  category: ANIME
+  tags: [药屋少女的呢喃, 猫猫, 后宫, 人物评论]
+  publishTime: 2026-06-30T15:12:00Z
+  markdownFile: posts/kusuriya-maomao-after-crowd.md
+  coverAsset: kusuriya-crowd-cover
+  inlineAssets: [kusuriya-garden-glance, kusuriya-poison-taste, kusuriya-curtain]
+  brief:
+    factAnchors: [猫猫, 园游会, 第六话, 第九话, 第二十四话, 长沼范裕, 凯文·彭金, 桶狭间有沙, 神前晓, 形真理]
+    voice: 留意推理如何嵌进人际秩序的读者，不把猫猫的沉默简单夸成冷静
+    position: 猫猫延迟揭晓是对后宫权力和他人承受能力的判断，也是她把自己撤出关系的防身姿势
+    format: personal-essay
+    mediaPlan: [罗汉隔帘看凤仙作封面, 园游会妃子反应, 猫猫试毒, 暗处帘幕]
+    sources: [kusuriya-official-episodes, kusuriya-production-notes]
+
+- seedKey: euphonium-kitauji-will-not-wait
+  legacySlug: null
+  authorSeedKey: site-owner
+  title: 北宇治不会为谁停下来
+  slug: euphonium-kitauji-will-not-wait
+  description: 最终试奏把久美子的愿望和北宇治的原则放在同一间礼堂，谁都不能免于结果。
+  category: ANIME
+  tags: [吹响吧上低音号, 北宇治, 黄前久美子, 动画评论]
+  publishTime: 2026-06-24T09:08:00Z
+  markdownFile: posts/euphonium-kitauji-will-not-wait.md
+  coverAsset: eupho-kitauji-cover
+  inlineAssets: [eupho-audition-light, eupho-listening-row, eupho-embrace]
+  brief:
+    factAnchors: [黄前久美子, 黑江真由, 高坂丽奈, 泷升, 最终试奏, 盲选, 全国大赛, 全国金奖, 北宇治, 上低音号]
+    voice: 跟完三季以后回看最终试奏的老观众，接受结果但不抹平久美子的委屈
+    position: 北宇治的实力原则最终对准主角本人，久美子承认欲望和失败后继续演奏，比得到独奏更接近作品三年的成长
+    format: personal-essay
+    mediaPlan: [全国赛前群像作封面, 真由等待试奏, 部员听选, 赛后拥抱]
+    sources: [euphonium-third-season-official, euphonium-final-production-notes]
+
+- seedKey: kimi-no-iro-count-to-four
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 三个人，一间旧教堂，还有数到四的声音——《你的颜色》
+  slug: kimi-no-iro-count-to-four
+  description: 颜色说不完一个人，数拍子却能让三个还没准备好的人在同一时刻开始。
+  category: ANIME
+  tags: [你的颜色, 山田尚子, 牛尾宪辅, 动画电影]
+  publishTime: 2026-06-15T12:37:00Z
+  markdownFile: posts/kimi-no-iro-count-to-four.md
+  coverAsset: kiminoiro-church-cover
+  inlineAssets: [kiminoiro-totsuko-color, kiminoiro-flower-credit]
+  brief:
+    factAnchors: [日暮登子, 作永きみ, 影平留依, 山田尚子, 牛尾宪辅, 旧教堂, 白猫堂, 一二三四, 蓝色, 绿色]
+    voice: 对学生乐队的生涩比完成度更感兴趣，沿着声音、脚步和颜色写三个人的距离
+    position: 旧教堂提供暂时无需解释身份的空间，数拍子让三个人练习在害怕时听见别人也让别人听见自己
+    format: personal-essay
+    mediaPlan: [乐队与彩色纹样作封面, 浅色中的登子, 花朵与彩色文字]
+    sources: [kimi-no-iro-official, kimi-no-iro-annecy-notes]
+
+- seedKey: mononoke-movie-colors-in-ooku
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 《剧场版物怪》：大奥没有黑夜，只有颜色变暗
+  slug: mononoke-movie-colors-in-ooku
+  description: 拉门、席位和过量纹样把人切进制度；颜色越繁盛，真正的空白越稀少。
+  category: ANIME
+  tags: [剧场版物怪, 唐伞, 中村健治, 视觉设计]
+  publishTime: 2026-05-29T14:56:00Z
+  markdownFile: posts/mononoke-movie-colors-in-ooku.md
+  coverAsset: mononoke-ooku-cover
+  inlineAssets: [mononoke-sliding-doors, mononoke-face-colors, mononoke-court]
+  brief:
+    factAnchors: [唐伞, 大奥, 卖药郎, 中村健治, 形真理, 拉门, 乌鸦, 花纹, fallacy of composition, 物怪]
+    voice: 先被色彩密度压住再慢慢拆空间的视觉爱好者，允许对过载段落保留不适
+    position: 唐伞来自具体怨念也来自个体局部选择合成的制度，物怪能被斩而让它诞生的条件不会随一次揭晓消失
+    format: personal-essay
+    mediaPlan: [卖药郎主视觉作封面, 层叠拉门, 色块切脸, 舞台式席位]
+    sources: [mononoke-movie-official, mononoke-avantgarde-notes]
+
+- seedKey: python-async-blocking-call
+  legacySlug: null
+  authorSeedKey: night-coder
+  title: Python async 接口中的阻塞调用排查
+  slug: python-async-blocking-call
+  description: 五十个短等待任务跑三种实现，用事件循环延迟和本地实验定位藏在协程里的同步 I/O。
+  category: TECH
+  tags: [Python, asyncio, 并发, 性能排查]
+  publishTime: 2026-07-08T11:19:00Z
+  markdownFile: posts/python-async-blocking-call.md
+  coverAsset: python-async-cover
+  inlineAssets: [python-async-code, python-async-chart]
+  brief:
+    factAnchors: [Python 3.7.0, 50个任务, 每个等待50ms, 五轮, 3.094287秒, 0.062620秒, 0.064977秒, run_in_executor, loop lag, 不是性能基准]
+    voice: 从线上排队现象回到最小实验的后端开发者，给出排查顺序并限制线程池结论
+    position: async函数体中的同步等待仍会阻塞事件循环，原生异步优先，线程池只用于隔离受控的旧同步边界
+    format: technical-report
+    mediaPlan: [深色实验摘要作封面, 三种写法的代码卡片, 五轮中位耗时图]
+    sources: [python-asyncio-docs, python-async-blocking-local-experiment]
+
+- seedKey: agent-memory-recency-experiment
+  legacySlug: null
+  authorSeedKey: algo-runner
+  title: Agent 记忆检索的时效性实验
+  slug: agent-memory-recency-experiment
+  description: 二十四条冻结查询里，先消解 supersedes 关系把旧值误召回从十七次降到零次。
+  category: TECH
+  tags: [Agent, Memory, 检索, 实验]
+  publishTime: 2026-07-03T06:52:00Z
+  markdownFile: posts/agent-memory-recency-experiment.md
+  coverAsset: agent-memory-cover
+  inlineAssets: [agent-memory-code, agent-memory-chart]
+  brief:
+    factAnchors: [24条记忆, 12条活跃, 24条查询, supersedes, 基线答对7条, 答错17条, 新旧关系后答对20条, 仍错4条, 旧值误召回为0, 不是LLM基准]
+    voice: 先公开一次有长度偏差的失败预实验，再报告冻结数据和剩余错误的实验笔记
+    position: 已知版本关系应在相关性排序前消解，但这只能解决旧值冲突，不能替代真正的语义召回与重排
+    format: technical-report
+    mediaPlan: [深色实验摘要作封面, supersedes过滤代码卡片, 两种策略正确数对照]
+    sources: [agent-memory-recency-local-experiment]
+
+- seedKey: lorelei-laser-eyes-paper-notes
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 《Lorelei and the Laser Eyes》让我重新拿起了纸和笔
+  slug: lorelei-laser-eyes-paper-notes
+  description: 截图保存画面，纸页保存误会；日期、箭头和被擦掉的关系组成另一份通关记录。
+  category: GAME
+  tags: [Lorelei and the Laser Eyes, Simogo, 解谜游戏, 独立游戏]
+  publishTime: 2026-06-11T16:21:00Z
+  markdownFile: posts/lorelei-laser-eyes-paper-notes.md
+  coverAsset: lorelei-paper-cover
+  inlineAssets: [lorelei-red-eye, lorelei-hotel-room, lorelei-red-maze]
+  brief:
+    factAnchors: [Simogo, 黑白庄园, 红色, 日期, 电影片段, 四位数锁, 纸和笔, 截图, 箭头, 错误推论]
+    voice: 通关后翻看潦草笔记的玩家，保留走错路的乐趣，不写无剧透购买指南
+    position: 纸笔的价值不只是记答案，而是保留线索之间尚未确定的关系和玩家曾经如何误解庄园
+    format: personal-essay
+    mediaPlan: [庄园外景作封面, 红色眼形结构, 窗前人物, 红色迷宫装置]
+    sources: [lorelei-steam, lorelei-simogo-official]
+
+- seedKey: curry-four-portions-onion
+  legacySlug: null
+  authorSeedKey: photo-walker
+  title: 一个人煮咖喱，我还是会切四人份的洋葱
+  slug: curry-four-portions-onion
+  description: 地址先变了，手里的分量晚一点；多出来的咖喱在冰箱里慢慢找到新的去处。
+  category: LIFE
+  tags: [独居, 做饭, 咖喱, 生活随笔]
+  publishTime: 2026-05-24T10:14:00Z
+  markdownFile: posts/curry-four-portions-onion.md
+  coverAsset: curry-four-cover
+  inlineAssets: [curry-onion-board, curry-onion-pan, curry-pot]
+  brief:
+    factAnchors: [四人份的洋葱, 一个人住, 砧板, 炒洋葱, 咖喱块, 冰箱, 分成三盒, 关小火, 写日期, 旧厨房]
+    voice: 搬出去以后才发现手感没搬走的普通人，不把独居写成励志或伤感模板
+    position: 多做的分量不是拒绝新生活，只是身体仍沿着旧厨房的尺度行动，适应发生在处理剩余的一顿又一顿里
+    format: personal-essay
+    mediaPlan: [家常咖喱饭作封面, 砧板洋葱, 锅中软化洋葱, 咖喱汤汁]
+    sources: [curry-wikimedia-images]
