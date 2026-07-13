@@ -15,10 +15,10 @@ describe("landing page", () => {
     expect(landingCss).not.toContain('/images/landing/default.jpg');
   });
 
-  it("keeps the Chtholly page on its existing default image", () => {
+  it("keeps the redesigned Chtholly room independent from landing imagery", () => {
     const communityCss = readFileSync("app/styles/community.css", "utf8");
 
-    expect(communityCss).toContain('background-image: url("/images/landing/default.jpg")');
+    expect(communityCss).not.toContain('/images/landing/default.jpg');
     expect(communityCss).not.toContain(formalLandingImage);
   });
 });
