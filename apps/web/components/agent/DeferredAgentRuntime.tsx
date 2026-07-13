@@ -107,7 +107,7 @@ export default function DeferredAgentRuntime() {
   const storedAuth = useStoredAuth();
   const policy = getAgentRuntimePolicy(pathname);
 
-  if (!storedAuth || policy.agentWorkspace) return null;
+  if (!storedAuth || policy.agentWorkspace || policy.chthollyRoom) return null;
 
   const resetKey = `${pathname}:${storedAuth.accessToken}`;
   return (

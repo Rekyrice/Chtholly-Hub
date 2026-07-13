@@ -25,6 +25,10 @@ vi.mock("@/components/site/ChthollyIllustration", () => ({
   ChthollyIllustration: () => <div data-testid="chtholly-illustration" />,
 }));
 
+vi.mock("@/components/agent/ChthollyInlineChat", () => ({
+  default: () => <button type="button">和珂朵莉聊天</button>,
+}));
+
 describe("ChthollyRoom", () => {
   afterEach(cleanup);
 

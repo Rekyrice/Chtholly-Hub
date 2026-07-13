@@ -1,4 +1,4 @@
-import Link from "next/link";
+import ChthollyInlineChat from "@/components/agent/ChthollyInlineChat";
 import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import type { ChthollyIllustrationProps } from "@/components/site/ChthollyIllustration";
 
@@ -24,9 +24,7 @@ export default function ChthollyRoomHero({
         <p className="chtholly-room-kicker">CHTHOLLY&apos;S ROOM</p>
         <h1 id="chtholly-room-title">今天也在这里</h1>
         <p className="room-mood">{message}</p>
-        <Link href="/agent" className="room-chat-btn">
-          和珂朵莉聊天
-        </Link>
+        <ChthollyInlineChat />
       </div>
     </section>
   );
