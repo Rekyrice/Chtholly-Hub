@@ -136,4 +136,57 @@ class TraceQueryServiceTest {
         assertThat(detail.correlationId()).isEqualTo("abc");
         assertThat(detail.tracePayload().path("event").asText()).isEqualTo("agent_execution_complete");
     }
+
+    @Test
+    void getTraceBuildsTypedStepsFromExplicitAssociations() {
+        ExecutionTraceRow row = new ExecutionTraceRow();
+        row.setCorrelationId("hierarchical");
+        row.setStatus(TraceStatus.SUCCESS.name());
+        row.setToolCalls("[]");
+        row.setTracePayload("""
+                {
+                  "steps":[{"stepIndex":0,"action":"fulltext_search","llmMs":40,"toolMs":80}],
+                  "llmCalls":[{"sequence":1,"step_index":0,"duration_ms":40,"input_chars":120,"output_chars":32}],
+                  "toolCalls":[{"sequence":2,"step_index":0,"tool":"fulltext_search","duration_ms":80,"success":true,"input_summary":"{}","observation_summary":"found 3 posts"}]
+                }
+                """);
+        when(traceMapper.findByCorrelationId("hierarchical")).thenReturn(row);
+
+        var detail = service.getTrace("hierarchical");
+
+        assertThat(detail.steps()).singleElement().satisfies(step -> {
+            assertThat(step.stepIndex()).isZero();
+            assertThat(step.action()).isEqualTo("fulltext_search");
+            assertThat(step.events()).extracting(event -> event.type())
+                    .containsExactly("llm", "tool");
+            assertThat(step.events()).extracting(event -> event.sequence())
+                    .containsExactly(1, 2);
+        });
+        assertThat(detail.unassignedEvents()).isEmpty();
+    }
+
+    @Test
+    void getTraceKeepsLegacyEventsUnassignedWithoutGuessing() {
+        ExecutionTraceRow row = new ExecutionTraceRow();
+        row.setCorrelationId("legacy");
+        row.setStatus(TraceStatus.FAILURE.name());
+        row.setToolCalls("[{\"tool\":\"search\",\"duration_ms\":12,\"success\":false}]");
+        row.setTracePayload("""
+                {
+                  "steps":[{"stepIndex":0,"action":"search","llmMs":8,"toolMs":12}],
+                  "llmCalls":[{"duration_ms":8,"input_chars":20,"output_chars":10}]
+                }
+                """);
+        when(traceMapper.findByCorrelationId("legacy")).thenReturn(row);
+
+        var detail = service.getTrace("legacy");
+
+        assertThat(detail.steps()).singleElement()
+                .satisfies(step -> assertThat(step.events()).isEmpty());
+        assertThat(detail.unassignedEvents()).hasSize(2)
+                .allSatisfy(event -> {
+                    assertThat(event.stepIndex()).isNull();
+                    assertThat(event.sequence()).isNull();
+                });
+    }
 }
