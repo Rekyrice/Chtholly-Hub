@@ -8,8 +8,8 @@ vi.mock("@/components/site/HeroParticles", () => ({
   default: () => <div data-testid="hero-particles" />,
 }));
 vi.mock("@/components/site/HeroTypewriter", () => ({
-  default: ({ onLineChange }: { onLineChange?: (index: number) => void }) => (
-    <button data-testid="hero-typewriter" onClick={() => onLineChange?.(2)} />
+  default: ({ onLineTransition }: { onLineTransition?: (index: number, durationMs: number) => void }) => (
+    <button data-testid="hero-typewriter" onClick={() => onLineTransition?.(2, 3200)} />
   ),
 }));
 
@@ -25,8 +25,8 @@ describe("SiteHeader", () => {
   });
 
   it("keeps the existing hero structure and forwards quote changes", () => {
-    const onQuoteChange = vi.fn();
-    render(<SiteHeader onQuoteChange={onQuoteChange} />);
+    const onQuoteTransition = vi.fn();
+    render(<SiteHeader onQuoteTransition={onQuoteTransition} />);
 
     const header = screen.getByTestId("site-header");
     const backgroundLayer = screen.getByTestId("site-header-background");
@@ -34,7 +34,7 @@ describe("SiteHeader", () => {
     expect(screen.getByTestId("hero-particles")).toBeInTheDocument();
     expect(screen.getByTestId("hero-typewriter")).toBeInTheDocument();
     screen.getByTestId("hero-typewriter").click();
-    expect(onQuoteChange).toHaveBeenCalledWith(2);
+    expect(onQuoteTransition).toHaveBeenCalledWith(2, 3200);
     expect(backgroundLayer).toHaveStyle({ transform: "translate3d(0, 0px, 0)" });
     for (const property of ["image", "position", "position-mobile", "blur", "saturate"]) {
       expect(header.style.getPropertyValue(`--site-header-${property}`)).toBe("");
@@ -60,6 +60,7 @@ describe("SiteHeader", () => {
     expect(css).toMatch(
       /\.site-header-overlay\s*\{[\s\S]*?var\(--site-header-overlay,\s*var\(--blog-header-overlay\)\)/,
     );
+    expect(css).toMatch(/\.site-header-overlay\s*\{[\s\S]*?rgb\(24 28 36 \/ var/);
   });
 
 });

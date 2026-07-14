@@ -24,19 +24,30 @@ type RouteVisualLayersProps = {
 };
 
 function RouteVisualLayers({ routeVisual, showHeader }: RouteVisualLayersProps) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const handleQuoteChange = useCallback((index: number) => {
-    setActiveIndex((current) => current === index ? current : index);
+  const [backgroundTransition, setBackgroundTransition] = useState({
+    activeIndex: 0,
+    durationMs: 2200,
+  });
+  const handleQuoteTransition = useCallback((index: number, durationMs: number) => {
+    setBackgroundTransition((current) =>
+      current.activeIndex === index && current.durationMs === durationMs
+        ? current
+        : { activeIndex: index, durationMs },
+    );
   }, []);
 
   return (
     <>
       {routeVisual && (
-        <RoutePageBackground background={routeVisual.page} activeIndex={activeIndex} />
+        <RoutePageBackground
+          background={routeVisual.page}
+          activeIndex={backgroundTransition.activeIndex}
+          transitionMs={backgroundTransition.durationMs}
+        />
       )}
       {showHeader && (
         <SiteHeader
-          onQuoteChange={routeVisual?.id === "hub" ? handleQuoteChange : undefined}
+          onQuoteTransition={routeVisual?.id === "hub" ? handleQuoteTransition : undefined}
         />
       )}
     </>

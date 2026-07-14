@@ -15,25 +15,24 @@ vi.mock("@/components/site/Footer", () => ({ default: () => <div data-testid="fo
 vi.mock("@/components/site/MobileBottomNav", () => ({ default: () => <div data-testid="mobile-nav" /> }));
 vi.mock("@/components/site/Navbar", () => ({ default: () => <div data-testid="navbar" /> }));
 vi.mock("@/components/site/SiteHeader", () => ({
-  default: ({ onQuoteChange }: { onQuoteChange?: (index: number) => void }) => (
-    <MockHeader onQuoteChange={onQuoteChange} />
+  default: ({ onQuoteTransition }: { onQuoteTransition?: (index: number, durationMs: number) => void }) => (
+    <MockHeader onQuoteTransition={onQuoteTransition} />
   ),
 }));
 
-function MockHeader({ onQuoteChange }: { onQuoteChange?: (index: number) => void }) {
+function MockHeader({ onQuoteTransition }: { onQuoteTransition?: (index: number, durationMs: number) => void }) {
   useEffect(() => {
     headerEffects();
-    onQuoteChange?.(0);
-  }, [onQuoteChange]);
+  }, []);
   return (
-    <button data-testid="site-header" onClick={() => onQuoteChange?.(2)}>
+    <button data-testid="site-header" onClick={() => onQuoteTransition?.(2, 3600)}>
       header
     </button>
   );
 }
 vi.mock("@/components/site/RoutePageBackground", () => ({
-  default: ({ background, activeIndex }: { background: PageVisualBackground; activeIndex?: number }) => (
-    <div data-testid="route-page-background" data-active-index={activeIndex}>
+  default: ({ background, activeIndex, transitionMs }: { background: PageVisualBackground; activeIndex?: number; transitionMs?: number }) => (
+    <div data-testid="route-page-background" data-active-index={activeIndex} data-transition-ms={transitionMs}>
       {background.images[activeIndex ?? 0]}
     </div>
   ),
@@ -169,6 +168,7 @@ describe("SiteChrome", () => {
     const { rerender } = render(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
     fireEvent.click(screen.getByTestId("site-header"));
     expect(screen.getByTestId("route-page-background")).toHaveAttribute("data-active-index", "2");
+    expect(screen.getByTestId("route-page-background")).toHaveAttribute("data-transition-ms", "3600");
 
     navigation.pathname = "/search";
     rerender(<SiteChrome><span data-testid="content">content</span></SiteChrome>);

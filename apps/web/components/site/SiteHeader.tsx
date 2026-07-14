@@ -6,10 +6,10 @@ import HeroTypewriter from "@/components/site/HeroTypewriter";
 import { siteConfig } from "@/lib/site.config";
 
 export interface SiteHeaderProps {
-  onQuoteChange?: (index: number) => void;
+  onQuoteTransition?: (index: number, durationMs: number) => void;
 }
 
-export default function SiteHeader({ onQuoteChange }: SiteHeaderProps) {
+export default function SiteHeader({ onQuoteTransition }: SiteHeaderProps) {
   const [parallaxY, setParallaxY] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
 
@@ -49,7 +49,10 @@ export default function SiteHeader({ onQuoteChange }: SiteHeaderProps) {
       <div className="site-header-overlay" />
       <div className="site-header-content">
         <h1 className="site-header-title">{siteConfig.name}</h1>
-        <HeroTypewriter quotes={siteConfig.heroQuotes} onLineChange={onQuoteChange} />
+        <HeroTypewriter
+          quotes={siteConfig.heroQuotes}
+          onLineTransition={onQuoteTransition}
+        />
       </div>
     </header>
   );

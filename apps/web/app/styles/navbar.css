@@ -349,9 +349,9 @@
     z-index: 2;
     background: linear-gradient(
       to bottom,
-      rgb(0 0 0 / var(--site-header-overlay, var(--blog-header-overlay))) 0%,
-      rgb(0 0 0 / calc(var(--site-header-overlay, var(--blog-header-overlay)) * 0.92)) 58%,
-      rgb(0 0 0 / calc(var(--site-header-overlay, var(--blog-header-overlay)) * 0.42)) 82%,
+      rgb(24 28 36 / var(--site-header-overlay, var(--blog-header-overlay))) 0%,
+      rgb(24 28 36 / calc(var(--site-header-overlay, var(--blog-header-overlay)) * 0.92)) 58%,
+      rgb(24 28 36 / calc(var(--site-header-overlay, var(--blog-header-overlay)) * 0.42)) 82%,
       transparent 100%
     );
   }

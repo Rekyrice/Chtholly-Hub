@@ -9,13 +9,18 @@ describe("HeroTypewriter", () => {
     vi.useRealTimers();
   });
 
-  it("notifies the active line index from the first line through the next line", async () => {
+  it("starts the next background transition when deletion begins", async () => {
     vi.useFakeTimers();
-    const onLineChange = vi.fn();
+    const onLineTransition = vi.fn();
 
-    render(<HeroTypewriter quotes={["A", "B"]} onLineChange={onLineChange} />);
+    render(
+      <HeroTypewriter
+        quotes={["A", "B"]}
+        onLineTransition={onLineTransition}
+      />,
+    );
 
-    expect(onLineChange).toHaveBeenLastCalledWith(0);
+    expect(onLineTransition).not.toHaveBeenCalled();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(80);
@@ -23,21 +28,25 @@ describe("HeroTypewriter", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
+
+    expect(onLineTransition).toHaveBeenCalledTimes(1);
+    expect(onLineTransition).toHaveBeenLastCalledWith(1, 2200);
+
     await act(async () => {
       await vi.advanceTimersByTimeAsync(40);
     });
 
-    expect(onLineChange).toHaveBeenLastCalledWith(1);
+    expect(onLineTransition).toHaveBeenCalledTimes(1);
   });
 
   it("does not notify a line index when there are no quotes", () => {
-    const onLineChange = vi.fn();
+    const onLineTransition = vi.fn();
 
     const { container } = render(
-      <HeroTypewriter quotes={[]} onLineChange={onLineChange} />,
+      <HeroTypewriter quotes={[]} onLineTransition={onLineTransition} />,
     );
 
     expect(container).toBeEmptyDOMElement();
-    expect(onLineChange).not.toHaveBeenCalled();
+    expect(onLineTransition).not.toHaveBeenCalled();
   });
 });

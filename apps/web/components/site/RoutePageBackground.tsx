@@ -10,6 +10,7 @@ type RouteBackgroundStyle = CSSProperties & {
   "--route-bg-overlay": string;
   "--route-bg-blur": string;
   "--route-bg-saturate": string;
+  "--route-bg-transition-duration": string;
 };
 
 type ImageStyle = CSSProperties & { "--route-bg-image": string };
@@ -17,6 +18,7 @@ type ImageStyle = CSSProperties & { "--route-bg-image": string };
 type RoutePageBackgroundProps = {
   background: PageVisualBackground;
   activeIndex?: number;
+  transitionMs?: number;
 };
 
 type ImageLayer = {
@@ -31,6 +33,7 @@ function normalizeIndex(index: number, length: number) {
 export default function RoutePageBackground({
   background,
   activeIndex = 0,
+  transitionMs = 2200,
 }: RoutePageBackgroundProps) {
   const requestedIndex = normalizeIndex(activeIndex, background.images.length);
   const requestedUrl = background.images[requestedIndex] ?? "";
@@ -127,6 +130,7 @@ export default function RoutePageBackground({
     "--route-bg-overlay": String(background.overlayAlpha),
     "--route-bg-blur": `${background.blurPx}px`,
     "--route-bg-saturate": String(background.saturate),
+    "--route-bg-transition-duration": `${Math.max(transitionMs, 2200)}ms`,
   };
   const layers = visible.previous === null
     ? [visible.current]

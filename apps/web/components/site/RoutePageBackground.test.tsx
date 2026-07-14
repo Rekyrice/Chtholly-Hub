@@ -87,7 +87,12 @@ describe("RoutePageBackground", () => {
   });
 
   it("mounts one image for a static route and keeps one shared overlay", () => {
-    render(<RoutePageBackground background={{ ...background, images: ["/one.webp"] }} />);
+    render(
+      <RoutePageBackground
+        background={{ ...background, images: ["/one.webp"] }}
+        transitionMs={3200}
+      />,
+    );
 
     const wrapper = screen.getByTestId("route-page-background");
     expect(wrapper.style.getPropertyValue("--route-bg-position")).toBe("52% 40%");
@@ -95,6 +100,7 @@ describe("RoutePageBackground", () => {
     expect(wrapper.style.getPropertyValue("--route-bg-overlay")).toBe("0.24");
     expect(wrapper.style.getPropertyValue("--route-bg-blur")).toBe("1.5px");
     expect(wrapper.style.getPropertyValue("--route-bg-saturate")).toBe("0.93");
+    expect(wrapper.style.getPropertyValue("--route-bg-transition-duration")).toBe("3200ms");
     expect(wrapper.querySelectorAll("[data-image-index]")).toHaveLength(1);
     expect(screen.getAllByTestId("route-page-background-overlay")).toHaveLength(1);
   });
@@ -187,11 +193,11 @@ describe("RoutePageBackground", () => {
     expect(container.querySelector('[data-image-index="2"]')).toBeInTheDocument();
   });
 
-  it("uses a slow ease-out crossfade instead of an abrupt image swap", () => {
+  it("uses the synchronized duration variable for the crossfade", () => {
     const css = readFileSync("app/styles/route-visuals.css", "utf8");
 
     expect(css).toMatch(
-      /\.route-page-background__image\s*\{[\s\S]*?transition:\s*opacity 1\.1s cubic-bezier\(0\.22, 1, 0\.36, 1\)/,
+      /\.route-page-background__image\s*\{[\s\S]*?transition:\s*opacity var\(--route-bg-transition-duration\) cubic-bezier\(0\.22, 1, 0\.36, 1\)/,
     );
   });
 });
