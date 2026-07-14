@@ -33,18 +33,18 @@ export default function RoutePageBackground({
   activeIndex = 0,
 }: RoutePageBackgroundProps) {
   const requestedIndex = normalizeIndex(activeIndex, background.images.length);
+  const requestedUrl = background.images[requestedIndex] ?? "";
   const requestedLayer: ImageLayer = {
     index: requestedIndex,
-    url: background.images[requestedIndex] ?? "",
+    url: requestedUrl,
   };
   const [reduceMotion, setReduceMotion] = useState(false);
   const [visible, setVisible] = useState({
     current: requestedLayer,
     previous: null as ImageLayer | null,
-    requestedUrl: requestedLayer.url,
-    reduced: false,
     entered: true,
   });
+  const displayedUrl = visible.current.url;
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -53,6 +53,49 @@ export default function RoutePageBackground({
     query.addEventListener("change", sync);
     return () => query.removeEventListener("change", sync);
   }, []);
+
+  useEffect(() => {
+    if (displayedUrl === requestedUrl) return;
+
+    const nextLayer: ImageLayer = {
+      index: requestedIndex,
+      url: requestedUrl,
+    };
+
+    if (reduceMotion || background.images.length < 2) {
+      const frame = window.requestAnimationFrame(() => {
+        setVisible({ current: nextLayer, previous: null, entered: true });
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    let cancelled = false;
+    const image = new Image();
+    const reveal = () => {
+      if (cancelled) return;
+      setVisible((current) => current.current.url === nextLayer.url
+        ? current
+        : {
+            current: nextLayer,
+            previous: current.current,
+            entered: false,
+          });
+    };
+
+    image.src = nextLayer.url;
+    if (typeof image.decode === "function") {
+      void image.decode().then(reveal, reveal);
+    } else {
+      image.onload = reveal;
+      image.onerror = reveal;
+    }
+
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [background.images.length, displayedUrl, reduceMotion, requestedIndex, requestedUrl]);
 
   useEffect(() => {
     if (background.images.length < 2) return;
@@ -64,18 +107,6 @@ export default function RoutePageBackground({
     const image = new Image();
     image.src = nextUrl;
   }, [background.images, requestedIndex]);
-
-  if (visible.requestedUrl !== requestedLayer.url || visible.reduced !== reduceMotion) {
-    const sameImage = visible.current.url === requestedLayer.url;
-    setVisible({
-      current: requestedLayer,
-      previous:
-        reduceMotion || sameImage ? null : visible.current,
-      requestedUrl: requestedLayer.url,
-      reduced: reduceMotion,
-      entered: reduceMotion || sameImage,
-    });
-  }
 
   const currentUrl = visible.current.url;
 

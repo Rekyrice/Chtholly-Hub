@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RoutePageBackground from "@/components/site/RoutePageBackground";
@@ -6,6 +7,10 @@ import type { PageVisualBackground } from "@/lib/route-visuals";
 const motion = vi.hoisted(() => ({ reduced: false }));
 const frames = vi.hoisted(() => [] as FrameRequestCallback[]);
 const preloadedImages = vi.hoisted(() => [] as Array<{ src: string }>);
+const imageDecodes = vi.hoisted(() => ({
+  deferred: false,
+  pending: [] as Array<{ src: string; resolve: () => void }>,
+}));
 
 const background: PageVisualBackground = {
   images: ["/one.webp", "/two.webp", "/three.webp"],
@@ -33,11 +38,39 @@ describe("RoutePageBackground", () => {
       removeEventListener: vi.fn(),
     }));
     preloadedImages.length = 0;
+    imageDecodes.deferred = false;
+    imageDecodes.pending.length = 0;
     vi.stubGlobal("Image", class {
+      private imageSrc = "";
+
       set src(value: string) {
+        this.imageSrc = value;
         preloadedImages.push({ src: value });
       }
+
+      decode() {
+        if (!imageDecodes.deferred) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+          imageDecodes.pending.push({ src: this.imageSrc, resolve });
+        });
+      }
     });
+  });
+
+  it("waits for the requested image to decode before starting the crossfade", async () => {
+    const { container, rerender } = render(
+      <RoutePageBackground background={background} activeIndex={0} />,
+    );
+    imageDecodes.deferred = true;
+
+    rerender(<RoutePageBackground background={background} activeIndex={1} />);
+
+    expect(container.querySelectorAll("[data-image-index]")).toHaveLength(1);
+    await waitFor(() => expect(imageDecodes.pending).toHaveLength(1));
+    expect(imageDecodes.pending[0]?.src).toBe("/two.webp");
+
+    await act(async () => imageDecodes.pending[0]?.resolve());
+    expect(container.querySelectorAll("[data-image-index]")).toHaveLength(2);
   });
 
   it("preloads only the next Hub image without adding another DOM layer", async () => {
@@ -100,7 +133,7 @@ describe("RoutePageBackground", () => {
     expect(latest).toHaveClass("route-page-background__image--active");
   });
 
-  it("never reads an undefined image when a multi-image background becomes static", () => {
+  it("never reads an undefined image when a multi-image background becomes static", async () => {
     const { container, rerender } = render(
       <RoutePageBackground background={background} activeIndex={2} />,
     );
@@ -112,6 +145,7 @@ describe("RoutePageBackground", () => {
       />,
     );
 
+    act(() => frames.shift()?.(0));
     expect(container.innerHTML).not.toContain("undefined");
     expect(container.querySelector('[style*="search.webp"]')).toBeInTheDocument();
   });
@@ -140,7 +174,7 @@ describe("RoutePageBackground", () => {
     expect(container.querySelector('[data-image-index="2"]')).toBeInTheDocument();
   });
 
-  it("switches immediately when reduced motion is preferred", async () => {
+  it("switches without a crossfade when reduced motion is preferred", () => {
     motion.reduced = true;
     const { container, rerender } = render(
       <RoutePageBackground background={background} activeIndex={0} />,
@@ -148,7 +182,16 @@ describe("RoutePageBackground", () => {
 
     rerender(<RoutePageBackground background={background} activeIndex={2} />);
 
-    await waitFor(() => expect(container.querySelectorAll("[data-image-index]")).toHaveLength(1));
+    act(() => frames.shift()?.(0));
+    expect(container.querySelectorAll("[data-image-index]")).toHaveLength(1);
     expect(container.querySelector('[data-image-index="2"]')).toBeInTheDocument();
+  });
+
+  it("uses a slow ease-out crossfade instead of an abrupt image swap", () => {
+    const css = readFileSync("app/styles/route-visuals.css", "utf8");
+
+    expect(css).toMatch(
+      /\.route-page-background__image\s*\{[\s\S]*?transition:\s*opacity 1\.1s cubic-bezier\(0\.22, 1, 0\.36, 1\)/,
+    );
   });
 });

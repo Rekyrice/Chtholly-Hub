@@ -17,7 +17,12 @@ export default function ChthollyRoomHero({
     <section className="chtholly-room-hero" aria-labelledby="chtholly-room-title">
       <div className="chtholly-room-hero__character">
         <span className="chtholly-room-hero__halo" aria-hidden="true" />
-        <ChthollyIllustration size="lg" mood={mood} timeOfDay={timeOfDay} />
+        <ChthollyIllustration
+          size="lg"
+          src="/images/illustrations/chtholly3.png"
+          mood={mood}
+          timeOfDay={timeOfDay}
+        />
       </div>
 
       <div className="chtholly-room-hero__desk">

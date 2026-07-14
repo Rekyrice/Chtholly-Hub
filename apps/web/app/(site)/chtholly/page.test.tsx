@@ -8,6 +8,7 @@ const serviceMocks = vi.hoisted(() => ({
   feed: vi.fn(),
   topics: vi.fn(),
 }));
+const illustrationProps = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/services/agentService", () => ({
   agentService: { experienceTimeline: serviceMocks.experienceTimeline },
@@ -22,7 +23,10 @@ vi.mock("@/lib/services/topicService", () => ({
 }));
 
 vi.mock("@/components/site/ChthollyIllustration", () => ({
-  ChthollyIllustration: () => <div data-testid="chtholly-illustration" />,
+  ChthollyIllustration: (props: { src?: string }) => {
+    illustrationProps(props);
+    return <div data-testid="chtholly-illustration" data-src={props.src} />;
+  },
 }));
 
 vi.mock("@/components/agent/ChthollyInlineChat", () => ({
@@ -33,6 +37,7 @@ describe("ChthollyRoom", () => {
   afterEach(cleanup);
 
   beforeEach(() => {
+    illustrationProps.mockClear();
     serviceMocks.experienceTimeline.mockResolvedValue({
       recent: [
         {
@@ -97,6 +102,15 @@ describe("ChthollyRoom", () => {
     expect(grid?.querySelector(".chtholly-room-experience")).not.toBeNull();
     expect(grid?.querySelector(".chtholly-room-topic")).not.toBeNull();
     expect(grid?.querySelector(".chtholly-room-recommendation")).not.toBeNull();
+  });
+
+  it("fixes the room hero placeholder to the approved Chtholly3 image", async () => {
+    render(await ChthollyRoom());
+
+    expect(screen.getByTestId("chtholly-illustration")).toHaveAttribute(
+      "data-src",
+      "/images/illustrations/chtholly3.png",
+    );
   });
 
   it("keeps the experience panel aligned across both right-hand rows", () => {
