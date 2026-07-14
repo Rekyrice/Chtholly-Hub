@@ -9,6 +9,11 @@ import type {
 
 const TRACE_PREFIX = "/api/v1/traces";
 
+type TraceDetailPayload = Omit<TraceDetail, "steps" | "unassignedEvents"> & {
+  steps?: TraceDetail["steps"] | null;
+  unassignedEvents?: TraceDetail["unassignedEvents"] | null;
+};
+
 function rangeQuery(from?: string, to?: string) {
   const search = new URLSearchParams();
   if (from) search.set("from", from);
@@ -38,8 +43,15 @@ export const traceService = {
     return apiFetch<TraceListResponse>(`${TRACE_PREFIX}?${search.toString()}`);
   },
 
-  detail(correlationId: string) {
-    return apiFetch<TraceDetail>(`${TRACE_PREFIX}/${encodeURIComponent(correlationId)}`);
+  async detail(correlationId: string): Promise<TraceDetail> {
+    const detail = await apiFetch<TraceDetailPayload>(
+      `${TRACE_PREFIX}/${encodeURIComponent(correlationId)}`,
+    );
+    return {
+      ...detail,
+      steps: Array.isArray(detail.steps) ? detail.steps : [],
+      unassignedEvents: Array.isArray(detail.unassignedEvents) ? detail.unassignedEvents : [],
+    };
   },
 
   stats(days = 7) {

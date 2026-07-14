@@ -27,4 +27,23 @@ describe("traceService", () => {
       "/api/v1/traces?page=2&size=10&status=FAILURE&userId=7&from=2026-07-01&to=2026-07-09&correlationId=corr-exact",
     );
   });
+
+  it("normalizes missing hierarchy arrays from a legacy detail response", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({
+      correlationId: "legacy-trace",
+      userId: 7,
+      sessionId: "legacy-session",
+      status: "SUCCESS",
+      durationMs: 120,
+      stepsCount: 1,
+      errorMessage: null,
+      toolCalls: [],
+      tracePayload: { terminatedBy: "final_answer" },
+    });
+
+    const detail = await traceService.detail("legacy-trace");
+
+    expect(detail.steps).toEqual([]);
+    expect(detail.unassignedEvents).toEqual([]);
+  });
 });
