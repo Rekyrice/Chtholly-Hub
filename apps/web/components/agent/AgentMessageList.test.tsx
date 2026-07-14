@@ -39,4 +39,33 @@ describe("AgentMessageList enter animation", () => {
     expect(rowFor("第一条")).not.toHaveClass("agent-message-row--user-enter");
     expect(rowFor("第二条")).toHaveClass("agent-message-row--user-enter");
   });
+
+  it("keeps non-workspace auto-scroll inside the supplied message container", () => {
+    const container = document.createElement("div");
+    container.scrollTo = vi.fn();
+    Object.defineProperty(container, "scrollHeight", { value: 640 });
+    const scrollContainerRef = { current: container };
+    const message: ChatMessage = {
+      id: "streaming-reply",
+      role: "assistant",
+      content: "正在生成回复",
+      streaming: true,
+    };
+
+    render(
+      <AgentMessageList
+        messages={[message]}
+        busy
+        showSteps={false}
+        liveSteps={[]}
+        scrollContainerRef={scrollContainerRef}
+      />,
+    );
+
+    expect(container.scrollTo).toHaveBeenCalledWith({
+      top: 640,
+      behavior: "smooth",
+    });
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
 });

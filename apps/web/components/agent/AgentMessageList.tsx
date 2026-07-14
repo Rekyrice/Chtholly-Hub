@@ -112,7 +112,6 @@ export default function AgentMessageList({
   scrollContainerRef,
   onSuggestion,
 }: AgentMessageListProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
   const speakingBubbleRef = useRef<HTMLDivElement>(null);
   const empty = messages.length === 0 && !busy;
 
@@ -146,8 +145,10 @@ export default function AgentMessageList({
 
   useEffect(() => {
     if (mangaLayout) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy, liveSteps, mangaLayout]);
+    const container = scrollContainerRef?.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, [messages, busy, liveSteps, mangaLayout, scrollContainerRef]);
 
   return (
     <>
@@ -226,7 +227,6 @@ export default function AgentMessageList({
           <p className="text-xs text-text-secondary px-2">珂朵莉思考中…</p>
         </div>
       )}
-      <div ref={bottomRef} />
     </>
   );
 }
