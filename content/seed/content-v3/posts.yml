@@ -197,8 +197,8 @@
   coverAsset: urban-myth-search-box-cover
   inlineAssets:
     - urban-myth-search-interface
-    - urban-myth-dialogue
     - urban-myth-investigation
+    - urban-myth-dialogue
   brief:
     factAnchors: [墓场文库, 集英社游戏, 福来蓟, 廻屋涉, 茉莉, 社交媒体帖子调查, 从帖子取得预设关键词, 单个或两个关键词组合检索, 现场调查, 眼镜查看残留意念与记忆, 都市传说特定与解体, 剧集式悬疑冒险, 迷幻像素画]
     voice: 摸鱼大师，像通关后在游戏社区发长帖，操作感受写具体，喜欢和嫌弃都不绕弯，不冒充攻略作者
