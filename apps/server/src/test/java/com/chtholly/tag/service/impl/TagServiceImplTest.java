@@ -84,11 +84,12 @@ class TagServiceImplTest {
     }
 
     @Test
-    void decrementUsageSqlUsesGreatestToPreventUnderflow() throws Exception {
+    void decrementUsageSqlChecksUnsignedValueBeforeSubtracting() throws Exception {
         Path xml = Path.of("src/main/resources/mapper/TagMapper.xml");
         String content = Files.readString(xml, StandardCharsets.UTF_8);
 
-        assertThat(content).contains("GREATEST(usage_count - 1, 0)");
+        assertThat(content).contains("IF(usage_count > 0, usage_count - 1, 0)");
+        assertThat(content).doesNotContain("GREATEST(usage_count - 1, 0)");
         assertThat(content).doesNotContain("usage_count = usage_count - 1");
     }
 }
