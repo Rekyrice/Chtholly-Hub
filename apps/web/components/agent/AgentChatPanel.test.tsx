@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AgentChatPanel from "@/components/agent/AgentChatPanel";
 
@@ -80,5 +80,11 @@ describe("AgentChatPanel expansion", () => {
     fireEvent.click(expandLink!);
     expect(linkState.componentPreventedNavigation).toBe(false);
     expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses Chtholly4 as the compact chat avatar", () => {
+    render(<AgentChatPanel variant="room" />);
+
+    expect(screen.getByTestId("chtholly-avatar")).toHaveAttribute("data-size", "md");
   });
 });

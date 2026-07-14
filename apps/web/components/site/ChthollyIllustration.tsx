@@ -18,7 +18,7 @@ export type IllustrationState =
   | "speaking";
 
 export type ChthollyIllustrationProps = {
-  size?: "xs" | "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg" | "hero";
   className?: string;
   src?: string;
   mood?: number;
@@ -48,6 +48,7 @@ const IMAGE_SIZE = {
   sm: { width: 500, height: 500, className: "h-40 w-auto" },
   md: { width: 500, height: 500, className: "h-60 w-auto" },
   lg: { width: 500, height: 500, className: "h-80 w-auto" },
+  hero: { width: 500, height: 500, className: "h-auto w-full" },
 } as const;
 
 export function ChthollyIllustration({

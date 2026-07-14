@@ -104,12 +104,15 @@ describe("ChthollyRoom", () => {
     expect(grid?.querySelector(".chtholly-room-recommendation")).not.toBeNull();
   });
 
-  it("fixes the room hero placeholder to the approved Chtholly3 image", async () => {
+  it("fills the room hero with the approved Chtholly18 image", async () => {
     render(await ChthollyRoom());
 
     expect(screen.getByTestId("chtholly-illustration")).toHaveAttribute(
       "data-src",
-      "/images/illustrations/chtholly3.png",
+      "/images/illustrations/chtholly18.png",
+    );
+    expect(illustrationProps).toHaveBeenCalledWith(
+      expect.objectContaining({ size: "hero" }),
     );
   });
 
@@ -118,5 +121,14 @@ describe("ChthollyRoom", () => {
 
     expect(css).toContain("grid-template-rows: repeat(2, minmax(0, 1fr))");
     expect(css).toContain("grid-row: 1 / span 2");
+  });
+
+  it("keeps the expanded room wide and the character vertically centered", () => {
+    const css = readFileSync("app/styles/community.css", "utf8");
+
+    expect(css).toContain("width: min(100%, 1360px)");
+    expect(css).toContain("place-items: center");
+    expect(css).toContain(".chtholly-room-hero__character .chtholly-illustration--hero");
+    expect(css).toContain("width: min(100%, 560px)");
   });
 });

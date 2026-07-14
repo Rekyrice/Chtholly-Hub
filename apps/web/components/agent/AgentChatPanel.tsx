@@ -6,6 +6,7 @@ import { ExternalLink, Minus, Send, Settings } from "lucide-react";
 import AgentMessageList from "@/components/agent/AgentMessageList";
 import AgentWorkspaceSettings from "@/components/agent/AgentWorkspaceSettings";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
+import ChthollyAvatar from "@/components/site/ChthollyAvatar";
 import { useAgentPlaceholder } from "@/lib/hooks/useAgentPlaceholder";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import { cn } from "@/lib/utils";
@@ -63,9 +64,7 @@ export default function AgentChatPanel({
       <header className="floating-agent-header shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
           {showAssistantAvatar && (
-            <span className="agent-avatar-md shrink-0" aria-hidden="true">
-              C
-            </span>
+            <ChthollyAvatar size="md" />
           )}
           <div className="min-w-0">
             <p className="text-sm font-medium text-text truncate">珂朵莉</p>

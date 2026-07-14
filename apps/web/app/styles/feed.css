@@ -656,10 +656,7 @@
     height: 54px;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
-    border: 2px solid color-mix(in srgb, var(--color-surface) 82%, transparent);
-    border-radius: 999px;
-    box-shadow: 0 10px 24px color-mix(in srgb, var(--color-sky) 18%, transparent);
+    overflow: visible;
   }
 
   .hub-profile-widget__name {

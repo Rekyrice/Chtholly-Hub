@@ -100,7 +100,9 @@ export default function SiteChrome({ children, visualOverride }: SiteChromeProps
                 ? "flex h-full min-h-0 w-full flex-col"
                 : policy.writeWorkspace
                   ? "w-full"
-                  : "max-w-6xl mx-auto px-4",
+                  : isChthollyRoom
+                    ? "w-full"
+                    : "max-w-6xl mx-auto px-4",
             )}
           >
             {children}

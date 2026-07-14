@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { AgentRichMessage, AgentSteps, stepTone } from "@/components/agent/AgentRichMessage";
+import ChthollyAvatar from "@/components/site/ChthollyAvatar";
 import { useMangaMessageScroll } from "@/lib/hooks/useMangaMessageScroll";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/lib/types/agent";
@@ -79,7 +80,7 @@ function MessageBubble({
     >
       {showAssistantAvatar && (
         <div className="agent-msg-avatar flex-none" aria-hidden="true">
-          <span className="agent-avatar-sm">C</span>
+          <ChthollyAvatar size="sm" />
         </div>
       )}
       <div
@@ -196,7 +197,7 @@ export default function AgentMessageList({
         >
           {showAssistantAvatar && (
             <div className="agent-steps-avatar flex-none" aria-hidden="true">
-              <span className="agent-avatar-sm">C</span>
+              <ChthollyAvatar size="sm" />
             </div>
           )}
           <div className="agent-live-steps flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-border bg-cloud">
@@ -221,7 +222,7 @@ export default function AgentMessageList({
         >
           {showAssistantAvatar && (
             <div className="agent-msg-avatar flex-none" aria-hidden="true">
-              <span className="agent-avatar-sm">C</span>
+              <ChthollyAvatar size="sm" />
             </div>
           )}
           <p className="text-xs text-text-secondary px-2">珂朵莉思考中…</p>

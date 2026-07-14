@@ -298,25 +298,6 @@
     background: var(--color-sky-deep);
   }
 
-  .agent-avatar-md,
-  .agent-avatar-sm {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--color-sky), var(--color-violet));
-    color: var(--color-on-primary);
-    font-weight: 700;
-    font-family: Lato, "Noto Sans SC", sans-serif;
-    flex-shrink: 0;
-  }
-
-  .agent-avatar-md {
-    width: 32px;
-    height: 32px;
-    font-size: 14px;
-  }
-
   @media (max-width: 767px) {
     .room-inline-chat {
       height: min(430px, 68vh);
@@ -332,12 +313,6 @@
     .room-inline-chat-login__actions {
       justify-content: space-between;
     }
-  }
-
-  .agent-avatar-sm {
-    width: 24px;
-    height: 24px;
-    font-size: 11px;
   }
 
   .agent-status-dot {

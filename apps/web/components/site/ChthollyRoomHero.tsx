@@ -18,8 +18,8 @@ export default function ChthollyRoomHero({
       <div className="chtholly-room-hero__character">
         <span className="chtholly-room-hero__halo" aria-hidden="true" />
         <ChthollyIllustration
-          size="lg"
-          src="/images/illustrations/chtholly3.png"
+          size="hero"
+          src="/images/illustrations/chtholly18.png"
           mood={mood}
           timeOfDay={timeOfDay}
         />

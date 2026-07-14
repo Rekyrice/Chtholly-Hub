@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Menu } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import ChthollyAvatar from "@/components/site/ChthollyAvatar";
 import NotificationBell from "@/components/site/NotificationBell";
 import { emitAuthChange, loadCurrentUserOnce, useStoredAuth } from "@/lib/auth/auth-store";
 import { authService } from "@/lib/services/authService";
@@ -235,9 +236,7 @@ export default function Navbar() {
         </div>
 
         <Link href="/hub" className="flex items-center gap-2.5 py-2 shrink-0">
-          <span className="navbar-brand-icon" aria-hidden="true">
-            C
-          </span>
+          <ChthollyAvatar size="md" />
           <span className="font-extrabold text-lg tracking-wide leading-none font-[Lato,'Noto_Sans_SC',sans-serif]">
             <span className="text-text">{brandMain}</span>
             {brandAccent && <span className="text-sky ml-1">{brandAccent}</span>}

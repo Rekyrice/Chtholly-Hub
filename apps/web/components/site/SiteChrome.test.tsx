@@ -163,6 +163,15 @@ describe("SiteChrome", () => {
     expect(screen.getByTestId("content").parentElement).toHaveClass("max-w-6xl");
   });
 
+  it("lets the Chtholly room use its dedicated wide layout", () => {
+    navigation.pathname = "/chtholly";
+    render(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
+
+    const contentWrapper = screen.getByTestId("content").parentElement;
+    expect(contentWrapper).toHaveClass("w-full");
+    expect(contentWrapper).not.toHaveClass("max-w-6xl");
+  });
+
   it("drives Hub images from quotes and resets the index when the route changes", () => {
     navigation.pathname = "/hub";
     const { rerender } = render(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
