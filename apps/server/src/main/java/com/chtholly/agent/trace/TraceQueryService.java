@@ -30,15 +30,27 @@ public class TraceQueryService {
     private final FailurePatternMapper failurePatternMapper;
     private final ObjectMapper objectMapper;
 
-    public PageResponse<TraceSummaryDto> listTraces(int page, int size, String status, Long userId) {
+    public PageResponse<TraceSummaryDto> listTraces(
+            int page,
+            int size,
+            String status,
+            Long userId,
+            Instant from,
+            Instant to,
+            String correlationId) {
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
         int offset = safePage * safeSize;
+        String safeCorrelationId = correlationId == null || correlationId.isBlank()
+                ? null
+                : correlationId.trim();
 
-        List<TraceSummaryDto> items = traceMapper.list(status, userId, safeSize, offset).stream()
+        List<TraceSummaryDto> items = traceMapper
+                .list(status, userId, from, to, safeCorrelationId, safeSize, offset)
+                .stream()
                 .map(TraceSummaryDto::from)
                 .toList();
-        long total = traceMapper.count(status, userId);
+        long total = traceMapper.count(status, userId, from, to, safeCorrelationId);
         boolean hasMore = (long) (safePage + 1) * safeSize < total;
         return PageResponse.offset(items, safePage, safeSize, total, hasMore);
     }

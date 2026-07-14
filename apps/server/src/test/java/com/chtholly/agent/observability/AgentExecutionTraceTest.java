@@ -48,4 +48,36 @@ class AgentExecutionTraceTest {
         JsonNode toolCalls = objectMapper.valueToTree(trace.toPayloadMap().get("toolCalls"));
         assertThat(toolCalls.path(0).path("success").asBoolean()).isFalse();
     }
+
+    @Test
+    void recordsStepAssociationSequenceAndSanitizedObservationSummary() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        String sensitiveObservation = "authorization=Bearer super-secret-token password=plain-secret "
+                + "x".repeat(700);
+
+        trace.recordLlmCall(0, 100, 400, 80, null);
+        trace.recordToolCall(
+                0,
+                "fulltext_search",
+                200,
+                "{\"accessToken\":\"input-secret\",\"query\":\"trace\"}",
+                sensitiveObservation,
+                true);
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+        JsonNode llmCall = payload.path("llmCalls").path(0);
+        JsonNode toolCall = payload.path("toolCalls").path(0);
+
+        assertThat(llmCall.path("step_index").asInt()).isZero();
+        assertThat(llmCall.path("sequence").asInt()).isEqualTo(1);
+        assertThat(toolCall.path("step_index").asInt()).isZero();
+        assertThat(toolCall.path("sequence").asInt()).isEqualTo(2);
+        assertThat(toolCall.path("input_summary").asText())
+                .doesNotContain("input-secret")
+                .contains("[REDACTED]");
+        assertThat(toolCall.path("observation_summary").asText())
+                .doesNotContain("super-secret-token", "plain-secret")
+                .contains("[REDACTED]")
+                .hasSizeLessThanOrEqualTo(512);
+    }
 }

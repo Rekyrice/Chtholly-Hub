@@ -101,7 +101,7 @@ public class AgentLoopExecutor {
             }
 
             long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
-            trace.recordLlmCall(stepLlmMs, inputChars, llmOut.length());
+            trace.recordLlmCall(step, stepLlmMs, inputChars, llmOut.length(), null);
             agentObservationService.finishSpan(llmSpan,
                     AgentSpanAttributes.llm(stepLlmMs, inputChars, llmOut.length(), "ok"));
 
@@ -150,6 +150,7 @@ public class AgentLoopExecutor {
             long stepToolMs = System.currentTimeMillis() - toolStart;
             finishToolSpan(toolSpan, tool.name(), stepToolMs, toolResult.status());
             trace.recordToolCall(
+                    step,
                     tool.name(),
                     stepToolMs,
                     summarizeToolInput(action.input()),

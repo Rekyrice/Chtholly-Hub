@@ -92,6 +92,15 @@ describe("DeferredAgentRuntime", () => {
     expect(screen.queryByTestId("authenticated-agent-runtime")).not.toBeInTheDocument();
   });
 
+  it("leaves the Chtholly room to its route-owned provider", () => {
+    navigation.pathname = "/chtholly";
+    localStorage.setItem(AUTH_TOKENS_KEY, JSON.stringify(validStoredAuthWithoutUser));
+
+    render(<DeferredAgentRuntime />);
+
+    expect(screen.queryByTestId("authenticated-agent-runtime")).not.toBeInTheDocument();
+  });
+
   it.each([
     ["damaged JSON", "{not-json"],
     ["an invalid expiry", JSON.stringify({ ...validStoredAuthWithoutUser, accessTokenExpiresAt: "not-a-date" })],

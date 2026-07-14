@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { ExternalLink, Minus, Send, Settings } from "lucide-react";
 import AgentMessageList from "@/components/agent/AgentMessageList";
@@ -11,9 +11,10 @@ import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import { cn } from "@/lib/utils";
 
 type AgentChatPanelProps = {
-  variant?: "float" | "workspace";
+  variant?: "float" | "workspace" | "room";
   onMinimize?: () => void;
   onExpand?: () => void;
+  headerAction?: ReactNode;
   className?: string;
 };
 
@@ -21,6 +22,7 @@ export default function AgentChatPanel({
   variant = "float",
   onMinimize,
   onExpand,
+  headerAction,
   className,
 }: AgentChatPanelProps) {
   const {
@@ -41,6 +43,7 @@ export default function AgentChatPanel({
   } = useAgentChatContext();
 
   const isWorkspace = variant === "workspace";
+  const isRoom = variant === "room";
   const isDesktopLayout = useMinWidth(992);
   const workspacePlaceholder = useAgentPlaceholder();
   const showAssistantAvatar = !isWorkspace || !isDesktopLayout;
@@ -52,6 +55,7 @@ export default function AgentChatPanel({
       className={cn(
         "floating-agent-panel-inner flex flex-col h-full min-h-0",
         isWorkspace && "agent-workspace-chat",
+        isRoom && "agent-room-chat",
         className,
       )}
       data-testid="agent-chat-panel"
@@ -75,6 +79,7 @@ export default function AgentChatPanel({
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {headerAction}
           {variant === "float" && (
             <Link
               href={`/agent?session=${encodeURIComponent(activeSessionId)}`}
@@ -95,7 +100,7 @@ export default function AgentChatPanel({
           )}
           {isWorkspace ? (
             <AgentWorkspaceSettings />
-          ) : (
+          ) : variant === "float" ? (
             <button
               type="button"
               className="floating-agent-icon-btn"
@@ -105,7 +110,7 @@ export default function AgentChatPanel({
             >
               <Settings size={16} />
             </button>
-          )}
+          ) : null}
           {onMinimize && (
             <button
               type="button"
@@ -158,7 +163,7 @@ export default function AgentChatPanel({
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={isWorkspace ? workspacePlaceholder : "输入问题…"}
+          placeholder={isWorkspace ? workspacePlaceholder : isRoom ? "想和她说什么…" : "输入问题…"}
           disabled={busy}
           className={cn(
             "floating-agent-input-field agent-input flex-1 text-sm disabled:opacity-50",

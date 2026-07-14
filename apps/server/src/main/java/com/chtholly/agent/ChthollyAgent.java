@@ -145,7 +145,8 @@ public class ChthollyAgent {
                         result.transcript(),
                         memory,
                         trace,
-                        agentSpan);
+                        agentSpan,
+                        result.finalStepIndex());
                 trace.recordStep(
                         result.finalStepIndex(),
                         "final_answer",
@@ -170,7 +171,8 @@ public class ChthollyAgent {
             List<String> transcript,
             AgentConversationMemory memory,
             AgentExecutionTrace trace,
-            Observation agentSpan) {
+            Observation agentSpan,
+            int stepIndex) {
         String context = String.join("\n\n", transcript);
         String system = agentDomainConfig.render(
                 agentDomainConfig.systemPrompt().finalAnswerSystem(),
@@ -197,7 +199,7 @@ public class ChthollyAgent {
             String answer = truncateAnswer(full.toString());
             long streamMs = System.currentTimeMillis() - streamStart;
             Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
-            trace.recordLlmCall(streamMs, inputChars, answer.length(), ttft);
+            trace.recordLlmCall(stepIndex, streamMs, inputChars, answer.length(), ttft);
             agentObservationService.finishSpan(llmSpan, AgentSpanAttributes.llm(
                     streamMs, inputChars, answer.length(), "ok"));
             trace.terminateFinalAnswer(answer);
@@ -210,7 +212,7 @@ public class ChthollyAgent {
         } catch (Exception e) {
             long streamMs = System.currentTimeMillis() - streamStart;
             Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
-            trace.recordLlmCall(streamMs, inputChars, 0, ttft);
+            trace.recordLlmCall(stepIndex, streamMs, inputChars, 0, ttft);
             if (isTimeout(e)) {
                 agentObservationService.finishSpanError(llmSpan, "stream_timeout",
                         AgentSpanAttributes.llm(streamMs, inputChars, 0, "timeout"));
