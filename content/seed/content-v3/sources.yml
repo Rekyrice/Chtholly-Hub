@@ -593,3 +593,174 @@
   factAnchors: [咖喱饭照片CC0, 洋葱砧板照片CC BY 2.0, 炒洋葱照片CC BY-SA 3.0, 锅中咖喱照片CC BY-SA 4.0]
   quote: null
   usageNote: 四张开放许可食物照片用于封面与过程插图；逐图原页、作者和许可保存在assets.yml
+- key: dungeon-meshi-official
+  type: official-site
+  title: TVアニメ「ダンジョン飯」公式サイト
+  pageUrl: https://delicious-in-dungeon.com/
+  author: 「ダンジョン飯」製作委員会
+  fetchedAt: 2026-07-14T14:30:00.000Z
+  factAnchors: [TRIGGER, 莱欧斯一行, 魔物食材, 红龙, 官方主视觉]
+  quote: null
+  usageNote: 核对人物与作品基本设定并选取官方视觉素材
+- key: dungeon-meshi-production-01-08
+  type: production-analysis
+  title: Dungeon Meshi Production Notes 01-08
+  pageUrl: https://blog.sakugabooru.com/2024/02/28/smart-management-makes-room-for-ambitious-creators-dungeon-meshi-production-notes-04-08/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:31:00.000Z
+  factAnchors: [TRIGGER制作流程, 人物表演, 莱欧斯的魔物兴趣, 食物作画, 前八集]
+  quote: null
+  usageNote: 核对制作和镜头事实；正文从红龙、法琳与同伴反应重新组织
+- key: frieren-official
+  type: official-site
+  title: TVアニメ「葬送のフリーレン」公式サイト
+  pageUrl: https://frieren-anime.jp/
+  author: 「葬送のフリーレン」製作委員会
+  fetchedAt: 2026-07-14T14:32:00.000Z
+  factAnchors: [芙莉莲, 勇者一行, 十年冒险, 五十年后流星雨, 官方故事信息]
+  quote: null
+  usageNote: 核对人物和开篇时间线；站点拒绝本地缓存时仅登记公开页面
+- key: frieren-production-01-10
+  type: production-analysis
+  title: Frieren Production Notes 01-10
+  pageUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:33:00.000Z
+  factAnchors: [斋藤圭一郎, 系列开篇, 环境随时间变化, 村庄与旧物, 人物微小动作]
+  quote: null
+  usageNote: 核对环境和表演观察；正文只写不同寿命如何被具体东西打断
+- key: yubisaki-official
+  type: official-site
+  title: TVアニメ「ゆびさきと恋々」公式サイト
+  pageUrl: https://yubisaki-pr.com/
+  author: ゆびさきと恋々製作委員会
+  fetchedAt: 2026-07-14T14:34:00.000Z
+  factAnchors: [糸濑雪, 波岐逸臣, 手语, 大学生, 官方主视觉]
+  quote: null
+  usageNote: 核对人物关系并保存官方主视觉素材
+- key: yubisaki-production-notes
+  type: production-analysis
+  title: Animating Yubisaki to Renren
+  pageUrl: https://blog.sakugabooru.com/2024/03/29/animating-a-silent-world-yubisaki-to-renren-a-sign-of-affection-production-notes/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:35:00.000Z
+  factAnchors: [村野佑太, 手语监督, 手部作画, 视线设计, 环境声, 分镜]
+  quote: null
+  usageNote: 核对制作方法；避免沿用将聋人经验概括为无声世界的表述
+- key: girls-band-cry-official
+  type: official-site
+  title: アニメ「ガールズバンドクライ」公式サイト
+  pageUrl: https://girls-band-cry.com/
+  author: 東映アニメーション
+  fetchedAt: 2026-07-14T14:36:00.000Z
+  factAnchors: [井芹仁菜, 河原木桃香, 刺刺不休, 川崎, 3DCG, 官方视觉]
+  quote: null
+  usageNote: 核对人物、乐队名与官方视觉素材
+- key: sakugabooru-animation-awards-2024
+  type: annual-production-review
+  title: Sakugabooru Animation Awards 2024
+  pageUrl: https://blog.sakugabooru.com/2025/01/04/sakugabooru-animation-awards-2024/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:37:00.000Z
+  factAnchors: [Girls Band Cry, 东映动画, 3DCG人物表演, 乐队演出, 2024年度回顾]
+  quote: null
+  usageNote: 只核对3DCG表演观察；正文从仁菜争吵与排练的个人观看经验展开
+- key: gridman-universe-official
+  type: official-site
+  title: 劇場版「グリッドマン ユニバース」公式情報
+  pageUrl: https://ssss-movie.net/
+  author: 円谷プロ / TRIGGER
+  fetchedAt: 2026-07-14T14:38:00.000Z
+  factAnchors: [响裕太, 宝多六花, SSSS.GRIDMAN, SSSS.DYNAZENON, 剧场版]
+  quote: null
+  usageNote: 核对作品与角色交汇关系；旧站点当前不可解析时以制作资料图片补充
+- key: gridman-universe-production
+  type: production-analysis
+  title: Gridman Universe Production Retrospective
+  pageUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:39:00.000Z
+  factAnchors: [雨宫哲, TRIGGER, 两部TV动画角色交汇, 粉丝回调, 裕太与六花]
+  quote: null
+  usageNote: 核对制作与回调位置；正文以裕太告白这条普通情绪线为中心
+- key: boy-and-heron-ghibli
+  type: official-gallery
+  title: 君たちはどう生きるか — スタジオジブリ
+  pageUrl: https://www.ghibli.jp/works/kimitachi/
+  author: スタジオジブリ
+  fetchedAt: 2026-07-14T14:40:00.000Z
+  factAnchors: [宫崎骏, 牧真人, 苍鹭, 塔, 官方画廊剧照]
+  quote: null
+  usageNote: 核对基本信息并使用吉卜力公开画廊图片
+- key: boy-and-heron-production
+  type: production-analysis
+  title: The Weight of Hayao Miyazaki and Ghibli
+  pageUrl: https://blog.sakugabooru.com/2023/11/06/the-weight-of-hayao-miyazaki-and-ghibli-the-boy-and-the-heron-how-do-you-live/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:41:00.000Z
+  factAnchors: [宫崎骏, 本田雄, 空间转场, 火焰与飞行, 吉卜力制作]
+  quote: null
+  usageNote: 核对制作事实；正文保留观众的不确定，不制作符号对照表
+- key: spring-transaction-event-docs
+  type: official-documentation
+  title: Transaction-bound Events
+  pageUrl: https://docs.spring.io/spring-framework/reference/data-access/transaction/event.html
+  author: Spring
+  fetchedAt: 2026-07-14T14:42:00.000Z
+  factAnchors: [TransactionalEventListener, BEFORE_COMMIT, AFTER_COMMIT, AFTER_ROLLBACK, AFTER_COMPLETION, 默认AFTER_COMMIT]
+  quote: null
+  usageNote: 核对监听器阶段定义；实际顺序和数据可见性以本地实验为准
+- key: spring-transaction-event-local-experiment
+  type: reproducible-local-experiment
+  title: Spring transaction event phase experiment
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/spring-transaction-event-phases
+  author: night-coder
+  fetchedAt: 2026-07-14T14:43:00.000Z
+  factAnchors: [Java 21, Spring Framework 6.1.6, H2 2.2.224, 提交场景, 回滚场景, 独立连接]
+  quote: null
+  usageNote: 文章时间线、数据可见性和图表全部从跟踪实验结果生成
+- key: rrf-original-paper
+  type: research-paper
+  title: Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods
+  pageUrl: https://dl.acm.org/doi/10.1145/1571941.1572114
+  author: Gordon V. Cormack / Charles L. A. Clarke / Stefan Buettcher
+  fetchedAt: 2026-07-14T14:44:00.000Z
+  factAnchors: [Reciprocal Rank Fusion, reciprocal rank, k常数, 多路结果融合]
+  quote: null
+  usageNote: 核对RRF定义；本文结果只来自冻结代理候选，不宣称真实embedding基准
+- key: rrf-ranking-local-experiment
+  type: reproducible-local-experiment
+  title: Deterministic RRF ranking experiment
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/rrf-hybrid-retrieval-ranking
+  author: algo-runner
+  fetchedAt: 2026-07-14T14:45:00.000Z
+  factAnchors: [32条文档, 16条查询, top5, lexical, semanticProxy, k=60, Hit@1, Hit@3, MRR]
+  quote: null
+  usageNote: 数据集、候选列表、源码和逐题结果均跟踪；不外推到真实语义模型
+- key: signalis-rose-engine
+  type: official-creator-page
+  title: SIGNALIS — rose-engine
+  pageUrl: https://rose-engine.org/signalis/
+  author: rose-engine
+  fetchedAt: 2026-07-14T14:46:00.000Z
+  factAnchors: [生存恐怖, Elster, 调查设施, 解谜, 资源管理, 官方截图]
+  quote: null
+  usageNote: 核对作品类型并保存官方截图，不展开关键身份与结局
+- key: signalis-steam
+  type: official-store-page
+  title: SIGNALIS on Steam
+  pageUrl: https://store.steampowered.com/app/1262350/SIGNALIS/
+  author: rose-engine / Humble Games
+  fetchedAt: 2026-07-14T14:47:00.000Z
+  factAnchors: [classic survival horror, melancholic mystery, inventory management, 官方商店截图]
+  quote: null
+  usageNote: 核对产品信息和媒体，不复写宣传文案
+- key: chipped-cup-public-images
+  type: open-license-image-set
+  title: Old cup and kitchen photographs from Wikimedia Commons and Pexels
+  pageUrl: https://commons.wikimedia.org/
+  author: Alexandru STAVRICĂ / Kampus Production / Unseen Studio / vastateparksstaff
+  fetchedAt: 2026-07-14T14:48:00.000Z
+  factAnchors: [旧杯静物, 水槽, 桌面, 橱柜, CC0, Pexels许可, CC BY 2.0]
+  quote: null
+  usageNote: 只使用可核对作者与许可的真实照片；Wikimedia Commons 与 Pexels 逐图信息记录在 assets.yml

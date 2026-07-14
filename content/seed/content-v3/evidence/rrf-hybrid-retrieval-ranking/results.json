@@ -1,0 +1,576 @@
+{
+  "experiment": "deterministic frozen-candidate RRF comparison",
+  "limitations": "semanticProxy is a hand-frozen ordered candidate list, not an embedding or LLM benchmark",
+  "corpusSize": 32,
+  "queryCount": 16,
+  "topK": 5,
+  "rrfK": 60,
+  "unrecoverableQueryCount": 2,
+  "strategies": {
+    "lexical": {
+      "hitAt1": 2,
+      "hitAt3": 11,
+      "mrr": 0.423958
+    },
+    "semanticProxy": {
+      "hitAt1": 2,
+      "hitAt3": 11,
+      "mrr": 0.423958
+    },
+    "rrf": {
+      "hitAt1": 4,
+      "hitAt3": 12,
+      "mrr": 0.514583
+    }
+  },
+  "queries": [
+    {
+      "queryId": "q01",
+      "query": "怎么避免大量缓存同一时刻过期",
+      "expected": "d01",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d17",
+        "d01",
+        "d18",
+        "d19",
+        "d20"
+      ],
+      "semanticProxy": [
+        "d21",
+        "d01",
+        "d22",
+        "d23",
+        "d24"
+      ],
+      "rrf": [
+        "d01",
+        "d17",
+        "d21",
+        "d18",
+        "d22",
+        "d19",
+        "d23",
+        "d20",
+        "d24"
+      ],
+      "expectedRanks": {
+        "lexical": 2,
+        "semanticProxy": 2,
+        "rrf": 1
+      }
+    },
+    {
+      "queryId": "q02",
+      "query": "数据库提交以后再处理事件",
+      "expected": "d02",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d25",
+        "d02",
+        "d03",
+        "d14",
+        "d30"
+      ],
+      "semanticProxy": [
+        "d26",
+        "d02",
+        "d12",
+        "d13",
+        "d31"
+      ],
+      "rrf": [
+        "d02",
+        "d25",
+        "d26",
+        "d03",
+        "d12",
+        "d13",
+        "d14",
+        "d30",
+        "d31"
+      ],
+      "expectedRanks": {
+        "lexical": 2,
+        "semanticProxy": 2,
+        "rrf": 1
+      }
+    },
+    {
+      "queryId": "q03",
+      "query": "业务数据和 Kafka 消息怎样保证一致",
+      "expected": "d03",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d26",
+        "d03",
+        "d02",
+        "d10",
+        "d25"
+      ],
+      "semanticProxy": [
+        "d12",
+        "d03",
+        "d31",
+        "d14",
+        "d25"
+      ],
+      "rrf": [
+        "d03",
+        "d25",
+        "d12",
+        "d26",
+        "d02",
+        "d31",
+        "d10",
+        "d14"
+      ],
+      "expectedRanks": {
+        "lexical": 2,
+        "semanticProxy": 2,
+        "rrf": 1
+      }
+    },
+    {
+      "queryId": "q04",
+      "query": "async def 里面调用 time sleep 为什么卡住",
+      "expected": "d04",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d27",
+        "d04",
+        "d30",
+        "d11",
+        "d13"
+      ],
+      "semanticProxy": [
+        "d31",
+        "d04",
+        "d27",
+        "d12",
+        "d30"
+      ],
+      "rrf": [
+        "d27",
+        "d04",
+        "d30",
+        "d31",
+        "d11",
+        "d12",
+        "d13"
+      ],
+      "expectedRanks": {
+        "lexical": 2,
+        "semanticProxy": 2,
+        "rrf": 2
+      }
+    },
+    {
+      "queryId": "q05",
+      "query": "RAG 段落切多长比较合适",
+      "expected": "d05",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d28",
+        "d05",
+        "d29",
+        "d08",
+        "d09"
+      ],
+      "semanticProxy": [
+        "d09",
+        "d05",
+        "d28",
+        "d07",
+        "d06"
+      ],
+      "rrf": [
+        "d28",
+        "d05",
+        "d09",
+        "d29",
+        "d07",
+        "d08",
+        "d06"
+      ],
+      "expectedRanks": {
+        "lexical": 2,
+        "semanticProxy": 2,
+        "rrf": 2
+      }
+    },
+    {
+      "queryId": "q06",
+      "query": "工具描述写法会不会影响 agent 选择",
+      "expected": "d06",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d07",
+        "d06",
+        "d32",
+        "d28",
+        "d14"
+      ],
+      "semanticProxy": [
+        "d29",
+        "d06",
+        "d07",
+        "d12",
+        "d32"
+      ],
+      "rrf": [
+        "d07",
+        "d06",
+        "d32",
+        "d29",
+        "d12",
+        "d28",
+        "d14"
+      ],
+      "expectedRanks": {
+        "lexical": 2,
+        "semanticProxy": 2,
+        "rrf": 2
+      }
+    },
+    {
+      "queryId": "q07",
+      "query": "记忆更新后为什么还召回旧值",
+      "expected": "d07",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d06",
+        "d07",
+        "d29",
+        "d32",
+        "d14"
+      ],
+      "semanticProxy": [
+        "d28",
+        "d07",
+        "d06",
+        "d05",
+        "d09"
+      ],
+      "rrf": [
+        "d06",
+        "d07",
+        "d28",
+        "d29",
+        "d05",
+        "d32",
+        "d09",
+        "d14"
+      ],
+      "expectedRanks": {
+        "lexical": 2,
+        "semanticProxy": 2,
+        "rrf": 2
+      }
+    },
+    {
+      "queryId": "q08",
+      "query": "BM25 标题字段应该怎样加权",
+      "expected": "d08",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d28",
+        "d08",
+        "d29",
+        "d05",
+        "d09"
+      ],
+      "semanticProxy": [
+        "d09",
+        "d08",
+        "d28",
+        "d05",
+        "d29"
+      ],
+      "rrf": [
+        "d28",
+        "d08",
+        "d09",
+        "d29",
+        "d05"
+      ],
+      "expectedRanks": {
+        "lexical": 2,
+        "semanticProxy": 2,
+        "rrf": 2
+      }
+    },
+    {
+      "queryId": "q09",
+      "query": "向量搜索漏掉正确文档怎么查",
+      "expected": "d09",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d09",
+        "d28",
+        "d08",
+        "d05",
+        "d29"
+      ],
+      "semanticProxy": [
+        "d28",
+        "d05",
+        "d08",
+        "d09",
+        "d07"
+      ],
+      "rrf": [
+        "d28",
+        "d09",
+        "d05",
+        "d08",
+        "d07",
+        "d29"
+      ],
+      "expectedRanks": {
+        "lexical": 1,
+        "semanticProxy": 4,
+        "rrf": 2
+      }
+    },
+    {
+      "queryId": "q10",
+      "query": "从哪一行开始看 mysql deadlock 日志",
+      "expected": "d10",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d25",
+        "d15",
+        "d02",
+        "d10",
+        "d26"
+      ],
+      "semanticProxy": [
+        "d10",
+        "d15",
+        "d25",
+        "d03",
+        "d02"
+      ],
+      "rrf": [
+        "d25",
+        "d15",
+        "d10",
+        "d02",
+        "d03",
+        "d26"
+      ],
+      "expectedRanks": {
+        "lexical": 4,
+        "semanticProxy": 1,
+        "rrf": 3
+      }
+    },
+    {
+      "queryId": "q11",
+      "query": "线程池为什么一直加队列不扩容",
+      "expected": "d11",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d11",
+        "d30",
+        "d27",
+        "d20",
+        "d13"
+      ],
+      "semanticProxy": [
+        "d30",
+        "d27",
+        "d20",
+        "d13",
+        "d31"
+      ],
+      "rrf": [
+        "d30",
+        "d27",
+        "d20",
+        "d13",
+        "d11",
+        "d31"
+      ],
+      "expectedRanks": {
+        "lexical": 1,
+        "semanticProxy": null,
+        "rrf": 5
+      }
+    },
+    {
+      "queryId": "q12",
+      "query": "模型服务连续超时后自动切备用模型",
+      "expected": "d12",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d31",
+        "d32",
+        "d14",
+        "d03",
+        "d26"
+      ],
+      "semanticProxy": [
+        "d12",
+        "d31",
+        "d32",
+        "d03",
+        "d14"
+      ],
+      "rrf": [
+        "d31",
+        "d32",
+        "d14",
+        "d03",
+        "d12",
+        "d26"
+      ],
+      "expectedRanks": {
+        "lexical": null,
+        "semanticProxy": 1,
+        "rrf": 5
+      }
+    },
+    {
+      "queryId": "q13",
+      "query": "流式接口中断后从上次事件继续",
+      "expected": "d13",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d31",
+        "d30",
+        "d13",
+        "d14",
+        "d27"
+      ],
+      "semanticProxy": [
+        "d26",
+        "d25",
+        "d13",
+        "d31",
+        "d30"
+      ],
+      "rrf": [
+        "d31",
+        "d13",
+        "d30",
+        "d26",
+        "d25",
+        "d14",
+        "d27"
+      ],
+      "expectedRanks": {
+        "lexical": 3,
+        "semanticProxy": 3,
+        "rrf": 2
+      }
+    },
+    {
+      "queryId": "q14",
+      "query": "refresh token 被重复使用怎么办",
+      "expected": "d14",
+      "presentInAnyCandidateList": true,
+      "lexical": [
+        "d26",
+        "d25",
+        "d32",
+        "d13",
+        "d14"
+      ],
+      "semanticProxy": [
+        "d12",
+        "d31",
+        "d03",
+        "d02",
+        "d14"
+      ],
+      "rrf": [
+        "d14",
+        "d12",
+        "d26",
+        "d25",
+        "d31",
+        "d03",
+        "d32",
+        "d02",
+        "d13"
+      ],
+      "expectedRanks": {
+        "lexical": 5,
+        "semanticProxy": 5,
+        "rrf": 1
+      }
+    },
+    {
+      "queryId": "q15",
+      "query": "连接池疑似泄漏怎样设置诊断阈值",
+      "expected": "d15",
+      "presentInAnyCandidateList": false,
+      "lexical": [
+        "d10",
+        "d25",
+        "d02",
+        "d30",
+        "d31"
+      ],
+      "semanticProxy": [
+        "d26",
+        "d03",
+        "d12",
+        "d32",
+        "d14"
+      ],
+      "rrf": [
+        "d10",
+        "d26",
+        "d03",
+        "d25",
+        "d02",
+        "d12",
+        "d30",
+        "d32",
+        "d14",
+        "d31"
+      ],
+      "expectedRanks": {
+        "lexical": null,
+        "semanticProxy": null,
+        "rrf": null
+      }
+    },
+    {
+      "queryId": "q16",
+      "query": "模型升级后结构化 JSON 字段变化",
+      "expected": "d16",
+      "presentInAnyCandidateList": false,
+      "lexical": [
+        "d32",
+        "d06",
+        "d14",
+        "d29",
+        "d31"
+      ],
+      "semanticProxy": [
+        "d12",
+        "d31",
+        "d06",
+        "d29",
+        "d14"
+      ],
+      "rrf": [
+        "d06",
+        "d31",
+        "d14",
+        "d29",
+        "d12",
+        "d32"
+      ],
+      "expectedRanks": {
+        "lexical": null,
+        "semanticProxy": null,
+        "rrf": null
+      }
+    }
+  ]
+}

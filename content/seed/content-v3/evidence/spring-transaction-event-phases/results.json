@@ -1,0 +1,13 @@
+{
+  "runtime": {"java":"21","springFramework":"6.1.6","h2":"2.2.224"},
+  "database": {"isolation":"READ_COMMITTED","visibilityProbe":"new raw JDBC connection"},
+  "observations": [
+    {"sequence":1,"scenario":"commit","listener":"ProbeListeners","phase":"ordinary","rowId":1,"independentConnectionRowCount":0},
+    {"sequence":2,"scenario":"commit","listener":"ProbeListeners","phase":"before_commit","rowId":1,"independentConnectionRowCount":0},
+    {"sequence":3,"scenario":"commit","listener":"ProbeListeners","phase":"after_commit","rowId":1,"independentConnectionRowCount":1},
+    {"sequence":4,"scenario":"commit","listener":"ProbeListeners","phase":"after_completion","rowId":1,"independentConnectionRowCount":1},
+    {"sequence":5,"scenario":"rollback","listener":"ProbeListeners","phase":"ordinary","rowId":2,"independentConnectionRowCount":0},
+    {"sequence":6,"scenario":"rollback","listener":"ProbeListeners","phase":"after_rollback","rowId":2,"independentConnectionRowCount":0},
+    {"sequence":7,"scenario":"rollback","listener":"ProbeListeners","phase":"after_completion","rowId":2,"independentConnectionRowCount":0}
+  ]
+}

@@ -626,3 +626,203 @@
     format: personal-essay
     mediaPlan: [家常咖喱饭作封面, 砧板洋葱, 锅中软化洋葱, 咖喱汤汁]
     sources: [curry-wikimedia-images]
+
+- seedKey: dungeon-meshi-red-dragon-meal
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 吃掉红龙这件事，莱欧斯想得比谁都认真
+  slug: dungeon-meshi-red-dragon-meal
+  description: 当妹妹和晚餐落到同一张砧板上，莱欧斯的认真既令人安心，也让同伴无处躲开。
+  category: ANIME
+  tags: [迷宫饭, 莱欧斯, 法琳, TRIGGER]
+  publishTime: 2026-07-13T08:42:00Z
+  markdownFile: posts/dungeon-meshi-red-dragon-meal.md
+  coverAsset: dungeon-red-dragon-cover
+  inlineAssets: [dungeon-laios-thinking, dungeon-falin-awake, dungeon-red-dragon-kitchen]
+  brief:
+    factAnchors: [红龙, 法琳, 莱欧斯, 玛露希尔, 森西, 魔物食材, 复活术, 砧板]
+    voice: 被莱欧斯的专注逗笑又逐渐不安的追番观众，从同伴反应写他的认真
+    position: 吃掉红龙不是猎奇噱头，而是莱欧斯把知识、救人和进食放进同一套逻辑时最坦率也最危险的一刻
+    format: personal-essay
+    mediaPlan: [红龙与队伍作封面, 莱欧斯思考, 法琳苏醒, 处理红龙肉]
+    sources: [dungeon-meshi-official, dungeon-meshi-production-01-08]
+
+- seedKey: frieren-ten-years-long
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 《葬送的芙莉莲》：十年原来已经很长了
+  slug: frieren-ten-years-long
+  description: 对芙莉莲只是短途的十年，被海塔和辛美尔留在村庄、旧物与一次次重访里。
+  category: ANIME
+  tags: [葬送的芙莉莲, 芙莉莲, 辛美尔, 时间]
+  publishTime: 2026-07-12T15:16:00Z
+  markdownFile: posts/frieren-ten-years-long.md
+  coverAsset: frieren-ten-years-cover
+  inlineAssets: [frieren-village-return, frieren-heiter-campfire, frieren-himmel-memory]
+  brief:
+    factAnchors: [十年冒险, 五十年流星雨, 辛美尔, 海塔, 村庄, 重访, 旧物, 不同寿命]
+    voice: 重看前几集时不断在背景旧物上停下来的读书人，少下结论
+    position: 作品没有让芙莉莲突然学会珍惜，而是让短命者留下的具体事物反复打断她的时间尺度
+    format: personal-essay
+    mediaPlan: [四人旅途余晖作封面, 重返旧地, 勇者一行篝火, 辛美尔的回忆镜头]
+    sources: [frieren-official, frieren-production-01-10]
+
+- seedKey: yubisaki-yuki-hands
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 雪说话时，画面会先看她的手
+  slug: yubisaki-yuki-hands
+  description: 手语、视线和手机文字轮流接过一句话，《指尖相触，恋恋不舍》不急着替雪解释。
+  category: ANIME
+  tags: [指尖相触恋恋不舍, 糸濑雪, 手语, 视听设计]
+  publishTime: 2026-07-11T10:37:00Z
+  markdownFile: posts/yubisaki-yuki-hands.md
+  coverAsset: yubisaki-yuki-cover
+  inlineAssets: [yubisaki-hands, yubisaki-gaze, yubisaki-phone-text]
+  brief:
+    factAnchors: [糸濑雪, 波岐逸臣, 手语, 读唇, 手机文字, 视线, 环境声, 构图]
+    voice: 会先看人物手和视线落点的动画观众，区分画面观察与个人感受
+    position: 作品的亲密来自沟通方式被认真拍摄，而不是把雪的经验压缩成一个浪漫化的无声世界
+    format: feature-review
+    mediaPlan: [雪与手语作封面, 手部动作, 视线交接, 手机文字]
+    sources: [yubisaki-official, yubisaki-production-notes]
+
+- seedKey: girls-band-cry-nina-song-not-round
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 井芹仁菜把歌唱得一点也不圆
+  slug: girls-band-cry-nina-song-not-round
+  description: 她会抢拍、顶嘴、唱破一句话，也会在吵完架后回来把同一首歌重新排一遍。
+  category: ANIME
+  tags: [Girls Band Cry, 井芹仁菜, 3DCG, 乐队]
+  publishTime: 2026-07-10T17:04:00Z
+  markdownFile: posts/girls-band-cry-nina-song-not-round.md
+  coverAsset: girls-band-cry-nina-cover
+  inlineAssets: [girls-band-cry-argument, girls-band-cry-rehearsal, girls-band-cry-stage]
+  brief:
+    factAnchors: [井芹仁菜, 河原木桃香, 刺刺不休, 排练, 争吵, 3DCG, 面部表演, 身体重心]
+    voice: 被仁菜气到暂停又会继续播放的乐队番观众，说话允许直白
+    position: 仁菜的歌不好被磨圆，因为动画把她争辩、退缩和重新站稳都留在身体表演里
+    format: personal-essay
+    mediaPlan: [舞台灯光作封面, 争吵近景, 排练, 演出身体表演]
+    sources: [girls-band-cry-official, sakugabooru-animation-awards-2024]
+
+- seedKey: gridman-universe-yuta-confession
+  legacySlug: null
+  authorSeedKey: site-owner
+  title: 裕太终于把那句话说完了——《古立特宇宙》
+  slug: gridman-universe-yuta-confession
+  description: 两部 TV 动画的人全挤进一场电影，最重要的却还是裕太没能说完的那句话。
+  category: ANIME
+  tags: [古立特宇宙, 响裕太, 宝多六花, SSSS.DYNAZENON]
+  publishTime: 2026-07-09T12:28:00Z
+  markdownFile: posts/gridman-universe-yuta-confession.md
+  coverAsset: gridman-universe-cover
+  inlineAssets: [gridman-yuta-rikka, gridman-two-groups, gridman-confession]
+  brief:
+    factAnchors: [响裕太, 宝多六花, 内海将, SSSS.GRIDMAN, SSSS.DYNAZENON, 两组角色, 告白, 学园祭]
+    voice: 知道每个回调用在哪里却仍嫌电影太挤的系列观众，承认粉丝服务有效
+    position: 宇宙级危机最终替裕太腾出的只是一个能把普通告白说完的现实位置
+    format: feature-review
+    mediaPlan: [两组角色集合封面, 裕太与六花, 两组相遇, 告白前后]
+    sources: [gridman-universe-official, gridman-universe-production]
+
+- seedKey: boy-and-heron-heron-not-guide
+  legacySlug: null
+  authorSeedKey: anime-critic
+  title: 《你想活出怎样的人生》里，苍鹭从来不负责带路
+  slug: boy-and-heron-heron-not-guide
+  description: 苍鹭只会把牧真人骗到下一扇门前；塔、走廊与门后的世界始终拒绝给他一张地图。
+  category: ANIME
+  tags: [你想活出怎样的人生, 宫崎骏, 苍鹭, 吉卜力]
+  publishTime: 2026-07-08T09:51:00Z
+  markdownFile: posts/boy-and-heron-heron-not-guide.md
+  coverAsset: boy-heron-tower-cover
+  inlineAssets: [boy-heron-corridor, boy-heron-door, boy-heron-mahito]
+  brief:
+    factAnchors: [牧真人, 苍鹭, 火灾, 母亲, 塔, 门, 走廊, 大叔公, 石头]
+    voice: 二刷后仍不愿把每个意象填进答案表的观众，保留没看懂的地方
+    position: 苍鹭不是可靠向导，空间的反复失灵让真人必须在没有完整解释时决定回到哪一边生活
+    format: feature-review
+    mediaPlan: [塔与天空作封面, 走廊, 门与异界, 真人近景]
+    sources: [boy-and-heron-ghibli, boy-and-heron-production]
+
+- seedKey: spring-transaction-event-phases
+  legacySlug: null
+  authorSeedKey: night-coder
+  title: Spring 事务事件的提交时机实验
+  slug: spring-transaction-event-phases
+  description: 用提交和回滚两条最小时间线，实际记录五种监听器被调用时独立连接能看到什么。
+  category: TECH
+  tags: [Spring, 事务, TransactionalEventListener, Java]
+  publishTime: 2026-07-07T14:23:00Z
+  markdownFile: posts/spring-transaction-event-phases.md
+  coverAsset: spring-transaction-cover
+  inlineAssets: [spring-transaction-code, spring-transaction-timeline]
+  brief:
+    factAnchors: [Spring Framework 6.1.6, H2 2.2.224, ordinary, BEFORE_COMMIT, AFTER_COMMIT, AFTER_ROLLBACK, AFTER_COMPLETION, 独立JDBC连接]
+    voice: 被一次提交前发消息问题坑过后补最小实验的Java后端开发者
+    position: 监听器名字不能替代数据可见性验证，事务后副作用应根据失败语义选择阶段并单独处理异常
+    format: technical-report
+    mediaPlan: [实验摘要封面, 监听器代码卡片, 提交与回滚时间线]
+    sources: [spring-transaction-event-docs, spring-transaction-event-local-experiment]
+
+- seedKey: rrf-hybrid-retrieval-ranking
+  legacySlug: null
+  authorSeedKey: algo-runner
+  title: RRF 混合检索的排序实验
+  slug: rrf-hybrid-retrieval-ranking
+  description: 把两路冻结候选表送进 RRF，逐题查看互补收益、平分规则和谁都没召回时的硬边界。
+  category: TECH
+  tags: [RRF, 混合检索, 排序, Agent]
+  publishTime: 2026-07-06T07:46:00Z
+  markdownFile: posts/rrf-hybrid-retrieval-ranking.md
+  coverAsset: rrf-ranking-cover
+  inlineAssets: [rrf-formula-code, rrf-ranking-chart]
+  brief:
+    factAnchors: [32条冻结文档, 16条查询, lexical, semanticProxy, top5, k=60, Hit@1, Hit@3, MRR, 两条不可恢复查询]
+    voice: 先把候选列表冻住再谈融合效果的检索实验记录者，主动限制结论
+    position: RRF能用名次互补缓和不同分数尺度，却无法创造两路都没召回的文档
+    format: technical-report
+    mediaPlan: [两路合流摘要封面, RRF公式代码卡片, 三策略指标图]
+    sources: [rrf-original-paper, rrf-ranking-local-experiment]
+
+- seedKey: signalis-six-slot-inventory
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 《SIGNALIS》：六格背包里装不下所有记忆
+  slug: signalis-six-slot-inventory
+  description: 钥匙、武器和治疗物挤在六格里，来回走过的走廊比一次顺畅通关更像记忆。
+  category: GAME
+  tags: [SIGNALIS, 生存恐怖, 背包, rose-engine]
+  publishTime: 2026-07-05T16:12:00Z
+  markdownFile: posts/signalis-six-slot-inventory.md
+  coverAsset: signalis-six-slot-cover
+  inlineAssets: [signalis-inventory, signalis-corridor, signalis-save-room]
+  brief:
+    factAnchors: [rose-engine, 六格物品栏, 钥匙, 武器, 治疗物, 重复路线, 存档房, 生存恐怖]
+    voice: 通关后仍记得自己在哪条走廊折返的玩家，不复述剧情谜底
+    position: 六格限制会制造烦躁，但丢下与折返的动作也让游戏关于残缺记忆的主题落到手上
+    format: personal-essay
+    mediaPlan: [红黑走廊作封面, 六格物品栏, 重复通道, 存档房]
+    sources: [signalis-rose-engine, signalis-steam]
+
+- seedKey: chipped-cup-two-years
+  legacySlug: null
+  authorSeedKey: photo-walker
+  title: 缺了一个口的杯子，我又用了两年
+  slug: chipped-cup-two-years
+  description: 每次洗到缺口都要绕开一点，真正让我丢掉它的不是怀旧结束，而是裂纹终于变了。
+  category: LIFE
+  tags: [旧物, 杯子, 厨房, 生活随笔]
+  publishTime: 2026-07-04T11:05:00Z
+  markdownFile: posts/chipped-cup-two-years.md
+  coverAsset: chipped-cup-cover
+  inlineAssets: [chipped-cup-sink, chipped-cup-table, chipped-cup-cabinet]
+  brief:
+    factAnchors: [杯沿缺口, 洗杯, 砂纸不可修复釉面安全, 柜子, 桌面, 尖锐裂口, 结构裂纹, 停止使用]
+    voice: 清理橱柜时翻出旧杯子的普通人，只写具体动作和迟疑
+    position: 留下旧物不必升华成忠诚，丢掉也不等于背叛；出现锋利缺口或结构裂纹就该停止饮用
+    format: personal-essay
+    mediaPlan: [旧杯静物封面, 水槽清洗, 桌面放置, 橱柜空位]
+    sources: [chipped-cup-public-images]

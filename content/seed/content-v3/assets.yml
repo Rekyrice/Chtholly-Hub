@@ -6,7 +6,7 @@
   usageNote: 仅复用公开头像图片，不关联或冒充原用户身份
   sourceFile: C08-night-sky-actual.jpg
   file: avatars/night-coder.webp
-  objectKey: seed/content-v3/avatars/night-coder/9d449e6aa288b0fbff93a2c5b33114047d28e28b849295b08b176fba0221a72d.webp
+  objectKey: seed/content-v3/assets/avatar-night-coder-9d449e6aa288b0fbff93a2c5b33114047d28e28b849295b08b176fba0221a72d.webp
   sha256: 9d449e6aa288b0fbff93a2c5b33114047d28e28b849295b08b176fba0221a72d
   contentType: image/webp
   width: 512
@@ -20,7 +20,7 @@
   usageNote: 仅复用公开头像图片，不关联或冒充原用户身份
   sourceFile: bgm12-female-actual.jpg
   file: avatars/algo-runner.webp
-  objectKey: seed/content-v3/avatars/algo-runner/9ce32924327a531854932dbd9a1a33533307219d7c27bc5ef278eee167f17c6e.webp
+  objectKey: seed/content-v3/assets/avatar-algo-runner-9ce32924327a531854932dbd9a1a33533307219d7c27bc5ef278eee167f17c6e.webp
   sha256: 9ce32924327a531854932dbd9a1a33533307219d7c27bc5ef278eee167f17c6e
   contentType: image/webp
   width: 512
@@ -34,7 +34,7 @@
   usageNote: 仅复用公开头像图片，不关联或冒充原用户身份
   sourceFile: bgm01-female-actual.jpg
   file: avatars/anime-critic.webp
-  objectKey: seed/content-v3/avatars/anime-critic/a291263e31fcdbd3836ae25b0bcc4212a188cb01876359ded287743e9bafca6d.webp
+  objectKey: seed/content-v3/assets/avatar-anime-critic-a291263e31fcdbd3836ae25b0bcc4212a188cb01876359ded287743e9bafca6d.webp
   sha256: a291263e31fcdbd3836ae25b0bcc4212a188cb01876359ded287743e9bafca6d
   contentType: image/webp
   width: 512
@@ -48,7 +48,7 @@
   usageNote: 仅复用公开头像图片，不关联或冒充原用户身份
   sourceFile: bgm10-female-actual.jpg
   file: avatars/design-sis.webp
-  objectKey: seed/content-v3/avatars/design-sis/8359e6247d9a5505a5fb410806e850d50f3d2e7534261afee08f7face2807594.webp
+  objectKey: seed/content-v3/assets/avatar-design-sis-8359e6247d9a5505a5fb410806e850d50f3d2e7534261afee08f7face2807594.webp
   sha256: 8359e6247d9a5505a5fb410806e850d50f3d2e7534261afee08f7face2807594
   contentType: image/webp
   width: 512
@@ -62,7 +62,7 @@
   usageNote: 仅复用公开头像图片，不关联或冒充原用户身份
   sourceFile: bgm06-female-actual.jpg
   file: avatars/moyu-master.webp
-  objectKey: seed/content-v3/avatars/moyu-master/b4b52f2e372c07f12cee71c60ca79198c9a700763044cc024766e02e32e0e1d1.webp
+  objectKey: seed/content-v3/assets/avatar-moyu-master-b4b52f2e372c07f12cee71c60ca79198c9a700763044cc024766e02e32e0e1d1.webp
   sha256: b4b52f2e372c07f12cee71c60ca79198c9a700763044cc024766e02e32e0e1d1
   contentType: image/webp
   width: 512
@@ -76,7 +76,7 @@
   usageNote: 仅复用公开头像图片，不关联或冒充原用户身份
   sourceFile: bgm16-female-actual.jpg
   file: avatars/indie-dev.webp
-  objectKey: seed/content-v3/avatars/indie-dev/30ddd89251ea41c70818e84a73aaccf35cb1491d1b46031bf2ef881141889756.webp
+  objectKey: seed/content-v3/assets/avatar-indie-dev-30ddd89251ea41c70818e84a73aaccf35cb1491d1b46031bf2ef881141889756.webp
   sha256: 30ddd89251ea41c70818e84a73aaccf35cb1491d1b46031bf2ef881141889756
   contentType: image/webp
   width: 512
@@ -90,7 +90,7 @@
   usageNote: 仅复用公开头像图片，不关联或冒充原用户身份
   sourceFile: bgm03-female-actual.jpg
   file: avatars/book-notes.webp
-  objectKey: seed/content-v3/avatars/book-notes/e06c4b361a7ca49c605931e65d3527a4a38b57b7043f7b708aded8fb0470decf.webp
+  objectKey: seed/content-v3/assets/avatar-book-notes-e06c4b361a7ca49c605931e65d3527a4a38b57b7043f7b708aded8fb0470decf.webp
   sha256: e06c4b361a7ca49c605931e65d3527a4a38b57b7043f7b708aded8fb0470decf
   contentType: image/webp
   width: 512
@@ -104,7 +104,7 @@
   usageNote: 仅复用公开头像图片，不关联或冒充原用户身份
   sourceFile: C06-hamster-actual.jpg
   file: avatars/photo-walker.webp
-  objectKey: seed/content-v3/avatars/photo-walker/caa198a112645fe6d1232aea086e58908f8022e2fb7d4040bb94a676a2c71bbc.webp
+  objectKey: seed/content-v3/assets/avatar-photo-walker-caa198a112645fe6d1232aea086e58908f8022e2fb7d4040bb94a676a2c71bbc.webp
   sha256: caa198a112645fe6d1232aea086e58908f8022e2fb7d4040bb94a676a2c71bbc
   contentType: image/webp
   width: 512
@@ -118,7 +118,7 @@
   usageNote: 作为文章氛围封面，展示广阔天空下人物占比较小的八千代
   sourceFile: apohotel5-actual.jpg
   file: covers/apocalypse-hotel.webp
-  objectKey: seed/content-v3/covers/apocalypse-hotel/1da7b57b988c155b424671cc34845dc45bb0d3043a3311022a1239f067c10a21.webp
+  objectKey: seed/content-v3/assets/apocalypse-hotel-cover-1da7b57b988c155b424671cc34845dc45bb0d3043a3311022a1239f067c10a21.webp
   sha256: 1da7b57b988c155b424671cc34845dc45bb0d3043a3311022a1239f067c10a21
   contentType: image/webp
   width: 1200
@@ -132,7 +132,7 @@
   usageNote: 配合春藤佳奈对孤独与交流距离的视觉处理分析
   sourceFile: apohotel1-actual.jpg
   file: inline/apocalypse-hotel-window.webp
-  objectKey: seed/content-v3/inline/apocalypse-hotel-window/d7ecd393bd581dace9618648a35072c657970b18aea8599852a9bb27c06edd15.webp
+  objectKey: seed/content-v3/assets/apocalypse-hotel-window-d7ecd393bd581dace9618648a35072c657970b18aea8599852a9bb27c06edd15.webp
   sha256: d7ecd393bd581dace9618648a35072c657970b18aea8599852a9bb27c06edd15
   contentType: image/webp
   width: 1600
@@ -146,7 +146,7 @@
   usageNote: 俯视机位把女孩们压在狭窄房间中央，作为文章的监视感氛围封面
   sourceFile: shiboyugi-room.jpg
   file: covers/shiboyugi-laugh-before-danger.webp
-  objectKey: seed/content-v3/covers/shiboyugi-laugh-before-danger/c07af8bc0ca369bc6a10a0f404903e7d94977de33d3f3fbdfc24379282a1f6f8.webp
+  objectKey: seed/content-v3/assets/shiboyugi-laugh-before-danger-cover-c07af8bc0ca369bc6a10a0f404903e7d94977de33d3f3fbdfc24379282a1f6f8.webp
   sha256: c07af8bc0ca369bc6a10a0f404903e7d94977de33d3f3fbdfc24379282a1f6f8
   contentType: image/webp
   width: 1200
@@ -160,7 +160,7 @@
   usageNote: 屏幕特写与幽鬼背影并置，呈现被观看者和观看设备之间的距离
   sourceFile: shiboyugi-screen.png
   file: inline/shiboyugi-mineral-eyes.webp
-  objectKey: seed/content-v3/inline/shiboyugi-mineral-eyes/beb8c385ff455caafbc5f130d2275f09d54d6ecfe945448f030d64fa0be2fec6.webp
+  objectKey: seed/content-v3/assets/shiboyugi-mineral-eyes-beb8c385ff455caafbc5f130d2275f09d54d6ecfe945448f030d64fa0be2fec6.webp
   sha256: beb8c385ff455caafbc5f130d2275f09d54d6ecfe945448f030d64fa0be2fec6
   contentType: image/webp
   width: 1600
@@ -174,7 +174,7 @@
   usageNote: 保留黄色空间里没有五官的彩色人物，支撑文章对抽象剪影的讨论
   sourceFile: shiboyugi-silhouettes.jpg
   file: inline/shiboyugi-color-silhouettes.webp
-  objectKey: seed/content-v3/inline/shiboyugi-color-silhouettes/7f36268f19b896d8fc85c9b02e023f793f101561c4522b00e315b322f20c4247.webp
+  objectKey: seed/content-v3/assets/shiboyugi-color-silhouettes-7f36268f19b896d8fc85c9b02e023f793f101561c4522b00e315b322f20c4247.webp
   sha256: 7f36268f19b896d8fc85c9b02e023f793f101561c4522b00e315b322f20c4247
   contentType: image/webp
   width: 1038
@@ -188,7 +188,7 @@
   usageNote: 第四话官方场面图，直树在低处被两双手拉住，作为压迫感封面
   sourceFile: takopi-fourth-04.jpg
   file: covers/takopi-sorry-is-not-enough.webp
-  objectKey: seed/content-v3/covers/takopi-sorry-is-not-enough/133f0afdb5d459a6d30c3ab96ba1dea391ac9298585a24609b73112dedd23eb2.webp
+  objectKey: seed/content-v3/assets/takopi-sorry-is-not-enough-cover-133f0afdb5d459a6d30c3ab96ba1dea391ac9298585a24609b73112dedd23eb2.webp
   sha256: 133f0afdb5d459a6d30c3ab96ba1dea391ac9298585a24609b73112dedd23eb2
   contentType: image/webp
   width: 1200
@@ -202,7 +202,7 @@
   usageNote: 第四话官方场面图，用鱼眼般变形的教室呈现直树无法处理外界声音
   sourceFile: takopi-fourth-02.jpg
   file: inline/takopi-naoki-shock.webp
-  objectKey: seed/content-v3/inline/takopi-naoki-shock/0737e5fbd9a9c147e4fca59b0bdb3f8a8264677d23f795c6e3b32e92038883dc.webp
+  objectKey: seed/content-v3/assets/takopi-naoki-shock-0737e5fbd9a9c147e4fca59b0bdb3f8a8264677d23f795c6e3b32e92038883dc.webp
   sha256: 0737e5fbd9a9c147e4fca59b0bdb3f8a8264677d23f795c6e3b32e92038883dc
   contentType: image/webp
   width: 1000
@@ -216,7 +216,7 @@
   usageNote: 第四话官方场面图，保留润也疲惫而克制的近景
   sourceFile: takopi-fourth-01.jpg
   file: inline/takopi-brothers-distance.webp
-  objectKey: seed/content-v3/inline/takopi-brothers-distance/51e4015b0ea31d1285e127bf62752fff72e20c9316ac481087dc3728d16ac13e.webp
+  objectKey: seed/content-v3/assets/takopi-brothers-distance-51e4015b0ea31d1285e127bf62752fff72e20c9316ac481087dc3728d16ac13e.webp
   sha256: 51e4015b0ea31d1285e127bf62752fff72e20c9316ac481087dc3728d16ac13e
   contentType: image/webp
   width: 1000
@@ -230,7 +230,7 @@
   usageNote: 第二季制作图与成片人物拼贴，作为文章讨论范围扩大的封面
   sourceFile: kisekoi-season2-header.png
   file: covers/kisekoi-season-two-beyond-cute.webp
-  objectKey: seed/content-v3/covers/kisekoi-season-two-beyond-cute/ff67a573328fb4f03a5d6f8c0f2c2aee5435024d2820731facdbdfa4f6cf52da.webp
+  objectKey: seed/content-v3/assets/kisekoi-season-two-beyond-cute-cover-ff67a573328fb4f03a5d6f8c0f2c2aee5435024d2820731facdbdfa4f6cf52da.webp
   sha256: ff67a573328fb4f03a5d6f8c0f2c2aee5435024d2820731facdbdfa4f6cf52da
   contentType: image/webp
   width: 1200
@@ -244,7 +244,7 @@
   usageNote: 海梦与朋友们的线稿和成片并置，支撑万圣节群体空间段落
   sourceFile: kisekoi-season2-group.png
   file: inline/kisekoi-halloween.webp
-  objectKey: seed/content-v3/inline/kisekoi-halloween/9800d5cd00c5e25997ab079a9700c91ffa66b078db7f378216920bf5065fb118.webp
+  objectKey: seed/content-v3/assets/kisekoi-halloween-9800d5cd00c5e25997ab079a9700c91ffa66b078db7f378216920bf5065fb118.webp
   sha256: 9800d5cd00c5e25997ab079a9700c91ffa66b078db7f378216920bf5065fb118
   contentType: image/webp
   width: 1536
@@ -258,7 +258,7 @@
   usageNote: 礼服俯视设计图，支撑衣服、身体与角色完成方式的讨论
   sourceFile: kisekoi-season2-dress.png
   file: inline/kisekoi-amane-crossplay.webp
-  objectKey: seed/content-v3/inline/kisekoi-amane-crossplay/8b99bc8fff067b2b94d2a316c2669f654aebbd4729cf4aa15c2b38279228a6e5.webp
+  objectKey: seed/content-v3/assets/kisekoi-amane-crossplay-8b99bc8fff067b2b94d2a316c2669f654aebbd4729cf4aa15c2b38279228a6e5.webp
   sha256: 8b99bc8fff067b2b94d2a316c2669f654aebbd4729cf4aa15c2b38279228a6e5
   contentType: image/webp
   width: 1600
@@ -272,7 +272,7 @@
   usageNote: 五条与海梦的制作过程拼贴，呈现同好活动中不同分工和注意力
   sourceFile: kisekoi-season2-collage.png
   file: inline/kisekoi-cosplay-community.webp
-  objectKey: seed/content-v3/inline/kisekoi-cosplay-community/99f2c3d583a051b3d87048aafbc6bf23022814e20d80f0889dbcb2752ed4a589.webp
+  objectKey: seed/content-v3/assets/kisekoi-cosplay-community-99f2c3d583a051b3d87048aafbc6bf23022814e20d80f0889dbcb2752ed4a589.webp
   sha256: 99f2c3d583a051b3d87048aafbc6bf23022814e20d80f0889dbcb2752ed4a589
   contentType: image/webp
   width: 1536
@@ -286,7 +286,7 @@
   usageNote: 两只手在明亮草地上靠近，作为藤野与京本关系的安静封面
   sourceFile: look-back-header.jpg
   file: covers/look-back-lines-in-the-rain.webp
-  objectKey: seed/content-v3/covers/look-back-lines-in-the-rain/c5f4048b2a9fa459a4a8b49ff9ba696ea5c624ab77a892b54ca5fb0b78d7d330.webp
+  objectKey: seed/content-v3/assets/look-back-lines-in-the-rain-cover-c5f4048b2a9fa459a4a8b49ff9ba696ea5c624ab77a892b54ca5fb0b78d7d330.webp
   sha256: c5f4048b2a9fa459a4a8b49ff9ba696ea5c624ab77a892b54ca5fb0b78d7d330
   contentType: image/webp
   width: 1200
@@ -300,7 +300,7 @@
   usageNote: 两张靠近但线条气质不同的脸，支撑文章对不统一轮廓的讨论
   sourceFile: look-back-close.jpg
   file: inline/look-back-running-lines.webp
-  objectKey: seed/content-v3/inline/look-back-running-lines/9bb025f7e0207b9b0ad1e6195066997a7fc4d5f2aa0f820395badbe6c30e95f0.webp
+  objectKey: seed/content-v3/assets/look-back-running-lines-9bb025f7e0207b9b0ad1e6195066997a7fc4d5f2aa0f820395badbe6c30e95f0.webp
   sha256: 9bb025f7e0207b9b0ad1e6195066997a7fc4d5f2aa0f820395badbe6c30e95f0
   contentType: image/webp
   width: 1600
@@ -314,7 +314,7 @@
   usageNote: 俯视凌乱画桌，呈现重复劳动与纸面时间
   sourceFile: look-back-desk.jpeg
   file: inline/look-back-drawing-room.webp
-  objectKey: seed/content-v3/inline/look-back-drawing-room/b7bd7091347c07c9580e4f9a67f2d61f85af7f291c6d6c05875a35d09d391110.webp
+  objectKey: seed/content-v3/assets/look-back-drawing-room-b7bd7091347c07c9580e4f9a67f2d61f85af7f291c6d6c05875a35d09d391110.webp
   sha256: b7bd7091347c07c9580e4f9a67f2d61f85af7f291c6d6c05875a35d09d391110
   contentType: image/webp
   width: 1600
@@ -328,7 +328,7 @@
   usageNote: 京本独坐在堆满画册的房间，支撑房门内另一种时间的段落
   sourceFile: look-back-room.jpg
   file: inline/look-back-fujino-kyomoto.webp
-  objectKey: seed/content-v3/inline/look-back-fujino-kyomoto/587d007206f51d07c04b6bc87e5f0f7413747df367649c734f947dea409e47b0.webp
+  objectKey: seed/content-v3/assets/look-back-fujino-kyomoto-587d007206f51d07c04b6bc87e5f0f7413747df367649c734f947dea409e47b0.webp
   sha256: 587d007206f51d07c04b6bc87e5f0f7413747df367649c734f947dea409e47b0
   contentType: image/webp
   width: 1600
@@ -342,7 +342,7 @@
   usageNote: 第六话官方场面图，一里背着吉他望向天空，作为走出房间的封面
   sourceFile: bocchi-episode6-bocchi.jpg
   file: covers/bocchi-song-leaves-the-room.webp
-  objectKey: seed/content-v3/covers/bocchi-song-leaves-the-room/2f60b2a0c7d5b3af313dd20e56e618434eeb9f4450b45fa10e28d5e5ef41447f.webp
+  objectKey: seed/content-v3/assets/bocchi-song-leaves-the-room-cover-2f60b2a0c7d5b3af313dd20e56e618434eeb9f4450b45fa10e28d5e5ef41447f.webp
   sha256: 2f60b2a0c7d5b3af313dd20e56e618434eeb9f4450b45fa10e28d5e5ef41447f
   contentType: image/webp
   width: 1200
@@ -356,7 +356,7 @@
   usageNote: 第六话官方场面图，一里与广井坐在街边，支撑第一次面对路人的段落
   sourceFile: bocchi-episode6-hiroi.jpg
   file: inline/bocchi-street-one-eye.webp
-  objectKey: seed/content-v3/inline/bocchi-street-one-eye/3ae865740dc309faffb2243696e1b2b78bdbc80ecfb551cf850a6260ec784729.webp
+  objectKey: seed/content-v3/assets/bocchi-street-one-eye-3ae865740dc309faffb2243696e1b2b78bdbc80ecfb551cf850a6260ec784729.webp
   sha256: 3ae865740dc309faffb2243696e1b2b78bdbc80ecfb551cf850a6260ec784729
   contentType: image/webp
   width: 1200
@@ -370,7 +370,7 @@
   usageNote: 第八话官方场面图，舞台灯下的虹夏呈现首次正式演出的紧张
   sourceFile: bocchi-episode8-drums.jpg
   file: inline/bocchi-first-concert.webp
-  objectKey: seed/content-v3/inline/bocchi-first-concert/09985c5dda47858c06037be3fb92872de9bc0f08df9e5a2f31b372255e898fa4.webp
+  objectKey: seed/content-v3/assets/bocchi-first-concert-09985c5dda47858c06037be3fb92872de9bc0f08df9e5a2f31b372255e898fa4.webp
   sha256: 09985c5dda47858c06037be3fb92872de9bc0f08df9e5a2f31b372255e898fa4
   contentType: image/webp
   width: 1200
@@ -384,7 +384,7 @@
   usageNote: 第八话官方场面图，喜多在麦克风前看向队友，支撑彼此听见的段落
   sourceFile: bocchi-episode8-kita.jpg
   file: inline/bocchi-kita-support.webp
-  objectKey: seed/content-v3/inline/bocchi-kita-support/ff41ddfc22d945d4a6dd83ad80c21f5af6af8a9c19b0245efa1b39a366f216cc.webp
+  objectKey: seed/content-v3/assets/bocchi-kita-support-ff41ddfc22d945d4a6dd83ad80c21f5af6af8a9c19b0245efa1b39a366f216cc.webp
   sha256: ff41ddfc22d945d4a6dd83ad80c21f5af6af8a9c19b0245efa1b39a366f216cc
   contentType: image/webp
   width: 1200
@@ -398,7 +398,7 @@
   usageNote: 第五话空教堂全景，裁切为深蓝色氛围封面
   sourceFile: bebop-episode5-church.jpg
   file: covers/cowboy-bebop-ballad-of-fallen-angels-rain.webp
-  objectKey: seed/content-v3/covers/cowboy-bebop-ballad-of-fallen-angels-rain/4596324618aa448bbb6a58eea4e1d88026bac00b4fa62ab21072db6b672448d3.webp
+  objectKey: seed/content-v3/assets/cowboy-bebop-ballad-cover-4596324618aa448bbb6a58eea4e1d88026bac00b4fa62ab21072db6b672448d3.webp
   sha256: 4596324618aa448bbb6a58eea4e1d88026bac00b4fa62ab21072db6b672448d3
   contentType: image/webp
   width: 1200
@@ -412,7 +412,7 @@
   usageNote: 第五话原始动画帧，斯派克与维icious被巨大彩窗和高位构图分开
   sourceFile: bebop-episode5-window.jpg
   file: inline/cowboy-bebop-rain-cathedral.webp
-  objectKey: seed/content-v3/inline/cowboy-bebop-rain-cathedral/ff450ee9ead53e538c1d1c9f83879a3a8cb85c2f600b26819ba10e4d493aaa3c.webp
+  objectKey: seed/content-v3/assets/cowboy-bebop-rain-cathedral-ff450ee9ead53e538c1d1c9f83879a3a8cb85c2f600b26819ba10e4d493aaa3c.webp
   sha256: ff450ee9ead53e538c1d1c9f83879a3a8cb85c2f600b26819ba10e4d493aaa3c
   contentType: image/webp
   width: 640
@@ -426,7 +426,7 @@
   usageNote: 第五话原始动画帧，两人在彩窗前近距离僵持，放在下坠段落之前
   sourceFile: bebop-episode5-standoff.jpg
   file: inline/cowboy-bebop-green-bird-fall.webp
-  objectKey: seed/content-v3/inline/cowboy-bebop-green-bird-fall/b3218bc48654456c0fc0e16deaf9407581ccc424756b259b7be174bc657131bb.webp
+  objectKey: seed/content-v3/assets/cowboy-bebop-green-bird-fall-b3218bc48654456c0fc0e16deaf9407581ccc424756b259b7be174bc657131bb.webp
   sha256: b3218bc48654456c0fc0e16deaf9407581ccc424756b259b7be174bc657131bb
   contentType: image/webp
   width: 640
@@ -440,7 +440,7 @@
   usageNote: 配合竹本泉角色原案与设计方法分析
   sourceFile: apohotel2-actual.jpg
   file: inline/apocalypse-hotel-takemoto-designs.webp
-  objectKey: seed/content-v3/inline/apocalypse-hotel-takemoto-designs/b033aa6045d4885c45c01f58da0428a8faa76cf3fe8ef25f694dd01082e02883.webp
+  objectKey: seed/content-v3/assets/apocalypse-hotel-takemoto-designs-b033aa6045d4885c45c01f58da0428a8faa76cf3fe8ef25f694dd01082e02883.webp
   sha256: b033aa6045d4885c45c01f58da0428a8faa76cf3fe8ef25f694dd01082e02883
   contentType: image/webp
   width: 1280
@@ -454,7 +454,7 @@
   usageNote: 配合彩色废墟与银河楼完整立面分析
   sourceFile: apohotel3-actual.jpg
   file: inline/apocalypse-hotel-gingarou.webp
-  objectKey: seed/content-v3/inline/apocalypse-hotel-gingarou/2121e4fd4f14c7fd2150c6efe3c49090b44cb9fdf2a41d0fb65c8ccb62dfeca8.webp
+  objectKey: seed/content-v3/assets/apocalypse-hotel-gingarou-2121e4fd4f14c7fd2150c6efe3c49090b44cb9fdf2a41d0fb65c8ccb62dfeca8.webp
   sha256: 2121e4fd4f14c7fd2150c6efe3c49090b44cb9fdf2a41d0fb65c8ccb62dfeca8
   contentType: image/webp
   width: 1600
@@ -468,7 +468,7 @@
   usageNote: 配合本田光平对植物、阳光与城市废墟的处理分析
   sourceFile: apohotel4-actual.jpg
   file: inline/apocalypse-hotel-overgrown-city.webp
-  objectKey: seed/content-v3/inline/apocalypse-hotel-overgrown-city/bde287c162683abe506f040775a0918d4b9118b5b5f436ddd4a7b70adb862402.webp
+  objectKey: seed/content-v3/assets/apocalypse-hotel-overgrown-city-bde287c162683abe506f040775a0918d4b9118b5b5f436ddd4a7b70adb862402.webp
   sha256: bde287c162683abe506f040775a0918d4b9118b5b5f436ddd4a7b70adb862402
   contentType: image/webp
   width: 1600
@@ -482,7 +482,7 @@
   usageNote: 配合第十一集八千代独坐树荫下圆桌旁的休息画面
   sourceFile: apocalypse-hotel-tree-rest-actual.jpg
   file: inline/apocalypse-hotel-tree-rest.webp
-  objectKey: seed/content-v3/inline/apocalypse-hotel-tree-rest/0cb1dfd9c19b4226a05b87164a1cb8527bbcc87d8f5d52d6ff86f1cb9cdedea4.webp
+  objectKey: seed/content-v3/assets/apocalypse-hotel-tree-rest-0cb1dfd9c19b4226a05b87164a1cb8527bbcc87d8f5d52d6ff86f1cb9cdedea4.webp
   sha256: 0cb1dfd9c19b4226a05b87164a1cb8527bbcc87d8f5d52d6ff86f1cb9cdedea4
   contentType: image/webp
   width: 849
@@ -496,7 +496,7 @@
   usageNote: 与结尾同一树林画面组成前后对照，呈现旧机器人被时间覆盖
   sourceFile: tree-before-actual.jpg
   file: inline/apocalypse-hotel-tree-before.webp
-  objectKey: seed/content-v3/inline/apocalypse-hotel-tree-before/64afd61a9c990274e6a0f4dca414664a2d1c52ebff00e5c6fb3a50db8f15a21b.webp
+  objectKey: seed/content-v3/assets/apocalypse-hotel-tree-before-64afd61a9c990274e6a0f4dca414664a2d1c52ebff00e5c6fb3a50db8f15a21b.webp
   sha256: 64afd61a9c990274e6a0f4dca414664a2d1c52ebff00e5c6fb3a50db8f15a21b
   contentType: image/webp
   width: 1600
@@ -510,7 +510,7 @@
   usageNote: 与旧机器人画面组成前后对照，呈现后来者与被传递的记忆
   sourceFile: tree-after-actual.jpg
   file: inline/apocalypse-hotel-tree-after.webp
-  objectKey: seed/content-v3/inline/apocalypse-hotel-tree-after/389a97940a7040636f2e24c310780013733e2726d3a3bd8713fd793f9a719d97.webp
+  objectKey: seed/content-v3/assets/apocalypse-hotel-tree-after-389a97940a7040636f2e24c310780013733e2726d3a3bd8713fd793f9a719d97.webp
   sha256: 389a97940a7040636f2e24c310780013733e2726d3a3bd8713fd793f9a719d97
   contentType: image/webp
   width: 1600
@@ -524,7 +524,7 @@
   usageNote: 封面以神社入口两端的人物和明暗分区呈现摄影中的距离与对峙，横向裁切后在卡片尺寸仍可辨识
   sourceFile: oomf1.jpg
   file: covers/shoushimin-cinematography.webp
-  objectKey: seed/content-v3/covers/shoushimin-cinematography/bfb6cbe09f72573dc6ac4304bb230f300f1441da3c574ae254c778ad70ae2ea4.webp
+  objectKey: seed/content-v3/assets/shoushimin-cinematography-cover-bfb6cbe09f72573dc6ac4304bb230f300f1441da3c574ae254c778ad70ae2ea4.webp
   sha256: bfb6cbe09f72573dc6ac4304bb230f300f1441da3c574ae254c778ad70ae2ea4
   contentType: image/webp
   width: 1200
@@ -538,7 +538,7 @@
   usageNote: 正文展示小佐内被严格置于中央、背景主动失焦的端正构图
   sourceFile: normal-oomf.jpeg
   file: inline/shoushimin-centered-frame.webp
-  objectKey: seed/content-v3/inline/shoushimin-centered-frame/6426f9e904771b2ec826f109dd75136059b339ae404599c9016c47eb1525fbc7.webp
+  objectKey: seed/content-v3/assets/shoushimin-centered-frame-6426f9e904771b2ec826f109dd75136059b339ae404599c9016c47eb1525fbc7.webp
   sha256: 6426f9e904771b2ec826f109dd75136059b339ae404599c9016c47eb1525fbc7
   contentType: image/webp
   width: 1600
@@ -552,7 +552,7 @@
   usageNote: 正文以多格旋转画面展示房间结构、人物位置和观看距离如何制造不安
   sourceFile: kanbe-walls.jpg
   file: inline/shoushimin-room-distance.webp
-  objectKey: seed/content-v3/inline/shoushimin-room-distance/0b45188426ca09553d34559b088ad32fd67ab0fce14a289982b2c8948673fe29.webp
+  objectKey: seed/content-v3/assets/shoushimin-room-distance-0b45188426ca09553d34559b088ad32fd67ab0fce14a289982b2c8948673fe29.webp
   sha256: 0b45188426ca09553d34559b088ad32fd67ab0fce14a289982b2c8948673fe29
   contentType: image/webp
   width: 1600
@@ -566,7 +566,7 @@
   usageNote: 正文结尾用小鸠平静闭眼的近景讨论“普通”如何成为需要维持的表面姿态；画面含作品原有英文字幕
   sourceFile: oomf-final.jpg
   file: inline/shoushimin-ordinary-mask.webp
-  objectKey: seed/content-v3/inline/shoushimin-ordinary-mask/cc43d053f161254ccbe7e728bfe1fdb05e1408ef6aba42c36e133c604b154dbb.webp
+  objectKey: seed/content-v3/assets/shoushimin-ordinary-mask-cc43d053f161254ccbe7e728bfe1fdb05e1408ef6aba42c36e133c604b154dbb.webp
   sha256: cc43d053f161254ccbe7e728bfe1fdb05e1408ef6aba42c36e133c604b154dbb
   contentType: image/webp
   width: 1600
@@ -580,7 +580,7 @@
   usageNote: 封面以迎面冲刺、透视夸张的手臂和速度线突出一百米奔跑的压迫感
   sourceFile: hyaku1.jpg
   file: covers/hyakuemu-one-hundred-meters.webp
-  objectKey: seed/content-v3/covers/hyakuemu-one-hundred-meters/afc5d6804ca1952c25c6292a865a2dca05e28fea83a0edd4d97a3e9d2f1cada3.webp
+  objectKey: seed/content-v3/assets/hyakuemu-one-hundred-meters-cover-afc5d6804ca1952c25c6292a865a2dca05e28fea83a0edd4d97a3e9d2f1cada3.webp
   sha256: afc5d6804ca1952c25c6292a865a2dca05e28fea83a0edd4d97a3e9d2f1cada3
   contentType: image/webp
   width: 1200
@@ -594,7 +594,7 @@
   usageNote: 正文以高亮近景中的轮廓线、排线和色块支撑身体感与线条密度分析
   sourceFile: hyaku2.jpg
   file: inline/hyakuemu-body-lines.webp
-  objectKey: seed/content-v3/inline/hyakuemu-body-lines/f12de0707689440832ea5ed3ac24d3c699bda39ac55e6a64b4a9f0f66c1ba9ad.webp
+  objectKey: seed/content-v3/assets/hyakuemu-body-lines-f12de0707689440832ea5ed3ac24d3c699bda39ac55e6a64b4a9f0f66c1ba9ad.webp
   sha256: f12de0707689440832ea5ed3ac24d3c699bda39ac55e6a64b4a9f0f66c1ba9ad
   contentType: image/webp
   width: 1600
@@ -608,7 +608,7 @@
   usageNote: 正文以奔跑者前倾的身体、飞散头发和运动失焦背景支撑冲刺速度与身体负荷分析
   sourceFile: hyaku5.jpg
   file: inline/hyakuemu-rain-sprint.webp
-  objectKey: seed/content-v3/inline/hyakuemu-rain-sprint/cd8f3eb1b15400e3d2c627b41e15f2cd567e266c98e150f96084cfa15ddfe9a4.webp
+  objectKey: seed/content-v3/assets/hyakuemu-rain-sprint-cd8f3eb1b15400e3d2c627b41e15f2cd567e266c98e150f96084cfa15ddfe9a4.webp
   sha256: cd8f3eb1b15400e3d2c627b41e15f2cd567e266c98e150f96084cfa15ddfe9a4
   contentType: image/webp
   width: 1600
@@ -622,7 +622,7 @@
   usageNote: 正文结尾以逼近终点的正面近景支撑胜负、执念与最后一次回望
   sourceFile: hyaku9.jpg
   file: inline/hyakuemu-finish.webp
-  objectKey: seed/content-v3/inline/hyakuemu-finish/c2b5104016d08b2cb173452a455a2338ea87721564ca9bf8ebc35f7655273350.webp
+  objectKey: seed/content-v3/assets/hyakuemu-finish-c2b5104016d08b2cb173452a455a2338ea87721564ca9bf8ebc35f7655273350.webp
   sha256: c2b5104016d08b2cb173452a455a2338ea87721564ca9bf8ebc35f7655273350
   contentType: image/webp
   width: 1600
@@ -636,7 +636,7 @@
   usageNote: 封面以城市街道纵深、行走人物和四周冲击线形成一座持续运动的城，而非头像硬裁
   sourceFile: city-war.jpg
   file: covers/city-restless-town.webp
-  objectKey: seed/content-v3/covers/city-restless-town/7630bc1e073593306e32fda0b24a6d51a54297b2af030ce7b7a91e372e4ea37b.webp
+  objectKey: seed/content-v3/assets/city-restless-town-cover-7630bc1e073593306e32fda0b24a6d51a54297b2af030ce7b7a91e372e4ea37b.webp
   sha256: 7630bc1e073593306e32fda0b24a6d51a54297b2af030ce7b7a91e372e4ea37b
   contentType: image/webp
   width: 1200
@@ -650,7 +650,7 @@
   usageNote: 正文以教育角式舞台、巨型标题字和并置角色展示喜剧冲击如何由画面层级共同完成
   sourceFile: city-riko.jpg
   file: inline/city-comedy-impact.webp
-  objectKey: seed/content-v3/inline/city-comedy-impact/cf2448b7ddfefcc021703cf3a7e8acb399a72a582d8793cc668fdb43e32d8c62.webp
+  objectKey: seed/content-v3/assets/city-comedy-impact-cf2448b7ddfefcc021703cf3a7e8acb399a72a582d8793cc668fdb43e32d8c62.webp
   sha256: cf2448b7ddfefcc021703cf3a7e8acb399a72a582d8793cc668fdb43e32d8c62
   contentType: image/webp
   width: 1600
@@ -664,7 +664,7 @@
   usageNote: 正文以弹簧字形、跨区群像和被拉伸的版面展示空间如何服从喜剧节拍
   sourceFile: city-springs.jpeg
   file: inline/city-space-elasticity.webp
-  objectKey: seed/content-v3/inline/city-space-elasticity/b0de14d745c6e6528d380756175eac2294bfe0aebf4b59fff8d92514a34a7fd7.webp
+  objectKey: seed/content-v3/assets/city-space-elasticity-b0de14d745c6e6528d380756175eac2294bfe0aebf4b59fff8d92514a34a7fd7.webp
   sha256: b0de14d745c6e6528d380756175eac2294bfe0aebf4b59fff8d92514a34a7fd7
   contentType: image/webp
   width: 1429
@@ -678,7 +678,7 @@
   usageNote: 正文以统一粗线条串联建筑、人物群像和弹簧状动势
   sourceFile: city-end.jpg
   file: inline/city-line-language.webp
-  objectKey: seed/content-v3/inline/city-line-language/c3a0bfe51c3d034336826a2eb34cb45aa4ab912b73ae8f8698e9e129158a547c.webp
+  objectKey: seed/content-v3/assets/city-line-language-c3a0bfe51c3d034336826a2eb34cb45aa4ab912b73ae8f8698e9e129158a547c.webp
   sha256: c3a0bfe51c3d034336826a2eb34cb45aa4ab912b73ae8f8698e9e129158a547c
   contentType: image/webp
   width: 1600
@@ -692,7 +692,7 @@
   usageNote: 封面展示祭典烟火下相拥的两人剪影，人物与大团金色烟火在小尺寸仍可分辨
   sourceFile: reze-cover.jpg
   file: covers/chainsaw-man-reze-rain.webp
-  objectKey: seed/content-v3/covers/chainsaw-man-reze-rain/2aeb9d729dcfee9fd33764fb59633c81248e76fb965fc08392d864dbb6058863.webp
+  objectKey: seed/content-v3/assets/chainsaw-man-reze-rain-cover-2aeb9d729dcfee9fd33764fb59633c81248e76fb965fc08392d864dbb6058863.webp
   sha256: 2aeb9d729dcfee9fd33764fb59633c81248e76fb965fc08392d864dbb6058863
   contentType: image/webp
   width: 1200
@@ -706,7 +706,7 @@
   usageNote: 正文展示蕾塞站在带雨痕的玻璃前手持白花的明亮近景
   sourceFile: reze-gerbera.jpg
   file: inline/chainsaw-man-reze-gerbera.webp
-  objectKey: seed/content-v3/inline/chainsaw-man-reze-gerbera/aba3316209208e8e63006d275f85d13c3e0d39ae654250dc520d123d49f2ba36.webp
+  objectKey: seed/content-v3/assets/chainsaw-man-reze-gerbera-aba3316209208e8e63006d275f85d13c3e0d39ae654250dc520d123d49f2ba36.webp
   sha256: aba3316209208e8e63006d275f85d13c3e0d39ae654250dc520d123d49f2ba36
   contentType: image/webp
   width: 1600
@@ -720,7 +720,7 @@
   usageNote: 正文展示空站台上蕾塞独自站在列车旁，红色花朵成为冷色画面里的视觉焦点
   sourceFile: reze-platform.jpg
   file: inline/chainsaw-man-reze-platform.webp
-  objectKey: seed/content-v3/inline/chainsaw-man-reze-platform/f1212695d575e7a5c8c6e315b5a9a63902588c12d92e4ca73d23a18d81157d6c.webp
+  objectKey: seed/content-v3/assets/chainsaw-man-reze-platform-f1212695d575e7a5c8c6e315b5a9a63902588c12d92e4ca73d23a18d81157d6c.webp
   sha256: f1212695d575e7a5c8c6e315b5a9a63902588c12d92e4ca73d23a18d81157d6c
   contentType: image/webp
   width: 1600
@@ -734,7 +734,7 @@
   usageNote: 正文以暮色海岸中相距很远的两个人和大片深色沙地呈现战后的短暂停顿，保留来源画面的宽银幕黑边
   sourceFile: reze-seaside.jpg
   file: inline/chainsaw-man-reze-seaside.webp
-  objectKey: seed/content-v3/inline/chainsaw-man-reze-seaside/11303bd0639c83dc66f245a90e8dcc8ea63b08c26241388e227a7898eafbcc15.webp
+  objectKey: seed/content-v3/assets/chainsaw-man-reze-seaside-11303bd0639c83dc66f245a90e8dcc8ea63b08c26241388e227a7898eafbcc15.webp
   sha256: 11303bd0639c83dc66f245a90e8dcc8ea63b08c26241388e227a7898eafbcc15
   contentType: image/webp
   width: 1600
@@ -748,7 +748,7 @@
   usageNote: 封面以紫蓝星空下握手的两人剪影突出人物与天空的关系，缩小后手势和轮廓仍清楚
   sourceFile: orb-cover.jpg
   file: covers/orb-unpersuaded-people.webp
-  objectKey: seed/content-v3/covers/orb-unpersuaded-people/56fbe4677b02faaf45089eee143aeb26caeebc5c6bb60067931d9f7392686c84.webp
+  objectKey: seed/content-v3/assets/orb-unpersuaded-people-cover-56fbe4677b02faaf45089eee143aeb26caeebc5c6bb60067931d9f7392686c84.webp
   sha256: 56fbe4677b02faaf45089eee143aeb26caeebc5c6bb60067931d9f7392686c84
   contentType: image/webp
   width: 1200
@@ -762,7 +762,7 @@
   usageNote: 正文以终局燃烧教堂中再次出现的拉法尔形象，对应诺瓦克迟到的动摇
   sourceFile: orb-voices.jpg
   file: inline/orb-voices.webp
-  objectKey: seed/content-v3/inline/orb-voices/98835b367f191b58b2159536f3c368028a7d108ed0ce340fa95e934c1b7cb2f8.webp
+  objectKey: seed/content-v3/assets/orb-voices-98835b367f191b58b2159536f3c368028a7d108ed0ce340fa95e934c1b7cb2f8.webp
   sha256: 98835b367f191b58b2159536f3c368028a7d108ed0ce340fa95e934c1b7cb2f8
   contentType: image/webp
   width: 1600
@@ -776,7 +776,7 @@
   usageNote: 正文明确以带有英文对白气泡的原作黑白星空画格，对照动画如何用声音与停顿控制同类仰望时刻
   sourceFile: orb-night-sky.jpeg
   file: inline/orb-night-sky.webp
-  objectKey: seed/content-v3/inline/orb-night-sky/8286a1b78bcc59ef3c96d4bf12ff96f4061ff1143bb518c81dadb64ee2e49666.webp
+  objectKey: seed/content-v3/assets/orb-night-sky-8286a1b78bcc59ef3c96d4bf12ff96f4061ff1143bb518c81dadb64ee2e49666.webp
   sha256: 8286a1b78bcc59ef3c96d4bf12ff96f4061ff1143bb518c81dadb64ee2e49666
   contentType: image/webp
   width: 1600
@@ -790,7 +790,7 @@
   usageNote: 正文展示三名披风人物在暮色中行进，对应脚步、赶路和短暂沉默
   sourceFile: orb-procession.jpg
   file: inline/orb-procession.webp
-  objectKey: seed/content-v3/inline/orb-procession/9ca3130872e8f63c1b0e90c672c6efb149c6bd1f20344d5516f2e2e50e0b51bf.webp
+  objectKey: seed/content-v3/assets/orb-procession-9ca3130872e8f63c1b0e90c672c6efb149c6bd1f20344d5516f2e2e50e0b51bf.webp
   sha256: 9ca3130872e8f63c1b0e90c672c6efb149c6bd1f20344d5516f2e2e50e0b51bf
   contentType: image/webp
   width: 1600
@@ -804,7 +804,7 @@
   usageNote: 真实 GitHub Issue 页面截图，经裁切保留标题、Closed、bug 与 milestone 3.33.0；隐藏作者用户名与头像，移除无关导航，作为技术复盘封面
   sourceFile: redisson-5972-issue-crop.png
   file: covers/redisson-moved-timeout.webp
-  objectKey: seed/content-v3/covers/redisson-moved-timeout/12308622cd68e9df19eeb4f637cba2ad69e104ea388a3b94a6582618fc1cd8c1.webp
+  objectKey: seed/content-v3/assets/redisson-moved-timeout-cover-12308622cd68e9df19eeb4f637cba2ad69e104ea388a3b94a6582618fc1cd8c1.webp
   sha256: 12308622cd68e9df19eeb4f637cba2ad69e104ea388a3b94a6582618fc1cd8c1
   contentType: image/webp
   width: 1200
@@ -818,7 +818,7 @@
   usageNote: 根据公开 Issue 日志按原顺序排版的终端样式图片，地址一致脱敏；未执行本地命令，也不表示完成本地复现
   sourceFile: redisson-5972-log-headless.png
   file: inline/redisson-moved-log.webp
-  objectKey: seed/content-v3/inline/redisson-moved-log/459b6810720d5551526eb8bd5ffff5da3728d5135b19a1ae9502cb2a353417ca.webp
+  objectKey: seed/content-v3/assets/redisson-moved-log-459b6810720d5551526eb8bd5ffff5da3728d5135b19a1ae9502cb2a353417ca.webp
   sha256: 459b6810720d5551526eb8bd5ffff5da3728d5135b19a1ae9502cb2a353417ca
   contentType: image/webp
   width: 1600
@@ -832,7 +832,7 @@
   usageNote: 根据 Issue 后续 DEBUG 所示 failback、旧slot映射与 MOVED 现象绘制，仅表达 client topology、旧映射目标（当前副本）、MOVED、当前主节点关系；不是实测集群拓扑，NodeSource addr 对应 MOVED 重定向目标
   sourceFile: redisson-5972-route-headless.png
   file: inline/redisson-cluster-route.webp
-  objectKey: seed/content-v3/inline/redisson-cluster-route/7513fb0e5b19bfe196664fd1df8017814828543220e9f5743a144f2d9ed42dcc.webp
+  objectKey: seed/content-v3/assets/redisson-cluster-route-7513fb0e5b19bfe196664fd1df8017814828543220e9f5743a144f2d9ed42dcc.webp
   sha256: 7513fb0e5b19bfe196664fd1df8017814828543220e9f5743a144f2d9ed42dcc
   contentType: image/webp
   width: 1600
@@ -846,7 +846,7 @@
   usageNote: 由 tracked results 动态生成实验摘要，展示两种方案的真实 Hit@1、MRR 与无模型边界；evidence：content/seed/content-v3/evidence/rag-chunk-size/experiment.py、content/seed/content-v3/evidence/rag-chunk-size/queries.json、content/seed/content-v3/evidence/rag-chunk-size/results.json、content/seed/content-v3/evidence/rag-chunk-size/visuals.html；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 a08dba095c004d57d2bbcf4b9115933925509d58c23ebce5c112d031fa2f1e7f；queries SHA-256 8e55530e8411a02cb4f54365ed418b00e45b978be711907bc0c4d0f48826e83e；result SHA-256 cac91a73bbf5f37fd2a8a259834e7100f4ec02bf5c6485a3fd7efa52a2bd4f62；visuals SHA-256 3c2285e3c224317fa993cfcbc67daef41c788f4b22a5119f9fb7ef00dc6d4178
   sourceFile: rag-chunk-size-regression.png
   file: covers/rag-chunk-size-regression.webp
-  objectKey: seed/content-v3/covers/rag-chunk-size-regression/d4a46b854b535bf5e4d34a3b252ccc9dc6538ca0000e405b03439a53e87f3f35.webp
+  objectKey: seed/content-v3/assets/rag-chunk-size-regression-cover-d4a46b854b535bf5e4d34a3b252ccc9dc6538ca0000e405b03439a53e87f3f35.webp
   sha256: d4a46b854b535bf5e4d34a3b252ccc9dc6538ca0000e405b03439a53e87f3f35
   contentType: image/webp
   width: 1200
@@ -860,7 +860,7 @@
   usageNote: 由 tracked results 动态生成逐问题表，展示 top 1、answer-bearing relevant rank、Hit@1 与 MRR；evidence：content/seed/content-v3/evidence/rag-chunk-size/experiment.py、content/seed/content-v3/evidence/rag-chunk-size/queries.json、content/seed/content-v3/evidence/rag-chunk-size/results.json、content/seed/content-v3/evidence/rag-chunk-size/visuals.html；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 a08dba095c004d57d2bbcf4b9115933925509d58c23ebce5c112d031fa2f1e7f；queries SHA-256 8e55530e8411a02cb4f54365ed418b00e45b978be711907bc0c4d0f48826e83e；result SHA-256 cac91a73bbf5f37fd2a8a259834e7100f4ec02bf5c6485a3fd7efa52a2bd4f62；visuals SHA-256 3c2285e3c224317fa993cfcbc67daef41c788f4b22a5119f9fb7ef00dc6d4178
   sourceFile: rag-recall-table.png
   file: inline/rag-recall-table.webp
-  objectKey: seed/content-v3/inline/rag-recall-table/060f368f7fcec1c965b5d6f17ac59b95e961af0439affd408ccd7d95805c4f2e.webp
+  objectKey: seed/content-v3/assets/rag-recall-table-060f368f7fcec1c965b5d6f17ac59b95e961af0439affd408ccd7d95805c4f2e.webp
   sha256: 060f368f7fcec1c965b5d6f17ac59b95e961af0439affd408ccd7d95805c4f2e
   contentType: image/webp
   width: 1600
@@ -874,7 +874,7 @@
   usageNote: 由 tracked results 动态生成缓存查询排名变化，展示 top 3 并追加 answer-bearing relevant 第 4 行与 score；evidence：content/seed/content-v3/evidence/rag-chunk-size/experiment.py、content/seed/content-v3/evidence/rag-chunk-size/queries.json、content/seed/content-v3/evidence/rag-chunk-size/results.json、content/seed/content-v3/evidence/rag-chunk-size/visuals.html；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 a08dba095c004d57d2bbcf4b9115933925509d58c23ebce5c112d031fa2f1e7f；queries SHA-256 8e55530e8411a02cb4f54365ed418b00e45b978be711907bc0c4d0f48826e83e；result SHA-256 cac91a73bbf5f37fd2a8a259834e7100f4ec02bf5c6485a3fd7efa52a2bd4f62；visuals SHA-256 3c2285e3c224317fa993cfcbc67daef41c788f4b22a5119f9fb7ef00dc6d4178
   sourceFile: rag-failed-query.png
   file: inline/rag-failed-query.webp
-  objectKey: seed/content-v3/inline/rag-failed-query/f39188592ec53cd91132acac39dc5feb8403b80fe8b093faf8094bdeba8314c4.webp
+  objectKey: seed/content-v3/assets/rag-failed-query-f39188592ec53cd91132acac39dc5feb8403b80fe8b093faf8094bdeba8314c4.webp
   sha256: f39188592ec53cd91132acac39dc5feb8403b80fe8b093faf8094bdeba8314c4
   contentType: image/webp
   width: 1600
@@ -888,7 +888,7 @@
   usageNote: 官网宽屏主视觉完整缩放为封面，保留日文标题、廻屋伸手与黄蓝像素构图，不包含剧情谜底
   sourceFile: hero-bg-w.jpg
   file: covers/urban-myth-search-box.webp
-  objectKey: seed/content-v3/covers/urban-myth-search-box/d8b8332407c3778657e1737e7deb3f84f20db7bde37a5f729a6098720d0b1b9f.webp
+  objectKey: seed/content-v3/assets/urban-myth-search-box-cover-d8b8332407c3778657e1737e7deb3f84f20db7bde37a5f729a6098720d0b1b9f.webp
   sha256: d8b8332407c3778657e1737e7deb3f84f20db7bde37a5f729a6098720d0b1b9f
   contentType: image/webp
   width: 1200
@@ -902,7 +902,7 @@
   usageNote: Steam官方简体中文截图，完整呈现关键词搜索栏、社交媒体帖子、证据计数和角色反应，支撑时间线调查的操作感
   sourceFile: steam-2.jpg
   file: inline/urban-myth-search-interface.webp
-  objectKey: seed/content-v3/inline/urban-myth-search-interface/87088e153f0fb81107dd1c80398e0d5f85cd938ee36af2cdbe7a52219d0b51f6.webp
+  objectKey: seed/content-v3/assets/urban-myth-search-interface-87088e153f0fb81107dd1c80398e0d5f85cd938ee36af2cdbe7a52219d0b51f6.webp
   sha256: 87088e153f0fb81107dd1c80398e0d5f85cd938ee36af2cdbe7a52219d0b51f6
   contentType: image/webp
   width: 1600
@@ -916,7 +916,7 @@
   usageNote: Steam官方简体中文截图，呈现廻屋向福来蓟说明都市传说解体中心的性质，背景保留中心室内的小像素人物
   sourceFile: steam-1.jpg
   file: inline/urban-myth-dialogue.webp
-  objectKey: seed/content-v3/inline/urban-myth-dialogue/15865a5f37d3801dffa8b08c702481c97981c6130b9f04234fed8e2c74daa605.webp
+  objectKey: seed/content-v3/assets/urban-myth-dialogue-15865a5f37d3801dffa8b08c702481c97981c6130b9f04234fed8e2c74daa605.webp
   sha256: 15865a5f37d3801dffa8b08c702481c97981c6130b9f04234fed8e2c74daa605
   contentType: image/webp
   width: 1600
@@ -930,7 +930,7 @@
   usageNote: Steam官方简体中文截图，呈现凌乱房间中的现场调查、红色异常痕迹与关系人的惊吓反应，不泄露案件解答
   sourceFile: steam-3.jpg
   file: inline/urban-myth-investigation.webp
-  objectKey: seed/content-v3/inline/urban-myth-investigation/7690ee7b292e4df766951d350380daa3c07924c070ea9e51fea3bc70685057b8.webp
+  objectKey: seed/content-v3/assets/urban-myth-investigation-7690ee7b292e4df766951d350380daa3c07924c070ea9e51fea3bc70685057b8.webp
   sha256: 7690ee7b292e4df766951d350380daa3c07924c070ea9e51fea3bc70685057b8
   contentType: image/webp
   width: 1600
@@ -944,7 +944,7 @@
   usageNote: 由跟踪的Java实验results.json生成，裁切展示无界队列与有界队列下真实线程数和排队数
   sourceFile: thread-pool-queue-chart.png
   file: covers/thread-pool-queue-before-max.webp
-  objectKey: seed/content-v3/covers/thread-pool-queue-before-max/f21197d69ddad1e56ca4ee270c965dd5cd112a586ea7e48d939b0b5bb3ec0367.webp
+  objectKey: seed/content-v3/assets/thread-pool-queue-before-max-cover-f21197d69ddad1e56ca4ee270c965dd5cd112a586ea7e48d939b0b5bb3ec0367.webp
   sha256: f21197d69ddad1e56ca4ee270c965dd5cd112a586ea7e48d939b0b5bb3ec0367
   contentType: image/webp
   width: 1200
@@ -958,7 +958,7 @@
   usageNote: 完整实验对比图；40个闩锁任务下无界队列线程4排队36，有界容量8时线程32排队8
   sourceFile: thread-pool-queue-chart.png
   file: inline/thread-pool-queue-chart.webp
-  objectKey: seed/content-v3/inline/thread-pool-queue-chart/4ccc31068c6885738cb44770741d0986f34f9f70812d33fdfa1704f9d8667636.webp
+  objectKey: seed/content-v3/assets/thread-pool-queue-chart-4ccc31068c6885738cb44770741d0986f34f9f70812d33fdfa1704f9d8667636.webp
   sha256: 4ccc31068c6885738cb44770741d0986f34f9f70812d33fdfa1704f9d8667636
   contentType: image/webp
   width: 1400
@@ -972,7 +972,7 @@
   usageNote: 由24条冻结提示的逐题结果生成，封面裁切保留长短说明正确数对比
   sourceFile: agent-tool-description-chart.png
   file: covers/agent-tool-description-ablation.webp
-  objectKey: seed/content-v3/covers/agent-tool-description-ablation/c2479d0513f131ffd9e8c76a269c1edc9a72cd29855dcf6ab389793f86baad08.webp
+  objectKey: seed/content-v3/assets/agent-tool-description-ablation-cover-c2479d0513f131ffd9e8c76a269c1edc9a72cd29855dcf6ab389793f86baad08.webp
   sha256: c2479d0513f131ffd9e8c76a269c1edc9a72cd29855dcf6ab389793f86baad08
   contentType: image/webp
   width: 1200
@@ -986,7 +986,7 @@
   usageNote: 完整对比图，明确标注为确定性词面选择器而非LLM基准；长说明错误12次，短说明错误1次
   sourceFile: agent-tool-description-chart.png
   file: inline/agent-tool-description-chart.webp
-  objectKey: seed/content-v3/inline/agent-tool-description-chart/44768eddae509b7ca1d9e781ce5ac8009725840d4d62e40b517525b621d899a3.webp
+  objectKey: seed/content-v3/assets/agent-tool-description-chart-44768eddae509b7ca1d9e781ce5ac8009725840d4d62e40b517525b621d899a3.webp
   sha256: 44768eddae509b7ca1d9e781ce5ac8009725840d4d62e40b517525b621d899a3
   contentType: image/webp
   width: 1400
@@ -1000,7 +1000,7 @@
   usageNote: Steam官方截图，雾中两个人与悬浮对话形成远距离氛围，作为文章封面
   sourceFile: 1000xresist-mist.jpg
   file: covers/1000xresist-words-arrive-late.webp
-  objectKey: seed/content-v3/covers/1000xresist-words-arrive-late/4fa040c68e500e7fecf53e15a6780df3ecc4361b021d30d18d089bfefb0f5350.webp
+  objectKey: seed/content-v3/assets/1000xresist-words-arrive-late-cover-4fa040c68e500e7fecf53e15a6780df3ecc4361b021d30d18d089bfefb0f5350.webp
   sha256: 4fa040c68e500e7fecf53e15a6780df3ecc4361b021d30d18d089bfefb0f5350
   contentType: image/webp
   width: 1200
@@ -1014,7 +1014,7 @@
   usageNote: Steam官方截图，Watcher走在白色记忆结构中，呈现场景和时间互相接续
   sourceFile: 1000xresist-memory.jpg
   file: inline/1000xresist-memory-walk.webp
-  objectKey: seed/content-v3/inline/1000xresist-memory-walk/7c90f2ca2815659b80fc56e5ed95fe37a74daab5a93718ac1a3026f819f03f67.webp
+  objectKey: seed/content-v3/assets/1000xresist-memory-walk-7c90f2ca2815659b80fc56e5ed95fe37a74daab5a93718ac1a3026f819f03f67.webp
   sha256: 7c90f2ca2815659b80fc56e5ed95fe37a74daab5a93718ac1a3026f819f03f67
   contentType: image/webp
   width: 1600
@@ -1028,7 +1028,7 @@
   usageNote: Steam官方截图，同脸角色在记忆场景中并肩，支撑克隆姐妹段落
   sourceFile: 1000xresist-sisters.jpg
   file: inline/1000xresist-sisters.webp
-  objectKey: seed/content-v3/inline/1000xresist-sisters/e0e689f64925cd94f8c4f2ac4c6b23868d1734fd8109500bc1db070fd900d18b.webp
+  objectKey: seed/content-v3/assets/1000xresist-sisters-e0e689f64925cd94f8c4f2ac4c6b23868d1734fd8109500bc1db070fd900d18b.webp
   sha256: e0e689f64925cd94f8c4f2ac4c6b23868d1734fd8109500bc1db070fd900d18b
   contentType: image/webp
   width: 1600
@@ -1042,7 +1042,7 @@
   usageNote: Steam官方截图，红色房间中角色与旧形象并置，支撑选择仍携带继承的段落
   sourceFile: 1000xresist-red-room.jpg
   file: inline/1000xresist-red-room.webp
-  objectKey: seed/content-v3/inline/1000xresist-red-room/02e4a2e52da4b39e076a7de39cce4b24750e4ac8ec7ffcdbdc6a48e08ba7a08c.webp
+  objectKey: seed/content-v3/assets/1000xresist-red-room-02e4a2e52da4b39e076a7de39cce4b24750e4ac8ec7ffcdbdc6a48e08ba7a08c.webp
   sha256: 02e4a2e52da4b39e076a7de39cce4b24750e4ac8ec7ffcdbdc6a48e08ba7a08c
   contentType: image/webp
   width: 1600
@@ -1056,7 +1056,7 @@
   usageNote: Acediscovery的东京夜街照片，裁切成保留黑色天空与发光文字的封面；开放许可见文件页
   sourceFile: night-sign-cover.jpg
   file: covers/night-sign-exposure.webp
-  objectKey: seed/content-v3/covers/night-sign-exposure/996d6cb7e3eacad7dea26851c0729c3c205ceed3cbead9f778f2214b1f93aedf.webp
+  objectKey: seed/content-v3/assets/night-sign-exposure-cover-996d6cb7e3eacad7dea26851c0729c3c205ceed3cbead9f778f2214b1f93aedf.webp
   sha256: 996d6cb7e3eacad7dea26851c0729c3c205ceed3cbead9f778f2214b1f93aedf
   contentType: image/webp
   width: 1200
@@ -1070,7 +1070,7 @@
   usageNote: Basile Morin的CC BY-SA 4.0照片，展示ISO50、0.2秒、f7.1下招牌与车流的高光层次
   sourceFile: night-sign-highlights.jpg
   file: inline/night-sign-highlights.webp
-  objectKey: seed/content-v3/inline/night-sign-highlights/11dc74ae80a79d8636cdf6de871edddf79f9dd9d0c5dce4f87dbc7038b26325e.webp
+  objectKey: seed/content-v3/assets/night-sign-highlights-11dc74ae80a79d8636cdf6de871edddf79f9dd9d0c5dce4f87dbc7038b26325e.webp
   sha256: 11dc74ae80a79d8636cdf6de871edddf79f9dd9d0c5dce4f87dbc7038b26325e
   contentType: image/webp
   width: 1600
@@ -1084,7 +1084,7 @@
   usageNote: Basile Morin的CC BY-SA 4.0照片，人流轻微拖影而灯牌文字仍清楚，支撑快门取舍段落
   sourceFile: night-sign-shutter.jpg
   file: inline/night-sign-shutter.webp
-  objectKey: seed/content-v3/inline/night-sign-shutter/cea436c9b4ffb413719406d7f9ffcba6dd91cdfccccff284e614181e95e87a21.webp
+  objectKey: seed/content-v3/assets/night-sign-shutter-cea436c9b4ffb413719406d7f9ffcba6dd91cdfccccff284e614181e95e87a21.webp
   sha256: cea436c9b4ffb413719406d7f9ffcba6dd91cdfccccff284e614181e95e87a21
   contentType: image/webp
   width: 1600
@@ -1098,7 +1098,7 @@
   usageNote: Michael Reeve的竖幅夜街照片，展示不同灯牌冷暖与黑色间隙；许可见文件页
   sourceFile: night-sign-white-balance.jpg
   file: inline/night-sign-white-balance.webp
-  objectKey: seed/content-v3/inline/night-sign-white-balance/5d545abe3a7731ba5e200df87e8d9e02804ef7b6d4be232142412282fafcfa1e.webp
+  objectKey: seed/content-v3/assets/night-sign-white-balance-5d545abe3a7731ba5e200df87e8d9e02804ef7b6d4be232142412282fafcfa1e.webp
   sha256: 5d545abe3a7731ba5e200df87e8d9e02804ef7b6d4be232142412282fafcfa1e
   contentType: image/webp
   width: 500
@@ -1112,7 +1112,7 @@
   usageNote: 第七话官方剧照，爱罗倒下后桃与厄卡伦守在身边
   sourceFile: dandadan-cover.jpg
   file: covers/dandadan-fireworks-aira.webp
-  objectKey: seed/content-v3/covers/dandadan-fireworks-aira/890d75ed49046a60208872e04e74bfff5df26616440f9f15857a3770a70813ed.webp
+  objectKey: seed/content-v3/assets/dandadan-fireworks-cover-264c54c8a8ccd38312c133e37f74f1cf920b36019d16e2e7544a5f05f411502c.webp
   sha256: 264c54c8a8ccd38312c133e37f74f1cf920b36019d16e2e7544a5f05f411502c
   contentType: image/webp
   width: 1200
@@ -1126,7 +1126,7 @@
   usageNote: 第七话官方剧照，爱罗仰望杂技长发女
   sourceFile: dandadan-aira.jpg
   file: inline/dandadan-aira-face.webp
-  objectKey: seed/content-v3/inline/dandadan-aira-face/b60ec0f1dee435c57131f10b258213cda67b1d7da626cf4e27f0a9392f126f67.webp
+  objectKey: seed/content-v3/assets/dandadan-aira-face-2dfc52036c41c3378478e56df91965d6f6d82fef31e60ff8a9fcd5b4fa357dad.webp
   sha256: 2dfc52036c41c3378478e56df91965d6f6d82fef31e60ff8a9fcd5b4fa357dad
   contentType: image/webp
   width: 1600
@@ -1140,7 +1140,7 @@
   usageNote: 第七话官方剧照，粉色光线中的拥抱
   sourceFile: dandadan-silky.jpg
   file: inline/dandadan-silky-light.webp
-  objectKey: seed/content-v3/inline/dandadan-silky-light/d25a2effd2b2e163010c6c39e4e43ac4324b7b576c33c51e7a5210cb5a8915e3.webp
+  objectKey: seed/content-v3/assets/dandadan-silky-light-280cf267f3b38822c3e7dcea65680698cdf1ea25d5efb5d42099ace8cbd48a33.webp
   sha256: 280cf267f3b38822c3e7dcea65680698cdf1ea25d5efb5d42099ace8cbd48a33
   contentType: image/webp
   width: 1600
@@ -1154,7 +1154,7 @@
   usageNote: 第七话官方剧照，母亲在粉色光线中奔跑
   sourceFile: dandadan-mother.jpg
   file: inline/dandadan-mother-run.webp
-  objectKey: seed/content-v3/inline/dandadan-mother-run/25222cfa64776e0723cedaa2839371398a63ab4b2c58932a97d0bfe1d7bbdb2a.webp
+  objectKey: seed/content-v3/assets/dandadan-mother-run-a78399308d0197892e82d6eb2b6feccd40c62675133a35f00b533db82d80b39d.webp
   sha256: a78399308d0197892e82d6eb2b6feccd40c62675133a35f00b533db82d80b39d
   contentType: image/webp
   width: 1600
@@ -1168,7 +1168,7 @@
   usageNote: 第四话官方剧照，八奈见伏在桌面休息
   sourceFile: makeine-summer.jpg
   file: covers/makeine-anna-summer.webp
-  objectKey: seed/content-v3/covers/makeine-anna-summer/d83d74117ec2747398d4c29bd5ed00b7022cbc0b543f593bab8257cf66b02076.webp
+  objectKey: seed/content-v3/assets/makeine-summer-cover-6223e9cbb14748e89378b2f8ac55d786ca0bcdc04cd4dfc2301737015445491a.webp
   sha256: 6223e9cbb14748e89378b2f8ac55d786ca0bcdc04cd4dfc2301737015445491a
   contentType: image/webp
   width: 1200
@@ -1182,7 +1182,7 @@
   usageNote: 第一话官方剧照，八奈见在文艺部活动室笑着说话
   sourceFile: makeine-anna.jpg
   file: inline/makeine-anna-smile.webp
-  objectKey: seed/content-v3/inline/makeine-anna-smile/b98e0a4b312651cb6029d003296d576b180f162e30257838b6288e4be958c4a2.webp
+  objectKey: seed/content-v3/assets/makeine-anna-smile-66cd07b4576c3a3f2392644938198226c8dec0b30cf104cb5f82105775150bee.webp
   sha256: 66cd07b4576c3a3f2392644938198226c8dec0b30cf104cb5f82105775150bee
   contentType: image/webp
   width: 1200
@@ -1196,7 +1196,7 @@
   usageNote: 第一话官方剧照，夏日走廊里的八奈见
   sourceFile: makeine-table.jpg
   file: inline/makeine-corridor.webp
-  objectKey: seed/content-v3/inline/makeine-corridor/5037f3f175a68941a931b03a2f295d2dc3882cec1e4d09b19491445867438c9e.webp
+  objectKey: seed/content-v3/assets/makeine-corridor-412551facf97d1906ea9421bfded5941997e16120a8eda4b5a730187c05b97b6.webp
   sha256: 412551facf97d1906ea9421bfded5941997e16120a8eda4b5a730187c05b97b6
   contentType: image/webp
   width: 1200
@@ -1210,7 +1210,7 @@
   usageNote: 第四话官方剧照，八奈见站在楼梯间的强光里
   sourceFile: makeine-ep4-2.jpg
   file: inline/makeine-stairwell.webp
-  objectKey: seed/content-v3/inline/makeine-stairwell/98bf2cb3303fd3ac05c7d2b0d4552626808965e04699270f7da5592a8f3ef6d9.webp
+  objectKey: seed/content-v3/assets/makeine-stairwell-79f30afe50d243afd9fbe5ea09653d936361965f65ef7cb60088a44a4a455ef9.webp
   sha256: 79f30afe50d243afd9fbe5ea09653d936361965f65ef7cb60088a44a4a455ef9
   contentType: image/webp
   width: 1200
@@ -1224,7 +1224,7 @@
   usageNote: 第二十四话官方剧照，罗汉在帘幕后看见凤仙
   sourceFile: kusuriya-cover.jpg
   file: covers/kusuriya-maomao-after-crowd.webp
-  objectKey: seed/content-v3/covers/kusuriya-maomao-after-crowd/a8112539824845bb204b580456e281706537e01cbd42ad35afd549d42ee98e15.webp
+  objectKey: seed/content-v3/assets/kusuriya-crowd-cover-1ece875afeca007c708431ba854197a028118e5d9b8c6e7d7c55f358a24706fb.webp
   sha256: 1ece875afeca007c708431ba854197a028118e5d9b8c6e7d7c55f358a24706fb
   contentType: image/webp
   width: 1200
@@ -1238,7 +1238,7 @@
   usageNote: 第六话官方剧照，园游会中的梨花妃
   sourceFile: kusuriya-garden.jpg
   file: inline/kusuriya-garden-glance.webp
-  objectKey: seed/content-v3/inline/kusuriya-garden-glance/6ab73f144f577604cb23a0ad1b68ed6a976186288207fcabfc498c3301b948fd.webp
+  objectKey: seed/content-v3/assets/kusuriya-garden-glance-f2d8c0025eabe4f108a1401f4417bf1b5d1c6b078380a6f60c62bd56f24f0f91.webp
   sha256: f2d8c0025eabe4f108a1401f4417bf1b5d1c6b078380a6f60c62bd56f24f0f91
   contentType: image/webp
   width: 1440
@@ -1252,7 +1252,7 @@
   usageNote: 第六话官方剧照，猫猫试毒后与高顺交谈
   sourceFile: kusuriya-poison.jpg
   file: inline/kusuriya-poison-taste.webp
-  objectKey: seed/content-v3/inline/kusuriya-poison-taste/d0b6fbcba47d1e99017b6a903b74bd8a19e6444da7426bea408b85d1ec4f7662.webp
+  objectKey: seed/content-v3/assets/kusuriya-poison-taste-80b61244235bd6a7d42eda948eb2974d6ee0872d74f17adb8840699c1ebe5cff.webp
   sha256: 80b61244235bd6a7d42eda948eb2974d6ee0872d74f17adb8840699c1ebe5cff
   contentType: image/webp
   width: 1440
@@ -1266,7 +1266,7 @@
   usageNote: 第二十四话官方剧照，帘幕后的人被暗处包围
   sourceFile: kusuriya-wall.jpg
   file: inline/kusuriya-curtain.webp
-  objectKey: seed/content-v3/inline/kusuriya-curtain/fa64c9a0214348b4decfb314dcee1e59870671cada4481d67ccf6ec89bb8396b.webp
+  objectKey: seed/content-v3/assets/kusuriya-curtain-09ad36640bab07c284c0a85513e8e7558e5979977dbded89331562f2c9852a71.webp
   sha256: 09ad36640bab07c284c0a85513e8e7558e5979977dbded89331562f2c9852a71
   contentType: image/webp
   width: 1440
@@ -1280,7 +1280,7 @@
   usageNote: 最终话官方剧照，全国大赛前的北宇治成员
   sourceFile: eupho-cover.webp
   file: covers/euphonium-kitauji-will-not-wait.webp
-  objectKey: seed/content-v3/covers/euphonium-kitauji-will-not-wait/83959b9d244624706021bbc845f5d74350714c5e36d87b7035f8c1a985494731.webp
+  objectKey: seed/content-v3/assets/eupho-kitauji-cover-f7b7297e6eb062e3ec0477e6475808b05ad584d90ab29732ec20a35239db817b.webp
   sha256: f7b7297e6eb062e3ec0477e6475808b05ad584d90ab29732ec20a35239db817b
   contentType: image/webp
   width: 1200
@@ -1294,7 +1294,7 @@
   usageNote: 第十二话官方剧照，最终试奏前的真由
   sourceFile: eupho-audition.webp
   file: inline/eupho-audition-light.webp
-  objectKey: seed/content-v3/inline/eupho-audition-light/eb136b4a62a2201396e5e370958a0a6ee54bad30b63f7a2f2eaa05904686d0ee.webp
+  objectKey: seed/content-v3/assets/eupho-audition-light-ec9c3176d47cff5a259e0e76841695b3f18d3b329ce2a6e70d73499e7bed6d05.webp
   sha256: ec9c3176d47cff5a259e0e76841695b3f18d3b329ce2a6e70d73499e7bed6d05
   contentType: image/webp
   width: 900
@@ -1308,7 +1308,7 @@
   usageNote: 第十二话官方剧照，北宇治成员等待试奏结果
   sourceFile: eupho-kumiko.webp
   file: inline/eupho-listening-row.webp
-  objectKey: seed/content-v3/inline/eupho-listening-row/6b0b679c5f894e152843d9ad142a052f382c7541d3af552d51cdc21b64d2bcab.webp
+  objectKey: seed/content-v3/assets/eupho-listening-row-2fb030c213aceabbea414e867148408e5bcf6927ce5b8f7eb00f9e3232c93231.webp
   sha256: 2fb030c213aceabbea414e867148408e5bcf6927ce5b8f7eb00f9e3232c93231
   contentType: image/webp
   width: 900
@@ -1322,7 +1322,7 @@
   usageNote: 最终话官方剧照，比赛结束后的拥抱
   sourceFile: eupho-stage.webp
   file: inline/eupho-embrace.webp
-  objectKey: seed/content-v3/inline/eupho-embrace/e2fb6ba3764453d401b06b500b3953200447558f1e595d61e9e283282110cb9b.webp
+  objectKey: seed/content-v3/assets/eupho-embrace-783e98327d7e60dd18b259b747b7aed41ada6449871fab7b9b0cfa2699ab4ccb.webp
   sha256: 783e98327d7e60dd18b259b747b7aed41ada6449871fab7b9b0cfa2699ab4ccb
   contentType: image/webp
   width: 900
@@ -1336,7 +1336,7 @@
   usageNote: 三人乐队与彩色纹样同框的宣传画面
   sourceFile: kiminoiro-cover.jpg
   file: covers/kimi-no-iro-count-to-four.webp
-  objectKey: seed/content-v3/covers/kimi-no-iro-count-to-four/5da6b0f2ae199613eb7ee8d5fdbdf6956d827aac42e127314a7a1afee8ea6bd4.webp
+  objectKey: seed/content-v3/assets/kiminoiro-church-cover-f4918765aa6bfdc1b6134f0bdaed2c9f3b6511a1e890e20a2d9dd778437bfa00.webp
   sha256: f4918765aa6bfdc1b6134f0bdaed2c9f3b6511a1e890e20a2d9dd778437bfa00
   contentType: image/webp
   width: 1200
@@ -1350,7 +1350,7 @@
   usageNote: 柔和浅色中的日暮登子与教会学校意象
   sourceFile: kiminoiro-totsuko.jpg
   file: inline/kiminoiro-totsuko-color.webp
-  objectKey: seed/content-v3/inline/kiminoiro-totsuko-color/a022ccb90077f9f800aa156c4591071877b08532eca0f981734bd33ee4e8ea3d.webp
+  objectKey: seed/content-v3/assets/kiminoiro-totsuko-color-cb85e100e33f52bb5339527f8d127ea19eae942769e56394f1771496a542686f.webp
   sha256: cb85e100e33f52bb5339527f8d127ea19eae942769e56394f1771496a542686f
   contentType: image/webp
   width: 1600
@@ -1364,7 +1364,7 @@
   usageNote: 花朵与制作人员文字叠印的彩色画面
   sourceFile: kiminoiro-kimi.jpg
   file: inline/kiminoiro-flower-credit.webp
-  objectKey: seed/content-v3/inline/kiminoiro-flower-credit/28b79de3e8127c757a610d3c27708841b4ccfa116f886487b2c9e6f235264ab1.webp
+  objectKey: seed/content-v3/assets/kiminoiro-flower-credit-4beea11ef4ec94cfb9b2000d2d5f42721553cfc554cc68c94b8fe85f9d192921.webp
   sha256: 4beea11ef4ec94cfb9b2000d2d5f42721553cfc554cc68c94b8fe85f9d192921
   contentType: image/webp
   width: 1600
@@ -1378,7 +1378,7 @@
   usageNote: 剧场版官方主视觉，卖药郎被纹样与色块包围
   sourceFile: mononoke-cover.jpg
   file: covers/mononoke-movie-colors-in-ooku.webp
-  objectKey: seed/content-v3/covers/mononoke-movie-colors-in-ooku/02eeccaf29e75d25652e5a9e61a203b4fafcca5419a056b215b8d5abbb77b004.webp
+  objectKey: seed/content-v3/assets/mononoke-ooku-cover-a542c716d774633e3ebaedc65abe6f808efd3582c35424785d1c42189d8711cb.webp
   sha256: a542c716d774633e3ebaedc65abe6f808efd3582c35424785d1c42189d8711cb
   contentType: image/webp
   width: 1200
@@ -1392,7 +1392,7 @@
   usageNote: 官方画廊剧照，层层拉门与大奥空间
   sourceFile: mononoke-gallery1.jpg
   file: inline/mononoke-sliding-doors.webp
-  objectKey: seed/content-v3/inline/mononoke-sliding-doors/0579dd9186c23f25015b62538c2157b10dd8d52d3030c8f016565fbd0c414925.webp
+  objectKey: seed/content-v3/assets/mononoke-sliding-doors-af8adb518bfdb5968e43f57fb76e5a5c6b6b25bb0252a50dacf320f2bfb13505.webp
   sha256: af8adb518bfdb5968e43f57fb76e5a5c6b6b25bb0252a50dacf320f2bfb13505
   contentType: image/webp
   width: 1600
@@ -1406,7 +1406,7 @@
   usageNote: 官方画廊剧照，人物面部被纹理与色块切分
   sourceFile: mononoke-gallery2.jpg
   file: inline/mononoke-face-colors.webp
-  objectKey: seed/content-v3/inline/mononoke-face-colors/f07699be710944f97da2e6e0b7dfae6c08104f2186ae59b714597307c4b1448a.webp
+  objectKey: seed/content-v3/assets/mononoke-face-colors-f341456a708b766f20b8bbc78302550f6dd90bac276cb8979de4e267c95a632e.webp
   sha256: f341456a708b766f20b8bbc78302550f6dd90bac276cb8979de4e267c95a632e
   contentType: image/webp
   width: 1600
@@ -1420,7 +1420,7 @@
   usageNote: 官方画廊剧照，大奥席位像舞台一样展开
   sourceFile: mononoke-gallery3.jpg
   file: inline/mononoke-court.webp
-  objectKey: seed/content-v3/inline/mononoke-court/f03eb154d3262b6e18e17d483d3113109a9651258e9cb9f739cff0abe73215e4.webp
+  objectKey: seed/content-v3/assets/mononoke-court-45314d0b2c2df0faa47e00d9c73f3fd1d64c54103f4c5ce292be7be8a21ae69f.webp
   sha256: 45314d0b2c2df0faa47e00d9c73f3fd1d64c54103f4c5ce292be7be8a21ae69f
   contentType: image/webp
   width: 1600
@@ -1434,7 +1434,7 @@
   usageNote: 根据本地实验数据制作的技术文章封面
   sourceFile: python-async-cover.jpg
   file: covers/python-async-blocking-call.webp
-  objectKey: seed/content-v3/covers/python-async-blocking-call/e0ee101838486032a207de56ac7fabd5d41e14d92b3723b93ab999204c3d4878.webp
+  objectKey: seed/content-v3/assets/python-async-cover-44a4d0569dfa703dc35fb6fe2c90eab07b3838da83cef1c7e906283bb0a30046.webp
   sha256: 44a4d0569dfa703dc35fb6fe2c90eab07b3838da83cef1c7e906283bb0a30046
   contentType: image/webp
   width: 1200
@@ -1448,7 +1448,7 @@
   usageNote: 50个并发任务三种等待方式的五轮中位数图
   sourceFile: python-async-blocking-call-chart.png
   file: inline/python-async-chart.webp
-  objectKey: seed/content-v3/inline/python-async-chart/343f008b3e57f6bce6d49e24e2587c720fabea3b8c7470efb8827872ee86c546.webp
+  objectKey: seed/content-v3/assets/python-async-chart-1c7a9c6cea3833d687e8b809852bb60cd1757c88704708ebba97d1180e663b32.webp
   sha256: 1c7a9c6cea3833d687e8b809852bb60cd1757c88704708ebba97d1180e663b32
   contentType: image/webp
   width: 1400
@@ -1462,7 +1462,7 @@
   usageNote: 阻塞调用、协作等待和线程池转移的代码对照图
   sourceFile: python-async-code.jpg
   file: inline/python-async-code.webp
-  objectKey: seed/content-v3/inline/python-async-code/f95f15b343ebb70bdd6e103f24ce3b564e25fddba9753412cdddaac8fc6b6fb9.webp
+  objectKey: seed/content-v3/assets/python-async-code-8c9bb8929b9b4b3d2a5068ca1544eec293b102a4dafc1a53bc3f246f097cca24.webp
   sha256: 8c9bb8929b9b4b3d2a5068ca1544eec293b102a4dafc1a53bc3f246f097cca24
   contentType: image/webp
   width: 1500
@@ -1476,7 +1476,7 @@
   usageNote: 根据本地记忆冲突实验制作的技术文章封面
   sourceFile: agent-memory-cover.jpg
   file: covers/agent-memory-recency-experiment.webp
-  objectKey: seed/content-v3/covers/agent-memory-recency-experiment/2974ef89c61784e3af0b9d5e04be9349bdee9d4a0ab59344c91c36cb3059b36e.webp
+  objectKey: seed/content-v3/assets/agent-memory-cover-ee16e2eac0411bf1dd77f71c55a85f5fa1f68ff485af5b419f1b0094e35b5e0b.webp
   sha256: ee16e2eac0411bf1dd77f71c55a85f5fa1f68ff485af5b419f1b0094e35b5e0b
   contentType: image/webp
   width: 1200
@@ -1490,7 +1490,7 @@
   usageNote: 词面基线与新旧关系消解后正确数对照图
   sourceFile: agent-memory-recency-chart.png
   file: inline/agent-memory-recency-chart.webp
-  objectKey: seed/content-v3/inline/agent-memory-recency-chart/4dc7506b6af9c7a8d4ac9bbf3c2aeb39e70c65f95871e0dbb7b1fdc832dbdf49.webp
+  objectKey: seed/content-v3/assets/agent-memory-chart-1c6b713937186d911399586ec083454e9e9633c7e0f9d649cfcd20a8dd0b5013.webp
   sha256: 1c6b713937186d911399586ec083454e9e9633c7e0f9d649cfcd20a8dd0b5013
   contentType: image/webp
   width: 1400
@@ -1504,7 +1504,7 @@
   usageNote: 用supersedes关系过滤旧记忆的代码对照图
   sourceFile: agent-memory-code.jpg
   file: inline/agent-memory-recency-code.webp
-  objectKey: seed/content-v3/inline/agent-memory-recency-code/17d0cfb72c0db1c8ffa453265ec1314785928826284a522159215e4340a1038a.webp
+  objectKey: seed/content-v3/assets/agent-memory-code-92f0b6814e607dad52580044ae02496d6f4f837dcfee1171cddd6cd18776004e.webp
   sha256: 92f0b6814e607dad52580044ae02496d6f4f837dcfee1171cddd6cd18776004e
   contentType: image/webp
   width: 1500
@@ -1518,7 +1518,7 @@
   usageNote: Steam官方截图，黑白庄园外景
   sourceFile: lorelei-cover.jpg
   file: covers/lorelei-laser-eyes-paper-notes.webp
-  objectKey: seed/content-v3/covers/lorelei-laser-eyes-paper-notes/246851bab5509fb6a91c71f75d18ee79a879567265111e391104aa548482dccd.webp
+  objectKey: seed/content-v3/assets/lorelei-paper-cover-0dd687452f28da098e9fc4ce8ccb288fc12dbbb824d24f704ee46a2fd834c4a5.webp
   sha256: 0dd687452f28da098e9fc4ce8ccb288fc12dbbb824d24f704ee46a2fd834c4a5
   contentType: image/webp
   width: 1200
@@ -1532,7 +1532,7 @@
   usageNote: Steam官方截图，黑白空间中红色眼形结构
   sourceFile: lorelei-eye.jpg
   file: inline/lorelei-red-eye.webp
-  objectKey: seed/content-v3/inline/lorelei-red-eye/2ad2fa5c4f95664cf8613e309a5c518459c4b0c65592325455eec684785edf86.webp
+  objectKey: seed/content-v3/assets/lorelei-red-eye-c0ffa37fe7700108760f87dae8b51b94903b6dd6223fd1268ce748fa0f56658b.webp
   sha256: c0ffa37fe7700108760f87dae8b51b94903b6dd6223fd1268ce748fa0f56658b
   contentType: image/webp
   width: 1600
@@ -1546,7 +1546,7 @@
   usageNote: Steam官方截图，窗前人物与红色光点
   sourceFile: lorelei-room.jpg
   file: inline/lorelei-hotel-room.webp
-  objectKey: seed/content-v3/inline/lorelei-hotel-room/8c60862d8ca0b8656b7b92dd5f5945495da9316f41d3f44ab4074ef4b5f1f355.webp
+  objectKey: seed/content-v3/assets/lorelei-hotel-room-c5d229db6b4c48c0b79163baebb03f6cf9dd81e36d98ae7762ada21094b65930.webp
   sha256: c5d229db6b4c48c0b79163baebb03f6cf9dd81e36d98ae7762ada21094b65930
   contentType: image/webp
   width: 1600
@@ -1560,7 +1560,7 @@
   usageNote: Steam官方截图，黑白房间中的红色迷宫装置
   sourceFile: lorelei-maze.jpg
   file: inline/lorelei-red-maze.webp
-  objectKey: seed/content-v3/inline/lorelei-red-maze/151c96e69d5aeaf8dd23a78f9b9b7f6149e6c877d6f09eb211b4ad7eca5f7d91.webp
+  objectKey: seed/content-v3/assets/lorelei-red-maze-28d08250ed23b297792ae25c78c51cab72ee2fcce8d8337fa3b5f8c20bca0477.webp
   sha256: 28d08250ed23b297792ae25c78c51cab72ee2fcce8d8337fa3b5f8c20bca0477
   contentType: image/webp
   width: 1600
@@ -1574,7 +1574,7 @@
   usageNote: Ocdp发布的CC0咖喱饭照片，裁切作封面
   sourceFile: curry-cover.jpg
   file: covers/curry-four-portions-onion.webp
-  objectKey: seed/content-v3/covers/curry-four-portions-onion/2add485c0172ec87259a0b89ceb480636610b51c3e00211c58837ba60f24e654.webp
+  objectKey: seed/content-v3/assets/curry-four-cover-ac042adf214e4f92e6b485a98f9fb95860e38eed01065e9f1a36ce557da38850.webp
   sha256: ac042adf214e4f92e6b485a98f9fb95860e38eed01065e9f1a36ce557da38850
   contentType: image/webp
   width: 1200
@@ -1588,7 +1588,7 @@
   usageNote: HungryHuy的CC BY 2.0照片，切开的白洋葱与砧板
   sourceFile: curry-onions.jpg
   file: inline/curry-onion-board.webp
-  objectKey: seed/content-v3/inline/curry-onion-board/5225cf558348ecb6215133d43be6f04fa3af2c718a206bc2c20f695e998cec0a.webp
+  objectKey: seed/content-v3/assets/curry-onion-board-8b5d7437a59bdfcf13c74ef0b1b382e0cc566fb98f20a6b02110f4a2f650f93e.webp
   sha256: 8b5d7437a59bdfcf13c74ef0b1b382e0cc566fb98f20a6b02110f4a2f650f93e
   contentType: image/webp
   width: 1200
@@ -1602,7 +1602,7 @@
   usageNote: DocteurCosmos的CC BY-SA 3.0照片，锅里逐渐变软的洋葱
   sourceFile: curry-pan.jpg
   file: inline/curry-onion-pan.webp
-  objectKey: seed/content-v3/inline/curry-onion-pan/f9ca4f6ba9953f89e5572b767c80ca7ca910a9d643ee9abfa24b459e84fdd185.webp
+  objectKey: seed/content-v3/assets/curry-onion-pan-749a9ab35f4a3fd5dd155429765869f08f8a4ee8aacc63d76343b2b4262072ed.webp
   sha256: 749a9ab35f4a3fd5dd155429765869f08f8a4ee8aacc63d76343b2b4262072ed
   contentType: image/webp
   width: 1600
@@ -1616,9 +1616,541 @@
   usageNote: Veikko Mäkelä的CC BY-SA 4.0照片，锅中咖喱汤汁
   sourceFile: curry-pot.jpg
   file: inline/curry-pot.webp
-  objectKey: seed/content-v3/inline/curry-pot/f0ffe2200926071ea0c47fff51896f403c0f8bdf6ab039d89a66ee5515a5771e.webp
+  objectKey: seed/content-v3/assets/curry-pot-03f3e04778e55191ea59122cbfdb4137e11c8c0d0c784a49310b5d37f89288bb.webp
   sha256: 03f3e04778e55191ea59122cbfdb4137e11c8c0d0c784a49310b5d37f89288bb
   contentType: image/webp
   width: 1600
   height: 1200
   usage: inline
+- key: dungeon-red-dragon-cover
+  source: public-web
+  sourceUrl: https://delicious-in-dungeon.com/assets/top2/vis1.webp
+  sourcePageUrl: https://delicious-in-dungeon.com/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《迷宫饭》官方主视觉，裁切为封面
+  sourceFile: batch4/media/dungeon-cover.webp
+  file: covers/dungeon-meshi-red-dragon-meal.webp
+  objectKey: seed/content-v3/assets/dungeon-red-dragon-cover-644db5d45bd7f0b3cd71b59c23d0953445ef5c97912d382d0c845be55fe99796.webp
+  usage: cover
+  sha256: 644db5d45bd7f0b3cd71b59c23d0953445ef5c97912d382d0c845be55fe99796
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: dungeon-laios-thinking
+  source: public-web
+  sourceUrl: https://delicious-in-dungeon.com/assets/story/12/5.webp
+  sourcePageUrl: https://delicious-in-dungeon.com/story.html
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《迷宫饭》第12话官方剧照，莱欧斯停下来思考
+  sourceFile: batch4/media/dungeon-thinking.webp
+  file: inline/dungeon-laios-thinking.webp
+  objectKey: seed/content-v3/assets/dungeon-laios-thinking-4d32f096568dcd6770eb255b0f6f8fced536e565cfa7f90347868b8bdf67b09b.webp
+  usage: inline
+  sha256: 4d32f096568dcd6770eb255b0f6f8fced536e565cfa7f90347868b8bdf67b09b
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: dungeon-falin-awake
+  source: public-web
+  sourceUrl: https://delicious-in-dungeon.com/assets/story/13/1.webp
+  sourcePageUrl: https://delicious-in-dungeon.com/story.html
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《迷宫饭》第13话官方剧照，法琳醒来后的片刻
+  sourceFile: batch4/media/dungeon-falin.webp
+  file: inline/dungeon-falin-awake.webp
+  objectKey: seed/content-v3/assets/dungeon-falin-awake-5bf9d7c4e77b3309044c238db180a4d091735b4972360d144fa85d336315786a.webp
+  usage: inline
+  sha256: 5bf9d7c4e77b3309044c238db180a4d091735b4972360d144fa85d336315786a
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: dungeon-red-dragon-kitchen
+  source: public-web
+  sourceUrl: https://delicious-in-dungeon.com/assets/story/12/2.webp
+  sourcePageUrl: https://delicious-in-dungeon.com/story.html
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《迷宫饭》第12话官方剧照，红龙料理现场
+  sourceFile: batch4/media/dungeon-kitchen.webp
+  file: inline/dungeon-red-dragon-kitchen.webp
+  objectKey: seed/content-v3/assets/dungeon-red-dragon-kitchen-6fd16499e67388e048d506229b7ec21c551ce26039f8351300b0672296ca1ebe.webp
+  usage: inline
+  sha256: 6fd16499e67388e048d506229b7ec21c551ce26039f8351300b0672296ca1ebe
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: frieren-ten-years-cover
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  sourcePageUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《葬送的芙莉莲》制作文章题图，裁切为封面
+  sourceFile: batch4/media/frieren-cover.png
+  file: covers/frieren-ten-years-long.webp
+  objectKey: seed/content-v3/assets/frieren-ten-years-cover-b72b16eaca982ce0fec58d9980bcdec924c57f87ca071f541fdae7aea530617c.webp
+  usage: cover
+  sha256: b72b16eaca982ce0fec58d9980bcdec924c57f87ca071f541fdae7aea530617c
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: frieren-village-return
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  sourcePageUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 制作资料中的村镇背景，表现重返旧地
+  sourceFile: batch4/media/frieren-village.jpg
+  file: inline/frieren-village-return.webp
+  objectKey: seed/content-v3/assets/frieren-village-return-3fef003dd0ac0a0a50844f66098efa0026906b6dfdc408d61c874dcf50ceec9c.webp
+  usage: inline
+  sha256: 3fef003dd0ac0a0a50844f66098efa0026906b6dfdc408d61c874dcf50ceec9c
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: frieren-heiter-campfire
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  sourcePageUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 勇者一行围坐火边的制作资料图
+  sourceFile: batch4/media/frieren-heiter.jpg
+  file: inline/frieren-heiter-campfire.webp
+  objectKey: seed/content-v3/assets/frieren-heiter-campfire-161acc0f61239daec183afd2d621cceadbb43f8cb632849b0c696cd745b8b423.webp
+  usage: inline
+  sha256: 161acc0f61239daec183afd2d621cceadbb43f8cb632849b0c696cd745b8b423
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: frieren-himmel-memory
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  sourcePageUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 欣梅尔相关回忆镜头的制作资料图
+  sourceFile: batch4/media/frieren-object.jpg
+  file: inline/frieren-himmel-memory.webp
+  objectKey: seed/content-v3/assets/frieren-himmel-memory-f79e75e087f16c4551f43199cba63fe70e491d003127e03d0328bf3d89d8cdb0.webp
+  usage: inline
+  sha256: f79e75e087f16c4551f43199cba63fe70e491d003127e03d0328bf3d89d8cdb0
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: yubisaki-yuki-cover
+  source: public-web
+  sourceUrl: https://yubisaki-pr.com/
+  sourcePageUrl: https://yubisaki-pr.com/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《指尖相触，恋恋不舍》官方主视觉，裁切为封面
+  sourceFile: batch4/media/yubisaki-cover.jpg
+  file: covers/yubisaki-yuki-hands.webp
+  objectKey: seed/content-v3/assets/yubisaki-yuki-cover-3b9948db8516f2330574a05fef66a9a31a8683860e299a59f1c07a633c85e84f.webp
+  usage: cover
+  sha256: 3b9948db8516f2330574a05fef66a9a31a8683860e299a59f1c07a633c85e84f
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: yubisaki-hands
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2024/03/29/animating-a-silent-world-yubisaki-to-renren-a-sign-of-affection-production-notes/
+  sourcePageUrl: https://blog.sakugabooru.com/2024/03/29/animating-a-silent-world-yubisaki-to-renren-a-sign-of-affection-production-notes/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 手语表演的制作资料图
+  sourceFile: batch4/media/yubisaki-hands.jpg
+  file: inline/yubisaki-hands.webp
+  objectKey: seed/content-v3/assets/yubisaki-hands-99b157b7ed0052680e9f653e3dbf4bc45bc945f66207c3fb67859fcea93d7eee.webp
+  usage: inline
+  sha256: 99b157b7ed0052680e9f653e3dbf4bc45bc945f66207c3fb67859fcea93d7eee
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: yubisaki-gaze
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2024/03/29/animating-a-silent-world-yubisaki-to-renren-a-sign-of-affection-production-notes/
+  sourcePageUrl: https://blog.sakugabooru.com/2024/03/29/animating-a-silent-world-yubisaki-to-renren-a-sign-of-affection-production-notes/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 视线交流的制作资料图
+  sourceFile: batch4/media/yubisaki-gaze.jpg
+  file: inline/yubisaki-gaze.webp
+  objectKey: seed/content-v3/assets/yubisaki-gaze-4988ad0acddf6a0cfee45e4c2f2a59c5bfaa6b9ea8dee11cb71f48fedecbb4e6.webp
+  usage: inline
+  sha256: 4988ad0acddf6a0cfee45e4c2f2a59c5bfaa6b9ea8dee11cb71f48fedecbb4e6
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: yubisaki-phone-text
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2024/03/29/animating-a-silent-world-yubisaki-to-renren-a-sign-of-affection-production-notes/
+  sourcePageUrl: https://blog.sakugabooru.com/2024/03/29/animating-a-silent-world-yubisaki-to-renren-a-sign-of-affection-production-notes/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 手机文字交流的制作资料图
+  sourceFile: batch4/media/yubisaki-phone.jpg
+  file: inline/yubisaki-phone.webp
+  objectKey: seed/content-v3/assets/yubisaki-phone-text-67f150dd494deebf9f9502364c0a1c8ebea5fe23550e37ffcf877134d2eb719b.webp
+  usage: inline
+  sha256: 67f150dd494deebf9f9502364c0a1c8ebea5fe23550e37ffcf877134d2eb719b
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: girls-band-cry-nina-cover
+  source: public-web
+  sourceUrl: https://i.ytimg.com/vi/LU3f8ZGfd5g/maxresdefault.jpg
+  sourcePageUrl: https://www.youtube.com/watch?v=LU3f8ZGfd5g
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 官方音乐录像《爆ぜて咲く》缩略图，裁切为封面
+  sourceFile: batch4/media/girls-cover.jpg
+  file: covers/girls-band-cry-nina-song-not-round.webp
+  objectKey: seed/content-v3/assets/girls-band-cry-nina-cover-b01695e9a7be944c2cdf3f60ee7875d89d78ba892648631f583d11b5abd40625.webp
+  usage: cover
+  sha256: b01695e9a7be944c2cdf3f60ee7875d89d78ba892648631f583d11b5abd40625
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: girls-band-cry-argument
+  source: public-web
+  sourceUrl: https://girls-band-cry.com/wp-content/uploads/2024/05/GBC_EP8_02-1024x576.jpg
+  sourcePageUrl: https://girls-band-cry.com/story/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《Girls Band Cry》第8话官方剧照，争执后的拥抱
+  sourceFile: batch4/media/girls-argument.jpg
+  file: inline/girls-band-cry-argument.webp
+  objectKey: seed/content-v3/assets/girls-band-cry-argument-471b4c40d065e76f943d4504378d6093597d08f5a68864be97576d0337f91c2e.webp
+  usage: inline
+  sha256: 471b4c40d065e76f943d4504378d6093597d08f5a68864be97576d0337f91c2e
+  contentType: image/webp
+  width: 1024
+  height: 576
+- key: girls-band-cry-rehearsal
+  source: public-web
+  sourceUrl: https://girls-band-cry.com/wp-content/uploads/2024/05/GBC_EP6_02-1024x576.jpg
+  sourcePageUrl: https://girls-band-cry.com/story/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《Girls Band Cry》第6话官方排练剧照
+  sourceFile: batch4/media/girls-rehearsal.jpg
+  file: inline/girls-band-cry-rehearsal.webp
+  objectKey: seed/content-v3/assets/girls-band-cry-rehearsal-983c2bc3c8efdecf2846345780908fd0f25e9d833bb82adb1cf7ff5159aeed2f.webp
+  usage: inline
+  sha256: 983c2bc3c8efdecf2846345780908fd0f25e9d833bb82adb1cf7ff5159aeed2f
+  contentType: image/webp
+  width: 1024
+  height: 576
+- key: girls-band-cry-stage
+  source: public-web
+  sourceUrl: https://girls-band-cry.com/wp-content/uploads/2024/05/GBC_EP8_04-1024x576.jpg
+  sourcePageUrl: https://girls-band-cry.com/story/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《Girls Band Cry》第8话官方舞台剧照
+  sourceFile: batch4/media/girls-stage.jpg
+  file: inline/girls-band-cry-stage.webp
+  objectKey: seed/content-v3/assets/girls-band-cry-stage-5c0b711b8fffe8b671ee422e7939394dc7b9b6b9e688298070db4cb2d19ad344.webp
+  usage: inline
+  sha256: 5c0b711b8fffe8b671ee422e7939394dc7b9b6b9e688298070db4cb2d19ad344
+  contentType: image/webp
+  width: 1024
+  height: 576
+- key: gridman-universe-cover
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  sourcePageUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《古立特宇宙》制作回顾配图，裁切为封面
+  sourceFile: batch4/media/gridman-cover.jpg
+  file: covers/gridman-universe-yuta-confession.webp
+  objectKey: seed/content-v3/assets/gridman-universe-cover-47569103eafe6a19a4afa6b194b1929ce3255776c4f5ef52d9e65c1a20960bbf.webp
+  usage: cover
+  sha256: 47569103eafe6a19a4afa6b194b1929ce3255776c4f5ef52d9e65c1a20960bbf
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: gridman-yuta-rikka
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  sourcePageUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 响裕太日常表演的制作资料图
+  sourceFile: batch4/media/gridman-yuta.jpg
+  file: inline/gridman-yuta.webp
+  objectKey: seed/content-v3/assets/gridman-yuta-rikka-f2c27ea3111f8274cc07c49b240d9610b8c858faaaba47080c7602f812294fc4.webp
+  usage: inline
+  sha256: f2c27ea3111f8274cc07c49b240d9610b8c858faaaba47080c7602f812294fc4
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: gridman-two-groups
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  sourcePageUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 两部作品人物汇合的制作资料图
+  sourceFile: batch4/media/gridman-groups.jpg
+  file: inline/gridman-groups.webp
+  objectKey: seed/content-v3/assets/gridman-two-groups-133a933361b0fd966a349099495473027ec61da2ab0a46e29ffd3e52f9eab0c1.webp
+  usage: inline
+  sha256: 133a933361b0fd966a349099495473027ec61da2ab0a46e29ffd3e52f9eab0c1
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: gridman-confession
+  source: public-web
+  sourceUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  sourcePageUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 裕太与六花情感线的制作资料图
+  sourceFile: batch4/media/gridman-confession.jpg
+  file: inline/gridman-confession.webp
+  objectKey: seed/content-v3/assets/gridman-confession-5db99173c873cacdc1c104828c7d0dce80e19f9267f6031fa5ee41f8dc580970.webp
+  usage: inline
+  sha256: 5db99173c873cacdc1c104828c7d0dce80e19f9267f6031fa5ee41f8dc580970
+  contentType: image/webp
+  width: 1600
+  height: 450
+- key: boy-heron-tower-cover
+  source: public-web
+  sourceUrl: https://www.ghibli.jp/gallery/kimitachi034.jpg
+  sourcePageUrl: https://www.ghibli.jp/works/kimitachi/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 吉卜力官方画廊中的宅邸远景，裁切为安静封面
+  sourceFile: batch4/media/heron-cover.jpg
+  file: covers/boy-and-heron-heron-not-guide.webp
+  objectKey: seed/content-v3/assets/boy-heron-tower-cover-26b4dd3300e7f39777ea12914f84c115138d1906f8100f8f613ec53dc3f08e44.webp
+  usage: cover
+  sha256: 26b4dd3300e7f39777ea12914f84c115138d1906f8100f8f613ec53dc3f08e44
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: boy-heron-corridor
+  source: public-web
+  sourceUrl: https://www.ghibli.jp/gallery/kimitachi016.jpg
+  sourcePageUrl: https://www.ghibli.jp/works/kimitachi/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 吉卜力官方画廊中的宅邸内景
+  sourceFile: batch4/media/heron-corridor.jpg
+  file: inline/boy-heron-corridor.webp
+  objectKey: seed/content-v3/assets/boy-heron-corridor-c7653ed093aa396a71b58eb134e5ac4f1d732a7dadbc93424560b08d8d5eb12a.webp
+  usage: inline
+  sha256: c7653ed093aa396a71b58eb134e5ac4f1d732a7dadbc93424560b08d8d5eb12a
+  contentType: image/webp
+  width: 1600
+  height: 865
+- key: boy-heron-door
+  source: public-web
+  sourceUrl: https://www.ghibli.jp/gallery/kimitachi049.jpg
+  sourcePageUrl: https://www.ghibli.jp/works/kimitachi/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 吉卜力官方画廊中的门边人物剧照
+  sourceFile: batch4/media/heron-door.jpg
+  file: inline/boy-heron-door.webp
+  objectKey: seed/content-v3/assets/boy-heron-door-e00a12258fa5f36b918c6fa3d496545ff61e817f52f69c8da4e007fa79ed9aac.webp
+  usage: inline
+  sha256: e00a12258fa5f36b918c6fa3d496545ff61e817f52f69c8da4e007fa79ed9aac
+  contentType: image/webp
+  width: 1600
+  height: 865
+- key: boy-heron-mahito
+  source: public-web
+  sourceUrl: https://www.ghibli.jp/gallery/kimitachi031.jpg
+  sourcePageUrl: https://www.ghibli.jp/works/kimitachi/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 吉卜力官方画廊中的真人与苍鹭剧照
+  sourceFile: batch4/media/heron-mahito.jpg
+  file: inline/boy-heron-mahito.webp
+  objectKey: seed/content-v3/assets/boy-heron-mahito-4cac1b17a67d4f59080b926c68475553ef867dffc3f15c8471b80cd8afe290c1.webp
+  usage: inline
+  sha256: 4cac1b17a67d4f59080b926c68475553ef867dffc3f15c8471b80cd8afe290c1
+  contentType: image/webp
+  width: 1600
+  height: 865
+- key: spring-transaction-cover
+  source: local-experiment
+  sourceUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/spring-transaction-event-phases
+  sourcePageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/spring-transaction-event-phases
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 由本地 Spring 事务事件实验结果生成的封面
+  sourceFile: spring-transaction-event-phases-cover.png
+  file: covers/spring-transaction-event-phases.webp
+  objectKey: seed/content-v3/assets/spring-transaction-cover-390c52305c5445cb5f7957d275b52cad0dd3976e1eb068ce97d56c33b873d863.webp
+  usage: cover
+  sha256: 390c52305c5445cb5f7957d275b52cad0dd3976e1eb068ce97d56c33b873d863
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: spring-transaction-code
+  source: local-experiment
+  sourceUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/spring-transaction-event-phases
+  sourcePageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/spring-transaction-event-phases
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 由跟踪实验源码生成的关键代码图
+  sourceFile: spring-transaction-event-phases-code.png
+  file: inline/spring-transaction-code.webp
+  objectKey: seed/content-v3/assets/spring-transaction-code-ed2be79f5085bfc7f30647a085eaa0df7da0d77668a2825478eaa67d235bae65.webp
+  usage: inline
+  sha256: ed2be79f5085bfc7f30647a085eaa0df7da0d77668a2825478eaa67d235bae65
+  contentType: image/webp
+  width: 1500
+  height: 900
+- key: spring-transaction-timeline
+  source: local-experiment
+  sourceUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/spring-transaction-event-phases
+  sourcePageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/spring-transaction-event-phases
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 由提交和回滚两组实验结果生成的时间线
+  sourceFile: spring-transaction-event-phases-chart.png
+  file: inline/spring-transaction-timeline.webp
+  objectKey: seed/content-v3/assets/spring-transaction-timeline-e73c4a84a5d167d0a4ba936f12e0bd3d5bb12addbd95bc1310ad5282f6506c73.webp
+  usage: inline
+  sha256: e73c4a84a5d167d0a4ba936f12e0bd3d5bb12addbd95bc1310ad5282f6506c73
+  contentType: image/webp
+  width: 1500
+  height: 900
+- key: rrf-ranking-cover
+  source: local-experiment
+  sourceUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/rrf-hybrid-retrieval-ranking
+  sourcePageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/rrf-hybrid-retrieval-ranking
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 由冻结候选集 RRF 实验生成的封面
+  sourceFile: rrf-hybrid-retrieval-ranking-cover.png
+  file: covers/rrf-hybrid-retrieval-ranking.webp
+  objectKey: seed/content-v3/assets/rrf-ranking-cover-f1aad1d0f6990754cc3dabbd57dae2dd92aaa5236f5c2a7e18c0c6dfd3110c9c.webp
+  usage: cover
+  sha256: f1aad1d0f6990754cc3dabbd57dae2dd92aaa5236f5c2a7e18c0c6dfd3110c9c
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: rrf-formula-code
+  source: local-experiment
+  sourceUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/rrf-hybrid-retrieval-ranking
+  sourcePageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/rrf-hybrid-retrieval-ranking
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 由本地 RRF 实验源码生成的公式图
+  sourceFile: rrf-hybrid-retrieval-ranking-code.png
+  file: inline/rrf-formula-code.webp
+  objectKey: seed/content-v3/assets/rrf-formula-code-991d830d1242acf037a7d020a751bd4726b004afaf4e7ce5eb488673e278c7d3.webp
+  usage: inline
+  sha256: 991d830d1242acf037a7d020a751bd4726b004afaf4e7ce5eb488673e278c7d3
+  contentType: image/webp
+  width: 1500
+  height: 900
+- key: rrf-ranking-chart
+  source: local-experiment
+  sourceUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/rrf-hybrid-retrieval-ranking
+  sourcePageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/rrf-hybrid-retrieval-ranking
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 由十六条查询结果生成的指标图
+  sourceFile: rrf-hybrid-retrieval-ranking-chart.png
+  file: inline/rrf-ranking-chart.webp
+  objectKey: seed/content-v3/assets/rrf-ranking-chart-a364b58cdb39f7a5dc1dfa7a9127014962379a119cfa246bbbb4754bffca62db.webp
+  usage: inline
+  sha256: a364b58cdb39f7a5dc1dfa7a9127014962379a119cfa246bbbb4754bffca62db
+  contentType: image/webp
+  width: 1500
+  height: 900
+- key: signalis-six-slot-cover
+  source: public-web
+  sourceUrl: https://shared.cdn.queniuqe.com/store_item_assets/steam/apps/1262350/header.jpg
+  sourcePageUrl: https://store.steampowered.com/app/1262350/SIGNALIS/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: 《SIGNALIS》商店题图，裁切为封面
+  sourceFile: batch4/media/signalis-cover.jpg
+  file: covers/signalis-six-slot-inventory.webp
+  objectKey: seed/content-v3/assets/signalis-six-slot-cover-65e41f566a450a50c6fb953433ca7375dceb3c7fdb533c1d134c67284339b76c.webp
+  usage: cover
+  sha256: 65e41f566a450a50c6fb953433ca7375dceb3c7fdb533c1d134c67284339b76c
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: signalis-inventory
+  source: public-web
+  sourceUrl: https://rose-engine.org/signalis/images/screens/3.png
+  sourcePageUrl: https://rose-engine.org/signalis/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: rose-engine 官方六格物品栏截图
+  sourceFile: batch4/media/signalis-inventory.png
+  file: inline/signalis-inventory.webp
+  objectKey: seed/content-v3/assets/signalis-inventory-51fc31e857a3aee62ad9905a7fce9ed1f39db48493969fb05e1ff094e79ebe76.webp
+  usage: inline
+  sha256: 51fc31e857a3aee62ad9905a7fce9ed1f39db48493969fb05e1ff094e79ebe76
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: signalis-corridor
+  source: public-web
+  sourceUrl: https://rose-engine.org/signalis/images/screens/9.png
+  sourcePageUrl: https://rose-engine.org/signalis/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: rose-engine 官方设施走廊截图
+  sourceFile: batch4/media/signalis-corridor.png
+  file: inline/signalis-corridor.webp
+  objectKey: seed/content-v3/assets/signalis-corridor-af8e6200de8b27674dc5da59013727bd61e5554bd645ab7ab8e58c41dfa697b5.webp
+  usage: inline
+  sha256: af8e6200de8b27674dc5da59013727bd61e5554bd645ab7ab8e58c41dfa697b5
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: signalis-save-room
+  source: public-web
+  sourceUrl: https://rose-engine.org/signalis/images/screens/10.png
+  sourcePageUrl: https://rose-engine.org/signalis/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: rose-engine 官方设施房间截图，用于存档房段落
+  sourceFile: batch4/media/signalis-save.png
+  file: inline/signalis-save-room.webp
+  objectKey: seed/content-v3/assets/signalis-save-room-ea498bf1556f5ac77a4eb396c53589ce1b9dd184333e0f06312da06dc2ca8ca9.webp
+  usage: inline
+  sha256: ea498bf1556f5ac77a4eb396c53589ce1b9dd184333e0f06312da06dc2ca8ca9
+  contentType: image/webp
+  width: 1600
+  height: 900
+- key: chipped-cup-cover
+  source: public-web
+  sourceUrl: https://upload.wikimedia.org/wikipedia/commons/3/36/Bucharest_mug_%28Unsplash%29.jpg
+  sourcePageUrl: https://commons.wikimedia.org/wiki/File:Bucharest_mug_(Unsplash).jpg
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: Alexandru STAVRICĂ 发布的 CC0 杯子照片，裁切为封面
+  sourceFile: batch4/media/cup-cover.jpg
+  file: covers/chipped-cup-two-years.webp
+  objectKey: seed/content-v3/assets/chipped-cup-cover-94934b719792acdbedb69559b6b4ff8e15b8ff78666acdd6c7adc113ef1b444b.webp
+  usage: cover
+  sha256: 94934b719792acdbedb69559b6b4ff8e15b8ff78666acdd6c7adc113ef1b444b
+  contentType: image/webp
+  width: 1200
+  height: 675
+- key: chipped-cup-sink
+  source: public-web
+  sourceUrl: https://images.pexels.com/photos/7477746/pexels-photo-7477746.jpeg
+  sourcePageUrl: https://www.pexels.com/photo/a-person-cleaning-a-white-cup-7477746/
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: Kampus Production 的 Pexels 杯子清洗照片
+  sourceFile: batch4/media/cup-sink.jpg
+  file: inline/chipped-cup-sink.webp
+  objectKey: seed/content-v3/assets/chipped-cup-sink-62a40129e0e10fea512f94c16b4db4e4878ea667ef34981e4dd2aebd9bca2e1f.webp
+  usage: inline
+  sha256: 62a40129e0e10fea512f94c16b4db4e4878ea667ef34981e4dd2aebd9bca2e1f
+  contentType: image/webp
+  width: 1600
+  height: 1068
+- key: chipped-cup-table
+  source: public-web
+  sourceUrl: https://upload.wikimedia.org/wikipedia/commons/2/22/Person_writing_on_brown_wooden_table_near_white_ceramic_mug.jpg
+  sourcePageUrl: https://commons.wikimedia.org/wiki/File:Person_writing_on_brown_wooden_table_near_white_ceramic_mug.jpg
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: Unseen Studio 发布的 CC0 桌面与杯子照片
+  sourceFile: batch4/media/cup-table.jpg
+  file: inline/chipped-cup-table.webp
+  objectKey: seed/content-v3/assets/chipped-cup-table-a1bca74d0a5b1eba06b77945746568da2bc17bd486c2fde0580dbd5a85a17324.webp
+  usage: inline
+  sha256: a1bca74d0a5b1eba06b77945746568da2bc17bd486c2fde0580dbd5a85a17324
+  contentType: image/webp
+  width: 1600
+  height: 1067
+- key: chipped-cup-cabinet
+  source: public-web
+  sourceUrl: https://upload.wikimedia.org/wikipedia/commons/f/f2/Kitchen_cabinets_cups_coffee_maker_toaster_sink_cabin_14_Douthat_State_Park_Virginia_%2828029414370%29.jpg
+  sourcePageUrl: https://commons.wikimedia.org/wiki/File:Kitchen_cabinets_cups_coffee_maker_toaster_sink_cabin_14_Douthat_State_Park_Virginia_(28029414370).jpg
+  fetchedAt: 2026-07-14T15:30:00.000Z
+  usageNote: vastateparksstaff 的 CC BY 2.0 厨房橱柜照片
+  sourceFile: batch4/media/cup-cabinet.jpg
+  file: inline/chipped-cup-cabinet.webp
+  objectKey: seed/content-v3/assets/chipped-cup-cabinet-77a0b17e1f07e89034d415e45ddfd549ab13be876306ce6c221a100e74c0368e.webp
+  usage: inline
+  sha256: 77a0b17e1f07e89034d415e45ddfd549ab13be876306ce6c221a100e74c0368e
+  contentType: image/webp
+  width: 1600
+  height: 1060
