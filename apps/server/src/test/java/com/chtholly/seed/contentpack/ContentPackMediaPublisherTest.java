@@ -90,6 +90,24 @@ class ContentPackMediaPublisherTest {
     }
 
     @Test
+    void givenPackAssetsDirectory_whenPublishAll_thenResolvesDeclaredFileInsideAssets() throws Exception {
+        Path v3Root = Files.createDirectories(tempDir.resolve("content-v3-with-assets"));
+        Path assetsRoot = Files.createDirectories(v3Root.resolve("assets"));
+        SeedAssetDefinition asset = writeAsset(
+                assetsRoot, "content-v3", "cover-v3", "covers/cover.webp", WEBP);
+        SeedPostDefinition post = post("post-v3", "正文");
+        ContentPack pack = pack(v3Root, "content-v3", asset, post);
+        String markdownObjectKey = markdownKey("content-v3", post.seedKey(), post.markdown());
+        when(storage.resolvePublicUrl(asset.objectKey())).thenReturn("/uploads/" + asset.objectKey());
+        when(storage.resolvePublicUrl(markdownObjectKey)).thenReturn("/uploads/" + markdownObjectKey);
+
+        PublishedContent content = publisher.publishAll(pack);
+
+        assertThat(content.assets()).containsKey(asset.key());
+        publisher.commitPublishedObjects(content);
+    }
+
+    @Test
     void givenContentV3RootWithV2ObjectKey_whenPublish_thenRejectsVersionMismatch() throws Exception {
         Path v3Root = Files.createDirectories(tempDir.resolve("content-v3"));
         SeedAssetDefinition asset = writeAsset(v3Root, "content-v2", "wrong-version", "media/wrong.webp", WEBP);

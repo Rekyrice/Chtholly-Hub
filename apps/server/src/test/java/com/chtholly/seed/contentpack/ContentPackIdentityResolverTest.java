@@ -177,6 +177,8 @@ class ContentPackIdentityResolverTest {
         assertThat(xml).doesNotContain("${");
         assertThat(xml).contains("#{namespace}", "#{entityType}", "#{seedKey}");
         assertThat(xml).contains("AND entity_id = VALUES(entity_id)", "NULL");
+        assertThat(xml).contains("column=\"entity_id\" javaType=\"_long\"");
+        assertThat(xml).doesNotContain("javaType=\"long\"");
 
         Configuration configuration = new Configuration();
         try (var input = Files.newInputStream(mapperPath)) {

@@ -7,7 +7,7 @@
             <arg column="namespace" javaType="java.lang.String"/>
             <arg column="entity_type" javaType="java.lang.String"/>
             <arg column="seed_key" javaType="java.lang.String"/>
-            <arg column="entity_id" javaType="long"/>
+            <arg column="entity_id" javaType="_long"/>
             <arg column="pack_version" javaType="java.lang.String"/>
             <arg column="content_hash" javaType="java.lang.String"/>
             <arg column="metadata" javaType="java.lang.String"/>
@@ -16,8 +16,8 @@
 
     <resultMap id="PostStateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$PostState">
         <constructor>
-            <arg column="id" javaType="long"/>
-            <arg column="creator_id" javaType="long"/>
+            <arg column="id" javaType="_long"/>
+            <arg column="creator_id" javaType="_long"/>
             <arg column="tags_json" javaType="java.lang.String"/>
             <arg column="content_object_key" javaType="java.lang.String"/>
         </constructor>
@@ -32,17 +32,17 @@
 
     <resultMap id="FollowingStateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$FollowingState">
         <constructor>
-            <arg column="id" javaType="long"/>
-            <arg column="from_user_id" javaType="long"/>
-            <arg column="to_user_id" javaType="long"/>
+            <arg column="id" javaType="_long"/>
+            <arg column="from_user_id" javaType="_long"/>
+            <arg column="to_user_id" javaType="_long"/>
         </constructor>
     </resultMap>
 
     <resultMap id="FollowerStateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$FollowerState">
         <constructor>
-            <arg column="id" javaType="long"/>
-            <arg column="from_user_id" javaType="long"/>
-            <arg column="to_user_id" javaType="long"/>
+            <arg column="id" javaType="_long"/>
+            <arg column="from_user_id" javaType="_long"/>
+            <arg column="to_user_id" javaType="_long"/>
         </constructor>
     </resultMap>
 

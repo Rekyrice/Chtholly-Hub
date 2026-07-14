@@ -80,9 +80,10 @@ public final class ContentPackMediaPublisher {
         List<String> newObjectKeys = new ArrayList<>();
         try {
             Path root = realRoot(pack.root());
+            Path assetRoot = resolveAssetRoot(root);
             String version = StorageObjectKeyValidator.requireContentPackVersion(pack.manifest().version());
             for (SeedAssetDefinition asset : pack.assets().values()) {
-                PublishedAsset published = publish(root, asset, version);
+                PublishedAsset published = publish(assetRoot, asset, version);
                 assets.put(asset.key(), published);
                 recordNewObject(published, newObjectKeys);
             }
@@ -328,6 +329,21 @@ public final class ContentPackMediaPublisher {
             throw new IllegalArgumentException("content pack root is not a directory: " + root);
         }
         return realRoot;
+    }
+
+    private Path resolveAssetRoot(Path packRoot) throws IOException {
+        Path declaredAssets = packRoot.resolve("assets").normalize();
+        if (!Files.exists(declaredAssets, LinkOption.NOFOLLOW_LINKS)) {
+            return packRoot;
+        }
+        if (Files.isSymbolicLink(declaredAssets)) {
+            throw new IllegalArgumentException("content pack assets directory is a symbolic link: " + declaredAssets);
+        }
+        Path assetRoot = realRoot(declaredAssets);
+        if (!assetRoot.startsWith(packRoot)) {
+            throw new IllegalArgumentException("content pack assets directory escapes pack root: " + declaredAssets);
+        }
+        return assetRoot;
     }
 
     private byte[] readOnceInside(Path realRoot, String relative, String assetKey) throws IOException {

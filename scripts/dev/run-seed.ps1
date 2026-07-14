@@ -80,9 +80,13 @@ $applicationArguments = "--seed.mode=$Mode --spring.main.web-application-type=no
 if ($DryRun) {
     $applicationArguments += " --seed.dry-run=true"
 }
+if ($isContentPack) {
+    # Content-pack jobs do not start a servlet container; defer unrelated web beans such as WebSocket setup.
+    $applicationArguments += " --spring.main.lazy-initialization=true"
+}
 if ($isContentPack -and $DryRun) {
     $applicationArguments += " --seed.cli-read-only=true --kafka.enabled=false --canal.enabled=false"
-    $applicationArguments += " --bangumi.enabled=false --spring.main.lazy-initialization=true"
+    $applicationArguments += " --bangumi.enabled=false"
 }
 $bootRunProperty = "-Dspring-boot.run.arguments=`"$applicationArguments`""
 
