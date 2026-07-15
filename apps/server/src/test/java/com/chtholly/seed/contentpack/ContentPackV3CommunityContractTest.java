@@ -36,6 +36,9 @@ class ContentPackV3CommunityContractTest {
         assertThat(pack.comments()).hasSize(36);
         assertThat(pack.comments().stream().filter(comment -> comment.parentSeedKey() == null)).hasSize(28);
         assertThat(pack.comments().stream().filter(comment -> comment.parentSeedKey() != null)).hasSize(8);
+        assertThat(pack.comments().stream()
+                .map(comment -> target(comment.postSeedKey(), comment.postSlug()))
+                .distinct()).hasSizeBetween(24, 26);
         assertThat(pack.comments()).allSatisfy(comment -> {
             assertThat(comment.authorSeedKey()).isIn(accountKeys);
             assertThat(hasExactlyOneTarget(comment.postSeedKey(), comment.postSlug())).isTrue();
@@ -53,6 +56,9 @@ class ContentPackV3CommunityContractTest {
                 .map(reaction -> target(reaction.postSeedKey(), reaction.postSlug()) + "|"
                         + reaction.accountSeedKey() + "|" + reaction.type())
                 .distinct()).hasSize(88);
+        assertThat(pack.reactions().stream()
+                .map(reaction -> target(reaction.postSeedKey(), reaction.postSlug()))
+                .distinct()).hasSizeBetween(30, 34);
 
         assertThat(pack.follows()).hasSize(14);
         assertThat(pack.follows()).allSatisfy(follow -> {

@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,21 +13,24 @@ const packRoot = path.resolve(process.argv[2] ?? path.join(repoRoot, 'content', 
 const outputFile = path.resolve(
   process.argv[3] ?? path.join(repoRoot, '.codex-tmp', 'community-interactions', 'review', 'index.html'),
 );
+assertIgnoredProjectOutput(outputFile);
 
-const [accounts, posts, interactions] = await Promise.all([
+const [accounts, assets, posts, interactions] = await Promise.all([
   loadYaml('accounts.yml'),
+  loadYaml('assets.yml'),
   loadYaml('posts.yml'),
   loadYaml('interactions.yml'),
 ]);
 
 const accountByKey = new Map(accounts.map((account) => [account.seedKey, account]));
+const assetByKey = new Map(assets.map((asset) => [asset.key, asset]));
 const postByKey = new Map(posts.map((post) => [post.seedKey, post]));
 const commentByKey = new Map(interactions.comments.map((comment) => [comment.seedKey, comment]));
-const reactionStats = aggregateReactions(interactions.reactions);
 const roots = interactions.comments.filter((comment) => !comment.parentSeedKey).length;
 const replies = interactions.comments.length - roots;
 const likes = interactions.reactions.filter((reaction) => reaction.type === 'like').length;
 const favorites = interactions.reactions.filter((reaction) => reaction.type === 'fav').length;
+const targetStats = aggregateTargets(interactions);
 
 const html = `<!doctype html>
 <html lang="zh-CN">
@@ -53,6 +57,8 @@ const html = `<!doctype html>
     .profiles { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
     .profile,.comment,.stat-row,.follow { border:1px solid var(--line); border-radius:16px; background:var(--paper); }
     .profile { padding:16px; }
+    .profile-head { display:flex; gap:12px; align-items:center; margin-bottom:10px; }
+    .avatar { width:52px; height:52px; border-radius:14px; object-fit:cover; background:#eaf0f7; }
     .handle,.time,.target { color:var(--muted); font-size:13px; }
     .tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
     .tag { padding:2px 9px; border-radius:999px; background:#eaf2fa; color:#426d96; font-size:12px; }
@@ -98,7 +104,7 @@ const html = `<!doctype html>
   <section class="panel">
     <h2>其余互动统计</h2>
     <div class="stats">
-      <div><h3>点赞与收藏分布</h3><div class="stat-list">${[...reactionStats.values()].sort((a,b) => (b.like+b.fav)-(a.like+a.fav)).map(renderReactionStat).join('')}</div></div>
+      <div><h3>文章互动覆盖</h3><div class="stat-list">${[...targetStats.values()].sort((a,b) => (b.comments+b.like+b.fav)-(a.comments+a.like+a.fav)).map(renderTargetStat).join('')}</div></div>
       <div><h3>关注关系</h3><div class="follow-list">${interactions.follows.map(renderFollow).join('')}</div></div>
       <div><h3>浏览基线（内容包文章）</h3><div class="stat-list">${interactions.views.filter((view) => view.postSeedKey).sort((a,b) => b.minimumCount-a.minimumCount).map(renderView).join('')}</div></div>
       <div><h3>浏览基线（Rekyrice 已有文章）</h3><div class="stat-list">${interactions.views.filter((view) => view.postSlug).sort((a,b) => b.minimumCount-a.minimumCount).map(renderView).join('')}</div></div>
@@ -124,14 +130,17 @@ async function loadYaml(file) {
   return YAML.parse(await readFile(path.join(packRoot, file), 'utf8'));
 }
 
-function aggregateReactions(reactions) {
+function aggregateTargets(values) {
   const stats = new Map();
-  for (const reaction of reactions) {
-    const target = targetKey(reaction);
-    const current = stats.get(target) ?? { target, like: 0, fav: 0 };
-    current[reaction.type] += 1;
-    stats.set(target, current);
-  }
+  const get = (value) => {
+    const key = targetKey(value);
+    const current = stats.get(key) ?? { target: key, comments: 0, like: 0, fav: 0, views: null };
+    stats.set(key, current);
+    return current;
+  };
+  values.comments.forEach((comment) => { get(comment).comments += 1; });
+  values.reactions.forEach((reaction) => { get(reaction)[reaction.type] += 1; });
+  values.views.forEach((view) => { get(view).views = view.minimumCount; });
   return stats;
 }
 
@@ -139,10 +148,22 @@ function targetKey(value) { return value.postSeedKey ? `seed:${value.postSeedKey
 function targetLabel(value) { return value.postSeedKey ? (postByKey.get(value.postSeedKey)?.title ?? value.postSeedKey) : `Rekyrice / ${value.postSlug}`; }
 function accountLabel(key) { const account = accountByKey.get(key); return account ? `${account.nickname} (@${account.handle})` : key; }
 function metric(label, value) { return `<div class="metric"><strong>${escapeHtml(value)}</strong>${escapeHtml(label)}</div>`; }
-function renderProfile(account) { return `<article class="profile"><h3>${escapeHtml(account.nickname)}</h3><div class="handle">@${escapeHtml(account.handle)} · 加入于 ${formatTime(account.joinedAt)}</div><p>${escapeHtml(account.bio)}</p><div class="tags">${account.tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div></article>`; }
+function renderProfile(account) { const asset=assetByKey.get(account.avatarAsset); const src=asset ? `/content/seed/content-v3/assets/${asset.file.split('/').map(encodeURIComponent).join('/')}` : ''; return `<article class="profile"><div class="profile-head">${src ? `<img class="avatar" src="${src}" alt="">` : ''}<div><h3>${escapeHtml(account.nickname)}</h3><div class="handle">@${escapeHtml(account.handle)} · 加入于 ${formatTime(account.joinedAt)}</div></div></div><p>${escapeHtml(account.bio)}</p><div class="tags">${account.tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div></article>`; }
 function renderComment(comment) { const parent = comment.parentSeedKey ? commentByKey.get(comment.parentSeedKey) : null; return `<article class="comment${parent ? ' reply' : ''}" data-author="${escapeHtml(comment.authorSeedKey)}"><div class="comment-head"><strong>${escapeHtml(accountLabel(comment.authorSeedKey))}</strong><span class="target">《${escapeHtml(targetLabel(comment))}》</span>${parent ? `<span class="reply-to">回复 ${escapeHtml(accountLabel(parent.authorSeedKey))}</span>` : ''}<time class="time">${formatTime(comment.createdAt)}</time></div><p>${escapeHtml(comment.content)}</p></article>`; }
-function renderReactionStat(stat) { const value = stat.target.startsWith('seed:') ? { postSeedKey: stat.target.slice(5) } : { postSlug: stat.target.slice(5) }; return `<div class="stat-row"><span>${escapeHtml(targetLabel(value))}</span><strong>赞 ${stat.like} · 收藏 ${stat.fav}</strong></div>`; }
+function renderTargetStat(stat) { const value = stat.target.startsWith('seed:') ? { postSeedKey: stat.target.slice(5) } : { postSlug: stat.target.slice(5) }; return `<div class="stat-row"><span>${escapeHtml(targetLabel(value))}</span><strong>评 ${stat.comments} · 赞 ${stat.like} · 藏 ${stat.fav}${stat.views == null ? '' : ` · 浏览 ≥ ${stat.views}`}</strong></div>`; }
 function renderFollow(follow) { return `<div class="follow"><span>${escapeHtml(accountLabel(follow.fromAccountSeedKey))}</span><span class="arrow">→</span><span>${escapeHtml(accountLabel(follow.toAccountSeedKey))}</span></div>`; }
 function renderView(view) { return `<div class="stat-row"><span>${escapeHtml(targetLabel(view))}</span><strong>至少 ${view.minimumCount}</strong></div>`; }
 function formatTime(value) { return new Intl.DateTimeFormat('zh-CN', { timeZone:'Asia/Shanghai', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }).format(new Date(value)); }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[character]); }
+
+function assertIgnoredProjectOutput(file) {
+  const relative = path.relative(repoRoot, file);
+  if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`review output must stay inside the repository: ${file}`);
+  }
+  try {
+    execFileSync('git', ['check-ignore', '--quiet', '--no-index', relative], { cwd: repoRoot, stdio: 'ignore' });
+  } catch {
+    throw new Error(`review output must be Git-ignored: ${relative}`);
+  }
+}
