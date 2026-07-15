@@ -26,11 +26,11 @@
 
 涉及文件：
 
-- `apps/server/src/main/java/com/chtholly/seed/content/SeedPostRetirementDefinition.java`
-- `apps/server/src/main/java/com/chtholly/seed/content/ContentPack.java`
-- `apps/server/src/main/java/com/chtholly/seed/content/ContentPackManifest.java`
-- `apps/server/src/main/java/com/chtholly/seed/content/ContentPackLoader.java`
-- `apps/server/src/test/java/com/chtholly/seed/content/ContentPackLoaderTest.java`
+- `apps/server/src/main/java/com/chtholly/seed/contentpack/model/SeedPostRetirementDefinition.java`
+- `apps/server/src/main/java/com/chtholly/seed/contentpack/model/ContentPack.java`
+- `apps/server/src/main/java/com/chtholly/seed/contentpack/model/ContentPackManifest.java`
+- `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackLoader.java`
+- `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackLoaderTest.java`
 
 先写失败测试，再实现：
 
@@ -51,8 +51,8 @@ mvn -q '-Dtest=ContentPackLoaderTest' test
 
 涉及文件：
 
-- `apps/server/src/main/java/com/chtholly/seed/content/ContentPackValidator.java`
-- `apps/server/src/test/java/com/chtholly/seed/content/ContentPackValidatorTest.java`
+- `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackValidator.java`
+- `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackValidatorTest.java`
 - `content/seed/content-v3/manifest.yml`
 - `content/seed/content-v3/retirements.yml`
 
@@ -76,10 +76,10 @@ mvn -q '-Dtest=ContentPackLoaderTest,ContentPackValidatorTest' test
 
 涉及文件：
 
-- `apps/server/src/main/java/com/chtholly/seed/content/ContentPackMapper.java`
+- `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackMapper.java`
 - `apps/server/src/main/resources/mapper/ContentPackMapper.xml`
-- `apps/server/src/main/java/com/chtholly/seed/content/ContentPackDatabaseWriter.java`
-- `apps/server/src/test/java/com/chtholly/seed/content/ContentPackDatabaseWriterTest.java`
+- `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackDatabaseWriter.java`
+- `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackDatabaseWriterTest.java`
 
 先写失败测试，再实现：
 
@@ -103,9 +103,9 @@ mvn -q '-Dtest=ContentPackDatabaseWriterTest' test
 
 涉及文件：
 
-- `apps/server/src/main/java/com/chtholly/seed/content/ContentPackImportReport.java`
-- `apps/server/src/main/java/com/chtholly/seed/content/ContentPackImportService.java`
-- `apps/server/src/test/java/com/chtholly/seed/content/ContentPackImportServiceTest.java`
+- `apps/server/src/main/java/com/chtholly/seed/contentpack/model/ContentPackImportReport.java`
+- `apps/server/src/main/java/com/chtholly/seed/contentpack/ContentPackImportService.java`
+- `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackImportServiceTest.java`
 - `apps/server/src/test/java/com/chtholly/seed/SeedRunnerTest.java`
 
 先写失败测试，再实现：
