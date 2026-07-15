@@ -72,6 +72,7 @@ class CommentServiceImplTest {
         assertThat(response.total()).isEqualTo(25);
         assertThat(response.hasMore()).isTrue();
         assertThat(response.items()).hasSize(2);
+        assertThat(response.items().get(0).authorHandle()).isEqualTo("tester-handle");
         assertThat(response.items().get(0).replies()).hasSize(1);
         assertThat(response.items().get(0).replies().get(0).content()).isEqualTo("reply-1");
     }
@@ -225,6 +226,7 @@ class CommentServiceImplTest {
         row.setContent(content);
         row.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
         row.setAuthorNickname("tester");
+        row.setAuthorHandle("tester-handle");
         row.setAuthorAvatar(null);
         return row;
     }

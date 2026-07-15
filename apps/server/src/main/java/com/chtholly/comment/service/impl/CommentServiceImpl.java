@@ -282,6 +282,7 @@ public class CommentServiceImpl implements CommentService {
                 String.valueOf(row.getPostId()),
                 row.getParentId() == null ? null : String.valueOf(row.getParentId()),
                 String.valueOf(row.getUserId()),
+                row.getAuthorHandle(),
                 resolveAuthorNickname(row),
                 row.getAuthorAvatar(),
                 content,

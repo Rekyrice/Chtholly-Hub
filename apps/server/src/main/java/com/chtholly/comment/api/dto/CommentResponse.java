@@ -12,6 +12,7 @@ public record CommentResponse(
         @Schema(description = "帖子 ID") String postId,
         @Schema(description = "父评论 ID") String parentId,
         @Schema(description = "作者用户 ID") String userId,
+        @Schema(description = "作者 handle") String authorHandle,
         @Schema(description = "作者昵称") String authorNickname,
         @Schema(description = "作者头像") String authorAvatar,
         @Schema(description = "评论内容") String content,
