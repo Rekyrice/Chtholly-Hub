@@ -20,6 +20,8 @@ public interface UserMapper {
 
     User findById(@Param("id") Long id);
 
+    User findPublicById(@Param("id") Long id);
+
     User findByHandle(@Param("handle") String handle);
 
     boolean existsByHandle(@Param("handle") String handle);
@@ -31,6 +33,8 @@ public interface UserMapper {
     boolean existsByHandleExceptId(@Param("handle") String handle, @Param("excludeId") Long excludeId);
 
     List<User> listByIds(@Param("ids") List<Long> ids);
+
+    List<User> listPublicByIds(@Param("ids") List<Long> ids);
 
     int updateRole(@Param("id") Long id, @Param("role") String role);
 

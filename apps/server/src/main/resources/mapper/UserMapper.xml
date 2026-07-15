@@ -94,6 +94,12 @@
         WHERE id = #{id}
     </select>
 
+    <select id="findPublicById" parameterType="long" resultMap="UserResultMap">
+        SELECT id, handle, nickname, avatar, bio, tags_json, created_at
+        FROM users
+        WHERE id = #{id}
+    </select>
+
     <select id="findByHandle" parameterType="string" resultMap="UserResultMap">
         SELECT *
         FROM users
@@ -143,6 +149,15 @@
 
     <select id="listByIds" resultMap="UserResultMap">
         SELECT *
+        FROM users
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="listPublicByIds" resultMap="UserResultMap">
+        SELECT id, handle, nickname, avatar, bio, tags_json, created_at
         FROM users
         WHERE id IN
         <foreach collection="ids" item="id" open="(" separator="," close=")">
