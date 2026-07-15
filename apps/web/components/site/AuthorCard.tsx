@@ -27,11 +27,7 @@ export default function AuthorCard({
   postTop,
   postVisibility,
 }: AuthorCardProps) {
-  const postsHref = authorHandle
-    ? `/user/${encodeURIComponent(authorHandle)}`
-    : authorId
-      ? `/hub?ownerId=${encodeURIComponent(authorId)}`
-      : "/hub";
+  const profileHref = authorHandle ? `/user/${encodeURIComponent(authorHandle)}` : null;
 
   return (
     <section className="author-card" aria-label="作者信息">
@@ -46,7 +42,7 @@ export default function AuthorCard({
         <div className="author-card__header">
           <div>
             <p className="author-card__eyebrow">作者</p>
-            <h2>{nickname}</h2>
+            <h2>{profileHref ? <Link href={profileHref}>{nickname}</Link> : nickname}</h2>
           </div>
           <div className="author-card__actions">
             {postId && (
@@ -66,10 +62,12 @@ export default function AuthorCard({
         <p className="author-card__bio">
           {bio || "这个人还没有写简介，不过已经在仓库里留下了一些故事。"}
         </p>
-        <Link href={postsHref} className="author-card__link">
-          <PenLine size={15} />
-          <span>查看作者所有文章</span>
-        </Link>
+        {profileHref && (
+          <Link href={profileHref} className="author-card__link">
+            <PenLine size={15} />
+            <span>查看作者所有文章</span>
+          </Link>
+        )}
       </div>
     </section>
   );

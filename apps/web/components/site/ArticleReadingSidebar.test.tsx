@@ -1,10 +1,12 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import ArticleReadingSidebar from "@/components/site/ArticleReadingSidebar";
 
 vi.mock("@/components/site/ChthollyIllustration", () => ({
   ChthollyIllustration: () => <div data-testid="chtholly-reading-companion" />,
 }));
+
+afterEach(cleanup);
 
 describe("ArticleReadingSidebar", () => {
   it("renders the table of contents and practical reading links", () => {
@@ -34,5 +36,25 @@ describe("ArticleReadingSidebar", () => {
     expect(screen.getByRole("link", { name: "动画" })).toHaveAttribute("href", "/tag/%E5%8A%A8%E7%94%BB");
     expect(screen.getByRole("link", { name: "问珂朵莉" })).toHaveAttribute("href", "/agent?context=post");
     expect(screen.getByTestId("chtholly-reading-companion")).toBeInTheDocument();
+  });
+
+  it("renders an unlinked author label when no canonical handle is available", () => {
+    render(
+      <ArticleReadingSidebar
+        headings={[]}
+        readingMinutes={1}
+        authorId="user-1"
+        authorNickname="Temporary author"
+        tags={[]}
+        askHref="/agent"
+        readingComment="test"
+        readingState="calm"
+        timeOfDay="day"
+        compact
+      />,
+    );
+
+    expect(screen.getByText("Temporary author")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Temporary author" })).not.toBeInTheDocument();
   });
 });
