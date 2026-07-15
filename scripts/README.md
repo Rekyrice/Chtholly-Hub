@@ -3,6 +3,7 @@
 | 目录 | 用途 |
 |------|------|
 | [dev/](dev/) | 本地开发：加载 `.env`、启动/停止前后端 |
+| [backup/](backup/) | MySQL 一致性备份、校验与恢复前材料 |
 | [oss/](oss/) | OSS Markdown：种子正文与上传 |
 | [git-hooks/](git-hooks/) | Git 钩子（如 prepare-commit-msg） |
 

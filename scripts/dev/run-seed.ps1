@@ -1,12 +1,26 @@
 param(
     [ValidateSet("full", "bangumi", "accounts", "content_only", "content-only", "content_pack", "content-pack")]
     [string]$Mode = "full",
+    [string]$Database,
     [switch]$DryRun,
     [switch]$ResetMarker
 )
 
 # Run one seed job on a spare port while the main backend may remain online.
 . (Join-Path $PSScriptRoot "load-env.ps1")
+
+function Test-SafeDatabaseName {
+    param([string]$Name)
+    return -not [string]::IsNullOrWhiteSpace($Name) -and $Name -match '^[A-Za-z0-9_]+$'
+}
+
+if ($Database) {
+    if (-not (Test-SafeDatabaseName $Database)) {
+        Write-Host "Invalid database name." -ForegroundColor Red
+        exit 1
+    }
+    $env:MYSQL_DATABASE = $Database
+}
 
 if (-not $RepoRoot) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
@@ -26,11 +40,15 @@ Write-Host ""
 # A content-pack dry-run only reads and validates the package. Applying migrations here would
 # violate its no-mutation guarantee before the importer even starts.
 if (-not ($isContentPack -and $DryRun)) {
-    & (Join-Path $PSScriptRoot "apply-migrations.ps1")
+    & (Join-Path $PSScriptRoot "apply-migrations.ps1") -Database $Database
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 . (Join-Path $PSScriptRoot "load-env.ps1")
+
+if ($Database) {
+    $env:MYSQL_DATABASE = $Database
+}
 
 if ($ResetMarker) {
     if ($DryRun) {
@@ -43,7 +61,7 @@ if ($ResetMarker) {
     }
     $marker = if ($Mode -eq "content_only" -or $Mode -eq "content-only") { "seed:content_only" } else { $Mode }
     Write-Host "ResetMarker: clearing seed marker '$marker'..." -ForegroundColor Yellow
-    docker exec -e "MYSQL_PWD=$env:MYSQL_PASSWORD" mysql mysql -uroot --default-character-set=utf8mb4 chtholly -e "DELETE FROM seed_data WHERE seed_key='$marker';" 2>$null | Out-Null
+    docker exec -e "MYSQL_PWD=$env:MYSQL_PASSWORD" mysql mysql -uroot --default-character-set=utf8mb4 $env:MYSQL_DATABASE -e "DELETE FROM seed_data WHERE seed_key='$marker';" 2>$null | Out-Null
 }
 
 # content_only uses template bodies; disabling the LLM avoids unnecessary generation latency.
@@ -153,7 +171,7 @@ if ($isContentPack) {
     exit 1
 }
 
-$postCount = docker exec -e "MYSQL_PWD=$env:MYSQL_PASSWORD" mysql mysql -uroot --default-character-set=utf8mb4 chtholly -N -B -e "SELECT COUNT(*) FROM posts WHERE status='published' AND visible='public';" 2>$null
+$postCount = docker exec -e "MYSQL_PWD=$env:MYSQL_PASSWORD" mysql mysql -uroot --default-character-set=utf8mb4 $env:MYSQL_DATABASE -N -B -e "SELECT COUNT(*) FROM posts WHERE status='published' AND visible='public';" 2>$null
 Write-Host ""
 Write-Host "MySQL published posts: $postCount" -ForegroundColor Green
 Write-Host "Restart the main backend (http://localhost:$serverPort), then refresh /hub" -ForegroundColor Yellow
