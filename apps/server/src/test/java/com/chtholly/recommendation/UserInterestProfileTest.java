@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -89,5 +90,18 @@ class UserInterestProfileTest {
         assertThat(profile.tagWeights()).containsEntry("Java", 0.5);
         assertThat(profile.tagWeights()).containsEntry("后端", 0.5);
         assertThat(profile.updatedAt()).isBeforeOrEqualTo(Instant.now());
+    }
+
+    @Test
+    void given_noInteractions_when_rebuild_then_doesNotQueryPostsWithEmptyIds() {
+        lenient().when(hashOps.entries(anyString())).thenReturn(Map.of());
+        lenient().when(zSetOps.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(null);
+        lenient().when(postMapper.listRecentPublicSince(any(Instant.class), anyInt())).thenReturn(List.of());
+        when(userMapper.findById(11L)).thenReturn(null);
+
+        var profile = profileService.rebuildProfile(11L);
+
+        assertThat(profile.hasSignal()).isFalse();
+        verify(postMapper, never()).findByIds(any());
     }
 }

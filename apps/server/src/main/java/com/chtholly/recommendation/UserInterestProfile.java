@@ -122,7 +122,9 @@ public class UserInterestProfile {
             interacted.addAll(bootstrapInteractionsFromBitmap(userId));
         }
 
-        List<Post> posts = postMapper.findByIds(new ArrayList<>(interacted));
+        List<Post> posts = interacted.isEmpty()
+                ? List.of()
+                : postMapper.findByIds(new ArrayList<>(interacted));
         for (Post post : posts) {
             mergePostTags(weights, tagJsonParser.parse(post.getTags()), 1.0);
         }
