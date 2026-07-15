@@ -273,6 +273,26 @@ class ContentPackImportServiceTest {
         assertThat(report.pendingViewPostIds()).containsExactly(12L);
     }
 
+    @Test
+    void givenRetiredPosts_whenImport_thenRebuildsAuthorsInvalidatesCachesDeletesIndexesAndReportsOutcome() {
+        when(databaseWriter.write(pack, published)).thenReturn(writeResult(
+                List.of(11L), Map.of(), List.of(91L, 92L), List.of(201L), List.of("missing-old-post")));
+
+        ContentPackImportReport report = service.run(root, false);
+
+        assertThat(report.status()).isEqualTo("completed");
+        assertThat(report.retiredPostIds()).containsExactly(91L, 92L);
+        assertThat(report.unmatchedRetirementSlugs()).containsExactly("missing-old-post");
+        verify(userCounterService).rebuildAllCounters(101L);
+        verify(userCounterService).rebuildAllCounters(201L);
+        verify(cacheInvalidator).invalidate(91L);
+        verify(cacheInvalidator).invalidate(92L);
+        verify(searchIndexService).softDeletePost(91L);
+        verify(searchIndexService).softDeletePost(92L);
+        verify(searchIndexService, never()).tryUpsertPost(91L);
+        verify(searchIndexService, never()).tryUpsertPost(92L);
+    }
+
     private ContentPack pack(String stage) {
         return new ContentPack(root, new ContentPackManifest(
                 "2.0.0", "seed-content-v2", stage, 0, 0, Map.of()),
@@ -280,10 +300,20 @@ class ContentPackImportServiceTest {
     }
 
     private WriteResult writeResult(List<Long> changed, Map<Long, Integer> created) {
+        return writeResult(changed, created, List.of(), List.of(), List.of());
+    }
+
+    private WriteResult writeResult(
+            List<Long> changed,
+            Map<Long, Integer> created,
+            List<Long> retiredPostIds,
+            List<Long> retiredAuthorIds,
+            List<String> unmatchedRetirementSlugs) {
         Map<String, Long> postIds = new java.util.LinkedHashMap<>();
         postIds.put("post-a", 11L);
         postIds.put("post-b", 12L);
         return new WriteResult(new ResolvedIdentities(
-                "seed-content-v2", Map.of("author", 101L), postIds), changed, created);
+                "seed-content-v2", Map.of("author", 101L), postIds), changed, created,
+                retiredPostIds, retiredAuthorIds, unmatchedRetirementSlugs);
     }
 }

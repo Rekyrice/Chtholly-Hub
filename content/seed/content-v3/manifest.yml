@@ -3,6 +3,7 @@ namespace: launch-community
 stage: complete
 expectedAccounts: 8
 expectedPosts: 40
+expectedRetirements: 34
 expectedCategories:
   ANIME: 24
   TECH: 8

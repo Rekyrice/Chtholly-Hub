@@ -11,6 +11,7 @@ import com.chtholly.seed.contentpack.ContentPackMapper.FollowState;
 import com.chtholly.seed.contentpack.ContentPackMapper.PostState;
 import com.chtholly.seed.contentpack.ContentPackMapper.FollowingState;
 import com.chtholly.seed.contentpack.ContentPackMapper.FollowerState;
+import com.chtholly.seed.contentpack.ContentPackMapper.RetirementCandidate;
 import com.chtholly.seed.contentpack.ContentPackMediaPublisher.PublishedAsset;
 import com.chtholly.seed.contentpack.ContentPackMediaPublisher.PublishedContent;
 import com.chtholly.seed.contentpack.model.ContentPack;
@@ -20,6 +21,7 @@ import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
 import com.chtholly.seed.contentpack.model.SeedContentIdentity;
 import com.chtholly.seed.contentpack.model.SeedFollowDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
+import com.chtholly.seed.contentpack.model.SeedPostRetirementDefinition;
 import com.chtholly.tag.service.TagService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -409,6 +412,89 @@ class ContentPackDatabaseWriterTest {
     }
 
     @Test
+    void givenPublishedAndMissingRetirementSlugs_whenWrite_thenRetiresExactMatchAndReportsMissing() {
+        List<SeedPostRetirementDefinition> retirements = retirements("old-post", "missing-post");
+        when(mapper.findRetirementCandidates(List.of("old-post", "missing-post"))).thenReturn(List.of(
+                new RetirementCandidate(501L, 77L, "old-post", "published", "[\"Java\"]")));
+        when(mapper.softDeleteRetirementPost(501L)).thenReturn(1);
+
+        WriteResult result = writer.write(pack(List.of(), List.of(), List.of(), List.of(), retirements),
+                emptyPublished());
+
+        verify(mapper).findRetirementCandidates(List.of("old-post", "missing-post"));
+        verify(mapper).softDeleteRetirementPost(501L);
+        verify(tagService).releasePublishedPostTags(List.of("Java"));
+        assertThat(result.retiredPostIds()).containsExactly(501L);
+        assertThat(result.retiredAuthorIds()).containsExactly(77L);
+        assertThat(result.unmatchedRetirementSlugs()).containsExactly("missing-post");
+    }
+
+    @Test
+    void givenOwnerRetirementCandidate_whenWrite_thenRejectsBeforeSoftDelete() {
+        List<SeedPostRetirementDefinition> retirements = retirements("owner-post");
+        when(mapper.findRetirementCandidates(List.of("owner-post"))).thenReturn(List.of(
+                new RetirementCandidate(501L, 1L, "owner-post", "published", "[]")));
+
+        assertThatThrownBy(() -> writer.write(
+                pack(List.of(), List.of(), List.of(), List.of(), retirements), emptyPublished()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("site owner");
+
+        verify(mapper, never()).softDeleteRetirementPost(anyLong());
+        verify(tagService, never()).releasePublishedPostTags(anyList());
+    }
+
+    @Test
+    void givenContentPackPostIdAsRetirementCandidate_whenWrite_thenRejectsBeforeSoftDelete() {
+        stubAccount("author", 42L);
+        when(mapper.findIdentity(NAMESPACE, "POST", "post-one")).thenReturn(null);
+        when(mapper.findLegacyPostId("legacy-post-one")).thenReturn(null);
+        when(idGenerator.nextId()).thenReturn(101L);
+        when(mapper.findPostStateById(101L)).thenReturn(null);
+        List<SeedPostRetirementDefinition> retirements = retirements("old-alias");
+        when(mapper.findRetirementCandidates(List.of("old-alias"))).thenReturn(List.of(
+                new RetirementCandidate(101L, 42L, "old-alias", "published", "[]")));
+
+        assertThatThrownBy(() -> writer.write(
+                pack(List.of(account("author")), List.of(post("post-one", "author")),
+                        List.of(), List.of(), retirements), published("post-one")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("content-pack post");
+
+        verify(mapper, never()).softDeleteRetirementPost(anyLong());
+    }
+
+    @Test
+    void givenAlreadyDeletedRetirementCandidate_whenWrite_thenDoesNotReleaseTagsAgain() {
+        List<SeedPostRetirementDefinition> retirements = retirements("old-post");
+        when(mapper.findRetirementCandidates(List.of("old-post"))).thenReturn(List.of(
+                new RetirementCandidate(501L, 77L, "old-post", "deleted", "[\"Java\"]")));
+
+        WriteResult result = writer.write(pack(List.of(), List.of(), List.of(), List.of(), retirements),
+                emptyPublished());
+
+        verify(mapper, never()).softDeleteRetirementPost(anyLong());
+        verify(tagService, never()).releasePublishedPostTags(anyList());
+        assertThat(result.retiredPostIds()).isEmpty();
+        assertThat(result.unmatchedRetirementSlugs()).isEmpty();
+    }
+
+    @Test
+    void givenRetirementUpdateLostRace_whenWrite_thenFailsTransaction() {
+        List<SeedPostRetirementDefinition> retirements = retirements("old-post");
+        when(mapper.findRetirementCandidates(List.of("old-post"))).thenReturn(List.of(
+                new RetirementCandidate(501L, 77L, "old-post", "published", "[]")));
+        when(mapper.softDeleteRetirementPost(501L)).thenReturn(0);
+
+        assertThatThrownBy(() -> writer.write(
+                pack(List.of(), List.of(), List.of(), List.of(), retirements), emptyPublished()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("expected to retire exactly one post");
+
+        verify(tagService, never()).releasePublishedPostTags(anyList());
+    }
+
+    @Test
     void mapperXml_parsesAndUsesOnlyParameterizedValuesWithEmptyCollectionGuards() throws Exception {
         Path mapperPath = Path.of("src/main/resources/mapper/ContentPackMapper.xml");
         String xml = Files.readString(mapperPath);
@@ -427,6 +513,10 @@ class ContentPackDatabaseWriterTest {
                 "com.chtholly.seed.contentpack.ContentPackMapper.findFollowingById")).isTrue();
         assertThat(configuration.hasStatement(
                 "com.chtholly.seed.contentpack.ContentPackMapper.findFollowerById")).isTrue();
+        assertThat(configuration.hasStatement(
+                "com.chtholly.seed.contentpack.ContentPackMapper.findRetirementCandidates")).isTrue();
+        assertThat(configuration.hasStatement(
+                "com.chtholly.seed.contentpack.ContentPackMapper.softDeleteRetirementPost")).isTrue();
     }
 
     private void stubAccount(String seedKey, long id) {
@@ -460,9 +550,20 @@ class ContentPackDatabaseWriterTest {
 
     private ContentPack pack(List<SeedAccountDefinition> accounts, List<SeedPostDefinition> posts,
                              List<SeedCommentDefinition> comments, List<SeedFollowDefinition> follows) {
+        return pack(accounts, posts, comments, follows, List.of());
+    }
+
+    private ContentPack pack(List<SeedAccountDefinition> accounts, List<SeedPostDefinition> posts,
+                             List<SeedCommentDefinition> comments, List<SeedFollowDefinition> follows,
+                             List<SeedPostRetirementDefinition> retirements) {
         return new ContentPack(Path.of("."),
-                new ContentPackManifest(VERSION, NAMESPACE, "complete", accounts.size(), posts.size(), Map.of()),
-                accounts, Map.of(), posts, comments, follows, List.of(), List.of());
+                new ContentPackManifest(
+                        VERSION, NAMESPACE, "complete", accounts.size(), posts.size(), retirements.size(), Map.of()),
+                accounts, Map.of(), Map.of(), posts, retirements, comments, follows, List.of(), List.of());
+    }
+
+    private List<SeedPostRetirementDefinition> retirements(String... slugs) {
+        return java.util.Arrays.stream(slugs).map(SeedPostRetirementDefinition::new).toList();
     }
 
     private PublishedContent published(String postKey) {

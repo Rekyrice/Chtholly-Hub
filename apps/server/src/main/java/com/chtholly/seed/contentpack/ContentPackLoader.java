@@ -8,6 +8,7 @@ import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
 import com.chtholly.seed.contentpack.model.SeedFollowDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
 import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
+import com.chtholly.seed.contentpack.model.SeedPostRetirementDefinition;
 import com.chtholly.seed.contentpack.model.SeedSourceDefinition;
 import com.chtholly.seed.contentpack.model.SeedViewDefinition;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -64,6 +65,7 @@ public final class ContentPackLoader {
         List<SeedAssetDefinition> assetDefinitions = readYaml(normalizedRoot, "assets.yml", ASSETS_TYPE);
         List<SeedSourceDefinition> sourceDefinitions = readSources(normalizedRoot, manifest);
         List<SeedPostDefinition> postDefinitions = readYaml(normalizedRoot, "posts.yml", POSTS_TYPE);
+        List<SeedPostRetirementDefinition> retirements = readRetirements(normalizedRoot, manifest);
         Interactions interactions = readYaml(normalizedRoot, "interactions.yml", Interactions.class);
 
         Map<String, SeedAssetDefinition> assets = indexAssets(assetDefinitions);
@@ -79,6 +81,7 @@ public final class ContentPackLoader {
                 assets,
                 sources,
                 posts,
+                retirements,
                 interactions.comments(),
                 interactions.follows(),
                 interactions.reactions(),
@@ -118,6 +121,15 @@ public final class ContentPackLoader {
             return List.of();
         }
         return readYaml(root, "sources.yml", SOURCES_TYPE);
+    }
+
+    private List<SeedPostRetirementDefinition> readRetirements(Path root, ContentPackManifest manifest) {
+        Path path = resolveInside(root, "retirements.yml");
+        if (!"content-v3".equals(manifest.version()) && Files.notExists(path)) {
+            return List.of();
+        }
+        Retirements retirements = readYaml(root, "retirements.yml", Retirements.class);
+        return retirements.posts() == null ? List.of() : List.copyOf(retirements.posts());
     }
 
     private <T> Map<String, T> indexDefinitions(
@@ -208,5 +220,8 @@ public final class ContentPackLoader {
             List<SeedFollowDefinition> follows,
             List<SeedReactionDefinition> reactions,
             List<SeedViewDefinition> views) {
+    }
+
+    private record Retirements(List<SeedPostRetirementDefinition> posts) {
     }
 }

@@ -13,6 +13,8 @@ import java.util.List;
  * @param version public content-pack version, when loading reached the manifest
  * @param snapshot pre-import snapshot location, only for formal runs that reached that stage
  * @param changedPostIds posts whose relational content changed
+ * @param retiredPostIds allowlisted legacy posts newly soft-deleted by this run
+ * @param unmatchedRetirementSlugs declared legacy slugs that were not present
  * @param attemptedPostIds all pack posts reconciled after the database boundary
  * @param pendingViewPostIds view baselines not yet visible before the bounded wait expired
  * @param indexFailures attempted pack posts that could not be indexed from full content
@@ -27,6 +29,8 @@ public record ContentPackImportReport(
         String version,
         SnapshotRef snapshot,
         List<Long> changedPostIds,
+        List<Long> retiredPostIds,
+        List<String> unmatchedRetirementSlugs,
         List<Long> attemptedPostIds,
         List<Long> pendingViewPostIds,
         List<Long> indexFailures,
@@ -37,12 +41,33 @@ public record ContentPackImportReport(
     /** Protects report collections from mutation by CLI serializers or callers. */
     public ContentPackImportReport {
         changedPostIds = immutable(changedPostIds);
+        retiredPostIds = immutable(retiredPostIds);
+        unmatchedRetirementSlugs = immutable(unmatchedRetirementSlugs);
         attemptedPostIds = immutable(attemptedPostIds);
         pendingViewPostIds = immutable(pendingViewPostIds);
         indexFailures = immutable(indexFailures);
         validationWarnings = immutable(validationWarnings);
         qualityWarnings = immutable(qualityWarnings);
         qualityErrors = immutable(qualityErrors);
+    }
+
+    /** Creates a legacy report without post-retirement outcomes. */
+    public ContentPackImportReport(
+            String status,
+            String failedStage,
+            String namespace,
+            String version,
+            SnapshotRef snapshot,
+            List<Long> changedPostIds,
+            List<Long> attemptedPostIds,
+            List<Long> pendingViewPostIds,
+            List<Long> indexFailures,
+            List<String> validationWarnings,
+            List<String> qualityWarnings,
+            List<String> qualityErrors) {
+        this(status, failedStage, namespace, version, snapshot, changedPostIds, List.of(), List.of(),
+                attemptedPostIds, pendingViewPostIds, indexFailures,
+                validationWarnings, qualityWarnings, qualityErrors);
     }
 
     private static <T> List<T> immutable(List<T> values) {

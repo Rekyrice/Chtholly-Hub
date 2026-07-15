@@ -7,6 +7,7 @@ import com.chtholly.seed.contentpack.model.SeedAssetDefinition;
 import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
 import com.chtholly.seed.contentpack.model.SeedFollowDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
+import com.chtholly.seed.contentpack.model.SeedPostRetirementDefinition;
 import com.chtholly.seed.contentpack.model.SeedSourceDefinition;
 import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
 import com.chtholly.seed.contentpack.model.SeedViewDefinition;
@@ -27,6 +28,40 @@ class ContentPackValidatorTest {
 
     private final ContentPackLoader loader = new ContentPackLoader();
     private final ContentPackValidator validator = new ContentPackValidator();
+
+    @Test
+    void requiresExpectedRetirementCountAndCompleteStage() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        ContentPack pack = withRetirements(
+                loaded, "review", 2, List.of(new SeedPostRetirementDefinition("old-post")));
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("expected retirement count: 2, actual: 1"));
+        assertTrue(exception.getMessage().contains("retirements require complete stage"));
+    }
+
+    @Test
+    void rejectsInvalidDuplicateAndOverlappingRetirementSlugs() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        List<SeedPostRetirementDefinition> retirements = List.of(
+                new SeedPostRetirementDefinition(" "),
+                new SeedPostRetirementDefinition("x".repeat(129)),
+                new SeedPostRetirementDefinition("Old-Slug"),
+                new SeedPostRetirementDefinition("old-slug"),
+                new SeedPostRetirementDefinition(loaded.posts().getFirst().slug()));
+        ContentPack pack = withRetirements(loaded, "complete", retirements.size(), retirements);
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertContainsInOrder(exception.getMessage(),
+                "blank retirement slug",
+                "retirement slug exceeds 128 code points",
+                "duplicate retirement slug: old-slug",
+                "retirement slug overlaps content-pack post: " + loaded.posts().getFirst().slug());
+    }
 
     @Test
     void reportsAllStructuralErrorsInDeterministicOrder() throws Exception {
@@ -466,6 +501,24 @@ class ContentPackValidatorTest {
         return new SeedAssetDefinition(key, source, sourceUrl, sourcePageUrl, original.fetchedAt(), usageNote,
                 sourceFile, original.file(), original.objectKey(), original.sha256(), original.contentType(),
                 original.width(), original.height(), original.usage());
+    }
+
+    private ContentPack withRetirements(
+            ContentPack loaded,
+            String stage,
+            int expectedRetirements,
+            List<SeedPostRetirementDefinition> retirements) {
+        ContentPackManifest manifest = new ContentPackManifest(
+                loaded.manifest().version(),
+                loaded.manifest().namespace(),
+                stage,
+                loaded.manifest().expectedAccounts(),
+                loaded.manifest().expectedPosts(),
+                expectedRetirements,
+                loaded.manifest().expectedCategories());
+        return new ContentPack(
+                loaded.root(), manifest, loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                retirements, loaded.comments(), loaded.follows(), loaded.reactions(), loaded.views());
     }
 
     private ContentPack normalizedValidPack() throws Exception {

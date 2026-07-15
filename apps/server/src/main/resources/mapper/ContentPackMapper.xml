@@ -23,6 +23,16 @@
         </constructor>
     </resultMap>
 
+    <resultMap id="RetirementCandidateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$RetirementCandidate">
+        <constructor>
+            <arg column="id" javaType="_long"/>
+            <arg column="creator_id" javaType="_long"/>
+            <arg column="slug" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="tags_json" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
     <resultMap id="FollowStateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$FollowState">
         <constructor>
             <arg column="following_id" javaType="java.lang.Long"/>
@@ -169,6 +179,32 @@
             #{createTime}, #{createTime}, #{publishTime}
         )
     </insert>
+
+    <select id="findRetirementCandidates" resultMap="RetirementCandidateMap">
+        SELECT id, creator_id, slug, status, CAST(tags AS CHAR) AS tags_json
+        FROM posts
+        WHERE
+        <choose>
+            <when test="slugs != null and slugs.size() > 0">
+                slug IN
+                <foreach collection="slugs" item="slug" open="(" separator="," close=")">
+                    #{slug}
+                </foreach>
+            </when>
+            <otherwise>
+                1 = 0
+            </otherwise>
+        </choose>
+        FOR UPDATE
+    </select>
+
+    <update id="softDeleteRetirementPost">
+        UPDATE posts
+        SET status = 'deleted',
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND status = 'published'
+    </update>
 
     <select id="findLegacyCommentId" resultType="java.lang.Long">
         SELECT id

@@ -7,6 +7,7 @@ import com.chtholly.seed.contentpack.model.SeedAssetDefinition;
 import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
 import com.chtholly.seed.contentpack.model.SeedFollowDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
+import com.chtholly.seed.contentpack.model.SeedPostRetirementDefinition;
 import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
 import com.chtholly.seed.contentpack.model.SeedSourceDefinition;
 import com.chtholly.seed.contentpack.model.SeedViewDefinition;
@@ -56,6 +57,7 @@ public final class ContentPackValidator {
         validateAssets(pack, errors);
         validateSources(pack, errors);
         validatePosts(pack, errors);
+        validateRetirements(pack, errors);
         validateComments(pack, errors);
         validateReactions(pack, errors);
         validateFollows(pack, errors);
@@ -84,6 +86,13 @@ public final class ContentPackValidator {
         }
         if (manifest.expectedPosts() != pack.posts().size()) {
             errors.add("expected post count: " + manifest.expectedPosts() + ", actual: " + pack.posts().size());
+        }
+        if (manifest.expectedRetirements() != pack.retirements().size()) {
+            errors.add("expected retirement count: " + manifest.expectedRetirements()
+                    + ", actual: " + pack.retirements().size());
+        }
+        if (!pack.retirements().isEmpty() && !"complete".equals(manifest.stage())) {
+            errors.add("retirements require complete stage");
         }
 
         Map<String, Integer> actualCategories = new LinkedHashMap<>();
@@ -158,6 +167,32 @@ public final class ContentPackValidator {
 
     private boolean isDeclaredPostAuthor(Set<String> accountKeys, String authorSeedKey) {
         return SITE_OWNER_AUTHOR.equals(authorSeedKey) || accountKeys.contains(authorSeedKey);
+    }
+
+    private void validateRetirements(ContentPack pack, List<String> errors) {
+        Set<String> contentPackSlugs = new HashSet<>();
+        for (SeedPostDefinition post : pack.posts()) {
+            contentPackSlugs.add(foldDatabaseIdentifier(post.slug()));
+        }
+        Set<String> seen = new HashSet<>();
+        Set<String> duplicateReports = new HashSet<>();
+        for (SeedPostRetirementDefinition retirement : pack.retirements()) {
+            String slug = retirement.slug();
+            if (slug == null || slug.isBlank()) {
+                errors.add("blank retirement slug");
+                continue;
+            }
+            if (slug.codePointCount(0, slug.length()) > 128) {
+                errors.add("retirement slug exceeds 128 code points: " + slug);
+            }
+            String folded = foldDatabaseIdentifier(slug);
+            if (!seen.add(folded) && duplicateReports.add(folded)) {
+                errors.add("duplicate retirement slug: " + slug);
+            }
+            if (contentPackSlugs.contains(folded)) {
+                errors.add("retirement slug overlaps content-pack post: " + slug);
+            }
+        }
     }
 
     private void validateAssets(ContentPack pack, List<String> errors) {

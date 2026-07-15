@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -249,7 +250,9 @@ public final class ContentPackImportService {
                 log.error("Seed author post counter update failed for user {}", created.getKey(), exception);
             }
         }
-        for (long authorId : write.identities().accountIds().values()) {
+        LinkedHashSet<Long> authorIdsToRebuild = new LinkedHashSet<>(write.identities().accountIds().values());
+        authorIdsToRebuild.addAll(write.retiredAuthorIds());
+        for (long authorId : authorIdsToRebuild) {
             try {
                 // increment 只记录首次创建；随后按 DB 事实重建，使 partial 重跑不会重复累加。
                 userCounterService.rebuildAllCounters(authorId);
@@ -260,7 +263,9 @@ public final class ContentPackImportService {
         }
 
         List<Long> attemptedPostIds = write.postIds();
-        for (long postId : attemptedPostIds) {
+        LinkedHashSet<Long> postIdsToInvalidate = new LinkedHashSet<>(attemptedPostIds);
+        postIdsToInvalidate.addAll(write.retiredPostIds());
+        for (long postId : postIdsToInvalidate) {
             try {
                 cacheInvalidator.invalidate(postId);
             } catch (RuntimeException exception) {
@@ -279,6 +284,14 @@ public final class ContentPackImportService {
                 // tryUpsertPost normally contains its own failure, but the import report remains complete if a proxy fails.
                 indexFailures.add(postId);
                 log.error("Seed post indexing invocation failed for post {}", postId, exception);
+            }
+        }
+        for (long postId : write.retiredPostIds()) {
+            try {
+                searchIndexService.softDeletePost(postId);
+            } catch (RuntimeException exception) {
+                runtimeFailure = true;
+                log.error("Retired post search-index deletion failed for post {}", postId, exception);
             }
         }
 
@@ -322,6 +335,8 @@ public final class ContentPackImportService {
                 pack == null || pack.manifest() == null ? null : pack.manifest().version(),
                 snapshot,
                 write == null ? List.of() : write.changedPostIds(),
+                write == null ? List.of() : write.retiredPostIds(),
+                write == null ? List.of() : write.unmatchedRetirementSlugs(),
                 attemptedPostIds,
                 pendingViews,
                 indexFailures,

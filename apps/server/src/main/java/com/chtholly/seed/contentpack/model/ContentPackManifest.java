@@ -11,6 +11,7 @@ public record ContentPackManifest(
         String stage,
         int expectedAccounts,
         int expectedPosts,
+        int expectedRetirements,
         Map<String, Integer> expectedCategories) {
 
     /**
@@ -18,5 +19,18 @@ public record ContentPackManifest(
      */
     public ContentPackManifest {
         expectedCategories = Map.copyOf(expectedCategories);
+    }
+
+    /**
+     * Creates a legacy manifest without retirement declarations.
+     */
+    public ContentPackManifest(
+            String version,
+            String namespace,
+            String stage,
+            int expectedAccounts,
+            int expectedPosts,
+            Map<String, Integer> expectedCategories) {
+        this(version, namespace, stage, expectedAccounts, expectedPosts, 0, expectedCategories);
     }
 }

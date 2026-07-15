@@ -4,6 +4,7 @@ import com.chtholly.config.SiteProperties;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.seed.contentpack.ContentPackMapper.FollowState;
 import com.chtholly.seed.contentpack.ContentPackMapper.PostState;
+import com.chtholly.seed.contentpack.ContentPackMapper.RetirementCandidate;
 import com.chtholly.seed.contentpack.ContentPackMapper.FollowingState;
 import com.chtholly.seed.contentpack.ContentPackMapper.FollowerState;
 import com.chtholly.seed.contentpack.ContentPackMediaPublisher.PublishedAsset;
@@ -101,12 +102,16 @@ public class ContentPackDatabaseWriter {
         ContentPackIdentityResolver resolver = new ContentPackIdentityResolver(namespace, mapper, idGenerator);
         Map<String, Long> accountIds = writeAccounts(pack, published, namespace, version, resolver);
         PostWriteState posts = writePosts(pack, published, accountIds, namespace, version, resolver);
+        RetirementWriteState retirements = retirePosts(pack, Set.copyOf(posts.postIds().values()));
         writeComments(pack, accountIds, posts.postIds(), namespace, version);
         writeFollows(pack, accountIds, namespace, version);
         return new WriteResult(
                 new ResolvedIdentities(namespace, accountIds, posts.postIds()),
                 posts.changedPostIds(),
-                posts.createdPostCountsByAuthor());
+                posts.createdPostCountsByAuthor(),
+                retirements.retiredPostIds(),
+                retirements.retiredAuthorIds(),
+                retirements.unmatchedSlugs());
     }
 
     private void requireValidReservedIdentities(ContentPack pack) {
@@ -196,6 +201,60 @@ public class ContentPackDatabaseWriter {
             changedPostIds.add(postId);
         }
         return new PostWriteState(postIds, changedPostIds, createdCounts);
+    }
+
+    private RetirementWriteState retirePosts(ContentPack pack, Set<Long> contentPackPostIds) {
+        if (pack.retirements().isEmpty()) {
+            return new RetirementWriteState(List.of(), List.of(), List.of());
+        }
+        long ownerUserId = requireSiteOwnerUserId();
+        List<String> declaredSlugs = pack.retirements().stream().map(retirement -> retirement.slug()).toList();
+        List<RetirementCandidate> candidates = mapper.findRetirementCandidates(declaredSlugs);
+        Map<String, RetirementCandidate> candidatesBySlug = new LinkedHashMap<>();
+        for (RetirementCandidate candidate : candidates) {
+            if (candidate.creatorId() == ownerUserId) {
+                throw new IllegalStateException("retirement allowlist matched site owner post: " + candidate.slug());
+            }
+            if (contentPackPostIds.contains(candidate.id())) {
+                throw new IllegalStateException("retirement allowlist matched content-pack post: " + candidate.slug());
+            }
+            if (!"published".equals(candidate.status()) && !"deleted".equals(candidate.status())) {
+                throw new IllegalStateException(
+                        "retirement candidate has unsupported status: " + candidate.slug() + " -> " + candidate.status());
+            }
+            String folded = foldSlug(candidate.slug());
+            if (candidatesBySlug.putIfAbsent(folded, candidate) != null) {
+                throw new IllegalStateException("multiple retirement candidates matched slug: " + candidate.slug());
+            }
+        }
+
+        List<Long> retiredPostIds = new ArrayList<>();
+        Set<Long> retiredAuthorIds = new LinkedHashSet<>();
+        List<String> unmatchedSlugs = new ArrayList<>();
+        for (String declaredSlug : declaredSlugs) {
+            RetirementCandidate candidate = candidatesBySlug.get(foldSlug(declaredSlug));
+            if (candidate == null) {
+                unmatchedSlugs.add(declaredSlug);
+                continue;
+            }
+            if ("deleted".equals(candidate.status())) {
+                continue;
+            }
+            int affected = mapper.softDeleteRetirementPost(candidate.id());
+            if (affected != 1) {
+                throw new IllegalStateException(
+                        "expected to retire exactly one post: " + candidate.slug() + ", affected: " + affected);
+            }
+            tagService.releasePublishedPostTags(parseTags(candidate.tagsJson()));
+            retiredPostIds.add(candidate.id());
+            retiredAuthorIds.add(candidate.creatorId());
+        }
+        return new RetirementWriteState(
+                List.copyOf(retiredPostIds), List.copyOf(retiredAuthorIds), List.copyOf(unmatchedSlugs));
+    }
+
+    private String foldSlug(String slug) {
+        return slug.toLowerCase(java.util.Locale.ROOT);
     }
 
     private long resolvePostAuthorId(Map<String, Long> accountIds, String authorSeedKey) {
@@ -481,11 +540,25 @@ public class ContentPackDatabaseWriter {
     public record WriteResult(
             ResolvedIdentities identities,
             List<Long> changedPostIds,
-            Map<Long, Integer> createdPostCountsByAuthor) {
+            Map<Long, Integer> createdPostCountsByAuthor,
+            List<Long> retiredPostIds,
+            List<Long> retiredAuthorIds,
+            List<String> unmatchedRetirementSlugs) {
         public WriteResult {
             changedPostIds = List.copyOf(changedPostIds);
             createdPostCountsByAuthor = Collections.unmodifiableMap(
                     new LinkedHashMap<>(createdPostCountsByAuthor));
+            retiredPostIds = List.copyOf(retiredPostIds);
+            retiredAuthorIds = List.copyOf(retiredAuthorIds);
+            unmatchedRetirementSlugs = List.copyOf(unmatchedRetirementSlugs);
+        }
+
+        /** Creates a legacy write result without retirement outcomes. */
+        public WriteResult(
+                ResolvedIdentities identities,
+                List<Long> changedPostIds,
+                Map<Long, Integer> createdPostCountsByAuthor) {
+            this(identities, changedPostIds, createdPostCountsByAuthor, List.of(), List.of(), List.of());
         }
 
         /**
@@ -502,5 +575,11 @@ public class ContentPackDatabaseWriter {
             Map<String, Long> postIds,
             List<Long> changedPostIds,
             Map<Long, Integer> createdPostCountsByAuthor) {
+    }
+
+    private record RetirementWriteState(
+            List<Long> retiredPostIds,
+            List<Long> retiredAuthorIds,
+            List<String> unmatchedSlugs) {
     }
 }

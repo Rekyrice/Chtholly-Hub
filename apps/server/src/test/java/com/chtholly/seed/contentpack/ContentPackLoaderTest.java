@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -107,6 +108,7 @@ class ContentPackLoaderTest {
         ContentPack pack = loader.load(tempDir);
 
         assertTrue(pack.sources().isEmpty());
+        assertTrue(pack.retirements().isEmpty());
     }
 
     @Test
@@ -119,6 +121,36 @@ class ContentPackLoaderTest {
         var exception = assertThrows(java.io.UncheckedIOException.class, () -> loader.load(tempDir));
 
         assertTrue(exception.getMessage().contains("sources.yml"));
+    }
+
+    @Test
+    void contentV3RequiresRetirementsFile(@TempDir Path tempDir) throws Exception {
+        copyFixture(fixtureRoot(), tempDir);
+        Files.writeString(tempDir.resolve("manifest.yml"),
+                Files.readString(tempDir.resolve("manifest.yml")).replace("content-v2", "content-v3"));
+
+        var exception = assertThrows(java.io.UncheckedIOException.class, () -> loader.load(tempDir));
+
+        assertTrue(exception.getMessage().contains("retirements.yml"));
+    }
+
+    @Test
+    void loadsRetirementsInDeclarationOrderAndMakesThemImmutable(@TempDir Path tempDir) throws Exception {
+        copyFixture(fixtureRoot(), tempDir);
+        Files.writeString(tempDir.resolve("manifest.yml"),
+                Files.readString(tempDir.resolve("manifest.yml")).replace("content-v2", "content-v3"));
+        Files.writeString(tempDir.resolve("retirements.yml"), """
+                posts:
+                  - slug: first-old-post
+                  - slug: second-old-post
+                """, StandardCharsets.UTF_8);
+
+        ContentPack pack = loader.load(tempDir);
+
+        assertEquals(List.of("first-old-post", "second-old-post"),
+                pack.retirements().stream().map(retirement -> retirement.slug()).toList());
+        assertThrows(UnsupportedOperationException.class,
+                () -> pack.retirements().add(pack.retirements().getFirst()));
     }
 
     @Test

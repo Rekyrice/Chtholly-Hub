@@ -93,6 +93,22 @@ public interface ContentPackMapper {
     int insertSeedPost(SeedPostRow row);
 
     /**
+     * Locks posts whose complete public slugs appear in the approved retirement allowlist.
+     *
+     * @param slugs exact declared slugs
+     * @return matching rows in database order
+     */
+    List<RetirementCandidate> findRetirementCandidates(@Param("slugs") List<String> slugs);
+
+    /**
+     * Soft-deletes one currently published retirement candidate.
+     *
+     * @param id candidate post ID
+     * @return affected row count
+     */
+    int softDeleteRetirementPost(@Param("id") long id);
+
+    /**
      * @param postId resolved post ID
      * @param authorId resolved Seed author ID
      * @param ordinal zero-based legacy order
@@ -165,6 +181,10 @@ public interface ContentPackMapper {
 
     /** Minimal current post state used for idempotency and tag reconciliation. */
     record PostState(long id, long creatorId, String tagsJson, String contentObjectKey) {
+    }
+
+    /** Locked post state used by strict allowlist retirement. */
+    record RetirementCandidate(long id, long creatorId, String slug, String status, String tagsJson) {
     }
 
     /** Existing IDs for both copies of a directed follow relation. */
