@@ -1,0 +1,50 @@
+{
+  "experiment": "python-async-blocking-call",
+  "python": "3.7.0",
+  "platform": "Windows-10-10.0.26100-SP0",
+  "tasks": 50,
+  "delaySeconds": 0.05,
+  "rounds": 5,
+  "summary": {
+    "direct_blocking": {
+      "roundSeconds": [
+        3.087606,
+        3.093646,
+        3.094287,
+        3.096745,
+        3.102048
+      ],
+      "medianSeconds": 3.094287,
+      "p95Seconds": 3.102048,
+      "speedupVsDirect": 1.0
+    },
+    "cooperative_wait": {
+      "roundSeconds": [
+        0.063206,
+        0.062868,
+        0.062112,
+        0.061518,
+        0.06262
+      ],
+      "medianSeconds": 0.06262,
+      "p95Seconds": 0.063206,
+      "speedupVsDirect": 49.41
+    },
+    "thread_offload": {
+      "roundSeconds": [
+        0.10831,
+        0.063806,
+        0.064977,
+        0.063398,
+        0.078447
+      ],
+      "medianSeconds": 0.064977,
+      "p95Seconds": 0.10831,
+      "speedupVsDirect": 47.62
+    }
+  },
+  "notes": [
+    "cooperative_wait simulates an awaitable dependency; it is not an HTTP benchmark",
+    "thread_offload uses the default executor and remains bounded by its thread count"
+  ]
+}

@@ -1,0 +1,7 @@
+version: content-v2
+namespace: invalid-structure
+stage: review
+expectedAccounts: 3
+expectedPosts: 3
+expectedCategories:
+  TECH: 3

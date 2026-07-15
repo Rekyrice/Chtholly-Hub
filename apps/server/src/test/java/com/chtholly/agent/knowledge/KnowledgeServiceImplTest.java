@@ -4,6 +4,7 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.bangumi.model.BangumiSubjectRow;
 import com.chtholly.bangumi.service.BangumiService;
+import com.chtholly.seed.SeedProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.ByteArrayResource;
@@ -16,6 +17,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class KnowledgeServiceImplTest {
@@ -69,6 +71,27 @@ class KnowledgeServiceImplTest {
         assertThat(results.getFirst().getId()).isEqualTo("bangumi:265");
         assertThat(results.getFirst().getTitle()).isEqualTo("葬送的芙莉莲");
         assertThat(results.getFirst().getSnippet()).contains("评分 8.7", "排名 20", "集数 28");
+    }
+
+    @Test
+    void cliReadOnly_loadsLocalKnowledgeWithoutMirroringToElasticsearch() throws Exception {
+        ResourcePatternResolver resolver = mock(ResourcePatternResolver.class);
+        when(resolver.getResources("classpath*:knowledge/*.md"))
+                .thenReturn(new Resource[]{markdown("about-me.md", "# About\n\nlocal only")});
+        ElasticsearchClient elasticsearch = mock(ElasticsearchClient.class);
+        SeedProperties seedProperties = new SeedProperties();
+        seedProperties.setCliReadOnly(true);
+        KnowledgeServiceImpl service = new KnowledgeServiceImpl(
+                resolver,
+                provider(elasticsearch),
+                emptyProvider(BangumiService.class),
+                null,
+                seedProperties);
+
+        service.loadKnowledge();
+
+        assertThat(service.searchRelevantKnowledge("local", 1)).hasSize(1);
+        verifyNoInteractions(elasticsearch);
     }
 
     private static Resource markdown(String filename, String content) {

@@ -56,7 +56,7 @@
 
     <update id="decrementUsage">
         UPDATE tags
-        SET usage_count = GREATEST(usage_count - 1, 0), updated_at = CURRENT_TIMESTAMP
+        SET usage_count = IF(usage_count > 0, usage_count - 1, 0), updated_at = CURRENT_TIMESTAMP
         WHERE name = #{name}
     </update>
 

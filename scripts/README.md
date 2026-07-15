@@ -4,6 +4,7 @@
 |-----------|----------|------|
 | [`dev/`](dev/) | `start-backend.ps1`、`start-frontend.ps1`、`stop-backend.ps1` | 加载根 `.env`，启动/停止本地应用 |
 | [`dev/`](dev/) | `apply-migrations.ps1`、`run-seed.ps1`、`ensure-kafka-topics.ps1` | 本地数据库增量、应用 seed、Kafka 主题 |
+| [`backup/`](backup/) | `backup-mysql.ps1` | MySQL 一致性备份、校验与恢复前材料 |
 | [`deploy/`](deploy/) | `ecs-bootstrap.sh`、`ecs-init-db.sh` | 单机生产 Compose 首次部署与数据库初始化 |
 | [`git-hooks/`](git-hooks/) | `prepare-commit-msg` | 可选 Git 提交信息钩子；仓库不会自动安装 |
 | [`oss/`](oss/README.md) | `upload-seed-markdown.mjs`、`upload-markdown.mjs` | 上传 Phase A 或单篇 Markdown 正文 |

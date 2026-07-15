@@ -1,0 +1,22 @@
+comments:
+  - seedKey: comment-debugging-1
+    legacyOrdinal: 1
+    postSeedKey: post-real-debugging
+    authorSeedKey: night-coder
+    parentSeedKey: null
+    content: 证据链很清晰。
+    createdAt: 2026-07-11T09:00:00Z
+follows:
+  - seedKey: follow-night-coder-log-watcher
+    fromAccountSeedKey: night-coder
+    toAccountSeedKey: log-watcher
+    createdAt: 2026-07-11T09:10:00Z
+reactions:
+  - seedKey: reaction-debugging-1
+    postSeedKey: post-real-debugging
+    accountSeedKey: night-coder
+    type: LIKE
+views:
+  - seedKey: view-debugging-1
+    postSeedKey: post-real-debugging
+    minimumCount: 42

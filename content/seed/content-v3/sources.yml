@@ -1,0 +1,766 @@
+- key: apocalypse-hotel-sakuga
+  type: production-analysis
+  title: Apocalypse Hotel And Legacies That Outlast The End Of The World
+  pageUrl: https://blog.sakugabooru.com/2026/01/02/apocalypse-hotel-and-legacies/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [企划换手形成的创作者谱系, 竹中信广与村越繁重整企划, 竹本泉原案的持续影响, 春藤佳奈的Gainax合作谱系, 本田光平的彩色废墟, 同一树林的前后对照]
+  quote: null
+  usageNote: 作为制作研究主线与图像来源；中文正文重新组织事实和论证，不逐段翻译或复制英文表达
+- key: apocalypse-hotel-bangumi-user
+  type: user-review
+  title: 末日后酒店公开条目与 rekyrice 收藏评论
+  pageUrl: https://bgm.tv/subject/509986
+  author: rekyrice / Bangumi
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [单元剧既是缺点也是优点, 第五集时间也是有色彩的, 第六集温泉与彩虹, 第十一集有种活着的感觉, 第十二集人类大笨蛋, 即使无法生活也可以停留]
+  quote: null
+  usageNote: 用户明确授权融合其本人公开评论；按文章论证拆分吸收，不把整段原评机械粘贴
+- key: apocalypse-hotel-itmedia
+  type: interview
+  title: ロジックじゃない、感覚で創る――「アポカリプスホテル」誕生の軌跡
+  pageUrl: https://www.itmedia.co.jp/news/articles/2509/20/news007.html
+  author: ITmedia NEWS
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [企划源自Cygames制片人与LIDENFILMS里见哲朗, 竹中信广邀请村越繁重整, 疫情导致排期困难, 制作转移至CygamesPictures, CyberAgent椛嶋麻菜美参与推进]
+  quote: null
+  usageNote: 核实企划起点、制作换手原因与商业推进过程
+- key: apocalypse-hotel-ann
+  type: interview
+  title: Opening the Apocalypse Hotel with CygamesPictures President Nobuhiro Takenaka, Director Kana Shundo, & Screenwriter Shigeru Murakoshi
+  pageUrl: https://www.animenewsnetwork.com/interview/2025-06-24/opening-the-apocalypse-hotel-with-cygamespictures-president-nobuhiro-takenaka-director-kana-shundo-/.225414
+  author: Anime News Network
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [村越繁约2020年加入, 十二集梗概, 八千代的未知扩展功能, 春藤佳奈把八千代视为工作女性, 银座传统与现代并存, 悲伤与欢乐是同一枚硬币的两面]
+  quote: null
+  usageNote: 核实核心成员对企划、八千代设计与银座场景的说明
+- key: apocalypse-hotel-netlab
+  type: interview
+  title: アニメ「アポカリプスホテル」竹中信広、村越繁ロングインタビュー
+  pageUrl: https://nlab.itmedia.co.jp/cont/articles/3456032/
+  author: ねとらぼ
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [各集并非有意切换类型, 从酒店里会发生什么出发, 第六集配音与插曲选角, 春藤佳奈调整演出]
+  quote: null
+  usageNote: 核实单元剧类型跳跃的创作出发点与第六集制作细节
+- key: apocalypse-hotel-animate-times
+  type: interview
+  title: 『アポカリプスホテル』キャラクター原案・竹本泉インタビュー
+  pageUrl: https://www.animatetimes.com/news/details.php?id=1749194269
+  author: Animate Times
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [竹本泉担任角色原案, 设计会从世界设定反推, 早期草案拓展角色可能性]
+  quote: null
+  usageNote: 核实竹本泉的角色设计方法，不把未采用草案写成正片设定
+- key: apocalypse-hotel-episode11-stills
+  type: episode-review
+  title: Apocalypse Hotel – 11
+  pageUrl: https://lostinanime.com/2025/06/apocalypse-hotel-11/
+  author: Guardian Enzo / Lost in Anime
+  fetchedAt: 2026-07-12T12:53:53.689Z
+  factAnchors: [第十一集评论页所嵌截图, 八千代独坐树荫下圆桌旁的画面]
+  quote: null
+  usageNote: 仅用于核对第十一集评论页所嵌截图与树荫下休息画面，不据此推断授权范围
+- key: apocalypse-hotel-gamebiz
+  type: interview
+  title: 『アポカリプスホテル』はなぜ心に残るのか
+  pageUrl: https://gamebiz.jp/news/411946
+  author: gamebiz
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [制作从LIDENFILMS转到CygamesPictures, 第五集跨越约五十年, 归来的人类不会重新定居, 八千代逐渐更接近人类]
+  quote: null
+  usageNote: 核实椛嶋麻菜美对企划、第五集时间跨度与结尾决定的说明
+- key: apocalypse-hotel-official
+  type: official-site
+  title: TVアニメ「アポカリプスホテル」公式
+  pageUrl: https://apocalypse-hotel.jp/
+  author: アポカリプスホテル製作委員会
+  fetchedAt: 2026-07-12T09:52:04Z
+  factAnchors: [2025年4月8日开播, 监督春藤佳奈, 角色原案竹本泉, 系列构成村越繁, 美术监督本田光平, 动画制作CygamesPictures]
+  quote: null
+  usageNote: 核对播出时间、核心职员与官方世界观简介，并提供封面视觉
+- key: shoushimin-cinematography-sakuga
+  type: production-analysis
+  title: Shoushimin Series' Cinematography And The Unnerving Pretense Of Ordinariness
+  pageUrl: https://blog.sakugabooru.com/2025/12/31/shoushimin-series-cinematography/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T14:29:34.163Z
+  factAnchors: [主角追求普通生活与中性构图之间的反差, 岐阜实景与《冰菓》动画的对照关系, 斋藤敦史负责角色设计, 看似克制的取景会逐步转为不安与夸张风格]
+  quote: null
+  usageNote: 观点路线：从过度端正的构图、人物与空间的距离进入“普通是一种表演”的论证；媒体说明：用于核对四张来源页静态剧照及其摄影语境，不复制原文长段
+- key: shoushimin-cinematography-official
+  type: official-site
+  title: TVアニメ『小市民シリーズ』公式サイト
+  pageUrl: https://shoshimin-anime.com/
+  author: 小市民シリーズ製作委員会
+  fetchedAt: 2026-07-12T14:29:34.948Z
+  factAnchors: [原作米泽穗信, 监督神户守, 角色设计斋藤敦史, 摄影监督盐川智幸, 动画制作Lapin Track]
+  quote: null
+  usageNote: 观点路线：仅核对作品、角色与制作职员等官方事实，不承担摄影评价；媒体说明：不直接取图，媒体统一回到已记录的 Sakuga Blog 来源页
+- key: hyakuemu-production-sakuga
+  type: production-analysis
+  title: "Hyakuemu / 100 Meters: Uoto & Kenji Iwaisawa's Full Force Sprint"
+  pageUrl: https://blog.sakugabooru.com/2025/12/27/hyakuemu-100-meters-uoto-kenji-iwaisawa/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T14:29:35.703Z
+  factAnchors: [鱼丰与岩井泽健治围绕非理性热情形成合作, 岩井泽健治以自行摸索的转描方法进入动画, 《音乐》的长期个人制作经验影响本片流程, 奔跑画面强调身体重量与创作者的执拗]
+  quote: null
+  usageNote: 观点路线：从身体线条、速度感和胜负时间切入制作方法与人物热情；媒体说明：用于核对四张来源页静态剧照及其动画语境，不复制原文长段
+- key: hyakuemu-production-official
+  type: official-site
+  title: 映画『ひゃくえむ。』公式サイト
+  pageUrl: https://hyakuemu-anime.com/
+  author: 『ひゃくえむ。』製作委員会
+  fetchedAt: 2026-07-12T14:29:42.584Z
+  factAnchors: [原作鱼丰, 监督岩井泽健治, 脚本武藤康之, 角色设计与总作画监督小岛庆祐, 动画制作Rock'n Roll Mountain]
+  quote: null
+  usageNote: 观点路线：核对原作、剧情前提和制作阵容，不替代对运动画面的分析；媒体说明：不直接取图，媒体统一回到已记录的 Sakuga Blog 来源页
+- key: city-animation-production-sakuga
+  type: production-analysis
+  title: "CITY: The Animation Final Production Notes And Kyoto Animation's Future"
+  pageUrl: https://blog.sakugabooru.com/2025/09/29/city-the-animation-final-production-notes-and-kyoto-animations-future/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T14:29:43.341Z
+  factAnchors: [第十二集由北之原孝将执导并分镜, 夸张二维动作与荒井切利的卡通表演结合, 无对白段落以古典音乐组织喜剧节拍, 动画师的线条与动作承担统一全城反应的作用]
+  quote: null
+  usageNote: 观点路线：按人物动作、背景反应与剪辑节拍拆解城市喜剧，再回到团队统一的线条语言；媒体说明：用于核对来源页静态剧照，线条图因原候选误指展览宣传图而改用同页 city-end 静态画面
+- key: city-animation-production-official
+  type: official-site
+  title: STAFF・CAST | 『CITY THE ANIMATION』公式サイト
+  pageUrl: https://city-the-animation.com/staff/
+  author: CITY THE ANIMATION 製作委員会
+  fetchedAt: 2026-07-12T14:58:59.084Z
+  factAnchors: [原作あらゐけいいち《CITY》, 监督石立太一, 角色设计与总作画监督徳山珠美, 动画制作京都アニメーション]
+  quote: null
+  usageNote: 观点路线：核对原作与核心制作阵容，为人物动作、团队表现和线条统一性的分析提供官方事实边界；媒体说明：不直接取图，媒体统一回到已记录的 Sakuga Blog 来源页
+- key: chainsaw-man-reze-sakuga
+  type: production-analysis
+  title: "Chainsaw Man: Reze Arc – The Movie Of The Moment"
+  pageUrl: https://blog.sakugabooru.com/2026/01/06/chainsaw-man-reze-the-movie-of-the-moment/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T16:22:06.309Z
+  factAnchors: [吉原达矢担任监督并调整宽银幕演出, 中园真登负责前段分镜与演出, 蕾塞的夸张肢体表演服务诱导与动摇, 泳池段落以非写实蓝色和牛尾宪辅配乐制造短暂梦境, 彩色爆炸呼应祭典烟火, 海中锁链回扣泳池, 白花与红花标记蕾塞的折返]
+  quote: null
+  usageNote: 观点路线：从雨夜相遇、泳池、烟火、海边与站台这些具体记忆讨论关系如何在动作奇观中反复回返；媒体说明：记录烟火、雨窗白花、空站台与海边暮色四张来源页静态图的实际画面和语境，不复制长段文字
+- key: chainsaw-man-reze-official
+  type: official-site
+  title: 劇場版『チェンソーマン レゼ篇』公式サイト
+  pageUrl: https://chainsawman.dog/movie_reze/
+  author: MAPPA / 東宝
+  fetchedAt: 2026-07-12T16:22:27.917Z
+  factAnchors: [剧场版标题为《チェンソーマン レゼ篇》, 日本公开日为2025年9月19日, 官方页面标示MAPPA与东宝, 官方主预告与视觉图]
+  quote: null
+  usageNote: 观点路线：只核对作品名称、公开日和官方发布主体，不承担观后评价；媒体说明：不直接取图，文章媒体均回到已记录的制作分析页静态图
+- key: orb-animation-sakuga
+  type: production-analysis
+  title: "Chi / Orb: On the Movements of the Earth – The Challenge To Animate The Uncompromising Human Spirit"
+  pageUrl: https://blog.sakugabooru.com/2025/05/09/chi-orb-the-challenge-to-animate-the-uncompromising/
+  author: kViN / Sakuga Blog
+  fetchedAt: 2026-07-12T16:22:07.430Z
+  factAnchors: [动画制片人冈恒成邀请清水健一以清楚演出强调话语力量, 配音阵容服务高密度对白, 鱼丰仅明确希望牛尾宪辅担任音乐, 第一篇章以暖橙信仰与冷蓝星空形成对照, 第五集黑暗雨夜在星光出现后改变人物方向, 动画星空参考日期与地点并按篇章调整色彩]
+  quote: null
+  usageNote: 观点路线：从配音的气息与停顿、音乐进入时机和三组未被说服的人物时刻讨论动画如何保存固执与犹疑；媒体说明：记录星空握手、火中人物、原作黑白星空画格和三名披风人物朝暮色移动四张来源页图像的真实内容
+- key: orb-animation-official
+  type: official-site
+  title: TVアニメ「チ。 ―地球の運動について―」公式
+  pageUrl: https://anime-chi.jp/
+  author: チ。―地球の運動について―製作委員会
+  fetchedAt: 2026-07-12T16:22:34.150Z
+  factAnchors: [原作鱼丰, 监督清水健一, 音乐牛尾宪辅, 动画制作MADHOUSE, 拉法尔由坂本真绫配音, 诺瓦克由津田健次郎配音, 胡贝特由速水奖配音]
+  quote: null
+  usageNote: 观点路线：核对角色配音、监督、音乐与动画制作等官方事实边界；媒体说明：不直接取图，正文媒体统一回到已记录的制作分析页图像
+- key: redisson-5972-moved-timeout
+  type: github-issue
+  title: The redis three-master and three-slave clusters often perform active/standby switchover
+  pageUrl: https://github.com/redisson/redisson/issues/5972
+  author: redisson/redisson contributors
+  fetchedAt: 2026-07-12T17:29:37.200Z
+  factAnchors: [Redis 6.0.11, Redisson 3.30.0, 三主三从频繁主备切换, 客户端拓扑可能未刷新, RedisMovedException目标URL构造NodeSource, NodeSource addr是MOVED重定向目标, failover后failback小环境复现, DEBUG请求先到当前副本再MOVED到当前主节点, Redisson内部四个master而实际三主, commit a4bdaa5, re-added master node isn't updated in Cluster topology, maintainer回复Fixed并关闭, milestone 3.33.0, 本文未自行复现或验证3.33.0]
+  quote: null
+  usageNote: "核对公开 Issue、comments、timeline、3.30.0 RedisExecutor 与官方 commit；API：https://api.github.com/repos/redisson/redisson/issues/5972；comments：https://api.github.com/repos/redisson/redisson/issues/5972/comments；timeline：https://api.github.com/repos/redisson/redisson/issues/5972/timeline；源码：https://github.com/redisson/redisson/blob/redisson-3.30.0/redisson/src/main/java/org/redisson/command/RedisExecutor.java；commit：https://github.com/redisson/redisson/commit/a4bdaa5；milestone：https://github.com/redisson/redisson/milestone/178。区分首帖判断、社区复现和维护者修复记录，不声称本文复现或验证 3.33.0。"
+- key: rag-chunk-local-experiment
+  type: local-experiment
+  title: RAG chunk size deterministic TF-IDF baseline
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/commit/c9f0747298c1267e4d1e3767fdfc5fb12185cb7e
+  author: kuro_404
+  fetchedAt: 2026-07-13T00:00:00Z
+  factAnchors: [tracked experiment.py queries.json results.json visuals.html, README.md, AGENTS.md, apps/server/README.md, apps/server/src/main/resources/knowledge/about-me.md, apps/server/src/main/resources/knowledge/my-home.md, apps/server/src/main/resources/knowledge/my-world.md, apps/server/src/main/resources/knowledge/those-stories.md, corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e, script SHA-256 a08dba095c004d57d2bbcf4b9115933925509d58c23ebce5c112d031fa2f1e7f, queries SHA-256 8e55530e8411a02cb4f54365ed418b00e45b978be711907bc0c4d0f48826e83e, result SHA-256 cac91a73bbf5f37fd2a8a259834e7100f4ec02bf5c6485a3fd7efa52a2bd4f62, visuals SHA-256 3c2285e3c224317fa993cfcbc67daef41c788f4b22a5119f9fb7ef00dc6d4178, Hit@1 0.375 与 0.375, MRR 0.569139 与 0.565179, OSS 上传方式 rank 7 到 5, Neo4j rank 13 到 14, 缓存 rank 3 到 4]
+  quote: null
+  usageNote: "tracked evidence：content/seed/content-v3/evidence/rag-chunk-size/experiment.py、content/seed/content-v3/evidence/rag-chunk-size/queries.json、content/seed/content-v3/evidence/rag-chunk-size/results.json、content/seed/content-v3/evidence/rag-chunk-size/visuals.html；corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e；script SHA-256 a08dba095c004d57d2bbcf4b9115933925509d58c23ebce5c112d031fa2f1e7f；queries SHA-256 8e55530e8411a02cb4f54365ed418b00e45b978be711907bc0c4d0f48826e83e；result SHA-256 cac91a73bbf5f37fd2a8a259834e7100f4ec02bf5c6485a3fd7efa52a2bd4f62；visuals SHA-256 3c2285e3c224317fa993cfcbc67daef41c788f4b22a5119f9fb7ef00dc6d4178。脚本以 git show 读取固定 commit 的七个 blob；queries 冻结 path、heading 与 answer-bearing substring；results 记录 blob SHA、指标和逐问排名；visuals 只从 results 动态取值；不调用 LLM、外部 embedding 或网络。"
+- key: urban-myth-official
+  type: official-site
+  title: 都市伝説解体センター 公式サイト
+  pageUrl: https://umdc.shueisha-games.com/
+  author: 墓場文庫 / 集英社ゲームズ
+  fetchedAt: 2026-07-12T20:00:14.725Z
+  factAnchors: [怪异呪物异界的调查与解体, 主人公福来蓟, 中心长廻屋涉, 社交媒体帖子调查, 可疑关键词搜索, 现场询问与探索, 眼镜查看过去残留痕迹, 都市传说的特定与解体, 开发墓场文库]
+  quote: null
+  usageNote: 核对官网的角色、调查流程与系统说明；封面使用官网公开主视觉，不把“冲击结局”等宣传语扩写成剧透
+- key: urban-myth-shueisha-games
+  type: official-product-page
+  title: 都市伝説解体センター | 集英社ゲームズ
+  pageUrl: https://shueisha-games.com/games/umdc/
+  author: 集英社ゲームズ
+  fetchedAt: 2026-07-12T20:00:14.725Z
+  factAnchors: [类型为悬疑冒险, 单人游戏, 2025年2月13日发售, 开发墓场文库, 发行集英社游戏, 支持简体中文]
+  quote: null
+  usageNote: 只核对产品类型、开发发行与发售信息，不用平台列表推断作者的购买平台
+- key: urban-myth-steam
+  type: official-store-page
+  title: 都市传说解体中心 | Steam
+  pageUrl: https://store.steampowered.com/app/2089600/Urban_Myth_Dissolution_Center/?l=schinese
+  author: Hakababunko / SHUEISHA GAMES
+  fetchedAt: 2026-07-12T20:00:14.725Z
+  factAnchors: [剧集式悬疑冒险, 福来蓟通过现场调查和社交媒体帖子收集证据, 迷幻像素画, 眼镜看到残留意念与记忆, 官方简体中文游戏截图]
+  quote: null
+  usageNote: 核对简体中文产品说明，并固定搜索界面、中心对话和现场调查三张官方商店截图；截图只呈现宣传页已有的低剧透场面
+- key: yokomichi-yonosuke-book
+  type: ebook-retail-page
+  title: 横道世之介
+  pageUrl: https://read.douban.com/ebook/54232408/
+  author: 吉田修一
+  fetchedAt: 2026-07-12T20:25:00Z
+  factAnchors: [吉田修一, 林雅惠, 上海人民出版社, 2018年版, ISBN 9787208152038]
+  quote: null
+  usageNote: 只核对作者、译者、出版社、版本、ISBN 与人物姓名；不引用作品简介，不读取或改写豆瓣用户书评
+- key: yokomichi-yonosuke-primary-text
+  type: primary-text
+  title: 横道世之介（上海人民出版社 2018 年林雅惠译本）
+  pageUrl: https://read.douban.com/ebook/54232408/
+  author: 吉田修一 / 林雅惠译
+  fetchedAt: 2026-07-12T20:50:00Z
+  factAnchors: [祥子在非洲难民营工作, 法国同事西尔维, 四驱车返回职员驻地, 谈起各自从前的男友, 世之介夏天去加藤住处吹空调, 明明睡过床却装作睡地板, 午夜公园长凳上的西瓜, 多年后的加藤笑起来]
+  quote: null
+  usageNote: 具体人物、未来插叙与两处场景依据上海人民出版社 2018 年林雅惠译本的原作阅读记录；pageUrl 只用于定位该版电子书与书目信息，公开零售页本身不独立证明非试读章节内容；不保存或引用长段原文
+- key: shiboyugi-sakuga-production
+  type: production-article
+  title: Shiboyugi — Souta Ueno
+  pageUrl: https://blog.sakugabooru.com/2026/04/10/shiboyugi-souta-ueno/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [上野壮大担任监督, 眼睛特写叠加矿物显微摄影, 无五官彩色剪影, 宽银幕与更窄画幅, 观众监视视角, Hewa制作3D环境参考, 墙后声音与赤脚音效, 死亡经常从远处呈现, 章节编号参与节奏]
+  quote: null
+  usageNote: 核对制作方法、空间与声音设计；正文独立组织，不翻译或复刻原文段落，配图保存公开文章中的动画画面
+- key: shiboyugi-official
+  type: official-site
+  title: TVアニメ「死亡遊戯で飯を食う。」公式サイト
+  pageUrl: https://shiboyugi-anime.com/
+  author: 鵜飼有志 / KADOKAWA / 「死亡遊戯で飯を食う。」製作委員会
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [主人公幽鬼, 以死亡游戏为生, 动画制作Studio DEEN]
+  quote: null
+  usageNote: 核对作品中文语境、主人公与动画制作信息
+- key: takopi-sakuga-production
+  type: production-article
+  title: Takopi's Original Sin Production Notes
+  pageUrl: https://blog.sakugabooru.com/2025/08/15/takopis-original-sin-production-notes-the-lengthy-road-to-proper-communication/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [两卷十六话改编为六集, 单集时长不固定, 第四话由大嶋博之主导分镜与演出, 直树获知尸体被发现后的断裂感, 背景动画表现距离, 润也从压迫性高位变为与弟弟平视]
+  quote: null
+  usageNote: 核对改编结构与第四话视听处理；正文从道歉和倾听切入，不沿用原文章法
+- key: takopi-official-story-04
+  type: official-episode-page
+  title: アニメ「タコピーの原罪」第4話 東くんの救済
+  pageUrl: https://www.tbs.co.jp/anime/takopi_project/story/story04.html
+  author: TBS / タイザン5 / 集英社・「タコピーの原罪」製作委員会
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [第四话标题东君的救济, 犯人搜寻开始, 直树对兄长润也有强烈自卑, 四张官方场面图]
+  quote: null
+  usageNote: 核对第四话梗概并使用三张官方场面图，图片不含结局信息
+- key: kisekoi-season2-sakuga
+  type: production-article
+  title: The Exceptional Growth Of My Dress-Up Darling Season 2
+  pageUrl: https://blog.sakugabooru.com/2025/10/08/the-exceptional-growth-of-my-dress-up-darling-kisekoi-season-2/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [筱原启辅担任监督, 山本ゆうすけ参与系列监督工作, 第十三话万圣节与五条的不安, 第十四话天野甘音的女装回忆, PrezHost剧中作品, 第二季扩大年龄性别与兴趣边界]
+  quote: null
+  usageNote: 核对第二季各段主题和制作分工；正文以海梦是否被困在可爱形象里为独立主线
+- key: kisekoi-official
+  type: official-site
+  title: TVアニメ「その着せ替え人形は恋をする」公式サイト
+  pageUrl: https://bisquedoll-anime.com/
+  author: 福田晋一 / SQUARE ENIX・「着せ恋」製作委員会
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [喜多川海梦, 五条新菜, 电视动画第二季]
+  quote: null
+  usageNote: 核对角色名与第二季作品信息
+- key: look-back-sakuga-production
+  type: production-article
+  title: Look Back — An Exceptional Production To Embrace The Paradox Of The Artist
+  pageUrl: https://blog.sakugabooru.com/2024/06/13/look-back-an-exceptional-production-to-embrace-the-paradox-of-the-artist-annecy-2024/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [押山清高担任监督脚本角色设计, Studio Durian, 保留原画线条, 押山承担约半数关键动画, 唯一作画监督, 为他人准备设定但自己不总参照, 奔跑段落在动画中扩展]
+  quote: null
+  usageNote: 核对作画方法与制作分工；不美化超负荷劳动，配图用于讨论线条、桌面与房间
+- key: look-back-official
+  type: official-site
+  title: 劇場アニメ「ルックバック」公式サイト
+  pageUrl: https://lookback-anime.com/
+  author: 藤本タツキ / 集英社・「ルックバック」製作委員会
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [藤野与京本, 押山清高担任监督脚本角色设计, Studio Durian制作]
+  quote: null
+  usageNote: 核对人物、主创与制作公司
+- key: bocchi-sakuga-production
+  type: production-article
+  title: Bocchi the Rock! Complete Production Notes
+  pageUrl: https://blog.sakugabooru.com/2022/12/26/bocchi-the-rock-complete-production-notes-and-final-impressions/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [斋藤圭一郎担任监督, 第六话街头演出使用贴近吉他的虚拟机位, 一只眼睛在演出前被头发遮住, 第八话两次演出以相近构图呈现身体变化, 第十二话喜多以演奏接住设备故障]
+  quote: null
+  usageNote: 核对第六、第八与第十二话的演出处理；正文以声音离开房间又回来为独立主线
+- key: bocchi-official-story
+  type: official-episode-pages
+  title: TVアニメ「ぼっち・ざ・ろっく！」STORY
+  pageUrl: https://bocchi.rocks/tv/story/
+  author: はまじあき / 芳文社・アニプレックス
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [第六话街头演出, 第八话首次Live, 第十二话学园祭, 官方场面图]
+  quote: null
+  usageNote: 使用第六话与第八话官方场面图，核对故事节点，不引用官方文案
+- key: cowboy-bebop-sakuga-roundtable
+  type: creator-roundtable
+  title: Cowboy Bebop 20th Anniversary Roundtable
+  pageUrl: https://blog.sakugabooru.com/2018/07/24/cowboy-bebop-20th-anniversary-roundtable-masahiko-minami-x-shinichiro-watanabe-x-keiko-nobumoto/
+  author: Masahiko Minami / Shinichiro Watanabe / Keiko Nobumoto
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [南雅彦渡边信一郎信本敬子圆桌, 企划最初与飞船玩具推广有关, 万代退出后由Bandai Visual继续, 单元剧每集追求不同气质, 主创维持角色说话方式, 不稳定前景使单集带有最后一集般的决绝]
+  quote: null
+  usageNote: 核对企划和单元剧制作背景；正文只保留与第五话观看感受有关的事实
+- key: cowboy-bebop-official
+  type: official-site
+  title: カウボーイビバップ | サンライズワールド
+  pageUrl: https://www.sunrise-world.net/titles/pickup_041.php
+  author: サンライズ
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [1998年电视动画, 全二十六话WOWOW版, 监督渡边信一郎, 音乐菅野洋子与SEATBELTS]
+  quote: null
+  usageNote: 核对作品、话数与主创信息
+- key: cowboy-bebop-episode5-gallery
+  type: community-screenshot-gallery
+  title: Cowboy Bebop Page 5 — Ballad Of Fallen Angels
+  pageUrl: https://www.inetres.com/gp/anime/bebop/index05.html
+  author: Gary W. Cooke
+  fetchedAt: 2026-07-13T08:00:00.000Z
+  factAnchors: [第五话教堂内部, Spike与Vicious在彩窗前对峙, 原始动画画面版权归Sunrise]
+  quote: null
+  usageNote: 保存三张低分辨率第五话场面帧，只用于私人站点文章中的画面讨论，不冒充官方图片库
+- key: thread-pool-jdk21-docs
+  type: official-documentation
+  title: ThreadPoolExecutor (Java SE 21 & JDK 21)
+  pageUrl: https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/ThreadPoolExecutor.html
+  author: Oracle
+  fetchedAt: 2026-07-13T15:30:00.000Z
+  factAnchors: [corePoolSize与maximumPoolSize, 核心线程忙时优先尝试排队, 队列无法接收任务后才创建非核心线程, 无界队列会使maximumPoolSize没有实际效果, 饱和后执行拒绝策略]
+  quote: null
+  usageNote: 核对ThreadPoolExecutor.execute的线程与队列决策顺序，不引用长段文档
+- key: thread-pool-local-experiment
+  type: reproducible-local-experiment
+  title: ThreadPoolExecutor queue-before-max local experiment
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/thread-pool-queue-before-max
+  author: night-coder
+  fetchedAt: 2026-07-13T15:24:51.809Z
+  factAnchors: [Java 21.0.11, corePoolSize 4, maximumPoolSize 64, 同时提交40个被闩锁阻塞任务, 无界LinkedBlockingQueue运行4排队36, ArrayBlockingQueue容量8运行32排队8, 两组均拒绝0, 源码与原始JSON已跟踪]
+  quote: null
+  usageNote: 文章中的数字、表格和图表全部来自跟踪实验；只验证队列决策顺序，不外推业务线程池容量
+- key: agent-tool-description-local-experiment
+  type: reproducible-local-experiment
+  title: Agent tool description ablation
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/agent-tool-description-ablation
+  author: algo-runner
+  fetchedAt: 2026-07-13T15:26:00.000Z
+  factAnchors: [六个工具, 每个工具四条冻结提示共24条, 确定性中文字符二元组与英文token重叠选择器, 长说明543字符, 短说明182字符, 字符减少66.5%, 长说明正确12错误12, 短说明正确23错误1, 不是LLM基准]
+  quote: null
+  usageNote: 文章明确限定为词面路由代理的前置消融；数据、工具说明、用例和逐题预测均已跟踪
+- key: 1000xresist-steam
+  type: official-store-page
+  title: 1000xRESIST on Steam
+  pageUrl: https://store.steampowered.com/app/1675830/1000xRESIST/?l=schinese
+  author: sunset visitor 斜陽過客 / Fellow Traveller
+  fetchedAt: 2026-07-13T14:30:00.000Z
+  factAnchors: [叙事冒险, Watcher, ALLMOTHER, 地下果园, 外来生物与疾病, 进入记忆, 十个章节, sunset visitor开发, Fellow Traveller发行]
+  quote: null
+  usageNote: 核对官方故事简介和产品信息，并保存四张官方商店截图；正文基于完整游玩后的个人理解，不复写商店文案
+- key: 1000xresist-unity-talk
+  type: creator-talk
+  title: Narrative Game Design in 1000xRESIST
+  pageUrl: https://unity.com/resources/1000xresist-narrative-game-design
+  author: Remy Siu / Nicole MacDougall / sunset visitor / Unity
+  fetchedAt: 2026-07-13T14:30:00.000Z
+  factAnchors: [团队有游戏之外的艺术背景, 使用场景工具在关键故事时刻之间跳转检查变化, 叙事和场景制作方法]
+  quote: null
+  usageNote: 只核对团队背景与非线性场景制作思路，不引用访谈原句
+- key: night-sign-kabukicho-gate
+  type: cc-photograph
+  title: Kabukicho red gate and colorful neon street signs at night
+  pageUrl: https://commons.wikimedia.org/wiki/File:Kabukicho_red_gate_and_colorful_neon_street_signs_at_night,_Shinjuku,_Tokyo,_Japan.jpg
+  author: Basile Morin
+  fetchedAt: 2026-07-13T14:50:00.000Z
+  factAnchors: [2019年6月6日, Canon EOS 5D Mark IV, 0.4秒, f8, ISO50, CC BY-SA 4.0]
+  quote: null
+  usageNote: 用作人流轻微拖影与灯牌文字仍清楚的例图；图片裁切压缩，署名与许可保存在来源记录
+- key: night-sign-yasukuni-vehicles
+  type: cc-photograph
+  title: Yasukuni-dori Avenue at night with vehicles and colorful neon street signs
+  pageUrl: https://commons.wikimedia.org/wiki/File:Yasukuni-dori_Avenue_at_night_with_vehicles_and_colorful_neon_street_signs,_Shinjuku,_Tokyo,_Japan.jpg
+  author: Basile Morin
+  fetchedAt: 2026-07-13T14:50:00.000Z
+  factAnchors: [2019年6月6日, Canon EOS 5D Mark IV, 0.2秒, f7.1, ISO50, 12毫米, CC BY-SA 4.0]
+  quote: null
+  usageNote: 用作招牌、车灯与黑色天空同时保留层次的例图；文章不声称由发帖账号拍摄
+- key: night-sign-tokyo-2006
+  type: cc-photograph
+  title: Neon street in Tokyo Japan
+  pageUrl: https://commons.wikimedia.org/wiki/File:Neon-street-in-Tokyo-Japan.jpg
+  author: Acediscovery
+  fetchedAt: 2026-07-13T14:50:00.000Z
+  factAnchors: [2006年4月29日, 东京夜间街道, 1600乘1155, 自有作品, 开放许可见文件页]
+  quote: null
+  usageNote: 较暗的旧数码夜景作为封面，保留黑色天空和未被统一校白的灯牌
+- key: night-sign-shinjuku-2004
+  type: cc-photograph
+  title: Shinjuku neon Tokyo
+  pageUrl: https://commons.wikimedia.org/wiki/File:Shinjuku-neon_Tokyo.jpg
+  author: Michael Reeve
+  fetchedAt: 2026-07-13T14:50:00.000Z
+  factAnchors: [2004年4月1日, 靖国通霓虹灯, 500乘667, GFDL与CC BY-SA 3.0兼容许可]
+  quote: null
+  usageNote: 用作纵向堆叠灯牌与不同色温的例图，保留原图比例
+
+- key: dandadan-episode-seven-official
+  type: official-episode-page
+  title: TVアニメ『ダンダダン』第7話「あたしはばあちゃんを忘れないよ」
+  pageUrl: https://anime-dandadan.com/story/ep07/
+  author: ダンダダン製作委員会
+  fetchedAt: 2026-07-14T00:40:00.000Z
+  factAnchors: [第七话剧情简介, 爱罗失去生命反应, 杂技长发女提出救回爱罗的方法, 四张官方剧照]
+  quote: null
+  usageNote: 核对第七话事件顺序并保存官方剧照，正文以观看感受为主
+- key: dandadan-production-notes
+  type: production-analysis
+  title: An Animator’s Hand Toward A Kinder World — Dandadan Production Notes 05–07
+  pageUrl: https://blog.sakugabooru.com/2024/11/21/an-animators-hand-toward-a-kinder-world-dandadan-production-notes-05-07/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T00:42:00.000Z
+  factAnchors: [第七话分镜与作画监督榎本柊斗, 演出松永浩太郎, 动画扩写杂技长发女过去, 舞蹈与手臂动作母题]
+  quote: null
+  usageNote: 核对单集主创与动画扩写方向；正文重新组织为爱罗视角的单集评论
+- key: makeine-official-story
+  type: official-episode-page
+  title: TVアニメ「負けヒロインが多すぎる！」STORY
+  pageUrl: https://makeine-anime.com/story/
+  author: マケイン応援委員会
+  fetchedAt: 2026-07-14T00:48:00.000Z
+  factAnchors: [第一话与第四话剧情, 八奈见杏菜, 温水和彦, 官方场面剧照]
+  quote: null
+  usageNote: 核对人物、话数与场面图，正文不复写官方简介
+- key: makeine-production-notes
+  type: production-analysis
+  title: The Grounded Worldview of the Losing Heroines — Makeine Production Notes
+  pageUrl: https://blog.sakugabooru.com/2024/09/30/the-grounded-worldview-of-the-losing-heroines-makeine-production-notes/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T00:50:00.000Z
+  factAnchors: [导演北村翔太郎, 丰桥取景, 多次实地勘景, 本地食品包装, 绿蓝夏日色彩与暖色活动室]
+  quote: null
+  usageNote: 核对地方景观与色彩设计背景；正文聚焦八奈见的食欲和时间感
+- key: kusuriya-official-episodes
+  type: official-episode-page
+  title: TVアニメ『薬屋のひとりごと』第一期各話あらすじ
+  pageUrl: https://kusuriyanohitorigoto.jp/season1/episodes/
+  author: 「薬屋のひとりごと」製作委員会
+  fetchedAt: 2026-07-14T00:56:00.000Z
+  factAnchors: [第六话园游会试毒, 第九话军官之死, 第二十四话罗汉与凤仙, 官方剧照]
+  quote: null
+  usageNote: 核对三话事件与保存场面图，正文只讨论猫猫延迟说出结论的习惯
+- key: kusuriya-production-notes
+  type: production-analysis
+  title: The Methodical Production of Kusuriya no Hitorigoto
+  pageUrl: https://blog.sakugabooru.com/2024/05/10/the-methodical-production-of-kusuriya-no-hitorigoto-how-to-create-a-system-of-holistic-excellence-in-anime/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T00:58:00.000Z
+  factAnchors: [导演与系列构成长沼范裕, 第一季二十四话, 凯文·彭金, 桶狭间有沙, 神前晓, 单元谜案与主线相连]
+  quote: null
+  usageNote: 核对主创、音乐与整季结构，正文改从人物的沉默与边界切入
+- key: euphonium-third-season-official
+  type: official-episode-page
+  title: TVアニメ『響け！ユーフォニアム３』第十二回・最終回あらすじ
+  pageUrl: https://tv3rd.anime-eupho.com/story/13/
+  author: 京都アニメーション
+  fetchedAt: 2026-07-14T01:02:00.000Z
+  factAnchors: [最终试奏, 全国大赛, 北宇治获得金奖, 第十二话与最终话官方剧照]
+  quote: null
+  usageNote: 核对最终两话事件顺序并保存官方场面图
+- key: euphonium-final-production-notes
+  type: production-analysis
+  title: "Kyoto Animation and Hibike! Euphonium: From the Past to the Future"
+  pageUrl: https://blog.sakugabooru.com/2024/07/19/kyoto-animation-and-hibike-euphonium-from-the-past-to-the-future-final-production-notes/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T01:04:00.000Z
+  factAnchors: [京都动画制作体系, 第三季最终两话, 系列过去场面的回返, 演奏与角色选择]
+  quote: null
+  usageNote: 核对终章制作背景，正文以久美子的愿望和社团原则冲突为中心
+- key: kimi-no-iro-official
+  type: official-site
+  title: 映画『きみの色』公式サイト
+  pageUrl: https://kiminoiro.jp/
+  author: 「きみの色」製作委員会
+  fetchedAt: 2026-07-14T01:08:00.000Z
+  factAnchors: [导演山田尚子, 编剧吉田玲子, 音乐牛尾宪辅, 日暮登子, 作永きみ, 影平留依]
+  quote: null
+  usageNote: 核对人物与主创，正文不复写官方宣传文案
+- key: kimi-no-iro-annecy-notes
+  type: festival-production-analysis
+  title: Kimi no Iro — Naoko Yamada’s Love Spins Round and Round
+  pageUrl: https://blog.sakugabooru.com/2024/06/21/kimi-no-iro-the-colors-within-naoko-yamadas-love-spins-round-and-round-annecy-2024/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T01:10:00.000Z
+  factAnchors: [登子看见他人颜色, 红粉色的登子, 蓝色的きみ, 绿色的留依, 三色加法混成白色, 旧教堂乐队]
+  quote: null
+  usageNote: 核对颜色设计和乐队设定；正文围绕数拍与共同开始重新组织
+- key: mononoke-movie-official
+  type: official-site
+  title: 『劇場版モノノ怪』公式サイト
+  pageUrl: https://www.mononoke-movie.com/
+  author: ツインエンジン
+  fetchedAt: 2026-07-14T01:14:00.000Z
+  factAnchors: [唐伞, 大奥, 卖药郎, 形真理, 官方主视觉与画廊剧照]
+  quote: null
+  usageNote: 核对作品设定并保存主视觉和三张官方画廊图
+- key: mononoke-avantgarde-notes
+  type: director-style-analysis
+  title: The Evolution of Kenji Nakamura’s Avantgarde Creation
+  pageUrl: https://blog.sakugabooru.com/2024/12/30/the-evolution-of-kenji-nakamuras-avantgarde-creation-15-years-between-kuuchuu-buranko-and-mononoke-the-movie/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T01:16:00.000Z
+  factAnchors: [导演中村健治, 加法式画面密度, 浮世绘与平面纹样, 拉门作为视觉标点, 个体局部正确合成整体悲剧]
+  quote: null
+  usageNote: 核对导演风格与制度主题；正文以大奥的颜色和空间为线索重新写作
+- key: python-asyncio-docs
+  type: official-documentation
+  title: Python 3 asyncio — Asynchronous I/O
+  pageUrl: https://docs.python.org/3/library/asyncio.html
+  author: Python Software Foundation
+  fetchedAt: 2026-07-14T01:20:00.000Z
+  factAnchors: [事件循环, asyncio.sleep, run_in_executor, 协作式调度, Python 3.7兼容写法]
+  quote: null
+  usageNote: 核对asyncio调度与兼容接口，不引用长段文档
+- key: python-async-blocking-local-experiment
+  type: reproducible-local-experiment
+  title: Python async blocking call comparison
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/python-async-blocking-call
+  author: night-coder
+  fetchedAt: 2026-07-14T01:22:00.000Z
+  factAnchors: [Python 3.7.0, 五十个并发任务, 单任务等待五十毫秒, 五轮, 直调阻塞中位3.094287秒, 协作等待中位0.062620秒, 线程池转移中位0.064977秒]
+  quote: null
+  usageNote: 文章中的耗时与图表全部来自跟踪源码和原始JSON；只验证等待是否串行，不外推业务吞吐
+- key: agent-memory-recency-local-experiment
+  type: reproducible-local-experiment
+  title: Agent memory recency conflict experiment
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/agent-memory-recency-experiment
+  author: algo-runner
+  fetchedAt: 2026-07-14T01:24:00.000Z
+  factAnchors: [二十四条记忆, 十二条活跃记忆, 二十四条冻结查询, 基线正确7错误17, 新旧关系消解后正确20错误4, 旧值误召回从17降到0, 确定性词面代理, 不是LLM或embedding基准]
+  quote: null
+  usageNote: 数据集、查询、源码、逐题预测和预实验限制均已跟踪；结论只针对已知supersedes关系
+- key: lorelei-steam
+  type: official-store-page
+  title: Lorelei and the Laser Eyes on Steam
+  pageUrl: https://store.steampowered.com/app/2008920/Lorelei_and_the_Laser_Eyes/
+  author: Simogo / Annapurna Interactive
+  fetchedAt: 2026-07-14T01:27:00.000Z
+  factAnchors: [非线性解谜, 黑白视觉, 庄园, 数字与文件谜题, 四张Steam官方截图]
+  quote: null
+  usageNote: 核对产品信息并保存四张官方截图，正文基于游玩后的纸笔记录习惯
+- key: lorelei-simogo-official
+  type: official-creator-page
+  title: Lorelei and the Laser Eyes — Simogo
+  pageUrl: https://simogo.com/work/loreleiandthelasereyes/
+  author: Simogo
+  fetchedAt: 2026-07-14T01:28:00.000Z
+  factAnchors: [Simogo开发, 庄园探索, 视觉与叙事谜题, 玩家自行连接信息]
+  quote: null
+  usageNote: 核对开发者与作品定位，不复写宣传语
+- key: curry-wikimedia-images
+  type: open-license-image-set
+  title: Curry and onion photographs on Wikimedia Commons
+  pageUrl: https://commons.wikimedia.org/wiki/File:Beef_curry_rice_003.jpg
+  author: Ocdp / HungryHuy / DocteurCosmos / Veikko Mäkelä
+  fetchedAt: 2026-07-14T01:30:00.000Z
+  factAnchors: [咖喱饭照片CC0, 洋葱砧板照片CC BY 2.0, 炒洋葱照片CC BY-SA 3.0, 锅中咖喱照片CC BY-SA 4.0]
+  quote: null
+  usageNote: 四张开放许可食物照片用于封面与过程插图；逐图原页、作者和许可保存在assets.yml
+- key: dungeon-meshi-official
+  type: official-site
+  title: TVアニメ「ダンジョン飯」公式サイト
+  pageUrl: https://delicious-in-dungeon.com/
+  author: 「ダンジョン飯」製作委員会
+  fetchedAt: 2026-07-14T14:30:00.000Z
+  factAnchors: [TRIGGER, 莱欧斯一行, 魔物食材, 红龙, 官方主视觉]
+  quote: null
+  usageNote: 核对人物与作品基本设定并选取官方视觉素材
+- key: dungeon-meshi-production-01-08
+  type: production-analysis
+  title: Dungeon Meshi Production Notes 01-08
+  pageUrl: https://blog.sakugabooru.com/2024/02/28/smart-management-makes-room-for-ambitious-creators-dungeon-meshi-production-notes-04-08/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:31:00.000Z
+  factAnchors: [TRIGGER制作流程, 人物表演, 莱欧斯的魔物兴趣, 食物作画, 前八集]
+  quote: null
+  usageNote: 核对制作和镜头事实；正文从红龙、法琳与同伴反应重新组织
+- key: frieren-official
+  type: official-site
+  title: TVアニメ「葬送のフリーレン」公式サイト
+  pageUrl: https://frieren-anime.jp/
+  author: 「葬送のフリーレン」製作委員会
+  fetchedAt: 2026-07-14T14:32:00.000Z
+  factAnchors: [芙莉莲, 勇者一行, 十年冒险, 五十年后流星雨, 官方故事信息]
+  quote: null
+  usageNote: 核对人物和开篇时间线；站点拒绝本地缓存时仅登记公开页面
+- key: frieren-production-01-10
+  type: production-analysis
+  title: Frieren Production Notes 01-10
+  pageUrl: https://blog.sakugabooru.com/2023/10/05/crafting-a-tangible-aging-world-frieren-beyond-journeys-end-production-notes-01-04/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:33:00.000Z
+  factAnchors: [斋藤圭一郎, 系列开篇, 环境随时间变化, 村庄与旧物, 人物微小动作]
+  quote: null
+  usageNote: 核对环境和表演观察；正文只写不同寿命如何被具体东西打断
+- key: yubisaki-official
+  type: official-site
+  title: TVアニメ「ゆびさきと恋々」公式サイト
+  pageUrl: https://yubisaki-pr.com/
+  author: ゆびさきと恋々製作委員会
+  fetchedAt: 2026-07-14T14:34:00.000Z
+  factAnchors: [糸濑雪, 波岐逸臣, 手语, 大学生, 官方主视觉]
+  quote: null
+  usageNote: 核对人物关系并保存官方主视觉素材
+- key: yubisaki-production-notes
+  type: production-analysis
+  title: Animating Yubisaki to Renren
+  pageUrl: https://blog.sakugabooru.com/2024/03/29/animating-a-silent-world-yubisaki-to-renren-a-sign-of-affection-production-notes/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:35:00.000Z
+  factAnchors: [村野佑太, 手语监督, 手部作画, 视线设计, 环境声, 分镜]
+  quote: null
+  usageNote: 核对制作方法；避免沿用将聋人经验概括为无声世界的表述
+- key: girls-band-cry-official
+  type: official-site
+  title: アニメ「ガールズバンドクライ」公式サイト
+  pageUrl: https://girls-band-cry.com/
+  author: 東映アニメーション
+  fetchedAt: 2026-07-14T14:36:00.000Z
+  factAnchors: [井芹仁菜, 河原木桃香, 刺刺不休, 川崎, 3DCG, 官方视觉]
+  quote: null
+  usageNote: 核对人物、乐队名与官方视觉素材
+- key: sakugabooru-animation-awards-2024
+  type: annual-production-review
+  title: Sakugabooru Animation Awards 2024
+  pageUrl: https://blog.sakugabooru.com/2025/01/04/sakugabooru-animation-awards-2024/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:37:00.000Z
+  factAnchors: [Girls Band Cry, 东映动画, 3DCG人物表演, 乐队演出, 2024年度回顾]
+  quote: null
+  usageNote: 只核对3DCG表演观察；正文从仁菜争吵与排练的个人观看经验展开
+- key: gridman-universe-official
+  type: official-site
+  title: 劇場版「グリッドマン ユニバース」公式情報
+  pageUrl: https://ssss-movie.net/
+  author: 円谷プロ / TRIGGER
+  fetchedAt: 2026-07-14T14:38:00.000Z
+  factAnchors: [响裕太, 宝多六花, SSSS.GRIDMAN, SSSS.DYNAZENON, 剧场版]
+  quote: null
+  usageNote: 核对作品与角色交汇关系；旧站点当前不可解析时以制作资料图片补充
+- key: gridman-universe-production
+  type: production-analysis
+  title: Gridman Universe Production Retrospective
+  pageUrl: https://blog.sakugabooru.com/2023/12/19/gridman-universe-production-retrospective-by-fans-for-fans/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:39:00.000Z
+  factAnchors: [雨宫哲, TRIGGER, 两部TV动画角色交汇, 粉丝回调, 裕太与六花]
+  quote: null
+  usageNote: 核对制作与回调位置；正文以裕太告白这条普通情绪线为中心
+- key: boy-and-heron-ghibli
+  type: official-gallery
+  title: 君たちはどう生きるか — スタジオジブリ
+  pageUrl: https://www.ghibli.jp/works/kimitachi/
+  author: スタジオジブリ
+  fetchedAt: 2026-07-14T14:40:00.000Z
+  factAnchors: [宫崎骏, 牧真人, 苍鹭, 塔, 官方画廊剧照]
+  quote: null
+  usageNote: 核对基本信息并使用吉卜力公开画廊图片
+- key: boy-and-heron-production
+  type: production-analysis
+  title: The Weight of Hayao Miyazaki and Ghibli
+  pageUrl: https://blog.sakugabooru.com/2023/11/06/the-weight-of-hayao-miyazaki-and-ghibli-the-boy-and-the-heron-how-do-you-live/
+  author: Sakuga Blog
+  fetchedAt: 2026-07-14T14:41:00.000Z
+  factAnchors: [宫崎骏, 本田雄, 空间转场, 火焰与飞行, 吉卜力制作]
+  quote: null
+  usageNote: 核对制作事实；正文保留观众的不确定，不制作符号对照表
+- key: spring-transaction-event-docs
+  type: official-documentation
+  title: Transaction-bound Events
+  pageUrl: https://docs.spring.io/spring-framework/reference/data-access/transaction/event.html
+  author: Spring
+  fetchedAt: 2026-07-14T14:42:00.000Z
+  factAnchors: [TransactionalEventListener, BEFORE_COMMIT, AFTER_COMMIT, AFTER_ROLLBACK, AFTER_COMPLETION, 默认AFTER_COMMIT]
+  quote: null
+  usageNote: 核对监听器阶段定义；实际顺序和数据可见性以本地实验为准
+- key: spring-transaction-event-local-experiment
+  type: reproducible-local-experiment
+  title: Spring transaction event phase experiment
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/spring-transaction-event-phases
+  author: night-coder
+  fetchedAt: 2026-07-14T14:43:00.000Z
+  factAnchors: [Java 21, Spring Framework 6.1.6, H2 2.2.224, 提交场景, 回滚场景, 独立连接]
+  quote: null
+  usageNote: 文章时间线、数据可见性和图表全部从跟踪实验结果生成
+- key: rrf-original-paper
+  type: research-paper
+  title: Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods
+  pageUrl: https://dl.acm.org/doi/10.1145/1571941.1572114
+  author: Gordon V. Cormack / Charles L. A. Clarke / Stefan Buettcher
+  fetchedAt: 2026-07-14T14:44:00.000Z
+  factAnchors: [Reciprocal Rank Fusion, reciprocal rank, k常数, 多路结果融合]
+  quote: null
+  usageNote: 核对RRF定义；本文结果只来自冻结代理候选，不宣称真实embedding基准
+- key: rrf-ranking-local-experiment
+  type: reproducible-local-experiment
+  title: Deterministic RRF ranking experiment
+  pageUrl: https://github.com/Rekyrice/Chtholly-Hub/tree/main/content/seed/content-v3/evidence/rrf-hybrid-retrieval-ranking
+  author: algo-runner
+  fetchedAt: 2026-07-14T14:45:00.000Z
+  factAnchors: [32条文档, 16条查询, top5, lexical, semanticProxy, k=60, Hit@1, Hit@3, MRR]
+  quote: null
+  usageNote: 数据集、候选列表、源码和逐题结果均跟踪；不外推到真实语义模型
+- key: signalis-rose-engine
+  type: official-creator-page
+  title: SIGNALIS — rose-engine
+  pageUrl: https://rose-engine.org/signalis/
+  author: rose-engine
+  fetchedAt: 2026-07-14T14:46:00.000Z
+  factAnchors: [生存恐怖, Elster, 调查设施, 解谜, 资源管理, 官方截图]
+  quote: null
+  usageNote: 核对作品类型并保存官方截图，不展开关键身份与结局
+- key: signalis-steam
+  type: official-store-page
+  title: SIGNALIS on Steam
+  pageUrl: https://store.steampowered.com/app/1262350/SIGNALIS/
+  author: rose-engine / Humble Games
+  fetchedAt: 2026-07-14T14:47:00.000Z
+  factAnchors: [classic survival horror, melancholic mystery, inventory management, 官方商店截图]
+  quote: null
+  usageNote: 核对产品信息和媒体，不复写宣传文案
+- key: chipped-cup-public-images
+  type: open-license-image-set
+  title: Old cup and kitchen photographs from Wikimedia Commons and Pexels
+  pageUrl: https://commons.wikimedia.org/
+  author: Alexandru STAVRICĂ / Kampus Production / Unseen Studio / vastateparksstaff
+  fetchedAt: 2026-07-14T14:48:00.000Z
+  factAnchors: [旧杯静物, 水槽, 桌面, 橱柜, CC0, Pexels许可, CC BY 2.0]
+  quote: null
+  usageNote: 只使用可核对作者与许可的真实照片；Wikimedia Commons 与 Pexels 逐图信息记录在 assets.yml

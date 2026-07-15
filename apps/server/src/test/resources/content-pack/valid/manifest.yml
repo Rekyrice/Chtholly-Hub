@@ -1,0 +1,7 @@
+version: content-v2
+namespace: chtholly-seed
+stage: test
+expectedAccounts: 2
+expectedPosts: 1
+expectedCategories:
+  TECH: 1

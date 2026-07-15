@@ -31,6 +31,16 @@ public interface CounterService {
      */
     Map<String, Long> getCounts(String entityType, String entityId, List<String> metrics);
 
+    /**
+     * Reads one persisted count plus its not-yet-flushed aggregation delta atomically.
+     *
+     * @param entityType entity type
+     * @param entityId entity ID
+     * @param metric schema metric name
+     * @return effective non-negative count
+     */
+    long getEffectiveCount(String entityType, String entityId, String metric);
+
     Map<String, Map<String, Long>> getCountsBatch(String entityType, List<String> entityIds, List<String> metrics);
 
     /**

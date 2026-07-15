@@ -22,7 +22,7 @@ public class CounterEvent {
     private String eventId;
     private String entityType;
     private String entityId;
-    private String metric; // like | fav
+    private String metric; // like | fav | view
     private int idx;
     private long userId;
     private int delta; // +1 / -1
@@ -42,6 +42,13 @@ public class CounterEvent {
 
     public static CounterEvent of(String entityType, String entityId, String metric, int idx, long userId, int delta) {
         return new CounterEvent(entityType, entityId, metric, idx, userId, delta);
+    }
+
+    /** Creates a seed event with a stable ID while retaining the content-pack call shape. */
+    public static CounterEvent of(
+            String entityType, String entityId, String metric, int idx, long userId, int delta, String eventId) {
+        return new CounterEvent(eventId, entityType, entityId, metric, idx, userId, delta,
+                null, null, null, null, null);
     }
 
     /** Creates an event with a stable ID for broker retry and replay. */

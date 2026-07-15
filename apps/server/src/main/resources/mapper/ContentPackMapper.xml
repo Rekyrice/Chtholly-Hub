@@ -1,0 +1,398 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.seed.contentpack.ContentPackMapper">
+
+    <resultMap id="SeedContentIdentityMap" type="com.chtholly.seed.contentpack.model.SeedContentIdentity">
+        <constructor>
+            <arg column="namespace" javaType="java.lang.String"/>
+            <arg column="entity_type" javaType="java.lang.String"/>
+            <arg column="seed_key" javaType="java.lang.String"/>
+            <arg column="entity_id" javaType="_long"/>
+            <arg column="pack_version" javaType="java.lang.String"/>
+            <arg column="content_hash" javaType="java.lang.String"/>
+            <arg column="metadata" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="PostStateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$PostState">
+        <constructor>
+            <arg column="id" javaType="_long"/>
+            <arg column="creator_id" javaType="_long"/>
+            <arg column="tags_json" javaType="java.lang.String"/>
+            <arg column="content_object_key" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="RetirementCandidateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$RetirementCandidate">
+        <constructor>
+            <arg column="id" javaType="_long"/>
+            <arg column="creator_id" javaType="_long"/>
+            <arg column="slug" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="tags_json" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="FollowStateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$FollowState">
+        <constructor>
+            <arg column="following_id" javaType="java.lang.Long"/>
+            <arg column="follower_id" javaType="java.lang.Long"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="FollowingStateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$FollowingState">
+        <constructor>
+            <arg column="id" javaType="_long"/>
+            <arg column="from_user_id" javaType="_long"/>
+            <arg column="to_user_id" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="FollowerStateMap" type="com.chtholly.seed.contentpack.ContentPackMapper$FollowerState">
+        <constructor>
+            <arg column="id" javaType="_long"/>
+            <arg column="from_user_id" javaType="_long"/>
+            <arg column="to_user_id" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findIdentity" resultMap="SeedContentIdentityMap">
+        SELECT namespace, entity_type, seed_key, entity_id, pack_version, content_hash, metadata
+        FROM seed_content_identity
+        WHERE namespace = #{namespace}
+          AND entity_type = #{entityType}
+          AND seed_key = #{seedKey}
+        LIMIT 1
+    </select>
+
+    <select id="findLegacyUserId" resultType="java.lang.Long">
+        SELECT id
+        FROM users
+        WHERE email = #{email}
+        LIMIT 1
+    </select>
+
+    <select id="findLegacyPostId" resultType="java.lang.Long">
+        SELECT id
+        FROM posts
+        WHERE slug = #{slug}
+        LIMIT 1
+    </select>
+
+    <insert id="upsertIdentity">
+        INSERT INTO seed_content_identity (
+            namespace, entity_type, seed_key, entity_id, pack_version,
+            content_hash, metadata, created_at, updated_at
+        ) VALUES (
+            #{namespace}, #{entityType}, #{seedKey}, #{entityId}, #{packVersion},
+            #{contentHash}, #{metadataJson}, NOW(3), NOW(3)
+        )
+        ON DUPLICATE KEY UPDATE
+            entity_id = IF(
+                namespace = VALUES(namespace)
+                    AND entity_type = VALUES(entity_type)
+                    AND seed_key = VALUES(seed_key)
+                    AND entity_id = VALUES(entity_id),
+                entity_id,
+                NULL
+            ),
+            updated_at = NOW(3)
+    </insert>
+
+    <update id="updateIdentityHash">
+        UPDATE seed_content_identity
+        SET pack_version = #{packVersion},
+            content_hash = #{contentHash},
+            metadata = #{metadataJson},
+            updated_at = NOW(3)
+        WHERE namespace = #{namespace}
+          AND entity_type = #{entityType}
+          AND seed_key = #{seedKey}
+    </update>
+
+    <update id="updateSeedUserById">
+        UPDATE users
+        SET nickname = #{nickname},
+            avatar = #{avatar},
+            bio = #{bio},
+            handle = #{handle},
+            gender = #{gender},
+            birthday = #{birthday},
+            school = #{school},
+            tags_json = #{tagsJson},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="seedUserExistsById" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM users WHERE id = #{id})
+    </select>
+
+    <insert id="insertSeedUser">
+        INSERT INTO users (
+            id, email, nickname, avatar, bio, handle, gender, birthday, school,
+            tags_json, role, created_at, updated_at
+        ) VALUES (
+            #{id}, #{email}, #{nickname}, #{avatar}, #{bio}, #{handle}, #{gender},
+            #{birthday}, #{school}, #{tagsJson}, 'USER', #{updatedAt}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="findPostStateById" resultMap="PostStateMap">
+        SELECT id, creator_id, CAST(tags AS CHAR) AS tags_json, content_object_key
+        FROM posts
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <update id="updateSeedPostById">
+        UPDATE posts
+        SET creator_id = #{creatorId},
+            title = #{title},
+            slug = #{slug},
+            description = #{description},
+            content_url = #{contentUrl},
+            content_object_key = #{contentObjectKey},
+            content_etag = #{contentSha256},
+            content_size = #{contentSize},
+            content_sha256 = #{contentSha256},
+            tags = #{tagsJson},
+            img_urls = #{imgUrlsJson},
+            status = 'published',
+            type = 'image_text',
+            visible = 'public',
+            is_top = 0,
+            update_time = CURRENT_TIMESTAMP,
+            publish_time = #{publishTime}
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertSeedPost">
+        INSERT INTO posts (
+            id, creator_id, title, slug, description, content_url, content_object_key,
+            content_etag, content_size, content_sha256, tags, img_urls, status, type,
+            visible, is_top, create_time, update_time, publish_time
+        ) VALUES (
+            #{id}, #{creatorId}, #{title}, #{slug}, #{description}, #{contentUrl},
+            #{contentObjectKey}, #{contentSha256}, #{contentSize}, #{contentSha256},
+            #{tagsJson}, #{imgUrlsJson}, 'published', 'image_text', 'public', 0,
+            #{createTime}, #{createTime}, #{publishTime}
+        )
+    </insert>
+
+    <select id="findRetirementCandidates" resultMap="RetirementCandidateMap">
+        SELECT id, creator_id, slug, status, CAST(tags AS CHAR) AS tags_json
+        FROM posts
+        WHERE
+        <choose>
+            <when test="slugs != null and slugs.size() > 0">
+                slug IN
+                <foreach collection="slugs" item="slug" open="(" separator="," close=")">
+                    #{slug}
+                </foreach>
+            </when>
+            <otherwise>
+                1 = 0
+            </otherwise>
+        </choose>
+        FOR UPDATE
+    </select>
+
+    <update id="softDeleteRetirementPost">
+        UPDATE posts
+        SET status = 'deleted',
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND status = 'published'
+    </update>
+
+    <select id="findLegacyCommentId" resultType="java.lang.Long">
+        SELECT id
+        FROM comments
+        WHERE post_id = #{postId}
+          AND user_id = #{authorId}
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1 OFFSET #{ordinal}
+    </select>
+
+    <insert id="upsertSeedComment">
+        INSERT INTO comments (
+            id, post_id, parent_id, user_id, content, is_chtholly,
+            created_at, deleted_at, updated_at
+        ) VALUES (
+            #{id}, #{postId}, #{parentId}, #{userId}, #{content}, 0,
+            #{createdAt}, NULL, #{createdAt}
+        )
+        ON DUPLICATE KEY UPDATE
+            post_id = VALUES(post_id),
+            parent_id = VALUES(parent_id),
+            user_id = VALUES(user_id),
+            content = VALUES(content),
+            is_chtholly = 0,
+            created_at = VALUES(created_at),
+            deleted_at = NULL,
+            updated_at = VALUES(updated_at)
+    </insert>
+
+    <update id="deactivateSeedCommentsExcept">
+        UPDATE comments c
+        JOIN seed_content_identity i
+          ON i.entity_id = c.id
+         AND i.namespace = #{namespace}
+         AND i.entity_type = 'COMMENT'
+        SET c.deleted_at = CURRENT_TIMESTAMP,
+            c.updated_at = CURRENT_TIMESTAMP
+        WHERE c.deleted_at IS NULL
+        <if test="seedKeys != null and seedKeys.size() > 0">
+            AND i.seed_key NOT IN
+            <foreach collection="seedKeys" item="seedKey" open="(" separator="," close=")">
+                #{seedKey}
+            </foreach>
+        </if>
+    </update>
+
+    <select id="findFollowState" resultMap="FollowStateMap">
+        SELECT f.id AS following_id, r.id AS follower_id
+        FROM (SELECT 1 AS anchor_row) anchor
+        LEFT JOIN following f
+          ON f.from_user_id = #{fromUserId}
+         AND f.to_user_id = #{toUserId}
+        LEFT JOIN follower r
+          ON r.from_user_id = #{fromUserId}
+         AND r.to_user_id = #{toUserId}
+        LIMIT 1
+    </select>
+
+    <select id="findFollowingById" resultMap="FollowingStateMap">
+        SELECT id, from_user_id, to_user_id
+        FROM following
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="findFollowerById" resultMap="FollowerStateMap">
+        SELECT id, from_user_id, to_user_id
+        FROM follower
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <insert id="upsertFollowing">
+        INSERT INTO following (id, from_user_id, to_user_id, rel_status, created_at, updated_at)
+        VALUES (#{id}, #{fromUserId}, #{toUserId}, 1, #{createdAt}, #{createdAt})
+        ON DUPLICATE KEY UPDATE
+            rel_status = 1,
+            created_at = VALUES(created_at),
+            updated_at = VALUES(updated_at)
+    </insert>
+
+    <insert id="upsertFollower">
+        INSERT INTO follower (id, to_user_id, from_user_id, rel_status, created_at, updated_at)
+        VALUES (#{id}, #{toUserId}, #{fromUserId}, 1, #{createdAt}, #{createdAt})
+        ON DUPLICATE KEY UPDATE
+            rel_status = 1,
+            created_at = VALUES(created_at),
+            updated_at = VALUES(updated_at)
+    </insert>
+
+    <update id="deactivateSeedFollowingExcept">
+        UPDATE following
+        SET rel_status = 0,
+            updated_at = CURRENT_TIMESTAMP(3)
+        WHERE rel_status = 1
+        <choose>
+            <when test="accountIds != null and accountIds.size() > 0">
+                AND from_user_id IN
+                <foreach collection="accountIds" item="accountId" open="(" separator="," close=")">
+                    #{accountId}
+                </foreach>
+                AND to_user_id IN
+                <foreach collection="accountIds" item="accountId" open="(" separator="," close=")">
+                    #{accountId}
+                </foreach>
+            </when>
+            <otherwise>
+                AND 1 = 0
+            </otherwise>
+        </choose>
+        <if test="declaredPairs != null and declaredPairs.size() > 0">
+            AND NOT (
+            <foreach collection="declaredPairs" item="pair" separator=" OR ">
+                (from_user_id = #{pair.fromUserId} AND to_user_id = #{pair.toUserId})
+            </foreach>
+            )
+        </if>
+    </update>
+
+    <update id="deactivateSeedFollowerExcept">
+        UPDATE follower
+        SET rel_status = 0,
+            updated_at = CURRENT_TIMESTAMP(3)
+        WHERE rel_status = 1
+        <choose>
+            <when test="accountIds != null and accountIds.size() > 0">
+                AND from_user_id IN
+                <foreach collection="accountIds" item="accountId" open="(" separator="," close=")">
+                    #{accountId}
+                </foreach>
+                AND to_user_id IN
+                <foreach collection="accountIds" item="accountId" open="(" separator="," close=")">
+                    #{accountId}
+                </foreach>
+            </when>
+            <otherwise>
+                AND 1 = 0
+            </otherwise>
+        </choose>
+        <if test="declaredPairs != null and declaredPairs.size() > 0">
+            AND NOT (
+            <foreach collection="declaredPairs" item="pair" separator=" OR ">
+                (from_user_id = #{pair.fromUserId} AND to_user_id = #{pair.toUserId})
+            </foreach>
+            )
+        </if>
+    </update>
+
+    <select id="snapshotSeedUsers" resultType="map">
+        SELECT i.seed_key AS seedKey, u.id, u.handle, u.nickname, u.avatar, u.bio,
+               u.gender, u.birthday, u.school, CAST(u.tags_json AS CHAR) AS tagsJson
+        FROM seed_content_identity i
+        JOIN users u ON u.id = i.entity_id
+        WHERE i.namespace = #{namespace}
+          AND i.entity_type = 'ACCOUNT'
+        ORDER BY i.seed_key
+    </select>
+
+    <select id="snapshotSeedPosts" resultType="map">
+        SELECT i.seed_key AS seedKey, p.id, p.creator_id AS creatorId, p.slug, p.title,
+               p.description, p.content_url AS contentUrl, p.content_object_key AS contentObjectKey,
+               CAST(p.tags AS CHAR) AS tagsJson, CAST(p.img_urls AS CHAR) AS imgUrlsJson,
+               p.publish_time AS publishTime
+        FROM seed_content_identity i
+        JOIN posts p ON p.id = i.entity_id
+        WHERE i.namespace = #{namespace}
+          AND i.entity_type = 'POST'
+        ORDER BY i.seed_key
+    </select>
+
+    <select id="snapshotSeedInteractions" resultType="map">
+        SELECT i.entity_type AS entityType, i.seed_key AS seedKey, c.id AS entityId,
+               c.post_id AS postId, c.user_id AS userId, c.parent_id AS parentId,
+               c.content, c.created_at AS createdAt, c.deleted_at AS deletedAt
+        FROM seed_content_identity i
+        JOIN comments c ON c.id = i.entity_id
+        WHERE i.namespace = #{namespace}
+          AND i.entity_type = 'COMMENT'
+        UNION ALL
+        SELECT i.entity_type AS entityType, i.seed_key AS seedKey, f.id AS entityId,
+               NULL AS postId, f.from_user_id AS userId, f.to_user_id AS parentId,
+               NULL AS content, f.created_at AS createdAt,
+               IF(f.rel_status = 1, NULL, f.updated_at) AS deletedAt
+        FROM seed_content_identity i
+        JOIN following f ON f.id = i.entity_id
+        WHERE i.namespace = #{namespace}
+          AND i.entity_type = 'FOLLOW'
+        ORDER BY seedKey
+    </select>
+
+</mapper>

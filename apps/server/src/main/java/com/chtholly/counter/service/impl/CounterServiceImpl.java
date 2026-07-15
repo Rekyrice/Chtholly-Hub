@@ -41,6 +41,7 @@ public class CounterServiceImpl implements CounterService {
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> toggleScript;
+    private final DefaultRedisScript<Long> effectiveCountScript;
     private final CounterEventPublisher counterEventPublisher;
     private final RedissonClient redisson;
     private final PostMapper postMapper;
@@ -68,6 +69,9 @@ public class CounterServiceImpl implements CounterService {
         this.toggleScript.setResultType(Long.class);
         // 位图状态原子切换，仅在状态变化时返回 1
         this.toggleScript.setScriptText(TOGGLE_LUA);
+        this.effectiveCountScript = new DefaultRedisScript<>();
+        this.effectiveCountScript.setResultType(Long.class);
+        this.effectiveCountScript.setScriptText(EFFECTIVE_COUNT_LUA);
     }
 
     /**
@@ -168,19 +172,28 @@ public class CounterServiceImpl implements CounterService {
         Map<String, Long> result = new LinkedHashMap<>();
 
         if (needRebuild) {
+            List<String> bitmapMetrics = metrics.stream()
+                    .filter(metric -> !"view".equals(metric))
+                    .toList();
+            if (metrics.contains("view")) {
+                result.put("view", getEffectiveCount(entityType, entityId, "view"));
+            }
+            if (bitmapMetrics.isEmpty()) {
+                return result;
+            }
             log.info("计数结构不存在，需要重建");
             // 限流与指数退避：避免在热点实体上触发重建风暴
             if (inBackoff(entityType, entityId)) {
-                for (String m : metrics) {
-                    result.put(m, 0L);
+                for (String m : bitmapMetrics) {
+                    result.putIfAbsent(m, 0L);
                 }
                 return result;
             }
 
             if (!allowedByRateLimiter(entityType, entityId)) {
                 escalateBackoff(entityType, entityId);
-                for (String m : metrics) {
-                    result.put(m, 0L);
+                for (String m : bitmapMetrics) {
+                    result.putIfAbsent(m, 0L);
                 }
                 return result;
             }
@@ -195,15 +208,15 @@ public class CounterServiceImpl implements CounterService {
                 locked = lock.tryLock(0L, TimeUnit.MILLISECONDS);
                 if (!locked) {
                     escalateBackoff(entityType, entityId);
-                    for (String m : metrics) {
-                        result.put(m, 0L);
+                    for (String m : bitmapMetrics) {
+                        result.putIfAbsent(m, 0L);
                     }
                     return result;
                 }
                 // 依据位图分片统计真实计数（仅由持锁者执行重建）
                 byte[] newSds = new byte[expectedLen];
                 List<String> rebuildFields = new ArrayList<>();
-                for (String m : metrics) {
+                for (String m : bitmapMetrics) {
                     Integer idx = CounterSchema.NAME_TO_IDX.get(m);
                     if (idx == null) {
                         continue;
@@ -223,8 +236,8 @@ public class CounterServiceImpl implements CounterService {
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 escalateBackoff(entityType, entityId);
-                for (String m : metrics) {
-                    result.put(m, 0L);
+                for (String m : bitmapMetrics) {
+                    result.putIfAbsent(m, 0L);
                 }
                 return result;
             } finally {
@@ -247,6 +260,28 @@ public class CounterServiceImpl implements CounterService {
             }
         }
         return result;
+    }
+
+    /**
+     * Atomically reads SDS and the pending aggregation hash in one Redis script.
+     *
+     * <p>The flush path increments SDS before decrementing the aggregation hash. An atomic read
+     * can therefore observe the old exact total, a temporary high estimate, or the new exact
+     * total, but never the unsafe old-SDS/new-aggregation combination that would undercount.
+     */
+    @Override
+    public long getEffectiveCount(String entityType, String entityId, String metric) {
+        Integer index = CounterSchema.NAME_TO_IDX.get(metric);
+        if (index == null) {
+            throw new IllegalArgumentException("Unsupported counter metric: " + metric);
+        }
+        Long value = redis.execute(
+                effectiveCountScript,
+                List.of(CounterKeys.sdsKey(entityType, entityId), CounterKeys.aggKey(entityType, entityId)),
+                String.valueOf(index),
+                String.valueOf(CounterSchema.FIELD_SIZE),
+                String.valueOf(CounterSchema.SCHEMA_LEN));
+        return value == null ? 0L : Math.max(0L, value);
     }
 
     /**
@@ -522,5 +557,30 @@ public class CounterServiceImpl implements CounterService {
               return 1
             end
             return -1
+            """;
+
+    private static final String EFFECTIVE_COUNT_LUA = """
+            local cntKey = KEYS[1]
+            local aggKey = KEYS[2]
+            local idx = tonumber(ARGV[1])
+            local fieldSize = tonumber(ARGV[2])
+            local schemaLen = tonumber(ARGV[3])
+
+            local function read32be(value, offset)
+              local b = {string.byte(value, offset + 1, offset + 4)}
+              local result = 0
+              for i = 1, 4 do result = result * 256 + b[i] end
+              return result
+            end
+
+            local persisted = 0
+            local raw = redis.call('GET', cntKey)
+            if raw and string.len(raw) == schemaLen * fieldSize then
+              persisted = read32be(raw, idx * fieldSize)
+            end
+            local pending = tonumber(redis.call('HGET', aggKey, tostring(idx)) or '0')
+            local effective = persisted + pending
+            if effective < 0 then return 0 end
+            return effective
             """;
 }

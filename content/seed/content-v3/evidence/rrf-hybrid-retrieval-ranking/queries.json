@@ -1,0 +1,18 @@
+[
+  {"id":"q01","text":"怎么避免大量缓存同一时刻过期","expected":"d01"},
+  {"id":"q02","text":"数据库提交以后再处理事件","expected":"d02"},
+  {"id":"q03","text":"业务数据和 Kafka 消息怎样保证一致","expected":"d03"},
+  {"id":"q04","text":"async def 里面调用 time sleep 为什么卡住","expected":"d04"},
+  {"id":"q05","text":"RAG 段落切多长比较合适","expected":"d05"},
+  {"id":"q06","text":"工具描述写法会不会影响 agent 选择","expected":"d06"},
+  {"id":"q07","text":"记忆更新后为什么还召回旧值","expected":"d07"},
+  {"id":"q08","text":"BM25 标题字段应该怎样加权","expected":"d08"},
+  {"id":"q09","text":"向量搜索漏掉正确文档怎么查","expected":"d09"},
+  {"id":"q10","text":"从哪一行开始看 mysql deadlock 日志","expected":"d10"},
+  {"id":"q11","text":"线程池为什么一直加队列不扩容","expected":"d11"},
+  {"id":"q12","text":"模型服务连续超时后自动切备用模型","expected":"d12"},
+  {"id":"q13","text":"流式接口中断后从上次事件继续","expected":"d13"},
+  {"id":"q14","text":"refresh token 被重复使用怎么办","expected":"d14"},
+  {"id":"q15","text":"连接池疑似泄漏怎样设置诊断阈值","expected":"d15"},
+  {"id":"q16","text":"模型升级后结构化 JSON 字段变化","expected":"d16"}
+]

@@ -1,0 +1,406 @@
+{
+  "experiment": "agent-tool-description-ablation",
+  "selector": "deterministic lexical overlap",
+  "runs": {
+    "verbose": {
+      "cases": 24,
+      "correct": 12,
+      "errors": 12,
+      "accuracy": 0.5,
+      "predictions": [
+        {
+          "id": "search-cache",
+          "expected": "search_posts",
+          "predicted": "update_post",
+          "correct": false,
+          "topScore": 12.465736,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "search-author",
+          "expected": "search_posts",
+          "predicted": "create_draft",
+          "correct": false,
+          "topScore": 6.484907,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "search-tag",
+          "expected": "search_posts",
+          "predicted": "search_posts",
+          "correct": true,
+          "topScore": 10.178054,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "search-many",
+          "expected": "search_posts",
+          "predicted": "list_comments",
+          "correct": false,
+          "topScore": 8.693147,
+          "runnerUp": "create_draft"
+        },
+        {
+          "id": "get-known",
+          "expected": "get_post",
+          "predicted": "get_post",
+          "correct": true,
+          "topScore": 7.791759,
+          "runnerUp": "list_comments"
+        },
+        {
+          "id": "get-meta",
+          "expected": "get_post",
+          "predicted": "search_posts",
+          "correct": false,
+          "topScore": 14.85203,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "get-body",
+          "expected": "get_post",
+          "predicted": "create_draft",
+          "correct": false,
+          "topScore": 12.780744,
+          "runnerUp": "search_posts"
+        },
+        {
+          "id": "get-one",
+          "expected": "get_post",
+          "predicted": "list_comments",
+          "correct": false,
+          "topScore": 6.693147,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "draft-new",
+          "expected": "create_draft",
+          "predicted": "get_post",
+          "correct": false,
+          "topScore": 17.484907,
+          "runnerUp": "search_posts"
+        },
+        {
+          "id": "draft-not-publish",
+          "expected": "create_draft",
+          "predicted": "update_post",
+          "correct": false,
+          "topScore": 13.772589,
+          "runnerUp": "create_draft"
+        },
+        {
+          "id": "draft-article",
+          "expected": "create_draft",
+          "predicted": "upload_media",
+          "correct": false,
+          "topScore": 8.0,
+          "runnerUp": "create_draft"
+        },
+        {
+          "id": "draft-copy",
+          "expected": "create_draft",
+          "predicted": "get_post",
+          "correct": false,
+          "topScore": 13.098612,
+          "runnerUp": "create_draft"
+        },
+        {
+          "id": "update-title",
+          "expected": "update_post",
+          "predicted": "update_post",
+          "correct": true,
+          "topScore": 5.693147,
+          "runnerUp": "search_posts"
+        },
+        {
+          "id": "update-tags",
+          "expected": "update_post",
+          "predicted": "create_draft",
+          "correct": false,
+          "topScore": 13.0,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "update-publish",
+          "expected": "update_post",
+          "predicted": "update_post",
+          "correct": true,
+          "topScore": 9.0,
+          "runnerUp": "search_posts"
+        },
+        {
+          "id": "update-body",
+          "expected": "update_post",
+          "predicted": "update_post",
+          "correct": true,
+          "topScore": 5.693147,
+          "runnerUp": "create_draft"
+        },
+        {
+          "id": "media-upload",
+          "expected": "upload_media",
+          "predicted": "upload_media",
+          "correct": true,
+          "topScore": 6.693147,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "media-cover",
+          "expected": "upload_media",
+          "predicted": "update_post",
+          "correct": false,
+          "topScore": 12.693147,
+          "runnerUp": "upload_media"
+        },
+        {
+          "id": "media-inline",
+          "expected": "upload_media",
+          "predicted": "upload_media",
+          "correct": true,
+          "topScore": 11.791759,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "media-file",
+          "expected": "upload_media",
+          "predicted": "upload_media",
+          "correct": true,
+          "topScore": 10.178054,
+          "runnerUp": "search_posts"
+        },
+        {
+          "id": "comments-list",
+          "expected": "list_comments",
+          "predicted": "list_comments",
+          "correct": true,
+          "topScore": 8.693147,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "comments-replies",
+          "expected": "list_comments",
+          "predicted": "list_comments",
+          "correct": true,
+          "topScore": 11.682131,
+          "runnerUp": "upload_media"
+        },
+        {
+          "id": "comments-feedback",
+          "expected": "list_comments",
+          "predicted": "list_comments",
+          "correct": true,
+          "topScore": 11.693147,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "comments-what",
+          "expected": "list_comments",
+          "predicted": "list_comments",
+          "correct": true,
+          "topScore": 11.0,
+          "runnerUp": "upload_media"
+        }
+      ]
+    },
+    "concise": {
+      "cases": 24,
+      "correct": 23,
+      "errors": 1,
+      "accuracy": 0.958333,
+      "predictions": [
+        {
+          "id": "search-cache",
+          "expected": "search_posts",
+          "predicted": "search_posts",
+          "correct": true,
+          "topScore": 7.693147,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "search-author",
+          "expected": "search_posts",
+          "predicted": "search_posts",
+          "correct": true,
+          "topScore": 3.0,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "search-tag",
+          "expected": "search_posts",
+          "predicted": "search_posts",
+          "correct": true,
+          "topScore": 8.693147,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "search-many",
+          "expected": "search_posts",
+          "predicted": "list_comments",
+          "correct": false,
+          "topScore": 4.0,
+          "runnerUp": "search_posts"
+        },
+        {
+          "id": "get-known",
+          "expected": "get_post",
+          "predicted": "get_post",
+          "correct": true,
+          "topScore": 8.0,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "get-meta",
+          "expected": "get_post",
+          "predicted": "get_post",
+          "correct": true,
+          "topScore": 6.0,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "get-body",
+          "expected": "get_post",
+          "predicted": "get_post",
+          "correct": true,
+          "topScore": 3.0,
+          "runnerUp": "search_posts"
+        },
+        {
+          "id": "get-one",
+          "expected": "get_post",
+          "predicted": "get_post",
+          "correct": true,
+          "topScore": 9.0,
+          "runnerUp": "create_draft"
+        },
+        {
+          "id": "draft-new",
+          "expected": "create_draft",
+          "predicted": "create_draft",
+          "correct": true,
+          "topScore": 18.0,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "draft-not-publish",
+          "expected": "create_draft",
+          "predicted": "create_draft",
+          "correct": true,
+          "topScore": 6.0,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "draft-article",
+          "expected": "create_draft",
+          "predicted": "create_draft",
+          "correct": true,
+          "topScore": 9.0,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "draft-copy",
+          "expected": "create_draft",
+          "predicted": "create_draft",
+          "correct": true,
+          "topScore": 10.0,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "update-title",
+          "expected": "update_post",
+          "predicted": "update_post",
+          "correct": true,
+          "topScore": 7.693147,
+          "runnerUp": "create_draft"
+        },
+        {
+          "id": "update-tags",
+          "expected": "update_post",
+          "predicted": "update_post",
+          "correct": true,
+          "topScore": 11.386294,
+          "runnerUp": "create_draft"
+        },
+        {
+          "id": "update-publish",
+          "expected": "update_post",
+          "predicted": "update_post",
+          "correct": true,
+          "topScore": 10.693147,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "update-body",
+          "expected": "update_post",
+          "predicted": "update_post",
+          "correct": true,
+          "topScore": 9.0,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "media-upload",
+          "expected": "upload_media",
+          "predicted": "upload_media",
+          "correct": true,
+          "topScore": 10.0,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "media-cover",
+          "expected": "upload_media",
+          "predicted": "upload_media",
+          "correct": true,
+          "topScore": 10.693147,
+          "runnerUp": "search_posts"
+        },
+        {
+          "id": "media-inline",
+          "expected": "upload_media",
+          "predicted": "upload_media",
+          "correct": true,
+          "topScore": 17.693147,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "media-file",
+          "expected": "upload_media",
+          "predicted": "upload_media",
+          "correct": true,
+          "topScore": 5.693147,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "comments-list",
+          "expected": "list_comments",
+          "predicted": "list_comments",
+          "correct": true,
+          "topScore": 7.0,
+          "runnerUp": "search_posts"
+        },
+        {
+          "id": "comments-replies",
+          "expected": "list_comments",
+          "predicted": "list_comments",
+          "correct": true,
+          "topScore": 5.0,
+          "runnerUp": "update_post"
+        },
+        {
+          "id": "comments-feedback",
+          "expected": "list_comments",
+          "predicted": "list_comments",
+          "correct": true,
+          "topScore": 7.0,
+          "runnerUp": "get_post"
+        },
+        {
+          "id": "comments-what",
+          "expected": "list_comments",
+          "predicted": "list_comments",
+          "correct": true,
+          "topScore": 11.0,
+          "runnerUp": "get_post"
+        }
+      ]
+    }
+  }
+}

@@ -1,5 +1,22 @@
+param(
+    [string]$Database
+)
+
 # Apply pending SQL migrations from apps/server/db/migration (tracked in schema_migrations)
 . (Join-Path $PSScriptRoot "load-env.ps1")
+
+function Test-SafeDatabaseName {
+    param([string]$Name)
+    return -not [string]::IsNullOrWhiteSpace($Name) -and $Name -match '^[A-Za-z0-9_]+$'
+}
+
+if ($Database) {
+    if (-not (Test-SafeDatabaseName $Database)) {
+        Write-Host "Invalid database name." -ForegroundColor Red
+        exit 1
+    }
+    $env:MYSQL_DATABASE = $Database
+}
 
 if (-not $RepoRoot) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path

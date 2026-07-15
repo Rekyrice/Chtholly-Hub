@@ -1,0 +1,18 @@
+[
+  {"queryId":"q01","expected":"d01","lexical":["d17","d01","d18","d19","d20"],"semanticProxy":["d21","d01","d22","d23","d24"]},
+  {"queryId":"q02","expected":"d02","lexical":["d25","d02","d03","d14","d30"],"semanticProxy":["d26","d02","d12","d13","d31"]},
+  {"queryId":"q03","expected":"d03","lexical":["d26","d03","d02","d10","d25"],"semanticProxy":["d12","d03","d31","d14","d25"]},
+  {"queryId":"q04","expected":"d04","lexical":["d27","d04","d30","d11","d13"],"semanticProxy":["d31","d04","d27","d12","d30"]},
+  {"queryId":"q05","expected":"d05","lexical":["d28","d05","d29","d08","d09"],"semanticProxy":["d09","d05","d28","d07","d06"]},
+  {"queryId":"q06","expected":"d06","lexical":["d07","d06","d32","d28","d14"],"semanticProxy":["d29","d06","d07","d12","d32"]},
+  {"queryId":"q07","expected":"d07","lexical":["d06","d07","d29","d32","d14"],"semanticProxy":["d28","d07","d06","d05","d09"]},
+  {"queryId":"q08","expected":"d08","lexical":["d28","d08","d29","d05","d09"],"semanticProxy":["d09","d08","d28","d05","d29"]},
+  {"queryId":"q09","expected":"d09","lexical":["d09","d28","d08","d05","d29"],"semanticProxy":["d28","d05","d08","d09","d07"]},
+  {"queryId":"q10","expected":"d10","lexical":["d25","d15","d02","d10","d26"],"semanticProxy":["d10","d15","d25","d03","d02"]},
+  {"queryId":"q11","expected":"d11","lexical":["d11","d30","d27","d20","d13"],"semanticProxy":["d30","d27","d20","d13","d31"]},
+  {"queryId":"q12","expected":"d12","lexical":["d31","d32","d14","d03","d26"],"semanticProxy":["d12","d31","d32","d03","d14"]},
+  {"queryId":"q13","expected":"d13","lexical":["d31","d30","d13","d14","d27"],"semanticProxy":["d26","d25","d13","d31","d30"]},
+  {"queryId":"q14","expected":"d14","lexical":["d26","d25","d32","d13","d14"],"semanticProxy":["d12","d31","d03","d02","d14"]},
+  {"queryId":"q15","expected":"d15","lexical":["d10","d25","d02","d30","d31"],"semanticProxy":["d26","d03","d12","d32","d14"]},
+  {"queryId":"q16","expected":"d16","lexical":["d32","d06","d14","d29","d31"],"semanticProxy":["d12","d31","d06","d29","d14"]}
+]

@@ -1,0 +1,828 @@
+- seedKey: apocalypse-hotel-legacies
+  legacySlug: null
+  authorSeedKey: site-owner
+  title: 即使无法生活，也可以停留——《末日后酒店》与那些比世界活得更久的东西
+  slug: apocalypse-hotel-legacies
+  description: 从一项几经换手的原创企划，读到银河楼、八千代与“停留”留下来的时间。
+  category: ANIME
+  tags: [末日后酒店, 动画, 制作考察, 长篇评论]
+  publishTime: 2026-07-12T08:30:00Z
+  markdownFile: posts/apocalypse-hotel-legacies.md
+  coverAsset: apocalypse-hotel-cover
+  inlineAssets:
+    - apocalypse-hotel-takemoto-designs
+    - apocalypse-hotel-window
+    - apocalypse-hotel-gingarou
+    - apocalypse-hotel-overgrown-city
+    - apocalypse-hotel-tree-rest
+    - apocalypse-hotel-tree-before
+    - apocalypse-hotel-tree-after
+  brief:
+    factAnchors: [LIDENFILMS, CygamesPictures, 竹中信广, 村越繁, 竹本泉, 春藤佳奈, Gainax, 本田光平, 第五集, 第六集, 第十一集, 第十二集, 即使无法生活，也可以停留]
+    voice: null
+    position: 把企划换手与创作者谱系视为作品形式的一部分，并结合四个具体集数讨论单元剧、八千代与酒店主旨
+    format: longform-review
+    mediaPlan: [天空下的八千代氛围剧照作封面, 角色原案图对应竹本泉, 银河楼与废墟图对应美术分析, 八千代树下休息画面对应第十一集, 两张树林图作结尾前后对照]
+    sources: [apocalypse-hotel-sakuga, apocalypse-hotel-bangumi-user, apocalypse-hotel-itmedia, apocalypse-hotel-ann, apocalypse-hotel-netlab, apocalypse-hotel-animate-times, apocalypse-hotel-episode11-stills, apocalypse-hotel-gamebiz, apocalypse-hotel-official]
+
+- seedKey: shoushimin-cinematography
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 《小市民系列》的摄影，为什么总让人坐立不安
+  slug: shoushimin-cinematography
+  description: 从中轴构图、人物距离和被压低的声音，拆解《小市民系列》怎样把“普通”拍成一场随时会露馅的表演。
+  category: ANIME
+  tags: [小市民系列, 动画摄影, 构图, 制作考察]
+  publishTime: 2026-06-28T14:17:00Z
+  markdownFile: posts/shoushimin-cinematography.md
+  coverAsset: shoushimin-cinematography-cover
+  inlineAssets:
+    - shoushimin-centered-frame
+    - shoushimin-room-distance
+    - shoushimin-ordinary-mask
+  brief:
+    factAnchors: [米泽穗信, 神户守, 斋藤敦史, 盐川智幸, Lapin Track, 中轴构图, 背景切换, 稀疏配乐, 岐阜实景, 普通生活的表演性]
+    voice: kzn，先注意镜头和声音，判断直接，句子偏短
+    position: 端正构图与克制声音暴露小鸠和小佐内维持普通生活的用力程度，也检视背景切换过满时的自觉感
+    format: feature-review
+    mediaPlan: [小佐内单人居中画面支撑中轴构图, 旋转倾斜室内拼图支撑对背景切换过满的保留意见, 闭眼小鸠字幕近景收束安静中的不安]
+    sources: [shoushimin-cinematography-sakuga, shoushimin-cinematography-official]
+
+- seedKey: hyakuemu-one-hundred-meters
+  legacySlug: null
+  authorSeedKey: anime-critic
+  title: 一百米够跑完一个人的一生吗？——《百米。》观后
+  slug: hyakuemu-one-hundred-meters
+  description: 从脚掌落地、雨中冲刺和终点后的回望，讨论《百米。》如何让身体、胜负与时间彼此较劲。
+  category: ANIME
+  tags: [百米。, 岩井泽健治, 运动动画, 动画电影]
+  publishTime: 2026-06-19T10:42:00Z
+  markdownFile: posts/hyakuemu-one-hundred-meters.md
+  coverAsset: hyakuemu-one-hundred-meters-cover
+  inlineAssets:
+    - hyakuemu-body-lines
+    - hyakuemu-rain-sprint
+    - hyakuemu-finish
+  brief:
+    factAnchors: [鱼丰, 岩井泽健治, 武藤康之, 小岛庆祐, Rock'n Roll Mountain, 转描, 三维跑步模型, 场景粗稿, 雨中长镜头, 百米赛事的十秒时间]
+    voice: 佐仓市民A，允许长段落、犹豫和保留意见，不把个人判断写成普遍定论
+    position: 影片让长期准备与十秒比赛在具体身体里发生冲突，并对终场可能盖过自我消耗代价保留意见
+    format: feature-review
+    mediaPlan: [高亮面部特写支撑速度中的主观压力, 低头前倾近景支撑身体负荷与混合作画方法, 迎面冲刺近景支撑终场兴奋与保留意见]
+    sources: [hyakuemu-production-sakuga, hyakuemu-production-official]
+
+- seedKey: city-restless-town
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 关于《CITY》：京都动画怎样画一座停不下来的城
+  slug: city-restless-town
+  description: 从人物动作、背景反应与剪辑节拍出发，看京都动画如何让新井圭一的粗线条扩散成一整座城的运动。
+  category: ANIME
+  tags: [CITY THE ANIMATION, 京都动画, 喜剧演出, 制作考察]
+  publishTime: 2026-06-03T16:08:00Z
+  markdownFile: posts/city-restless-town.md
+  coverAsset: city-restless-town-cover
+  inlineAssets:
+    - city-comedy-impact
+    - city-space-elasticity
+    - city-line-language
+  brief:
+    factAnchors: [新井圭一, 石立太一, 德山珠美, 京都动画, 北之原孝将, 第十二集, 无对白古典乐段落, 二维特效, 背景动画, 全城反应]
+    voice: kzn，开门见山并置笑点，拆动作与节拍时判断直接，短段落推进
+    position: 《CITY》的统一感来自人物、背景、线条和剪辑共享同一套反应机制，而非把漫画笑点单独装饰得更华丽
+    format: feature-review
+    mediaPlan: [森林教育角静帧支撑同画面信息错位, 片尾式群像拼贴支撑居民关系的版面化组织, 终幕建筑群像支撑统一粗线与环境表演]
+    sources: [city-animation-production-sakuga, city-animation-production-official]
+
+- seedKey: chainsaw-man-reze-rain
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 蕾塞篇：那场雨下得实在太久了
+  slug: chainsaw-man-reze-rain
+  description: 从雨窗白花、暮色海边和空站台回想蕾塞，也直说对撒娇笑点与过饱动作戏的嫌弃。
+  category: ANIME
+  tags: [链锯人 蕾塞篇, 蕾塞, 动画电影, 观后感]
+  publishTime: 2026-05-24T12:51:00Z
+  markdownFile: posts/chainsaw-man-reze-rain.md
+  coverAsset: chainsaw-man-reze-rain-cover
+  inlineAssets:
+    - chainsaw-man-reze-gerbera
+    - chainsaw-man-reze-seaside
+    - chainsaw-man-reze-platform
+  brief:
+    factAnchors: [电话亭里的相遇, 空教室, 雨窗前拿花的蕾塞, 泳池, 祭典, 海边, 蕾塞折返, 空站台, 玛奇玛]
+    voice: 摸鱼大师，像社区里刚看完片的人聊天，喜欢就直说，动作看累了也直说，不摆制作履历
+    position: 蕾塞的真心无需按比例结算，雨窗、海边与站台已经让短暂相处成立；后半段动作戏很爽也太满，挡住人物时就该直接嫌弃
+    format: feature-review
+    mediaPlan: [烟火下两人剪影只作氛围封面, 雨窗前蕾塞持白花对应短暂开心, 暮色海边远景对应没说清的告别, 空站台与列车对应蕾塞独自折返]
+    sources: [chainsaw-man-reze-sakuga, chainsaw-man-reze-official]
+
+- seedKey: orb-unpersuaded-people
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 我喜欢《地。》里那些没有被说服的人
+  slug: orb-unpersuaded-people
+  description: 从诺瓦克的日常问话、奥克兹赴刑前仰望与终局教堂进入《地。》，聊声音怎样保留恐惧、固执和迟到的动摇。
+  category: ANIME
+  tags: [地。―关于地球的运动―, 配音, 牛尾宪辅, 动画观后感]
+  publishTime: 2026-05-08T09:36:00Z
+  markdownFile: posts/orb-unpersuaded-people.md
+  coverAsset: orb-unpersuaded-people-cover
+  inlineAssets:
+    - orb-procession
+    - orb-night-sky
+    - orb-voices
+  brief:
+    factAnchors: [诺瓦克审问胡贝特与拉法尔, 拉法尔接受判决后服毒死亡, 奥克兹与巴德尼同行, 奥克兹与巴德尼赴刑前仰望星空, 终局燃烧教堂, 诺瓦克眼前再次出现拉法尔形象, 坂本真绫, 津田健次郎, 小西克幸, 牛尾宪辅]
+    voice: 耳机线打结，更留意音色、气息、停顿和配乐进入时机，但仍像普通动画社区用户说个人好恶
+    position: 三组具体声音记忆让坚持带着怕死、疲惫和迟到的动摇，台词与配乐过满时也会直说不喜欢，不替诺瓦克的醒悟结账
+    format: feature-review
+    mediaPlan: [星空下两人握手作人物与天空关系的封面, 三名披风人物暮色行进对应脚步与短暂沉默, 原作黑白星空画格短暂对照奥克兹赴刑前仰望, 火光中拉法尔形象对应诺瓦克终局记忆]
+    sources: [orb-animation-sakuga, orb-animation-official]
+
+- seedKey: redisson-moved-timeout
+  legacySlug: null
+  authorSeedKey: night-coder
+  title: Redis 明明还活着，为什么请求还是一批批超时
+  slug: redisson-moved-timeout
+  description: 主从切换恢复后仍有请求成批超时。沿 MOVED 重定向和客户端旧拓扑映射，复盘公开记录能确认到哪里。
+  category: TECH
+  tags: [Redisson, Redis Cluster, MOVED, 故障复盘]
+  publishTime: 2026-04-27T15:22:00Z
+  markdownFile: posts/redisson-moved-timeout.md
+  coverAsset: redisson-moved-timeout-cover
+  inlineAssets:
+    - redisson-moved-log
+    - redisson-cluster-route
+  brief:
+    factAnchors: [Redis 6.0.11, Redisson 3.30.0, 三主三从频繁主备切换, 客户端拓扑可能未刷新, 请求先按旧slot映射发往当前副本, Redis 返回 MOVED, MOVED目标URL构造当前NodeSource, NodeSource addr是重定向目标, failover与failback小环境复现, 内部四个master而实际三主, a4bdaa5, re-added master node topology update, maintainer Fixed, Issue closed, milestone 3.33.0, 本文未自行复现或验证3.33.0]
+    voice: 磁盘又满了，按日志、误判、定位、结果短句推进，判断直接，不把公开记录写成亲历事故
+    position: 连接池提示会把排查带向容量问题；带redirect=MOVED的NodeSource记录的是重定向阶段，初始旧目标必须由DEBUG路由或拓扑快照确认；上游修复记录仍需在预发failover与failback场景验收
+    format: technical-report
+    mediaPlan: [真实 GitHub Issue 页面截图作封面并保留 Closed bug milestone 3.33.0, 公开日志按原顺序排版且地址脱敏, 根据 Issue DEBUG 现象绘制 client topology 到旧映射目标当前副本再经 MOVED 指向当前主节点的非实测路径示意]
+    sources: [redisson-5972-moved-timeout]
+
+- seedKey: rag-chunk-size-regression
+  legacySlug: null
+  authorSeedKey: algo-runner
+  title: 500 与 800 字符切片：Hit@1 没变，MRR 小幅下降
+  slug: rag-chunk-size-regression
+  description: 冻结七份 Git 语料和答案片段，对比两种字符切片的 Hit@1、MRR 与逐问排名。
+  category: TECH
+  tags: [RAG, 文档切片, TF-IDF, 检索实验]
+  publishTime: 2026-04-11T11:05:00Z
+  markdownFile: posts/rag-chunk-size-regression.md
+  coverAsset: rag-chunk-size-regression-cover
+  inlineAssets:
+    - rag-recall-table
+    - rag-failed-query
+  brief:
+    factAnchors: [tracked experiment.py queries.json results.json visuals.html, corpus commit c9f0747298c1267e4d1e3767fdfc5fb12185cb7e, 7 个 Git blob SHA-256, 8 个 answer-bearing 标签, path heading evidence substring 同 chunk relevant, Markdown heading 分段, Unicode 字符窗口, chunk size 500 与 800, overlap 80, 连续汉字 run 内二元组, TF-IDF 余弦, top 3, Hit@1 0.375, 500 MRR 0.569139, 800 MRR 0.565179, 文章缓存 relevant rank 3 到 4, OSS 上传方式 rank 7 到 5, Neo4j rank 13 到 14, 无 LLM, 无 embedding]
+    voice: kuro_404，公开条件反例和失败项，样本小就不下大结论，像个人实验记录
+    position: 冻结语料与 answer-bearing substring 标签后，两种切片 Hit@1 均为 0.375，800 字符的 MRR 从 0.569139 降到 0.565179；substring relevant 有局限，结果不外推到 embedding 或完整 RAG 系统
+    format: technical-report
+    mediaPlan: [由 tracked results 生成的 Hit@1 与 MRR 摘要封面, 由 tracked results 生成的八问 answer-bearing 首位结果表, 缓存查询 top 3 加真实 relevant 第 4 行]
+    sources: [rag-chunk-local-experiment]
+
+- seedKey: urban-myth-search-box
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 《都市传说解体中心》通关后，我还是不敢关掉搜索框
+  slug: urban-myth-search-box
+  description: 从关键词搜索、时间线翻帖和现场调查聊这部游戏，也说说我喜欢的传言设计和太着急的提示。
+  category: GAME
+  tags: [都市传说解体中心, 冒险游戏, 推理游戏, 像素美术]
+  publishTime: 2026-03-29T13:48:00Z
+  markdownFile: posts/urban-myth-search-box.md
+  coverAsset: urban-myth-search-box-cover
+  inlineAssets:
+    - urban-myth-search-interface
+    - urban-myth-investigation
+    - urban-myth-dialogue
+  brief:
+    factAnchors: [墓场文库, 集英社游戏, 福来蓟, 廻屋涉, 茉莉, 社交媒体帖子调查, 从帖子取得预设关键词, 单个或两个关键词组合检索, 现场调查, 眼镜查看残留意念与记忆, 都市传说特定与解体, 剧集式悬疑冒险, 迷幻像素画]
+    voice: 摸鱼大师，像通关后在游戏社区发长帖，操作感受写具体，喜欢和嫌弃都不绕弯，不冒充攻略作者
+    position: 从帖子取得预设关键词，再用单词或双词组合翻查时间线，让网络传言本身成为调查现场；提示过早限定组合时会挤掉自己试错的乐趣
+    format: review
+    mediaPlan: [官网主视觉作封面, Steam官方中文截图呈现关键词搜索和社交媒体帖子, Steam官方中文截图呈现廻屋向福来蓟说明中心性质, Steam官方中文截图呈现现场调查与异常痕迹]
+    sources: [urban-myth-official, urban-myth-shueisha-games, urban-myth-steam]
+
+- seedKey: yokomichi-yonosuke-after
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 《横道世之介》离开以后，书里反而更热闹了
+  slug: yokomichi-yonosuke-after
+  description: 祥子在非洲回驻地的车上谈起旧男友，加藤记起闷热住处与午夜西瓜；世之介离开后，小事仍被人说起。
+  category: LIFE
+  tags: [横道世之介, 吉田修一, 日本文学, 阅读随笔]
+  publishTime: 2026-03-12T07:19:00Z
+  markdownFile: posts/yokomichi-yonosuke-after.md
+  coverAsset: null
+  inlineAssets: []
+  brief:
+    factAnchors: [祥子在非洲难民营工作, 法国同事西尔维, 回职员驻地的四驱车, 两个人从前的男友, 世之介的住处没有空调, 明明睡过人家的床, 一直老实睡在地板上, 夜里的公园, 长凳上吃西瓜, 加藤笑了起来]
+    voice: 余白，少解释人物，只把两段多年后的闲谈和记住的小事放在一起，句子有长有短，停在人物反应上
+    position: 祥子和加藤并未把世之介整理成统一结论；非洲车程、空调房与午夜西瓜让已离场的人继续进入新听众的谈话
+    format: personal-essay
+    mediaPlan: []
+    sources: [yokomichi-yonosuke-book, yokomichi-yonosuke-primary-text]
+
+- seedKey: shiboyugi-laugh-before-danger
+  legacySlug: null
+  authorSeedKey: anime-critic
+  title: 《靠死亡游戏混饭吃》的房间里，笑声总比危险先到
+  slug: shiboyugi-laugh-before-danger
+  description: 危险还没发生，房间、监控与声音已经决定了女孩们怎样看见彼此。
+  category: ANIME
+  tags: [靠死亡游戏混饭吃, 死亡游戏, 动画演出, 声音设计]
+  publishTime: 2026-06-28T14:16:00Z
+  markdownFile: posts/shiboyugi-laugh-before-danger.md
+  coverAsset: shiboyugi-laugh-before-danger-cover
+  inlineAssets: [shiboyugi-mineral-eyes, shiboyugi-color-silhouettes]
+  brief:
+    factAnchors: [靠死亡游戏混饭吃, 监控和窥视构图, 窄画幅制造压迫, 虹膜叠加矿物显微摄影, 无五官彩色剪影, 墙后声音被闷住, Hewa制作三维环境参考, 死亡常从远处呈现, 章节编号参与节奏]
+    voice: 看完几集后的深夜长帖，从一阵笑声和一间房写起，不替角色总结人生
+    position: 职业玩家设定没有让死亡变轻；镜头保持距离，反而拒绝把角色的死只做成观众奖励
+    format: personal-essay
+    mediaPlan: [俯视房间作氛围封面, 屏幕与角色同框, 彩色无脸剪影]
+    sources: [shiboyugi-sakuga-production, shiboyugi-official]
+
+- seedKey: takopi-sorry-is-not-enough
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 《章鱼哔的原罪》第四话之后，我才发现“对不起”根本不够用
+  slug: takopi-sorry-is-not-enough
+  description: 第四话没有把道歉当成句号。直树听不进声音，润也从高处蹲下来，而已经发生的事仍留在原处。
+  category: ANIME
+  tags: [章鱼哔的原罪, 第四话, 动画演出, 沟通]
+  publishTime: 2026-06-20T10:42:00Z
+  markdownFile: posts/takopi-sorry-is-not-enough.md
+  coverAsset: takopi-sorry-is-not-enough-cover
+  inlineAssets: [takopi-naoki-shock, takopi-brothers-distance]
+  brief:
+    factAnchors: [两卷十六话改为六集, 单集时长不固定, 第四话东君的救济, 尸体被发现, 直树的断裂感, 润也起初以压迫性高位出现, 背景与机位表现距离, 润也转为倾听]
+    voice: 读完原作又看动画的普通观众，只抓住一句说不出口的道歉和兄弟间的高度变化
+    position: 道歉有用但不能替代倾听，更不能把受害者变成帮助别人完成成长的工具
+    format: personal-essay
+    mediaPlan: [直树被拉住的低角度场面作封面, 变形教室里的喘息, 润也的疲惫近景]
+    sources: [takopi-sakuga-production, takopi-official-story-04]
+
+- seedKey: kisekoi-season-two-beyond-cute
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 喜多川海梦没有被第二季困在“可爱”里
+  slug: kisekoi-season-two-beyond-cute
+  description: 海梦依然漂亮，但第二季把镜头往旁边挪开，才让她如何对待五条、甘音和其他同好变得清楚。
+  category: ANIME
+  tags: [更衣人偶坠入爱河, 喜多川海梦, Cosplay, 动画评论]
+  publishTime: 2026-06-08T16:35:00Z
+  markdownFile: posts/kisekoi-season-two-beyond-cute.md
+  coverAsset: kisekoi-season-two-beyond-cute-cover
+  inlineAssets: [kisekoi-halloween, kisekoi-amane-crossplay, kisekoi-cosplay-community]
+  brief:
+    factAnchors: [第二季, 第十三话万圣节, 五条身处热闹人群的不安, 朋友询问两人是否交往, 第十四话天野甘音的女装回忆, 服装随身体变化, 同好年龄与性别边界扩大]
+    voice: 动漫社区长帖，承认自己先被海梦吸引，再慢慢把视线挪到她周围的人
+    position: 第二季没有削弱海梦的可爱，而是用她如何给别人留位置，为可爱补上了看不见的缝线
+    format: feature-review
+    mediaPlan: [第二季制作图拼贴封面, 海梦与朋友合影, 礼服设计图, 五条与海梦制作过程拼贴]
+    sources: [kisekoi-season2-sakuga, kisekoi-official]
+
+- seedKey: look-back-lines-in-the-rain
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 雨落下来以后，线稿还在往前走——《蓦然回首》的动画为什么离人这么近
+  slug: look-back-lines-in-the-rain
+  description: 从藤野的雨中奔跑写到京本的房间：保留下来的抖动、差异和未完成感，让画纸两边的人仍然靠得很近。
+  category: ANIME
+  tags: [蓦然回首, 押山清高, 作画, 动画电影]
+  publishTime: 2026-05-19T12:08:00Z
+  markdownFile: posts/look-back-lines-in-the-rain.md
+  coverAsset: look-back-lines-in-the-rain-cover
+  inlineAssets: [look-back-running-lines, look-back-drawing-room, look-back-fujino-kyomoto]
+  brief:
+    factAnchors: [藤野在跑, 京本长期待在房间, 押山清高担任监督脚本角色设计, Studio Durian, 保留关键动画线条, 押山承担大量关键动画并任唯一作画监督, 奔跑段落扩展, 另一张四格漫画]
+    voice: 喜欢画画的人写的观后随笔，注意桌面、手腕、房门和线条，不把加班写成天才神话
+    position: 创作不能复活谁也不能证明失去值得，它只在无法继续时提供一个再次握笔的动作
+    format: personal-essay
+    mediaPlan: [两只手靠近的明亮画面作封面, 不同线条的两张脸, 凌乱画桌, 堆满画册的房间]
+    sources: [look-back-sakuga-production, look-back-official]
+
+- seedKey: bocchi-song-leaves-the-room
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 当一首歌终于从房间里走出去
+  slug: bocchi-song-leaves-the-room
+  description: 一里没有因街演摆脱恐惧，只让声音先走出去，再学会听见队友。
+  category: ANIME
+  tags: [孤独摇滚, 后藤一里, 结束乐队, 乐队动画]
+  publishTime: 2026-04-03T09:26:00Z
+  markdownFile: posts/bocchi-song-leaves-the-room.md
+  coverAsset: bocchi-song-leaves-the-room-cover
+  inlineAssets: [bocchi-street-one-eye, bocchi-first-concert, bocchi-kita-support]
+  brief:
+    factAnchors: [第六话, 一只眼睛在演出前被头发遮住, 贴近吉他的虚拟机位, 第八话首次Live, 第一首僵硬而第二首逐渐同步, 虹夏认出guitarhero, 第十二话设备故障, 喜多用演奏支撑]
+    voice: 玩过一点乐器的人重看单集，既记演出也记演出结束后的尴尬
+    position: 成长不是症状消失；房间也不是反派，重要的是声音能否出去并带着别人的节拍回来
+    format: personal-essay
+    mediaPlan: [背琴望天作封面, 一里与广井坐在街边, 第八话舞台上的鼓手, 舞台上的喜多]
+    sources: [bocchi-sakuga-production, bocchi-official-story]
+
+- seedKey: cowboy-bebop-ballad-of-fallen-angels-rain
+  legacySlug: null
+  authorSeedKey: site-owner
+  title: 深夜重看《Cowboy Bebop》第五话，最先回来的是那段雨声
+  slug: cowboy-bebop-ballad-of-fallen-angels-rain
+  description: 两首歌陪斯派克走进教堂又落下，最后只剩一只飞出去的枕头。
+  category: ANIME
+  tags: [Cowboy Bebop, 堕天使们的歌谣, 菅野洋子, 动画音乐]
+  publishTime: 2026-03-21T18:54:00Z
+  markdownFile: posts/cowboy-bebop-ballad-of-fallen-angels-rain.md
+  coverAsset: cowboy-bebop-ballad-cover
+  inlineAssets: [cowboy-bebop-rain-cathedral, cowboy-bebop-green-bird-fall]
+  brief:
+    factAnchors: [第五话, Spike走向教堂时播放Rain, 教堂对峙Vicious, Spike穿过彩窗坠落时播放Green Bird, 回忆以碎片出现, 醒来后向唱歌的Faye扔枕头, 单元剧制作背景]
+    voice: 管理员账号的短篇深夜重看记录，少解释设定，沿两首歌和一个枕头走完
+    position: 名场面的重量不只在彩窗碎裂，而在音乐让过去回来以后，角色仍能暂时回到吵闹日常
+    format: personal-essay
+    mediaPlan: [空教堂作氛围封面, 彩窗前的高位对峙, Spike与Vicious近距离僵持]
+    sources: [cowboy-bebop-sakuga-roundtable, cowboy-bebop-official, cowboy-bebop-episode5-gallery]
+
+- seedKey: thread-pool-queue-before-max
+  legacySlug: null
+  authorSeedKey: night-coder
+  title: 我把 maxPoolSize 调到 64，任务还是先在队列里等死了
+  slug: thread-pool-queue-before-max
+  description: 同样是 core=4、max=64，两种队列却跑出 4 和 32 个线程。
+  category: TECH
+  tags: [Java, ThreadPoolExecutor, 线程池, 性能排查]
+  publishTime: 2026-06-14T13:12:00Z
+  markdownFile: posts/thread-pool-queue-before-max.md
+  coverAsset: thread-pool-queue-before-max-cover
+  inlineAssets: [thread-pool-queue-chart]
+  brief:
+    factAnchors: [Java 21.0.11, ThreadPoolExecutor, corePoolSize 4, maximumPoolSize 64, 40个闩锁任务, 无界LinkedBlockingQueue线程4队列36, ArrayBlockingQueue容量8线程32队列8, 两组拒绝0, tracked Java source and JSON]
+    voice: 后端开发者的一次配置误判复盘，先承认把64改成96没用，再用最小实验把路径跑出来
+    position: maximumPoolSize没有失效，是无界队列让非核心线程创建分支没有机会执行；改有界队列仍需结合下游容量与拒绝策略
+    format: technical-report
+    mediaPlan: [实验对比图裁切作封面, 完整对比图放在结果表后]
+    sources: [thread-pool-jdk21-docs, thread-pool-local-experiment]
+
+- seedKey: agent-tool-description-ablation
+  legacySlug: null
+  authorSeedKey: algo-runner
+  title: 工具说明砍掉一半以后，Agent 反而少选错了几次
+  slug: agent-tool-description-ablation
+  description: 六个工具、二十四条提示：说明从 543 字减到 182 字，错误少了十一次。
+  category: TECH
+  tags: [Agent, Tool Calling, 提示词, 消融实验]
+  publishTime: 2026-05-08T07:47:00Z
+  markdownFile: posts/agent-tool-description-ablation.md
+  coverAsset: agent-tool-description-ablation-cover
+  inlineAssets: [agent-tool-description-chart]
+  brief:
+    factAnchors: [六个工具, 二十四条冻结提示, deterministic lexical overlap selector, 长说明543字符, 短说明182字符, 减少66.5%, 长说明正确12错误12, 短说明正确23错误1, 全部逐题预测已跟踪, 非LLM基准]
+    voice: 做完小实验后写的实用笔记，保留剩下的一条错误，也主动限制结论
+    position: 工具描述要保留改变路由决策和参数填写的约束，删除在多个工具中重复的工作流背景；词面代理结果只用于发现污染，不等于真实模型评测
+    format: technical-report
+    mediaPlan: [两版本正确数对比裁切作封面, 完整图注明非LLM基准]
+    sources: [agent-tool-description-local-experiment]
+
+- seedKey: 1000xresist-words-arrive-late
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 《1000xRESIST》没有把真相藏到最后，它只是让每句话都晚了一点
+  slug: 1000xresist-words-arrive-late
+  description: Watcher 很早就看见裂缝，真正迟到的是理解；旧话总在几章后突然变重。
+  category: GAME
+  tags: [1000xRESIST, 独立游戏, 叙事游戏, 科幻]
+  publishTime: 2026-04-18T15:03:00Z
+  markdownFile: posts/1000xresist-words-arrive-late.md
+  coverAsset: 1000xresist-words-arrive-late-cover
+  inlineAssets: [1000xresist-memory-walk, 1000xresist-sisters, 1000xresist-red-room]
+  brief:
+    factAnchors: [Watcher, ALLMOTHER, 地下果园, 外来生物带来的疾病, 克隆姐妹与岗位称呼, 进入记忆, 非线性场景转换, Iris家庭, 英语与广东话, 真实影像进入三维叙事, 选择后果延迟]
+    voice: 通关后在游戏社区写的长帖，承认自己起初只等反转，后来被前面轻轻说过的话追上
+    position: 游戏的力量不在最后揭晓谜底，而在信息已经出现后，让关系与理解过几章才跟上
+    format: personal-essay
+    mediaPlan: [雾中对话作封面, 白色记忆空间, 同脸姐妹, 红色房间的旧秩序]
+    sources: [1000xresist-steam, 1000xresist-unity-talk]
+
+- seedKey: night-sign-exposure
+  legacySlug: null
+  authorSeedKey: photo-walker
+  title: 夜里拍亮招牌，我会先把字压暗一点
+  slug: night-sign-exposure
+  description: 夜景不必把每块阴影拉亮。先让灯箱里的字回来，再决定快门、白平衡和哪些黑色应该留下。
+  category: LIFE
+  tags: [夜景摄影, 街头摄影, 曝光, 白平衡]
+  publishTime: 2026-03-06T11:31:00Z
+  markdownFile: posts/night-sign-exposure.md
+  coverAsset: night-sign-exposure-cover
+  inlineAssets: [night-sign-highlights, night-sign-shutter, night-sign-white-balance]
+  brief:
+    factAnchors: [亮招牌点测光, exposure compensation minus 0.7 to minus 1.7 EV as starting range, 高光警告与直方图, 手持1/15到1/60取舍, RAW, 3800K到4300K起点, 红色灯箱先丢颜色层次, 保留真实黑, 示例图ISO50 0.2秒 f7.1 12毫米]
+    voice: 拍过一阵夜街以后留下的经验帖，不冒充器材评测，不把公开例图说成自己拍摄
+    position: 夜景最重要的不是把街道整体提亮，而是保护发光文字的边缘、颜色和笔画，再有意识地决定人流与暗部
+    format: personal-essay
+    mediaPlan: [较暗旧夜街作封面, 车流与灯箱层次, 人流拖影和稳定文字, 竖向灯牌色温]
+    sources: [night-sign-tokyo-2006, night-sign-yasukuni-vehicles, night-sign-kabukicho-gate, night-sign-shinjuku-2004]
+
+- seedKey: dandadan-fireworks-aira-episode-seven
+  legacySlug: null
+  authorSeedKey: anime-critic
+  title: 烟花落下来时，爱罗已经没有地方可以回去了——《胆大党》第七话
+  slug: dandadan-fireworks-aira-episode-seven
+  description: 从舞蹈、手臂和粉色光点，回看爱罗与杂技长发女那次无法延长的拥抱。
+  category: ANIME
+  tags: [胆大党, 爱罗, 杂技长发女, 单集评论]
+  publishTime: 2026-07-10T13:26:00Z
+  markdownFile: posts/dandadan-fireworks-aira-episode-seven.md
+  coverAsset: dandadan-fireworks-cover
+  inlineAssets: [dandadan-aira-face, dandadan-silky-light, dandadan-mother-run]
+  brief:
+    factAnchors: [第七话, 爱罗, 杂技长发女, 榎本柊斗, 松永浩太郎, 粉色光点, 生命交出去, 手臂, 舞蹈, 无法延长的拥抱]
+    voice: 看完单集后立刻重看的动画观众，先记动作和颜色，再承认这并不是圆满
+    position: 扩写的母女回忆让妖怪的身体语言从恐怖转为迟到的拥抱，牺牲救回爱罗却没有抵消任何一方的失去
+    format: personal-essay
+    mediaPlan: [爱罗倒地的暗色场面作封面, 爱罗仰视妖怪, 粉色光中的拥抱, 母亲奔跑]
+    sources: [dandadan-episode-seven-official, dandadan-production-notes]
+
+- seedKey: makeine-anna-summer-eaten
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 八奈见杏菜的夏天，大概有一半是吃掉的
+  slug: makeine-anna-summer-eaten
+  description: 失恋、便当债和丰桥的暑气混在一起，八奈见总能在最难堪的时候再吃一口。
+  category: ANIME
+  tags: [败犬女主太多了, 八奈见杏菜, 丰桥, 青春动画]
+  publishTime: 2026-07-06T08:43:00Z
+  markdownFile: posts/makeine-anna-summer-eaten.md
+  coverAsset: makeine-summer-cover
+  inlineAssets: [makeine-anna-smile, makeine-corridor, makeine-stairwell]
+  brief:
+    factAnchors: [八奈见杏菜, 温水, 袴田草介, 姬宫华恋, 便当抵债, 丰桥, 北村翔太郎, 黑雷巧克力, 初恋汽水, 第四话]
+    voice: 喜欢八奈见不体面的普通观众，把吃饭当作人物节拍，不把失恋写成治愈教程
+    position: 食欲让八奈见的难过保留生活中的狼狈与反复，饭盒债务也为她和温水提供了无需过早命名的相处理由
+    format: personal-essay
+    mediaPlan: [桌面伏睡作封面, 活动室笑脸, 夏日走廊, 强光楼梯间]
+    sources: [makeine-official-story, makeine-production-notes]
+
+- seedKey: kusuriya-maomao-after-crowd
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 猫猫为什么总要等人散了才说答案
+  slug: kusuriya-maomao-after-crowd
+  description: 后宫里的真相落错位置也会伤人；猫猫先看身体和席位，最后才决定该告诉谁。
+  category: ANIME
+  tags: [药屋少女的呢喃, 猫猫, 后宫, 人物评论]
+  publishTime: 2026-06-30T15:12:00Z
+  markdownFile: posts/kusuriya-maomao-after-crowd.md
+  coverAsset: kusuriya-crowd-cover
+  inlineAssets: [kusuriya-garden-glance, kusuriya-poison-taste, kusuriya-curtain]
+  brief:
+    factAnchors: [猫猫, 园游会, 第六话, 第九话, 第二十四话, 长沼范裕, 凯文·彭金, 桶狭间有沙, 神前晓, 形真理]
+    voice: 留意推理如何嵌进人际秩序的读者，不把猫猫的沉默简单夸成冷静
+    position: 猫猫延迟揭晓是对后宫权力和他人承受能力的判断，也是她把自己撤出关系的防身姿势
+    format: personal-essay
+    mediaPlan: [罗汉隔帘看凤仙作封面, 园游会妃子反应, 猫猫试毒, 暗处帘幕]
+    sources: [kusuriya-official-episodes, kusuriya-production-notes]
+
+- seedKey: euphonium-kitauji-will-not-wait
+  legacySlug: null
+  authorSeedKey: site-owner
+  title: 北宇治不会为谁停下来
+  slug: euphonium-kitauji-will-not-wait
+  description: 最终试奏把久美子的愿望和北宇治的原则放在同一间礼堂，谁都不能免于结果。
+  category: ANIME
+  tags: [吹响吧上低音号, 北宇治, 黄前久美子, 动画评论]
+  publishTime: 2026-06-24T09:08:00Z
+  markdownFile: posts/euphonium-kitauji-will-not-wait.md
+  coverAsset: eupho-kitauji-cover
+  inlineAssets: [eupho-audition-light, eupho-listening-row, eupho-embrace]
+  brief:
+    factAnchors: [黄前久美子, 黑江真由, 高坂丽奈, 泷升, 最终试奏, 盲选, 全国大赛, 全国金奖, 北宇治, 上低音号]
+    voice: 跟完三季以后回看最终试奏的老观众，接受结果但不抹平久美子的委屈
+    position: 北宇治的实力原则最终对准主角本人，久美子承认欲望和失败后继续演奏，比得到独奏更接近作品三年的成长
+    format: personal-essay
+    mediaPlan: [全国赛前群像作封面, 真由等待试奏, 部员听选, 赛后拥抱]
+    sources: [euphonium-third-season-official, euphonium-final-production-notes]
+
+- seedKey: kimi-no-iro-count-to-four
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 三个人，一间旧教堂，还有数到四的声音——《你的颜色》
+  slug: kimi-no-iro-count-to-four
+  description: 颜色说不完一个人，数拍子却能让三个还没准备好的人在同一时刻开始。
+  category: ANIME
+  tags: [你的颜色, 山田尚子, 牛尾宪辅, 动画电影]
+  publishTime: 2026-06-15T12:37:00Z
+  markdownFile: posts/kimi-no-iro-count-to-four.md
+  coverAsset: kiminoiro-church-cover
+  inlineAssets: [kiminoiro-totsuko-color, kiminoiro-flower-credit]
+  brief:
+    factAnchors: [日暮登子, 作永きみ, 影平留依, 山田尚子, 牛尾宪辅, 旧教堂, 白猫堂, 一二三四, 蓝色, 绿色]
+    voice: 对学生乐队的生涩比完成度更感兴趣，沿着声音、脚步和颜色写三个人的距离
+    position: 旧教堂提供暂时无需解释身份的空间，数拍子让三个人练习在害怕时听见别人也让别人听见自己
+    format: personal-essay
+    mediaPlan: [乐队与彩色纹样作封面, 浅色中的登子, 花朵与彩色文字]
+    sources: [kimi-no-iro-official, kimi-no-iro-annecy-notes]
+
+- seedKey: mononoke-movie-colors-in-ooku
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 《剧场版物怪》：大奥没有黑夜，只有颜色变暗
+  slug: mononoke-movie-colors-in-ooku
+  description: 拉门、席位和过量纹样把人切进制度；颜色越繁盛，真正的空白越稀少。
+  category: ANIME
+  tags: [剧场版物怪, 唐伞, 中村健治, 视觉设计]
+  publishTime: 2026-05-29T14:56:00Z
+  markdownFile: posts/mononoke-movie-colors-in-ooku.md
+  coverAsset: mononoke-ooku-cover
+  inlineAssets: [mononoke-sliding-doors, mononoke-face-colors, mononoke-court]
+  brief:
+    factAnchors: [唐伞, 大奥, 卖药郎, 中村健治, 形真理, 拉门, 乌鸦, 花纹, fallacy of composition, 物怪]
+    voice: 先被色彩密度压住再慢慢拆空间的视觉爱好者，允许对过载段落保留不适
+    position: 唐伞来自具体怨念也来自个体局部选择合成的制度，物怪能被斩而让它诞生的条件不会随一次揭晓消失
+    format: personal-essay
+    mediaPlan: [卖药郎主视觉作封面, 层叠拉门, 色块切脸, 舞台式席位]
+    sources: [mononoke-movie-official, mononoke-avantgarde-notes]
+
+- seedKey: python-async-blocking-call
+  legacySlug: null
+  authorSeedKey: night-coder
+  title: Python async 接口中的阻塞调用排查
+  slug: python-async-blocking-call
+  description: 五十个短等待任务跑三种实现，用事件循环延迟和本地实验定位藏在协程里的同步 I/O。
+  category: TECH
+  tags: [Python, asyncio, 并发, 性能排查]
+  publishTime: 2026-07-08T11:19:00Z
+  markdownFile: posts/python-async-blocking-call.md
+  coverAsset: python-async-cover
+  inlineAssets: [python-async-code, python-async-chart]
+  brief:
+    factAnchors: [Python 3.7.0, 50个任务, 每个等待50ms, 五轮, 3.094287秒, 0.062620秒, 0.064977秒, run_in_executor, loop lag, 不是性能基准]
+    voice: 从线上排队现象回到最小实验的后端开发者，给出排查顺序并限制线程池结论
+    position: async函数体中的同步等待仍会阻塞事件循环，原生异步优先，线程池只用于隔离受控的旧同步边界
+    format: technical-report
+    mediaPlan: [深色实验摘要作封面, 三种写法的代码卡片, 五轮中位耗时图]
+    sources: [python-asyncio-docs, python-async-blocking-local-experiment]
+
+- seedKey: agent-memory-recency-experiment
+  legacySlug: null
+  authorSeedKey: algo-runner
+  title: Agent 记忆检索的时效性实验
+  slug: agent-memory-recency-experiment
+  description: 二十四条冻结查询里，先消解 supersedes 关系把旧值误召回从十七次降到零次。
+  category: TECH
+  tags: [Agent, Memory, 检索, 实验]
+  publishTime: 2026-07-03T06:52:00Z
+  markdownFile: posts/agent-memory-recency-experiment.md
+  coverAsset: agent-memory-cover
+  inlineAssets: [agent-memory-code, agent-memory-chart]
+  brief:
+    factAnchors: [24条记忆, 12条活跃, 24条查询, supersedes, 基线答对7条, 答错17条, 新旧关系后答对20条, 仍错4条, 旧值误召回为0, 不是LLM基准]
+    voice: 先公开一次有长度偏差的失败预实验，再报告冻结数据和剩余错误的实验笔记
+    position: 已知版本关系应在相关性排序前消解，但这只能解决旧值冲突，不能替代真正的语义召回与重排
+    format: technical-report
+    mediaPlan: [深色实验摘要作封面, supersedes过滤代码卡片, 两种策略正确数对照]
+    sources: [agent-memory-recency-local-experiment]
+
+- seedKey: lorelei-laser-eyes-paper-notes
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 《Lorelei and the Laser Eyes》让我重新拿起了纸和笔
+  slug: lorelei-laser-eyes-paper-notes
+  description: 截图保存画面，纸页保存误会；日期、箭头和被擦掉的关系组成另一份通关记录。
+  category: GAME
+  tags: [Lorelei and the Laser Eyes, Simogo, 解谜游戏, 独立游戏]
+  publishTime: 2026-06-11T16:21:00Z
+  markdownFile: posts/lorelei-laser-eyes-paper-notes.md
+  coverAsset: lorelei-paper-cover
+  inlineAssets: [lorelei-red-eye, lorelei-hotel-room, lorelei-red-maze]
+  brief:
+    factAnchors: [Simogo, 黑白庄园, 红色, 日期, 电影片段, 四位数锁, 纸和笔, 截图, 箭头, 错误推论]
+    voice: 通关后翻看潦草笔记的玩家，保留走错路的乐趣，不写无剧透购买指南
+    position: 纸笔的价值不只是记答案，而是保留线索之间尚未确定的关系和玩家曾经如何误解庄园
+    format: personal-essay
+    mediaPlan: [庄园外景作封面, 红色眼形结构, 窗前人物, 红色迷宫装置]
+    sources: [lorelei-steam, lorelei-simogo-official]
+
+- seedKey: curry-four-portions-onion
+  legacySlug: null
+  authorSeedKey: photo-walker
+  title: 一个人煮咖喱，我还是会切四人份的洋葱
+  slug: curry-four-portions-onion
+  description: 地址先变了，手里的分量晚一点；多出来的咖喱在冰箱里慢慢找到新的去处。
+  category: LIFE
+  tags: [独居, 做饭, 咖喱, 生活随笔]
+  publishTime: 2026-05-24T10:14:00Z
+  markdownFile: posts/curry-four-portions-onion.md
+  coverAsset: curry-four-cover
+  inlineAssets: [curry-onion-board, curry-onion-pan, curry-pot]
+  brief:
+    factAnchors: [四人份的洋葱, 一个人住, 砧板, 炒洋葱, 咖喱块, 冰箱, 分成三盒, 关小火, 写日期, 旧厨房]
+    voice: 搬出去以后才发现手感没搬走的普通人，不把独居写成励志或伤感模板
+    position: 多做的分量不是拒绝新生活，只是身体仍沿着旧厨房的尺度行动，适应发生在处理剩余的一顿又一顿里
+    format: personal-essay
+    mediaPlan: [家常咖喱饭作封面, 砧板洋葱, 锅中软化洋葱, 咖喱汤汁]
+    sources: [curry-wikimedia-images]
+
+- seedKey: dungeon-meshi-red-dragon-meal
+  legacySlug: null
+  authorSeedKey: indie-dev
+  title: 吃掉红龙这件事，莱欧斯想得比谁都认真
+  slug: dungeon-meshi-red-dragon-meal
+  description: 当妹妹和晚餐落到同一张砧板上，莱欧斯的认真既令人安心，也让同伴无处躲开。
+  category: ANIME
+  tags: [迷宫饭, 莱欧斯, 法琳, TRIGGER]
+  publishTime: 2026-07-13T08:42:00Z
+  markdownFile: posts/dungeon-meshi-red-dragon-meal.md
+  coverAsset: dungeon-red-dragon-cover
+  inlineAssets: [dungeon-laios-thinking, dungeon-falin-awake, dungeon-red-dragon-kitchen]
+  brief:
+    factAnchors: [红龙, 法琳, 莱欧斯, 玛露希尔, 森西, 魔物食材, 复活术, 砧板]
+    voice: 被莱欧斯的专注逗笑又逐渐不安的追番观众，从同伴反应写他的认真
+    position: 吃掉红龙不是猎奇噱头，而是莱欧斯把知识、救人和进食放进同一套逻辑时最坦率也最危险的一刻
+    format: personal-essay
+    mediaPlan: [红龙与队伍作封面, 莱欧斯思考, 法琳苏醒, 处理红龙肉]
+    sources: [dungeon-meshi-official, dungeon-meshi-production-01-08]
+
+- seedKey: frieren-ten-years-long
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 《葬送的芙莉莲》：十年原来已经很长了
+  slug: frieren-ten-years-long
+  description: 对芙莉莲只是短途的十年，被海塔和辛美尔留在村庄、旧物与一次次重访里。
+  category: ANIME
+  tags: [葬送的芙莉莲, 芙莉莲, 辛美尔, 时间]
+  publishTime: 2026-07-12T15:16:00Z
+  markdownFile: posts/frieren-ten-years-long.md
+  coverAsset: frieren-ten-years-cover
+  inlineAssets: [frieren-village-return, frieren-heiter-campfire, frieren-himmel-memory]
+  brief:
+    factAnchors: [十年冒险, 五十年流星雨, 辛美尔, 海塔, 村庄, 重访, 旧物, 不同寿命]
+    voice: 重看前几集时不断在背景旧物上停下来的读书人，少下结论
+    position: 作品没有让芙莉莲突然学会珍惜，而是让短命者留下的具体事物反复打断她的时间尺度
+    format: personal-essay
+    mediaPlan: [四人旅途余晖作封面, 重返旧地, 勇者一行篝火, 辛美尔的回忆镜头]
+    sources: [frieren-official, frieren-production-01-10]
+
+- seedKey: yubisaki-yuki-hands
+  legacySlug: null
+  authorSeedKey: design-sis
+  title: 雪说话时，画面会先看她的手
+  slug: yubisaki-yuki-hands
+  description: 手语、视线和手机文字轮流接过一句话，《指尖相触，恋恋不舍》不急着替雪解释。
+  category: ANIME
+  tags: [指尖相触恋恋不舍, 糸濑雪, 手语, 视听设计]
+  publishTime: 2026-07-11T10:37:00Z
+  markdownFile: posts/yubisaki-yuki-hands.md
+  coverAsset: yubisaki-yuki-cover
+  inlineAssets: [yubisaki-hands, yubisaki-gaze, yubisaki-phone-text]
+  brief:
+    factAnchors: [糸濑雪, 波岐逸臣, 手语, 读唇, 手机文字, 视线, 环境声, 构图]
+    voice: 会先看人物手和视线落点的动画观众，区分画面观察与个人感受
+    position: 作品的亲密来自沟通方式被认真拍摄，而不是把雪的经验压缩成一个浪漫化的无声世界
+    format: feature-review
+    mediaPlan: [雪与手语作封面, 手部动作, 视线交接, 手机文字]
+    sources: [yubisaki-official, yubisaki-production-notes]
+
+- seedKey: girls-band-cry-nina-song-not-round
+  legacySlug: null
+  authorSeedKey: moyu-master
+  title: 井芹仁菜把歌唱得一点也不圆
+  slug: girls-band-cry-nina-song-not-round
+  description: 她会抢拍、顶嘴、唱破一句话，也会在吵完架后回来把同一首歌重新排一遍。
+  category: ANIME
+  tags: [Girls Band Cry, 井芹仁菜, 3DCG, 乐队]
+  publishTime: 2026-07-10T17:04:00Z
+  markdownFile: posts/girls-band-cry-nina-song-not-round.md
+  coverAsset: girls-band-cry-nina-cover
+  inlineAssets: [girls-band-cry-argument, girls-band-cry-rehearsal, girls-band-cry-stage]
+  brief:
+    factAnchors: [井芹仁菜, 河原木桃香, 刺刺不休, 排练, 争吵, 3DCG, 面部表演, 身体重心]
+    voice: 被仁菜气到暂停又会继续播放的乐队番观众，说话允许直白
+    position: 仁菜的歌不好被磨圆，因为动画把她争辩、退缩和重新站稳都留在身体表演里
+    format: personal-essay
+    mediaPlan: [舞台灯光作封面, 争吵近景, 排练, 演出身体表演]
+    sources: [girls-band-cry-official, sakugabooru-animation-awards-2024]
+
+- seedKey: gridman-universe-yuta-confession
+  legacySlug: null
+  authorSeedKey: site-owner
+  title: 裕太终于把那句话说完了——《古立特宇宙》
+  slug: gridman-universe-yuta-confession
+  description: 两部 TV 动画的人全挤进一场电影，最重要的却还是裕太没能说完的那句话。
+  category: ANIME
+  tags: [古立特宇宙, 响裕太, 宝多六花, SSSS.DYNAZENON]
+  publishTime: 2026-07-09T12:28:00Z
+  markdownFile: posts/gridman-universe-yuta-confession.md
+  coverAsset: gridman-universe-cover
+  inlineAssets: [gridman-yuta-rikka, gridman-two-groups, gridman-confession]
+  brief:
+    factAnchors: [响裕太, 宝多六花, 内海将, SSSS.GRIDMAN, SSSS.DYNAZENON, 两组角色, 告白, 学园祭]
+    voice: 知道每个回调用在哪里却仍嫌电影太挤的系列观众，承认粉丝服务有效
+    position: 宇宙级危机最终替裕太腾出的只是一个能把普通告白说完的现实位置
+    format: feature-review
+    mediaPlan: [两组角色集合封面, 裕太与六花, 两组相遇, 告白前后]
+    sources: [gridman-universe-official, gridman-universe-production]
+
+- seedKey: boy-and-heron-heron-not-guide
+  legacySlug: null
+  authorSeedKey: anime-critic
+  title: 《你想活出怎样的人生》里，苍鹭从来不负责带路
+  slug: boy-and-heron-heron-not-guide
+  description: 苍鹭只会把牧真人骗到下一扇门前；塔、走廊与门后的世界始终拒绝给他一张地图。
+  category: ANIME
+  tags: [你想活出怎样的人生, 宫崎骏, 苍鹭, 吉卜力]
+  publishTime: 2026-07-08T09:51:00Z
+  markdownFile: posts/boy-and-heron-heron-not-guide.md
+  coverAsset: boy-heron-tower-cover
+  inlineAssets: [boy-heron-corridor, boy-heron-door, boy-heron-mahito]
+  brief:
+    factAnchors: [牧真人, 苍鹭, 火灾, 母亲, 塔, 门, 走廊, 大叔公, 石头]
+    voice: 二刷后仍不愿把每个意象填进答案表的观众，保留没看懂的地方
+    position: 苍鹭不是可靠向导，空间的反复失灵让真人必须在没有完整解释时决定回到哪一边生活
+    format: feature-review
+    mediaPlan: [塔与天空作封面, 走廊, 门与异界, 真人近景]
+    sources: [boy-and-heron-ghibli, boy-and-heron-production]
+
+- seedKey: spring-transaction-event-phases
+  legacySlug: null
+  authorSeedKey: night-coder
+  title: Spring 事务事件的提交时机实验
+  slug: spring-transaction-event-phases
+  description: 用提交和回滚两条最小时间线，实际记录五种监听器被调用时独立连接能看到什么。
+  category: TECH
+  tags: [Spring, 事务, TransactionalEventListener, Java]
+  publishTime: 2026-07-07T14:23:00Z
+  markdownFile: posts/spring-transaction-event-phases.md
+  coverAsset: spring-transaction-cover
+  inlineAssets: [spring-transaction-code, spring-transaction-timeline]
+  brief:
+    factAnchors: [Spring Framework 6.1.6, H2 2.2.224, ordinary, BEFORE_COMMIT, AFTER_COMMIT, AFTER_ROLLBACK, AFTER_COMPLETION, 独立JDBC连接]
+    voice: 被一次提交前发消息问题坑过后补最小实验的Java后端开发者
+    position: 监听器名字不能替代数据可见性验证，事务后副作用应根据失败语义选择阶段并单独处理异常
+    format: technical-report
+    mediaPlan: [实验摘要封面, 监听器代码卡片, 提交与回滚时间线]
+    sources: [spring-transaction-event-docs, spring-transaction-event-local-experiment]
+
+- seedKey: rrf-hybrid-retrieval-ranking
+  legacySlug: null
+  authorSeedKey: algo-runner
+  title: RRF 混合检索的排序实验
+  slug: rrf-hybrid-retrieval-ranking
+  description: 把两路冻结候选表送进 RRF，逐题查看互补收益、平分规则和谁都没召回时的硬边界。
+  category: TECH
+  tags: [RRF, 混合检索, 排序, Agent]
+  publishTime: 2026-07-06T07:46:00Z
+  markdownFile: posts/rrf-hybrid-retrieval-ranking.md
+  coverAsset: rrf-ranking-cover
+  inlineAssets: [rrf-formula-code, rrf-ranking-chart]
+  brief:
+    factAnchors: [32条冻结文档, 16条查询, lexical, semanticProxy, top5, k=60, Hit@1, Hit@3, MRR, 两条不可恢复查询]
+    voice: 先把候选列表冻住再谈融合效果的检索实验记录者，主动限制结论
+    position: RRF能用名次互补缓和不同分数尺度，却无法创造两路都没召回的文档
+    format: technical-report
+    mediaPlan: [两路合流摘要封面, RRF公式代码卡片, 三策略指标图]
+    sources: [rrf-original-paper, rrf-ranking-local-experiment]
+
+- seedKey: signalis-six-slot-inventory
+  legacySlug: null
+  authorSeedKey: book-notes
+  title: 《SIGNALIS》：六格背包里装不下所有记忆
+  slug: signalis-six-slot-inventory
+  description: 钥匙、武器和治疗物挤在六格里，来回走过的走廊比一次顺畅通关更像记忆。
+  category: GAME
+  tags: [SIGNALIS, 生存恐怖, 背包, rose-engine]
+  publishTime: 2026-07-05T16:12:00Z
+  markdownFile: posts/signalis-six-slot-inventory.md
+  coverAsset: signalis-six-slot-cover
+  inlineAssets: [signalis-inventory, signalis-corridor, signalis-save-room]
+  brief:
+    factAnchors: [rose-engine, 六格物品栏, 钥匙, 武器, 治疗物, 重复路线, 存档房, 生存恐怖]
+    voice: 通关后仍记得自己在哪条走廊折返的玩家，不复述剧情谜底
+    position: 六格限制会制造烦躁，但丢下与折返的动作也让游戏关于残缺记忆的主题落到手上
+    format: personal-essay
+    mediaPlan: [红黑走廊作封面, 六格物品栏, 重复通道, 存档房]
+    sources: [signalis-rose-engine, signalis-steam]
+
+- seedKey: chipped-cup-two-years
+  legacySlug: null
+  authorSeedKey: photo-walker
+  title: 缺了一个口的杯子，我又用了两年
+  slug: chipped-cup-two-years
+  description: 每次洗到缺口都要绕开一点，真正让我丢掉它的不是怀旧结束，而是裂纹终于变了。
+  category: LIFE
+  tags: [旧物, 杯子, 厨房, 生活随笔]
+  publishTime: 2026-07-04T11:05:00Z
+  markdownFile: posts/chipped-cup-two-years.md
+  coverAsset: chipped-cup-cover
+  inlineAssets: [chipped-cup-sink, chipped-cup-table, chipped-cup-cabinet]
+  brief:
+    factAnchors: [杯沿缺口, 洗杯, 砂纸不可修复釉面安全, 柜子, 桌面, 尖锐裂口, 结构裂纹, 停止使用]
+    voice: 清理橱柜时翻出旧杯子的普通人，只写具体动作和迟疑
+    position: 留下旧物不必升华成忠诚，丢掉也不等于背叛；出现锋利缺口或结构裂纹就该停止饮用
+    format: personal-essay
+    mediaPlan: [旧杯静物封面, 水槽清洗, 桌面放置, 橱柜空位]
+    sources: [chipped-cup-public-images]

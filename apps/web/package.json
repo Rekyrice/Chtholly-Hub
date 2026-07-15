@@ -7,8 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "seed:fetch-source": "node scripts/seed/fetch-source-asset.mjs",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run && node --test scripts/seed/fetch-source-asset.test.mjs scripts/seed/prepare-content-media.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -34,9 +35,11 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
-    "jsdom": "^29.1.1",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "yaml": "^2.8.1",
+    "jsdom": "^29.1.1",
     "vitest": "^4.1.10"
   }
 }

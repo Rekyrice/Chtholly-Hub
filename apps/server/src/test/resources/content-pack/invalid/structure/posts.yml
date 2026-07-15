@@ -1,0 +1,36 @@
+- seedKey: post-01
+  authorSeedKey: absent-author
+  title: 第一篇
+  slug: repeated-slug
+  description: 这是一段满足长度要求的文章描述。
+  category: TECH
+  tags: []
+  publishTime: 2026-07-11T08:00:00Z
+  markdownFile: markdown/blank.md
+  coverAsset: missing-cover
+  inlineAssets: [missing-inline]
+  brief:
+    factAnchors: [事实]
+    voice: test
+    position: test
+    format: article
+    mediaPlan: []
+    sources: []
+- seedKey: post-01
+  authorSeedKey: account-01
+  title: 第二篇
+  slug: repeated-slug
+  description: 这是另一段满足长度要求的文章描述。
+  category: TECH
+  tags: []
+  publishTime: 2026-07-11T08:00:00Z
+  markdownFile: markdown/content.md
+  coverAsset: avatar-01
+  inlineAssets: []
+  brief:
+    factAnchors: [事实]
+    voice: test
+    position: test
+    format: article
+    mediaPlan: []
+    sources: []

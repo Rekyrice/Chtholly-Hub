@@ -5,6 +5,7 @@ import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.bangumi.model.BangumiSubjectRow;
 import com.chtholly.bangumi.service.BangumiService;
+import com.chtholly.seed.SeedProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -45,23 +46,26 @@ public class KnowledgeServiceImpl implements KnowledgeService {
     private final ObjectProvider<ElasticsearchClient> esClientProvider;
     private final ObjectProvider<BangumiService> bangumiServiceProvider;
     private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
+    private final SeedProperties seedProperties;
     private final List<KnowledgeChunk> chunks = new ArrayList<>();
 
     @Autowired
     public KnowledgeServiceImpl(ResourcePatternResolver resourceResolver,
                                 ObjectProvider<ElasticsearchClient> esClientProvider,
                                 ObjectProvider<BangumiService> bangumiServiceProvider,
-                                ObjectProvider<EmbeddingModel> embeddingModelProvider) {
+                                ObjectProvider<EmbeddingModel> embeddingModelProvider,
+                                SeedProperties seedProperties) {
         this.resourceResolver = resourceResolver;
         this.esClientProvider = esClientProvider;
         this.bangumiServiceProvider = bangumiServiceProvider;
         this.embeddingModelProvider = embeddingModelProvider;
+        this.seedProperties = seedProperties;
     }
 
     KnowledgeServiceImpl(ResourcePatternResolver resourceResolver,
                          ObjectProvider<ElasticsearchClient> esClientProvider,
                          ObjectProvider<BangumiService> bangumiServiceProvider) {
-        this(resourceResolver, esClientProvider, bangumiServiceProvider, null);
+        this(resourceResolver, esClientProvider, bangumiServiceProvider, null, new SeedProperties());
     }
 
     /**
@@ -88,7 +92,9 @@ public class KnowledgeServiceImpl implements KnowledgeService {
             chunks.addAll(loaded);
         }
         log.info("Loaded {} Chtholly knowledge chunks from {} files", loaded.size(), sorted.size());
-        mirrorToElasticsearch(loaded);
+        if (!seedProperties.isCliReadOnly()) {
+            mirrorToElasticsearch(loaded);
+        }
     }
 
     /**

@@ -1,0 +1,900 @@
+{
+  "chunk_boundary": "Markdown heading sections, fixed windows, step = chunk_size - overlap",
+  "chunk_unit": "Unicode characters (Python string code points)",
+  "corpus": [
+    {
+      "path": "README.md",
+      "sha256": "c0ad133aa9d72e341df1a1eee8213647acb99608253bae83c12e83382cf59c76"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "a5b0716e95f980c7cb692f456859d8c1fcfa1904f64d2a78a7ef97ac03fceab5"
+    },
+    {
+      "path": "apps/server/README.md",
+      "sha256": "9c5b78b9f3a40cd87b9b18b7f6a46c3e5afc7c143b7063b1607079065e8c1edc"
+    },
+    {
+      "path": "apps/server/src/main/resources/knowledge/about-me.md",
+      "sha256": "261b6ce471b09b82c60d8f4bd5d2364c05dc6c7e843e0fde4d443012b2352761"
+    },
+    {
+      "path": "apps/server/src/main/resources/knowledge/my-home.md",
+      "sha256": "606c12c0c7be738e95d530652fc25c03db47fdca323a2d2353c779394675213c"
+    },
+    {
+      "path": "apps/server/src/main/resources/knowledge/my-world.md",
+      "sha256": "70167ff19b52af5ca6c35a715b06db36947699d6403e10c652c574d17c96c8cc"
+    },
+    {
+      "path": "apps/server/src/main/resources/knowledge/those-stories.md",
+      "sha256": "4468fe6539208e3aed37e21c83e7ef1d82a3db853accdee4bb5794d1b1b9263b"
+    }
+  ],
+  "corpus_commit": "c9f0747298c1267e4d1e3767fdfc5fb12185cb7e",
+  "corpus_count": 7,
+  "experiment": "rag-chunk-size-tfidf-answer-bearing-baseline",
+  "query_count": 8,
+  "relevance": "source_path and heading match, and the same chunk contains at least one frozen evidence substring",
+  "retrieval": "TF-IDF cosine, score descending then source_path and chunk_index ascending",
+  "runs": [
+    {
+      "chunk_count": 62,
+      "chunk_size": 500,
+      "metrics": {
+        "hit_at_1": 0.375,
+        "mrr": 0.569139
+      },
+      "overlap": 80,
+      "queries": [
+        {
+          "evidence_substrings": [
+            "`SITE_OWNER_USER_ID` | `1` | 站长用户 ID"
+          ],
+          "expected_heading": "配置说明",
+          "expected_rank": 1,
+          "expected_result": {
+            "chunk_index": 5,
+            "end_char": 404,
+            "heading": "配置说明",
+            "is_relevant": true,
+            "rank": 1,
+            "score": 0.2685719,
+            "source_path": "apps/server/README.md",
+            "start_char": 0
+          },
+          "expected_source_path": "apps/server/README.md",
+          "id": "site-owner-user-id",
+          "query": "站长用户ID如何配置",
+          "top_results": [
+            {
+              "chunk_index": 5,
+              "end_char": 404,
+              "heading": "配置说明",
+              "is_relevant": true,
+              "rank": 1,
+              "score": 0.2685719,
+              "source_path": "apps/server/README.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 11,
+              "end_char": 385,
+              "heading": "站点路由",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.1908139,
+              "source_path": "README.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 7,
+              "end_char": 1760,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.13475539,
+              "source_path": "AGENTS.md",
+              "start_char": 1260
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "通知用 Spring ApplicationEvent（非 Kafka）"
+          ],
+          "expected_heading": "架构决策",
+          "expected_rank": 2,
+          "expected_result": {
+            "chunk_index": 21,
+            "end_char": 449,
+            "heading": "架构决策",
+            "is_relevant": true,
+            "rank": 2,
+            "score": 0.09029118,
+            "source_path": "AGENTS.md",
+            "start_char": 0
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "notification-transport",
+          "query": "通知为何不用Kafka",
+          "top_results": [
+            {
+              "chunk_index": 5,
+              "end_char": 920,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.11543123,
+              "source_path": "AGENTS.md",
+              "start_char": 420
+            },
+            {
+              "chunk_index": 21,
+              "end_char": 449,
+              "heading": "架构决策",
+              "is_relevant": true,
+              "rank": 2,
+              "score": 0.09029118,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 6,
+              "end_char": 186,
+              "heading": "1. 环境变量",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.08278543,
+              "source_path": "README.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "`agent/memory` | 内存对话记忆（计划迁移 Redis）"
+          ],
+          "expected_heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+          "expected_rank": 1,
+          "expected_result": {
+            "chunk_index": 6,
+            "end_char": 1340,
+            "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+            "is_relevant": true,
+            "rank": 1,
+            "score": 0.2187999,
+            "source_path": "AGENTS.md",
+            "start_char": 840
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "agent-memory-location",
+          "query": "Agent对话记忆存在哪里",
+          "top_results": [
+            {
+              "chunk_index": 6,
+              "end_char": 1340,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": true,
+              "rank": 1,
+              "score": 0.2187999,
+              "source_path": "AGENTS.md",
+              "start_char": 840
+            },
+            {
+              "chunk_index": 0,
+              "end_char": 500,
+              "heading": "关于那些故事",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.07979966,
+              "source_path": "apps/server/src/main/resources/knowledge/those-stories.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 0,
+              "end_char": 500,
+              "heading": "关于我来的地方",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.07382638,
+              "source_path": "apps/server/src/main/resources/knowledge/my-world.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "`search` | Elasticsearch 全文搜索（IK 分词）"
+          ],
+          "expected_heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+          "expected_rank": 1,
+          "expected_result": {
+            "chunk_index": 5,
+            "end_char": 920,
+            "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+            "is_relevant": true,
+            "rank": 1,
+            "score": 0.18783532,
+            "source_path": "AGENTS.md",
+            "start_char": 420
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "search-tokenizer",
+          "query": "搜索使用什么分词",
+          "top_results": [
+            {
+              "chunk_index": 5,
+              "end_char": 920,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": true,
+              "rank": 1,
+              "score": 0.18783532,
+              "source_path": "AGENTS.md",
+              "start_char": 420
+            },
+            {
+              "chunk_index": 1,
+              "end_char": 451,
+              "heading": "已实现能力",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.12023258,
+              "source_path": "README.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 1,
+              "end_char": 240,
+              "heading": "模块概览",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.06973065,
+              "source_path": "apps/server/README.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "多级缓存（Caffeine + Redis） | L1 热 Key（纳秒级）、L2 温数据（毫秒级）、DB 为最终数据源"
+          ],
+          "expected_heading": "架构决策",
+          "expected_rank": 3,
+          "expected_result": {
+            "chunk_index": 21,
+            "end_char": 449,
+            "heading": "架构决策",
+            "is_relevant": true,
+            "rank": 3,
+            "score": 0.07183907,
+            "source_path": "AGENTS.md",
+            "start_char": 0
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "post-cache-layers",
+          "query": "文章缓存有哪些层",
+          "top_results": [
+            {
+              "chunk_index": 4,
+              "end_char": 500,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.11282685,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 16,
+              "end_char": 1760,
+              "heading": "后端（Java）",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.11084951,
+              "source_path": "AGENTS.md",
+              "start_char": 1260
+            },
+            {
+              "chunk_index": 21,
+              "end_char": 449,
+              "heading": "架构决策",
+              "is_relevant": true,
+              "rank": 3,
+              "score": 0.07183907,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "`bangumi` | Bangumi API 客户端、本地缓存、番剧数据同步",
+            "`BangumiSyncJob`"
+          ],
+          "expected_heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+          "expected_rank": 2,
+          "expected_result": {
+            "chunk_index": 6,
+            "end_char": 1340,
+            "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+            "is_relevant": true,
+            "rank": 2,
+            "score": 0.14308872,
+            "source_path": "AGENTS.md",
+            "start_char": 840
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "bangumi-sync-component",
+          "query": "哪个组件负责 Bangumi 数据同步",
+          "top_results": [
+            {
+              "chunk_index": 21,
+              "end_char": 449,
+              "heading": "架构决策",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.14412656,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 6,
+              "end_char": 1340,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": true,
+              "rank": 2,
+              "score": 0.14308872,
+              "source_path": "AGENTS.md",
+              "start_char": 840
+            },
+            {
+              "chunk_index": 11,
+              "end_char": 262,
+              "heading": "数据库",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.07353592,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "OSS 预签名直传"
+          ],
+          "expected_heading": "已实现能力",
+          "expected_rank": 7,
+          "expected_result": {
+            "chunk_index": 1,
+            "end_char": 451,
+            "heading": "已实现能力",
+            "is_relevant": true,
+            "rank": 7,
+            "score": 0.04261397,
+            "source_path": "README.md",
+            "start_char": 0
+          },
+          "expected_source_path": "README.md",
+          "id": "oss-upload-method",
+          "query": "OSS 上传采用什么方式",
+          "top_results": [
+            {
+              "chunk_index": 7,
+              "end_char": 1760,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.12725372,
+              "source_path": "AGENTS.md",
+              "start_char": 1260
+            },
+            {
+              "chunk_index": 13,
+              "end_char": 500,
+              "heading": "后端（Java）",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.07572602,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 6,
+              "end_char": 1340,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.07377603,
+              "source_path": "AGENTS.md",
+              "start_char": 840
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "MySQL 邻接表做知识图谱（非 Neo4j） | 数据量小（数千节点），Java BFS 比 Cypher 更清晰"
+          ],
+          "expected_heading": "架构决策",
+          "expected_rank": 13,
+          "expected_result": {
+            "chunk_index": 21,
+            "end_char": 449,
+            "heading": "架构决策",
+            "is_relevant": true,
+            "rank": 13,
+            "score": 0.03056515,
+            "source_path": "AGENTS.md",
+            "start_char": 0
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "knowledge-graph-storage",
+          "query": "项目为何不用Neo4j",
+          "top_results": [
+            {
+              "chunk_index": 15,
+              "end_char": 48,
+              "heading": "参考项目（同级目录，不纳入本仓）",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.1416328,
+              "source_path": "README.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 0,
+              "end_char": 92,
+              "heading": "Chtholly Hub — Agent 指南",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.1143335,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 6,
+              "end_char": 186,
+              "heading": "1. 环境变量",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.07938928,
+              "source_path": "README.md",
+              "start_char": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "chunk_count": 51,
+      "chunk_size": 800,
+      "metrics": {
+        "hit_at_1": 0.375,
+        "mrr": 0.565179
+      },
+      "overlap": 80,
+      "queries": [
+        {
+          "evidence_substrings": [
+            "`SITE_OWNER_USER_ID` | `1` | 站长用户 ID"
+          ],
+          "expected_heading": "配置说明",
+          "expected_rank": 1,
+          "expected_result": {
+            "chunk_index": 4,
+            "end_char": 404,
+            "heading": "配置说明",
+            "is_relevant": true,
+            "rank": 1,
+            "score": 0.26233876,
+            "source_path": "apps/server/README.md",
+            "start_char": 0
+          },
+          "expected_source_path": "apps/server/README.md",
+          "id": "site-owner-user-id",
+          "query": "站长用户ID如何配置",
+          "top_results": [
+            {
+              "chunk_index": 4,
+              "end_char": 404,
+              "heading": "配置说明",
+              "is_relevant": true,
+              "rank": 1,
+              "score": 0.26233876,
+              "source_path": "apps/server/README.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 10,
+              "end_char": 385,
+              "heading": "站点路由",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.18722299,
+              "source_path": "README.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 6,
+              "end_char": 1889,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.12136383,
+              "source_path": "AGENTS.md",
+              "start_char": 1440
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "通知用 Spring ApplicationEvent（非 Kafka）"
+          ],
+          "expected_heading": "架构决策",
+          "expected_rank": 2,
+          "expected_result": {
+            "chunk_index": 16,
+            "end_char": 449,
+            "heading": "架构决策",
+            "is_relevant": true,
+            "rank": 2,
+            "score": 0.08888804,
+            "source_path": "AGENTS.md",
+            "start_char": 0
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "notification-transport",
+          "query": "通知为何不用Kafka",
+          "top_results": [
+            {
+              "chunk_index": 4,
+              "end_char": 800,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.09782728,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 16,
+              "end_char": 449,
+              "heading": "架构决策",
+              "is_relevant": true,
+              "rank": 2,
+              "score": 0.08888804,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 6,
+              "end_char": 186,
+              "heading": "1. 环境变量",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.0820842,
+              "source_path": "README.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "`agent/memory` | 内存对话记忆（计划迁移 Redis）"
+          ],
+          "expected_heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+          "expected_rank": 1,
+          "expected_result": {
+            "chunk_index": 5,
+            "end_char": 1520,
+            "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+            "is_relevant": true,
+            "rank": 1,
+            "score": 0.15389712,
+            "source_path": "AGENTS.md",
+            "start_char": 720
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "agent-memory-location",
+          "query": "Agent对话记忆存在哪里",
+          "top_results": [
+            {
+              "chunk_index": 5,
+              "end_char": 1520,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": true,
+              "rank": 1,
+              "score": 0.15389712,
+              "source_path": "AGENTS.md",
+              "start_char": 720
+            },
+            {
+              "chunk_index": 0,
+              "end_char": 800,
+              "heading": "关于那些故事",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.0701753,
+              "source_path": "apps/server/src/main/resources/knowledge/those-stories.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 0,
+              "end_char": 800,
+              "heading": "关于我来的地方",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.06786787,
+              "source_path": "apps/server/src/main/resources/knowledge/my-world.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "`search` | Elasticsearch 全文搜索（IK 分词）"
+          ],
+          "expected_heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+          "expected_rank": 1,
+          "expected_result": {
+            "chunk_index": 5,
+            "end_char": 1520,
+            "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+            "is_relevant": true,
+            "rank": 1,
+            "score": 0.14111122,
+            "source_path": "AGENTS.md",
+            "start_char": 720
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "search-tokenizer",
+          "query": "搜索使用什么分词",
+          "top_results": [
+            {
+              "chunk_index": 5,
+              "end_char": 1520,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": true,
+              "rank": 1,
+              "score": 0.14111122,
+              "source_path": "AGENTS.md",
+              "start_char": 720
+            },
+            {
+              "chunk_index": 1,
+              "end_char": 451,
+              "heading": "已实现能力",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.11684852,
+              "source_path": "README.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 1,
+              "end_char": 240,
+              "heading": "模块概览",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.0669079,
+              "source_path": "apps/server/README.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "多级缓存（Caffeine + Redis） | L1 热 Key（纳秒级）、L2 温数据（毫秒级）、DB 为最终数据源"
+          ],
+          "expected_heading": "架构决策",
+          "expected_rank": 4,
+          "expected_result": {
+            "chunk_index": 16,
+            "end_char": 449,
+            "heading": "架构决策",
+            "is_relevant": true,
+            "rank": 4,
+            "score": 0.06911904,
+            "source_path": "AGENTS.md",
+            "start_char": 0
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "post-cache-layers",
+          "query": "文章缓存有哪些层",
+          "top_results": [
+            {
+              "chunk_index": 4,
+              "end_char": 800,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.11855524,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 11,
+              "end_char": 1520,
+              "heading": "后端（Java）",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.10390859,
+              "source_path": "AGENTS.md",
+              "start_char": 720
+            },
+            {
+              "chunk_index": 5,
+              "end_char": 1520,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.08717357,
+              "source_path": "AGENTS.md",
+              "start_char": 720
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "`bangumi` | Bangumi API 客户端、本地缓存、番剧数据同步",
+            "`BangumiSyncJob`"
+          ],
+          "expected_heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+          "expected_rank": 2,
+          "expected_result": {
+            "chunk_index": 5,
+            "end_char": 1520,
+            "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+            "is_relevant": true,
+            "rank": 2,
+            "score": 0.10619543,
+            "source_path": "AGENTS.md",
+            "start_char": 720
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "bangumi-sync-component",
+          "query": "哪个组件负责 Bangumi 数据同步",
+          "top_results": [
+            {
+              "chunk_index": 16,
+              "end_char": 449,
+              "heading": "架构决策",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.14100428,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 5,
+              "end_char": 1520,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": true,
+              "rank": 2,
+              "score": 0.10619543,
+              "source_path": "AGENTS.md",
+              "start_char": 720
+            },
+            {
+              "chunk_index": 8,
+              "end_char": 262,
+              "heading": "数据库",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.07200222,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "OSS 预签名直传"
+          ],
+          "expected_heading": "已实现能力",
+          "expected_rank": 5,
+          "expected_result": {
+            "chunk_index": 1,
+            "end_char": 451,
+            "heading": "已实现能力",
+            "is_relevant": true,
+            "rank": 5,
+            "score": 0.04077715,
+            "source_path": "README.md",
+            "start_char": 0
+          },
+          "expected_source_path": "README.md",
+          "id": "oss-upload-method",
+          "query": "OSS 上传采用什么方式",
+          "top_results": [
+            {
+              "chunk_index": 5,
+              "end_char": 1520,
+              "heading": "后端（`apps/server/src/main/java/com/chtholly/`）",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.10501455,
+              "source_path": "AGENTS.md",
+              "start_char": 720
+            },
+            {
+              "chunk_index": 2,
+              "end_char": 358,
+              "heading": "仓库结构",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.06869786,
+              "source_path": "README.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 10,
+              "end_char": 800,
+              "heading": "后端（Java）",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.0680952,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            }
+          ]
+        },
+        {
+          "evidence_substrings": [
+            "MySQL 邻接表做知识图谱（非 Neo4j） | 数据量小（数千节点），Java BFS 比 Cypher 更清晰"
+          ],
+          "expected_heading": "架构决策",
+          "expected_rank": 14,
+          "expected_result": {
+            "chunk_index": 16,
+            "end_char": 449,
+            "heading": "架构决策",
+            "is_relevant": true,
+            "rank": 14,
+            "score": 0.0302369,
+            "source_path": "AGENTS.md",
+            "start_char": 0
+          },
+          "expected_source_path": "AGENTS.md",
+          "id": "knowledge-graph-storage",
+          "query": "项目为何不用Neo4j",
+          "top_results": [
+            {
+              "chunk_index": 14,
+              "end_char": 48,
+              "heading": "参考项目（同级目录，不纳入本仓）",
+              "is_relevant": false,
+              "rank": 1,
+              "score": 0.1411903,
+              "source_path": "README.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 0,
+              "end_char": 92,
+              "heading": "Chtholly Hub — Agent 指南",
+              "is_relevant": false,
+              "rank": 2,
+              "score": 0.11263773,
+              "source_path": "AGENTS.md",
+              "start_char": 0
+            },
+            {
+              "chunk_index": 6,
+              "end_char": 186,
+              "heading": "1. 环境变量",
+              "is_relevant": false,
+              "rank": 3,
+              "score": 0.07875593,
+              "source_path": "README.md",
+              "start_char": 0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "tokenizer": "Chinese single characters and adjacent bigrams inside contiguous Han runs plus lowercase English/number tokens",
+  "top_k": 3
+}

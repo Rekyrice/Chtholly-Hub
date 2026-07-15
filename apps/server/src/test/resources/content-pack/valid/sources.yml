@@ -1,0 +1,9 @@
+- key: spring-observability
+  type: official-doc
+  title: Spring observability documentation
+  pageUrl: https://docs.spring.io/spring-boot/reference/actuator/observability.html
+  author: Spring
+  fetchedAt: 2026-07-01T00:00:00Z
+  factAnchors: [metrics]
+  quote: null
+  usageNote: fact checking

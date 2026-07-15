@@ -16,4 +16,10 @@ class SeedRunModeTest {
         assertThat(SeedRunMode.from("content-only")).isEqualTo(SeedRunMode.CONTENT_ONLY);
         assertThat(SeedRunMode.from("content_only")).isEqualTo(SeedRunMode.CONTENT_ONLY);
     }
+
+    @Test
+    void from_parsesBothContentPackSpellings() {
+        assertThat(SeedRunMode.from("content-pack")).isEqualTo(SeedRunMode.CONTENT_PACK);
+        assertThat(SeedRunMode.from("content_pack")).isEqualTo(SeedRunMode.CONTENT_PACK);
+    }
 }

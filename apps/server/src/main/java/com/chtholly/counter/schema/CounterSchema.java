@@ -19,10 +19,12 @@ public final class CounterSchema {
     public static final int FIELD_SIZE = 4; // 改为 4 字节 Int32 存储
     public static final int SCHEMA_LEN = 5; // 预留 5 个指标位
 
+    public static final int IDX_VIEW = 0;
     public static final int IDX_LIKE = 1;
     public static final int IDX_FAV = 2;
 
     public static final Map<String, Integer> NAME_TO_IDX = Map.of(
+            "view", IDX_VIEW,
             "like", IDX_LIKE,
             "fav", IDX_FAV
     );

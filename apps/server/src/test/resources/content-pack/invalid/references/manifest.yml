@@ -1,0 +1,7 @@
+version: content-v2
+namespace: invalid-references
+stage: complete
+expectedAccounts: 1
+expectedPosts: 2
+expectedCategories:
+  TECH: 2

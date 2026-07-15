@@ -1,0 +1,19 @@
+- seedKey: post-real-debugging
+  legacySlug: real-debugging
+  authorSeedKey: night-coder
+  title: 一次真实排障记录
+  slug: once-real-debugging
+  description: 从告警到根因的完整记录。
+  category: TECH
+  tags: [Java, debugging]
+  publishTime: 2026-07-11T08:00:00Z
+  markdownFile: markdown/real-debugging.md
+  coverAsset: avatar-night-coder
+  inlineAssets: []
+  brief:
+    factAnchors: [告警时间, JVM 指标]
+    voice: night-coder
+    position: evidence-first
+    format: timeline
+    mediaPlan: [告警曲线截图]
+    sources: [应用日志, 监控面板]

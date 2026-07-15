@@ -9,7 +9,8 @@ public enum SeedRunMode {
     FULL,
     BANGUMI,
     ACCOUNTS,
-    CONTENT_ONLY;
+    CONTENT_ONLY,
+    CONTENT_PACK;
 
     public String markerKey() {
         if (this == CONTENT_ONLY) {
