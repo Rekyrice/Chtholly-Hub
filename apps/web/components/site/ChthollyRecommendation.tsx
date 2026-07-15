@@ -104,9 +104,9 @@ function ChthollyRecommendationSlides({
             {active.tags[0] ? ` · ${active.tags[0]}` : ""}
           </p>
           <h3>{active.title}</h3>
-          <p className="hub-recommendation__quote">
-            珂朵莉说：「{buildChthollyComment(active)}」
-          </p>
+          {active.description ? (
+            <p className="hub-recommendation__quote">{active.description}</p>
+          ) : null}
         </div>
       </Link>
 
@@ -139,15 +139,4 @@ function getReason(post: FeedItem | RecommendedFeedItem) {
     return post.reason.trim();
   }
   return null;
-}
-
-function buildChthollyComment(post: FeedItem) {
-  if (post.description) {
-    return `${post.description.slice(0, 48)}${post.description.length > 48 ? "……" : ""}`;
-  }
-  if (post.tags.includes("技术")) return "这篇看起来很认真呢，适合慢慢读。";
-  if (post.tags.some((tag) => ["番剧", "动画", "观后感"].includes(tag))) {
-    return "像是在好好记住一个故事。这样的文章，我会多看一会儿。";
-  }
-  return "这篇写得很用心呢。路过的时候，可以停下来看看。";
 }
