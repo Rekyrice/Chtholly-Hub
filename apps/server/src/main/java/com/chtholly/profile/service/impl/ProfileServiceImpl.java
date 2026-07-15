@@ -2,6 +2,7 @@ package com.chtholly.profile.service.impl;
 
 import com.chtholly.profile.api.dto.ProfilePatchRequest;
 import com.chtholly.profile.api.dto.ProfileResponse;
+import com.chtholly.profile.event.AuthorProfileChangedPayload;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -9,10 +10,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.Objects;
 
+import com.chtholly.post.id.SnowflakeIdGenerator;
+import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
 import com.chtholly.profile.service.ProfileService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Default implementation of {@link ProfileService}.
@@ -23,6 +29,9 @@ import com.chtholly.profile.service.ProfileService;
 public class ProfileServiceImpl implements ProfileService {
 
     private final UserMapper userMapper;
+    private final OutboxMapper outboxMapper;
+    private final SnowflakeIdGenerator idGenerator;
+    private final ObjectMapper objectMapper;
 
     /**
      * Loads a user entity by ID for internal profile operations.
@@ -78,6 +87,7 @@ public class ProfileServiceImpl implements ProfileService {
 
         // 更新后回读，保证返回数据为最新快照
         User updated = userMapper.findById(userId);
+        writeAuthorProfileChangedIfNeeded(current, updated);
 
         return toResponse(updated);
     }
@@ -133,7 +143,35 @@ public class ProfileServiceImpl implements ProfileService {
 
         // 更新后回读，保证返回最新头像地址
         User updated = userMapper.findById(userId);
+        writeAuthorProfileChangedIfNeeded(current, updated);
         return toResponse(updated);
+    }
+
+    private void writeAuthorProfileChangedIfNeeded(User before, User after) {
+        if (after == null || !publicProfileChanged(before, after)) {
+            return;
+        }
+        final String payload;
+        try {
+            payload = objectMapper.writeValueAsString(AuthorProfileChangedPayload.of(after.getId()));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize author profile event for user " + after.getId(), e);
+        }
+        outboxMapper.insert(
+                idGenerator.nextId(),
+                "user",
+                after.getId(),
+                "AUTHOR_PROFILE_CHANGED",
+                payload
+        );
+    }
+
+    private boolean publicProfileChanged(User before, User after) {
+        return !Objects.equals(before.getNickname(), after.getNickname())
+                || !Objects.equals(before.getAvatar(), after.getAvatar())
+                || !Objects.equals(before.getBio(), after.getBio())
+                || !Objects.equals(before.getHandle(), after.getHandle())
+                || !Objects.equals(before.getTagsJson(), after.getTagsJson());
     }
 
     private ProfileResponse toResponse(User user) {
