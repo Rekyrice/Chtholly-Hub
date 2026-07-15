@@ -1,40 +1,30 @@
 ---
-description: 组件层样式约定（禁止 inline 颜色/间距/字体）
+description: 组件层样式与交互硬约束（禁止 inline 设计值）
 globs: apps/web/**/components/**/*
 alwaysApply: false
 ---
 
-# 组件样式
+# 组件局部硬约束
 
-## 禁止 inline style 表达设计
+进入前端组件目录时，同时遵循 [`apps/web/AGENTS.md`](../../apps/web/AGENTS.md)。以下是该 glob 的 Cursor 局部硬约束。
 
-以下不得出现在 `style={{ ... }}` 中：
+## 禁止 inline 设计值
+
+以下设计属性不得写入 `style={{ ... }}`：
 
 - `color`、`background`、`backgroundColor`、`borderColor`
 - `fontSize`、`fontWeight`、`letterSpacing`、`lineHeight`
-- `padding`、`margin`、`gap`（布局例外见下）
+- `padding`、`margin`、`gap`
 
-改用 Tailwind 工具类或 `globals.css` 中的语义类（如 `.sakuga-nav-link`、`.post-card`）。
+改用 Tailwind 工具类、Design Token 或 `globals.css` 中的语义类。inline style 仅允许动态计算值（例如进度、图表尺寸）或第三方库强制要求的 `style` prop；不得借例外硬编码设计值。
 
-## 布局例外
+## 交互与可访问性
 
-仅允许 inline style 用于：
+- 所有可点击、可聚焦元素必须提供清晰的 hover、focus-visible 状态与短时 transition。
+- 不得移除可见焦点；键盘操作、语义元素/ARIA 和触控目标不得因视觉调整而退化。
+- 动效必须遵循 `prefers-reduced-motion`，不得把动画作为理解状态的唯一方式。
 
-- 动态计算值（如 `width: ${percent}%`、图表尺寸）
-- 第三方库要求的 style prop
+## 可测试性与截图
 
-## 交互元素
-
-所有可点击/可聚焦元素**必须**包含 transition，例如：
-
-```tsx
-className="... transition-colors duration-150 hover:text-[var(--blog-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blog-primary)]"
-```
-
-## 可测试性
-
-新增交互组件优先加 `data-testid`（如 `data-testid="navbar-search"`），便于 Playwright MCP 截图与 E2E 验收。
-
-## 验收
-
-改完 UI 后：dev server 运行 → Playwright MCP 截图桌面/移动视口 → 与预期对比后再声称完成。
+- 新增交互组件优先提供稳定的可访问名称；仅在语义定位不足时添加稳定的 `data-testid`。
+- 用 Playwright MCP 覆盖实际交互，并按受影响布局检查桌面与移动视口截图；同时检查键盘焦点和 reduced-motion 行为。

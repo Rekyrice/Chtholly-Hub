@@ -18,8 +18,9 @@ export type IllustrationState =
   | "speaking";
 
 export type ChthollyIllustrationProps = {
-  size?: "xs" | "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg" | "hero";
   className?: string;
+  src?: string;
   mood?: number;
   timeOfDay?: "morning" | "afternoon" | "evening" | "night" | "late-night";
   pageContext?: string;
@@ -47,11 +48,13 @@ const IMAGE_SIZE = {
   sm: { width: 500, height: 500, className: "h-40 w-auto" },
   md: { width: 500, height: 500, className: "h-60 w-auto" },
   lg: { width: 500, height: 500, className: "h-80 w-auto" },
+  hero: { width: 500, height: 500, className: "h-auto w-full" },
 } as const;
 
 export function ChthollyIllustration({
   size = "md",
   className,
+  src,
   mood = 0,
   timeOfDay = "afternoon",
   pageContext,
@@ -63,7 +66,7 @@ export function ChthollyIllustration({
   return (
     <div className={cn("chtholly-illustration", `chtholly-illustration--${size}`, className)}>
       <Image
-        src={ILLUSTRATION_MAP[illustrationState]}
+        src={src ?? ILLUSTRATION_MAP[illustrationState]}
         alt={`珂朵莉 - ${illustrationState}`}
         width={imageSize.width}
         height={imageSize.height}

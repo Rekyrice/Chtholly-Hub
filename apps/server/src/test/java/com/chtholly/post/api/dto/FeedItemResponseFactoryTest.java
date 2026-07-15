@@ -3,6 +3,7 @@ package com.chtholly.post.api.dto;
 import com.chtholly.post.model.PostFeedRow;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +24,7 @@ class FeedItemResponseFactoryTest {
         row.setAuthorNickname("Sakura");
         row.setAuthorTagJson("[\"reader\"]");
         row.setIsTop(true);
+        row.setPublishTime(Instant.parse("2026-07-13T08:30:00Z"));
 
         FeedItemResponse item = FeedItemResponse.fromRow(
                 row,
@@ -38,6 +40,7 @@ class FeedItemResponseFactoryTest {
         assertThat(item.liked()).isTrue();
         assertThat(item.faved()).isFalse();
         assertThat(item.isTop()).isTrue();
+        assertThat(item.publishTime()).isEqualTo(Instant.parse("2026-07-13T08:30:00Z"));
     }
 
     @Test
@@ -52,6 +55,7 @@ class FeedItemResponseFactoryTest {
                 Map.entry("author_avatar", "/es-avatar.jpg"),
                 Map.entry("author_nickname", "Yukino"),
                 Map.entry("author_tag_json", "[]"),
+                Map.entry("publish_time", Instant.parse("2026-07-12T08:30:00Z").toEpochMilli()),
                 Map.entry("like_count", 11L),
                 Map.entry("favorite_count", 5L));
 
@@ -66,5 +70,6 @@ class FeedItemResponseFactoryTest {
         assertThat(item.favoriteCount()).isEqualTo(5L);
         assertThat(item.liked()).isNull();
         assertThat(item.faved()).isNull();
+        assertThat(item.publishTime()).isEqualTo(Instant.parse("2026-07-12T08:30:00Z"));
     }
 }

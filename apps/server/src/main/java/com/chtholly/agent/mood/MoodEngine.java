@@ -1,5 +1,8 @@
 package com.chtholly.agent.mood;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import com.chtholly.agent.state.CharacterStateService;
 import com.chtholly.post.service.PostService;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -12,6 +15,8 @@ import java.util.List;
  * Updates Chtholly's slow-changing mood from time, community, and relationships.
  */
 @Service
+@AgentExtensionComponent
+@ConditionalOnProperty(prefix = "agent.extensions.mood", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class MoodEngine {
 
     private final CharacterStateService characterState;

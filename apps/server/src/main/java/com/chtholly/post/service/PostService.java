@@ -1,6 +1,6 @@
 package com.chtholly.post.service;
 
-import com.chtholly.agent.content.ContentAnalysis;
+import com.chtholly.content.ContentAnalysis;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.model.Post;

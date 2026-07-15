@@ -40,6 +40,7 @@ public class CanalKafkaBridge implements SmartLifecycle {
     private final long intervalMs;
     private volatile boolean running;
     private final TaskExecutor taskExecutor;
+    private final CanalOutboxRowMapper rowMapper;
     private CanalConnector connector;
     private static final Logger log = LoggerFactory.getLogger(CanalKafkaBridge.class);
 
@@ -60,6 +61,7 @@ public class CanalKafkaBridge implements SmartLifecycle {
     public CanalKafkaBridge(KafkaTemplate<String, String> kafka,
                             ObjectMapper objectMapper,
                             @Qualifier("taskExecutor") TaskExecutor taskExecutor,
+                            CanalOutboxRowMapper rowMapper,
                             @Value("${canal.enabled}") boolean enabled,
                             @Value("${canal.host}") String host,
                             @Value("${canal.port}") int port,
@@ -72,6 +74,7 @@ public class CanalKafkaBridge implements SmartLifecycle {
         this.kafka = kafka;
         this.objectMapper = objectMapper;
         this.taskExecutor = taskExecutor;
+        this.rowMapper = rowMapper;
         this.enabled = enabled;
         this.host = host;
         this.port = port;
@@ -142,14 +145,8 @@ public class CanalKafkaBridge implements SmartLifecycle {
                         ArrayNode dataArray = objectMapper.createArrayNode();
 
                         for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
-                            ObjectNode rowNode = objectMapper.createObjectNode();
-                            for (CanalEntry.Column col : rowData.getAfterColumnsList()) {
-                                // 提取 payload 字段值（JSON 字符串），供下游消费
-                                if ("payload".equalsIgnoreCase(col.getName())) {
-                                    rowNode.put("payload", col.getValue());
-                                }
-                            }
-                            dataArray.add(rowNode);
+                            // 保留 Outbox 行 ID，让下游能区分业务事件并实现重放幂等。
+                            dataArray.add(rowMapper.toJson(rowData));
                         }
 
                         ObjectNode msgNode = objectMapper.createObjectNode();

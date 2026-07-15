@@ -51,18 +51,19 @@ export function useTypewriterSequence(
 
     if (!isDeleting && text === full) {
       timeout = setTimeout(() => setIsDeleting(true), pauseMs);
-    } else if (isDeleting && text === "") {
-      setIsDeleting(false);
-      setIndex((current) => (current + 1) % lines.length);
     } else {
       const nextLength = isDeleting ? text.length - 1 : text.length + 1;
       timeout = setTimeout(() => {
         setText(full.slice(0, nextLength));
+        if (isDeleting && nextLength <= 0) {
+          setIsDeleting(false);
+          setIndex((current) => (current + 1) % lines.length);
+        }
       }, isDeleting ? eraseMs : typeMs);
     }
 
     return () => clearTimeout(timeout);
   }, [text, isDeleting, index, lines, typeMs, eraseMs, pauseMs]);
 
-  return { text };
+  return { text, index, isDeleting, typeMs, eraseMs };
 }

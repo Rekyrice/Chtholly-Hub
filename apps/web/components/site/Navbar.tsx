@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Menu } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import ChthollyAvatar from "@/components/site/ChthollyAvatar";
 import NotificationBell from "@/components/site/NotificationBell";
+import { emitAuthChange, loadCurrentUserOnce, useStoredAuth } from "@/lib/auth/auth-store";
 import { authService } from "@/lib/services/authService";
-import { getStoredAuth, purgeExpiredAuth } from "@/lib/auth/tokens";
 import { siteConfig } from "@/lib/site.config";
 import { cn } from "@/lib/utils";
-import type { AuthUser } from "@/lib/types/auth";
 
 const SCROLL_THRESHOLD = 100;
 
@@ -21,7 +22,8 @@ const drawerExtraLinks = [
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const auth = useStoredAuth();
+  const user = auth?.user ?? null;
   const [isScrolled, setIsScrolled] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLLIElement>(null);
@@ -31,21 +33,13 @@ export default function Navbar() {
   const brandAccent = siteConfig.name.endsWith(" Hub") ? "Hub" : "";
   const drawerLinks = [...siteConfig.nav, ...drawerExtraLinks];
   const isAdmin = user?.role?.toLowerCase() === "admin";
-
-  const syncUser = useCallback(() => {
-    purgeExpiredAuth();
-    const stored = getStoredAuth();
-    setUser(stored?.user ?? null);
-    if (stored?.accessToken && !stored.user?.role) {
-      void authService.me().then(setUser).catch(() => undefined);
-    }
-  }, []);
+  const roleLookupToken = auth?.accessToken && !user?.role ? auth.accessToken : null;
 
   useEffect(() => {
-    syncUser();
-    window.addEventListener("chtholly-auth-change", syncUser);
-    return () => window.removeEventListener("chtholly-auth-change", syncUser);
-  }, [syncUser]);
+    if (!roleLookupToken) return;
+
+    void loadCurrentUserOnce(roleLookupToken).then(emitAuthChange).catch(() => undefined);
+  }, [roleLookupToken]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -85,8 +79,6 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     await authService.logout();
-    setUser(null);
-    window.dispatchEvent(new Event("chtholly-auth-change"));
     setMenuOpen(false);
     setUserMenuOpen(false);
     router.push("/");
@@ -119,9 +111,11 @@ export default function Navbar() {
           aria-expanded={userMenuOpen}
         >
           {user.avatar ? (
-            <img
+            <Image
               src={user.avatar}
               alt={user.nickname || user.phone || "User avatar"}
+              width={32}
+              height={32}
               className="navbar-user-menu__avatar"
             />
           ) : (
@@ -242,9 +236,7 @@ export default function Navbar() {
         </div>
 
         <Link href="/hub" className="flex items-center gap-2.5 py-2 shrink-0">
-          <span className="navbar-brand-icon" aria-hidden="true">
-            C
-          </span>
+          <ChthollyAvatar size="md" />
           <span className="font-extrabold text-lg tracking-wide leading-none font-[Lato,'Noto_Sans_SC',sans-serif]">
             <span className="text-text">{brandMain}</span>
             {brandAccent && <span className="text-sky ml-1">{brandAccent}</span>}

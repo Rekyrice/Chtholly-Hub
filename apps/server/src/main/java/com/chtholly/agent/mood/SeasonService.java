@@ -1,5 +1,8 @@
 package com.chtholly.agent.mood;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -9,6 +12,8 @@ import java.time.LocalDate;
  * Provides season-aware context for Chtholly's mood and recommendations.
  */
 @Service
+@AgentExtensionComponent
+@ConditionalOnProperty(prefix = "agent.extensions.mood", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class SeasonService {
 
     private final Clock clock;

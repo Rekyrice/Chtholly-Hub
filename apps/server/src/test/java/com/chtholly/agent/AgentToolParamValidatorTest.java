@@ -57,16 +57,9 @@ class AgentToolParamValidatorTest {
 
     @Test
     void toolExecutionTimeoutPattern() {
-        CompletableFuture<String> slow = CompletableFuture.supplyAsync(() -> {
-            try {
-                Thread.sleep(2_000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            return "done";
-        });
+        CompletableFuture<String> pending = new CompletableFuture<>();
 
-        assertThatThrownBy(() -> slow.get(1, TimeUnit.SECONDS))
+        assertThatThrownBy(() -> pending.get(20, TimeUnit.MILLISECONDS))
                 .isInstanceOf(TimeoutException.class);
     }
 }

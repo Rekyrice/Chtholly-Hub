@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isLoggedIn, purgeExpiredAuth } from "@/lib/auth/tokens";
+import { useStoredAuth } from "@/lib/auth/auth-store";
+import { isLoggedIn } from "@/lib/auth/tokens";
 import { notificationService } from "@/lib/services/notificationService";
 import type { NotificationItem } from "@/lib/types/notification";
 import { cn, formatDate } from "@/lib/utils";
@@ -20,22 +21,19 @@ function notificationHref(item: NotificationItem): string | null {
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(false);
+  const loggedIn = useStoredAuth() !== null;
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const refreshUnread = useCallback(async () => {
-    if (!isLoggedIn()) {
-      setUnread(0);
-      return;
-    }
+  const refreshUnread = useCallback(async (isAlive: () => boolean = () => true) => {
+    if (!isLoggedIn()) return;
     try {
       const res = await notificationService.unreadCount();
-      setUnread(res.unreadCount);
+      if (isAlive()) setUnread(res.unreadCount);
     } catch {
-      setUnread(0);
+      if (isAlive()) setUnread(0);
     }
   }, []);
 
@@ -54,24 +52,14 @@ export default function NotificationBell() {
   }, []);
 
   useEffect(() => {
-    const syncAuth = () => {
-      purgeExpiredAuth();
-      setLoggedIn(isLoggedIn());
+    if (!loggedIn) return;
+    let alive = true;
+    const timer = window.setTimeout(() => void refreshUnread(() => alive), 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
     };
-    syncAuth();
-    const onAuth = () => {
-      syncAuth();
-      void refreshUnread();
-    };
-    void refreshUnread();
-    window.addEventListener("chtholly-auth-change", onAuth);
-    return () => window.removeEventListener("chtholly-auth-change", onAuth);
-  }, [refreshUnread]);
-
-  useEffect(() => {
-    if (!open) return;
-    void loadList();
-  }, [open, loadList]);
+  }, [loggedIn, refreshUnread]);
 
   useEffect(() => {
     if (!open) return;
@@ -86,7 +74,9 @@ export default function NotificationBell() {
 
   const handleOpen = () => {
     if (!isLoggedIn()) return;
-    setOpen((v) => !v);
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen) void loadList();
   };
 
   const handleItemClick = async (item: NotificationItem) => {

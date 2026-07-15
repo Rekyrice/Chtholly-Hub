@@ -1,5 +1,8 @@
 package com.chtholly.agent.graph;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,6 +16,8 @@ import java.util.Optional;
  * MyBatis implementation of the knowledge graph repository.
  */
 @Repository
+@AgentExtensionComponent
+@ConditionalOnProperty(prefix = "agent.extensions.graph", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class MyBatisKnowledgeGraphRepository implements KnowledgeGraphRepository {
 
     private final KnowledgeGraphMapper mapper;

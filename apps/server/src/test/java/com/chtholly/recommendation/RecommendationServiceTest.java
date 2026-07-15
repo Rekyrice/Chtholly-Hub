@@ -1,6 +1,6 @@
 package com.chtholly.recommendation;
 
-import com.chtholly.agent.content.ContentUnderstandingService;
+import com.chtholly.content.ContentIntelligenceReader;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
@@ -34,7 +34,7 @@ class RecommendationServiceTest {
     @Mock
     private SearchService searchService;
     @Mock
-    private ContentUnderstandingService contentUnderstandingService;
+    private ContentIntelligenceReader contentUnderstandingService;
     @Mock
     private PostMapper postMapper;
 

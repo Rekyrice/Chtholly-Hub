@@ -26,10 +26,14 @@ export function clearAuth() {
 
 /** 访问令牌是否在有效期内（留 30s 缓冲避免临界点失败） */
 export function isAccessTokenValid(auth: StoredAuth | null): boolean {
-  if (!auth?.accessToken) return false;
-  if (!auth.accessTokenExpiresAt) return true;
+  if (!auth || typeof auth !== "object") return false;
+  if (typeof auth.accessToken !== "string" || !auth.accessToken.trim()) return false;
+  if (typeof auth.accessTokenExpiresAt !== "string" || !auth.accessTokenExpiresAt) return false;
+  if (typeof auth.refreshToken !== "string" || !auth.refreshToken.trim()) return false;
+  if (typeof auth.refreshTokenExpiresAt !== "string" || !auth.refreshTokenExpiresAt) return false;
   const expiresAt = new Date(auth.accessTokenExpiresAt).getTime();
-  if (Number.isNaN(expiresAt)) return true;
+  const refreshExpiresAt = new Date(auth.refreshTokenExpiresAt).getTime();
+  if (!Number.isFinite(expiresAt) || !Number.isFinite(refreshExpiresAt)) return false;
   return Date.now() < expiresAt - 30_000;
 }
 

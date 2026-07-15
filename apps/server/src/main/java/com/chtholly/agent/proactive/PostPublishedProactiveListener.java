@@ -1,5 +1,8 @@
 package com.chtholly.agent.proactive;
 
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
+
 import com.chtholly.agent.notification.Notification;
 import com.chtholly.agent.notification.NotificationChannel;
 import com.chtholly.post.event.PostPublishedEvent;
@@ -16,6 +19,8 @@ import java.util.List;
  * 新文章发布时，向兴趣标签匹配的用户推送「信息主动」通知。
  */
 @Component
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 @RequiredArgsConstructor
 @Slf4j
 public class PostPublishedProactiveListener {

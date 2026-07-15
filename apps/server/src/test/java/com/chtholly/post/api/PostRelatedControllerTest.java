@@ -1,7 +1,7 @@
 package com.chtholly.post.api;
 
-import com.chtholly.agent.content.ContentUnderstandingService;
-import com.chtholly.agent.content.RelatedPostDto;
+import com.chtholly.content.ContentIntelligenceReader;
+import com.chtholly.content.RelatedPostDto;
 import com.chtholly.auth.token.JwtService;
 import com.chtholly.post.service.PostFeedService;
 import com.chtholly.post.service.PostService;
@@ -20,7 +20,7 @@ class PostRelatedControllerTest {
         PostService postService = mock(PostService.class);
         PostFeedService feedService = mock(PostFeedService.class);
         JwtService jwtService = mock(JwtService.class);
-        ContentUnderstandingService contentUnderstandingService = mock(ContentUnderstandingService.class);
+        ContentIntelligenceReader contentUnderstandingService = mock(ContentIntelligenceReader.class);
         when(contentUnderstandingService.getRelatedPosts(42L)).thenReturn(List.of(
                 new RelatedPostDto(99L, "另一篇时间文章", "相关摘要", List.of("芙莉莲", "时间"))
         ));

@@ -18,15 +18,19 @@ type ChthollyRecommendationProps = {
 
 export default function ChthollyRecommendation({
   posts,
+  ...props
+}: ChthollyRecommendationProps) {
+  const slideKey = posts.slice(0, 5).map((post) => post.id).join(":");
+  return <ChthollyRecommendationSlides key={slideKey} posts={posts} {...props} />;
+}
+
+function ChthollyRecommendationSlides({
+  posts,
   personalized = false,
   emptyInterest = false,
 }: ChthollyRecommendationProps) {
   const slides = useMemo(() => posts.slice(0, 5), [posts]);
   const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    setIndex(0);
-  }, [slides]);
 
   useEffect(() => {
     if (slides.length <= 1) return;

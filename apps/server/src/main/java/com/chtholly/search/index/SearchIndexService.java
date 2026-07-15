@@ -119,7 +119,9 @@ public class SearchIndexService {
         try {
             upsertPostOrThrow(id, false);
         } catch (Exception e) {
-            log.error("Index upsert failed for post {}: {}", id, e.getMessage(), e);
+            log.error("Index upsert failed for post {}: {}", id, e.getMessage());
+            // ES 写失败必须冒泡给 Outbox 消费者，否则消息会被确认且永久丢失索引更新。
+            throw new IllegalStateException("Failed to upsert search index for post " + id, e);
         }
     }
 
@@ -225,6 +227,8 @@ public class SearchIndexService {
             es.index(req);
         } catch (Exception e) {
             log.error("Index soft delete failed for post {}: {}", id, e.getMessage());
+            // 删除事件同样依赖 Kafka 重试语义，不能在索引层吞掉异常。
+            throw new IllegalStateException("Failed to soft delete search index for post " + id, e);
         }
     }
 

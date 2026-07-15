@@ -33,6 +33,7 @@ agent:
       question-empty: "问题不能为空"
       model-response-timeout: "模型响应超时，请稍后重试"
       model-call-failed: "模型调用失败，请检查 LLM 配置"
+      model-call-interrupted: "模型调用被中断"
       response-timeout: "生成回答超时，请稍后重试"
       response-failed: "生成回答失败，请重试"
       max-steps: "已达到最大推理步数（{maxSteps}），请简化问题后重试"

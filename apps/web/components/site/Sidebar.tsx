@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
+import ChthollyAvatar from "@/components/site/ChthollyAvatar";
 import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import SidebarRecommendations from "@/components/site/SidebarRecommendations";
 import { postService } from "@/lib/services/postService";
@@ -64,9 +65,7 @@ export default async function Sidebar({
           className="hub-profile-widget__identity"
         >
           <div className="hub-profile-widget__avatar">
-            <span className="navbar-brand-icon navbar-brand-icon--lg" aria-hidden="true">
-              C
-            </span>
+            <ChthollyAvatar size="lg" />
           </div>
           <div>
             <div className="hub-profile-widget__name">{profileName}</div>

@@ -42,7 +42,7 @@ class TracePersistenceServiceTest {
     @Test
     void persistWritesExecutionTraceRow() {
         AgentExecutionTrace trace = new AgentExecutionTrace(7L, "sess-1", 5);
-        trace.recordToolCall("bangumi_search", 120, "{\"keyword\":\"re0\"}", "ok");
+        trace.recordToolCall("bangumi_search", 120, "{\"keyword\":\"re0\"}", "ok", true);
         trace.recordStep(0, "bangumi_search", 80, 120);
         trace.terminateFinalAnswer("answer");
         trace.finish();

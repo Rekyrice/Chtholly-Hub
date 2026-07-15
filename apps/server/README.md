@@ -1,72 +1,53 @@
-# Chtholly Hub — Backend (`apps/server`)
+# Chtholly Hub 后端运行入口
 
-Spring Boot 3.2 · Java 21 · MyBatis · MySQL `chtholly`
+`apps/server` 是基于 Java 21、Spring Boot 3.2.4、MyBatis 与 Maven 的业务 API 和后台任务应用。
 
-## 模块概览
+## 前置条件
 
-| 包 | 能力 |
-|----|------|
-| `auth` | JWT 双令牌、验证码登录 |
-| `post` | 帖子 CRUD、Feed、详情 |
-| `storage` | OSS 预签名直传 |
-| `counter` | 点赞/收藏计数 |
-| `relation` | 关注/粉丝 |
-| `search` | Elasticsearch 搜索 |
-| `llm` | AI 摘要、RAG（需 `LLM_ENABLED=true`） |
+- JDK 21 与 Maven。
+- MySQL、Redis 是基础依赖；仓库示例 `.env` 显式设置 `KAFKA_ENABLED=true`，按推荐流程启动时也需准备 Kafka，除非将该值改为 `false` 使用进程内 fallback。职责与可靠性边界见[数据与存储](../../docs/architecture/data-and-storage.md)。
+- 在仓库根目录从 `.env.example` 创建本地 `.env`，不要把凭据写入文档或提交到 Git。
+- 首次初始化数据库时阅读 [`db/README.md`](db/README.md)。
 
 ## 本地启动
 
-1. 确认 Docker 中 MySQL / Redis / Kafka / ES 已运行（见仓库 `docker/README.md`）
-2. 首次开发需完成 [db/README.md](db/README.md) 中的 schema + seed + OSS 正文上传
-3. 在 Monorepo 根目录配置 `.env`（从 `.env.example` 复制）
-4. 启动（Spring Boot **不会**自动读取根目录 `.env`，推荐用 `scripts/dev/start-backend.ps1`）：
+推荐从仓库根目录使用脚本启动；脚本会加载根目录 `.env`，而直接运行 Spring Boot 不会自动读取该文件。
+
+```powershell
+# 仓库根目录
+./scripts/dev/start-backend.ps1
+```
+
+默认地址为 `http://localhost:8888`，健康检查为 `http://localhost:8888/actuator/health`。以下直接启动命令仅适用于环境变量已经由外部注入到当前终端的情况；它不会加载根目录 `.env`：
 
 ```powershell
 cd apps/server
-$env:MYSQL_PASSWORD="你的密码"
-$env:CANAL_ENABLED="false"   # Phase A 无需 Canal
-$env:LLM_ENABLED="false"     # Phase A 无需 AI Key
-mvn spring-boot:run "-Dmaven.test.skip=true"
+mvn spring-boot:run
 ```
 
-默认端口：`http://localhost:8888`
+## 核心配置入口
 
-### 健康检查与 Phase A API 冒烟
+- [`application.yml`](src/main/resources/application.yml)：默认端口、数据源、Redis、Kafka、Elasticsearch、存储和特性开关。
+- [`application-dev.yml`](src/main/resources/application-dev.yml)：开发 profile 覆盖。
+- [`application-llm.yml`](src/main/resources/application-llm.yml)：LLM profile 覆盖。
+- [根目录 `.env.example`](../../.env.example)：可配置环境变量清单。
+- Agent Core、扩展开关与 `LLM_ENABLED` 的当前边界见[后端领域地图的 Agent 平台章节](../../docs/architecture/backend.md#agent-平台)。
 
-```powershell
-Invoke-RestMethod http://localhost:8888/actuator/health
-Invoke-RestMethod "http://localhost:8888/api/v1/posts/feed?ownerId=1&page=1&size=10"
-Invoke-RestMethod http://localhost:8888/api/v1/posts/detail/by-slug/welcome-chtholly-hub
-```
-
-预期：health 为 `UP`；Feed 返回 3 条种子帖子；详情含 `slug` 与 `contentUrl`。
-
-## 配置说明
-
-主要环境变量见根目录 `.env.example`。数据库名必须为 **`chtholly`**。
-
-| 变量 | Phase A 默认 | 说明 |
-|------|-------------|------|
-| `CANAL_ENABLED` | `false` | 关闭 Canal 桥接 |
-| `LLM_ENABLED` | `false` | 关闭 DeepSeek / Embedding / RAG |
-| `SITE_OWNER_USER_ID` | `1` | 站长用户 ID（Feed `ownerId` 过滤） |
-
-启用 LLM/RAG 时：设置 `LLM_ENABLED=true`，配置 `DEEPSEEK_API_KEY` 与 `DASHSCOPE_API_KEY`，并激活 profile `llm`（见 `application-llm.yml`）。
-
-## 编译
+## 编译与测试
 
 ```powershell
-mvn clean compile "-Dmaven.test.skip=true"
-```
+cd apps/server
 
-Cursor / VS Code 请安装 **Lombok** 扩展，并启用 `java.jdt.ls.lombokSupport.enabled`。
-
-## 测试
-
-```powershell
+mvn clean compile '-Dmaven.test.skip=true'
 mvn test
+mvn -q '-Dtest=ClassATest,ClassBTest' test
+mvn -Pintegration-test verify
 ```
 
-## 参考
+## 继续阅读
 
-后端统一 **`com.chtholly`** 包名；REST **`/api/v1/posts`**；计数实体类型 **`post`**；用户 **`handle`** 字段。对外产品名 **Chtholly Hub**。
+- [后端局部规则](AGENTS.md)
+- [后端领域地图](../../docs/architecture/backend.md)
+- [数据与存储](../../docs/architecture/data-and-storage.md)
+- [核心请求链路](../../docs/architecture/request-flows.md)
+- [数据库操作入口](db/README.md)

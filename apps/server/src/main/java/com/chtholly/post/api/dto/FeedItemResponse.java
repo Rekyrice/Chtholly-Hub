@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -27,9 +29,29 @@ public record FeedItemResponse(
         Long favoriteCount,
         Boolean liked,
         Boolean faved,
-        Boolean isTop
+        Boolean isTop,
+        Instant publishTime
 ) {
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    public FeedItemResponse(
+            String id,
+            String slug,
+            String title,
+            String description,
+            String coverImage,
+            List<String> tags,
+            String authorAvatar,
+            String authorNickname,
+            String tagJson,
+            Long likeCount,
+            Long favoriteCount,
+            Boolean liked,
+            Boolean faved,
+            Boolean isTop) {
+        this(id, slug, title, description, coverImage, tags, authorAvatar, authorNickname,
+                tagJson, likeCount, favoriteCount, liked, faved, isTop, null);
+    }
 
     /**
      * Creates a feed item from a database projection.
@@ -50,7 +72,7 @@ public record FeedItemResponse(
                 String.valueOf(row.getId()), row.getSlug(), row.getTitle(), row.getDescription(),
                 images.isEmpty() ? null : images.getFirst(), parseJsonList(row.getTags()),
                 row.getAuthorAvatar(), row.getAuthorNickname(), row.getAuthorTagJson(),
-                counts.likes(), counts.favorites(), liked, faved, row.getIsTop());
+                counts.likes(), counts.favorites(), liked, faved, row.getIsTop(), row.getPublishTime());
     }
 
     /**
@@ -69,7 +91,8 @@ public record FeedItemResponse(
                 images.isEmpty() ? null : images.getFirst(), asStringList(source.get("tags")),
                 asString(source.get("author_avatar")), asString(source.get("author_nickname")),
                 asString(source.get("author_tag_json")), asLong(source.get("like_count")),
-                asLong(source.get("favorite_count")), liked, faved, asBoolean(source.get("is_top")));
+                asLong(source.get("favorite_count")), liked, faved, asBoolean(source.get("is_top")),
+                asInstant(source.get("publish_time")));
     }
 
     public FeedItemResponse withDescription(String nextDescription) {
@@ -100,7 +123,7 @@ public record FeedItemResponse(
             Boolean nextFaved,
             Boolean nextIsTop) {
         return create(id, slug, title, nextDescription, coverImage, tags, authorAvatar, authorNickname,
-                tagJson, nextLikeCount, nextFavoriteCount, nextLiked, nextFaved, nextIsTop);
+                tagJson, nextLikeCount, nextFavoriteCount, nextLiked, nextFaved, nextIsTop, publishTime);
     }
 
     private static FeedItemResponse create(
@@ -117,9 +140,10 @@ public record FeedItemResponse(
             Long favoriteCount,
             Boolean liked,
             Boolean faved,
-            Boolean isTop) {
+            Boolean isTop,
+            Instant publishTime) {
         return new FeedItemResponse(id, slug, title, description, coverImage, tags, authorAvatar,
-                authorNickname, tagJson, likeCount, favoriteCount, liked, faved, isTop);
+                authorNickname, tagJson, likeCount, favoriteCount, liked, faved, isTop, publishTime);
     }
 
     private static List<String> parseJsonList(String value) {
@@ -168,6 +192,24 @@ public record FeedItemResponse(
             return bool;
         }
         return value == null ? null : Boolean.valueOf(String.valueOf(value));
+    }
+
+    private static Instant asInstant(Object value) {
+        if (value instanceof Instant instant) {
+            return instant;
+        }
+        if (value instanceof Number number) {
+            return Instant.ofEpochMilli(number.longValue());
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Instant.parse(String.valueOf(value));
+        } catch (DateTimeParseException exception) {
+            log.warn("Feed item date field could not be parsed: {}", value);
+            return null;
+        }
     }
 
     /** Aggregate counters required while mapping a database row. */

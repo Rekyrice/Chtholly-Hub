@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Heart, Loader2 } from "lucide-react";
 import { isLoggedIn } from "@/lib/auth/tokens";
@@ -23,19 +23,31 @@ export default function LikeButton({
   initialCount = 0,
   className,
 }: LikeButtonProps) {
+  const stateKey = `${entityType}:${entityId}:${initialLiked}:${initialCount}`;
+  return (
+    <LikeButtonState
+      key={stateKey}
+      entityType={entityType}
+      entityId={entityId}
+      initialLiked={initialLiked}
+      initialCount={initialCount}
+      className={className}
+    />
+  );
+}
+
+function LikeButtonState({
+  entityType,
+  entityId,
+  initialLiked = false,
+  initialCount = 0,
+  className,
+}: LikeButtonProps) {
   const router = useRouter();
   const [liked, setLiked] = useState(initialLiked);
   const [count, setCount] = useState(initialCount);
   const [loading, setLoading] = useState(false);
   const [pulse, setPulse] = useState(false);
-
-  useEffect(() => {
-    setLiked(initialLiked);
-  }, [initialLiked]);
-
-  useEffect(() => {
-    setCount(initialCount);
-  }, [initialCount]);
 
   const handleClick = useCallback(async () => {
     if (loading) return;

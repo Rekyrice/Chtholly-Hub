@@ -1,5 +1,8 @@
 package com.chtholly.agent.api;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import com.chtholly.agent.api.dto.TopicClusterResponse;
 import com.chtholly.agent.api.dto.TopicPostResponse;
 import com.chtholly.agent.content.TopicCluster;
@@ -21,6 +24,8 @@ import java.util.List;
  * Public read API for community topic clusters.
  */
 @RestController
+@AgentExtensionComponent
+@ConditionalOnProperty(prefix = "agent.extensions.content", name = "enabled", havingValue = "true", matchIfMissing = true)
 @RequestMapping(path = "/api/v1/topics", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class TopicController {

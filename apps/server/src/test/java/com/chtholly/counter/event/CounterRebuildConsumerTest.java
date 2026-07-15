@@ -60,6 +60,7 @@ class CounterRebuildConsumerTest {
         CounterEvent first = CounterEvent.of("post", "7", "view", 0, 0L, 10, "baseline-10");
         CounterEvent second = CounterEvent.of("post", "7", "view", 0, 0L, 5, "baseline-15");
         CounterEvent legacy = CounterEvent.of("post", "7", "like", 1, 9L, 1);
+        legacy.setEventId(null);
 
         assertThat(consumer.applyRebuildEvent(first)).isTrue();
         assertThat(consumer.applyRebuildEvent(second)).isTrue();

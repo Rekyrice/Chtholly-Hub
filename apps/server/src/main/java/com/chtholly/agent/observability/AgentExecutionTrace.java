@@ -36,6 +36,7 @@ public class AgentExecutionTrace {
     private long inputTokenEstimate;
     private long outputTokenEstimate;
     private int finalAnswerLength;
+    private int eventSequence;
     private String terminatedBy = "error";
 
     @Setter
@@ -71,22 +72,73 @@ public class AgentExecutionTrace {
     }
 
     public void recordLlmCall(long durationMs, int inputChars, int outputChars, Long firstTokenMs) {
+        recordLlmCall(null, durationMs, inputChars, outputChars, firstTokenMs);
+    }
+
+    /**
+     * Records one model invocation with its explicit loop step association.
+     *
+     * @param stepIndex zero-based loop step, or {@code null} when unavailable
+     * @param durationMs model duration
+     * @param inputChars model input size
+     * @param outputChars model output size
+     * @param firstTokenMs first-token latency, or {@code null}
+     */
+    public void recordLlmCall(
+            Integer stepIndex,
+            long durationMs,
+            int inputChars,
+            int outputChars,
+            Long firstTokenMs) {
         llmCalls++;
         llmDurationMs += durationMs;
         inputTokenEstimate += estimateTokens(inputChars);
         outputTokenEstimate += estimateTokens(outputChars);
-        llmCallDetails.add(new TraceLlmCallInfo(durationMs, inputChars, outputChars, firstTokenMs));
+        llmCallDetails.add(new TraceLlmCallInfo(
+                nextEventSequence(),
+                stepIndex,
+                durationMs,
+                inputChars,
+                outputChars,
+                firstTokenMs));
     }
 
-    public void recordToolCall(String toolName, long durationMs, String inputSummary, String observation) {
+    public void recordToolCall(
+            String toolName,
+            long durationMs,
+            String inputSummary,
+            String observation,
+            boolean success) {
+        recordToolCall(null, toolName, durationMs, inputSummary, observation, success);
+    }
+
+    /**
+     * Records one tool invocation with a bounded input and observation summary.
+     *
+     * @param stepIndex zero-based loop step, or {@code null} when unavailable
+     * @param toolName tool identifier
+     * @param durationMs tool duration
+     * @param inputSummary raw input summary
+     * @param observation raw tool observation
+     * @param success explicit execution outcome
+     */
+    public void recordToolCall(
+            Integer stepIndex,
+            String toolName,
+            long durationMs,
+            String inputSummary,
+            String observation,
+            boolean success) {
         if (toolName != null && !toolName.isBlank()) {
             toolsCalled.add(toolName);
         }
         toolDurationMs += durationMs;
-        boolean success = !isFailureObservation(observation);
         toolCallDetails.add(new TraceToolCallInfo(
+                nextEventSequence(),
+                stepIndex,
                 toolName,
-                truncate(inputSummary, 256),
+                TracePayloadSanitizer.sanitizeAndTruncate(inputSummary, 256),
+                TracePayloadSanitizer.sanitizeAndTruncate(observation, 512),
                 durationMs,
                 success));
     }
@@ -212,26 +264,8 @@ public class AgentExecutionTrace {
         return Math.max(1, chars / 4L);
     }
 
-    private static boolean isFailureObservation(String observation) {
-        if (observation == null || observation.isBlank()) {
-            return false;
-        }
-        String lower = observation.toLowerCase();
-        return lower.contains("timed out")
-                || lower.contains("timeout")
-                || lower.contains("失败")
-                || lower.contains("无法")
-                || lower.contains("错误");
-    }
-
-    private static String truncate(String value, int maxLen) {
-        if (value == null) {
-            return "";
-        }
-        if (value.length() <= maxLen) {
-            return value;
-        }
-        return value.substring(0, maxLen);
+    private int nextEventSequence() {
+        return ++eventSequence;
     }
 
     public record TraceStepInfo(int stepIndex, String action, long llmMs, long toolMs) {
@@ -245,20 +279,42 @@ public class AgentExecutionTrace {
         }
     }
 
-    public record TraceToolCallInfo(String tool, String inputSummary, long durationMs, boolean success) {
+    public record TraceToolCallInfo(
+            Integer sequence,
+            Integer stepIndex,
+            String tool,
+            String inputSummary,
+            String observationSummary,
+            long durationMs,
+            boolean success) {
         public Map<String, Object> toMap() {
             Map<String, Object> map = new LinkedHashMap<>();
+            map.put("sequence", sequence);
+            if (stepIndex != null) {
+                map.put("step_index", stepIndex);
+            }
             map.put("tool", tool);
             map.put("input_summary", inputSummary);
+            map.put("observation_summary", observationSummary);
             map.put("duration_ms", durationMs);
             map.put("success", success);
             return map;
         }
     }
 
-    public record TraceLlmCallInfo(long durationMs, int inputChars, int outputChars, Long firstTokenMs) {
+    public record TraceLlmCallInfo(
+            Integer sequence,
+            Integer stepIndex,
+            long durationMs,
+            int inputChars,
+            int outputChars,
+            Long firstTokenMs) {
         public Map<String, Object> toMap() {
             Map<String, Object> map = new LinkedHashMap<>();
+            map.put("sequence", sequence);
+            if (stepIndex != null) {
+                map.put("step_index", stepIndex);
+            }
             map.put("duration_ms", durationMs);
             map.put("input_chars", inputChars);
             map.put("output_chars", outputChars);

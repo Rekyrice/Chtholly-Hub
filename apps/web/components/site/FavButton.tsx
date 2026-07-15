@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bookmark, Loader2 } from "lucide-react";
 import { isLoggedIn } from "@/lib/auth/tokens";
@@ -23,19 +23,31 @@ export default function FavButton({
   initialCount = 0,
   className,
 }: FavButtonProps) {
+  const stateKey = `${entityType}:${entityId}:${initialFaved}:${initialCount}`;
+  return (
+    <FavButtonState
+      key={stateKey}
+      entityType={entityType}
+      entityId={entityId}
+      initialFaved={initialFaved}
+      initialCount={initialCount}
+      className={className}
+    />
+  );
+}
+
+function FavButtonState({
+  entityType,
+  entityId,
+  initialFaved = false,
+  initialCount = 0,
+  className,
+}: FavButtonProps) {
   const router = useRouter();
   const [faved, setFaved] = useState(initialFaved);
   const [count, setCount] = useState(initialCount);
   const [loading, setLoading] = useState(false);
   const [pulse, setPulse] = useState(false);
-
-  useEffect(() => {
-    setFaved(initialFaved);
-  }, [initialFaved]);
-
-  useEffect(() => {
-    setCount(initialCount);
-  }, [initialCount]);
 
   const handleClick = useCallback(async () => {
     if (loading) return;

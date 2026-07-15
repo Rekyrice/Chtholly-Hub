@@ -1,7 +1,7 @@
 package com.chtholly.post.api;
 
-import com.chtholly.agent.content.ContentUnderstandingService;
-import com.chtholly.agent.content.RelatedPostDto;
+import com.chtholly.content.ContentIntelligenceReader;
+import com.chtholly.content.RelatedPostDto;
 import com.chtholly.common.web.HttpCacheHelper;
 import com.chtholly.common.ratelimit.RateLimit;
 import com.chtholly.common.ratelimit.RateLimitDimension;
@@ -43,7 +43,7 @@ public class PostController {
     private final PostService service;
     private final PostFeedService feedService;
     private final JwtService jwtService;
-    private final ContentUnderstandingService contentUnderstandingService;
+    private final ContentIntelligenceReader contentUnderstandingService;
 
     /**
      * Creates an empty draft owned by the authenticated user.

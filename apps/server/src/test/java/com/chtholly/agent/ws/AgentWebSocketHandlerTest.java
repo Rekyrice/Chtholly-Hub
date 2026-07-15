@@ -20,29 +20,31 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.net.URI;
-import java.util.ArrayList;
+import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CopyOnWriteArrayList;
 
+import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AgentWebSocketHandlerTest {
-
-    private static final long ASYNC_VERIFY_TIMEOUT_MS = 3_000;
 
     @Mock
     private ChthollyAgent agent;
@@ -97,8 +99,14 @@ class AgentWebSocketHandlerTest {
                 return cognitiveEngine;
             }
         };
+        StaticListableBeanFactory extensionFactory = new StaticListableBeanFactory();
+        extensionFactory.addBean("insightService", insightService);
+        extensionFactory.addBean("notificationService", notificationService);
         handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
-                agentMetrics, characterStateService, insightService, cognitiveProvider, notificationService);
+                agentMetrics, characterStateService,
+                extensionFactory.getBeanProvider(InsightService.class), cognitiveProvider,
+                extensionFactory.getBeanProvider(NotificationService.class),
+                Runnable::run);
     }
 
     @Test
@@ -121,7 +129,7 @@ class AgentWebSocketHandlerTest {
         when(memoryStore.getOrCreateMemory(99L, "sess-chat-a")).thenReturn(memory);
         doNothing().when(agent).run(any(), anyLong(), any(), any(), any(), any());
 
-        List<String> payloads = new ArrayList<>();
+        List<String> payloads = new CopyOnWriteArrayList<>();
         doAnswer(inv -> {
             TextMessage msg = inv.getArgument(0);
             payloads.add(msg.getPayload());
@@ -133,13 +141,13 @@ class AgentWebSocketHandlerTest {
                     new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-a\",\"message\":\"hi\"}"));
         }
 
-        TimeUnit.MILLISECONDS.sleep(300);
-
-        long rateLimited = payloads.stream()
-                .filter(p -> p.contains("RATE_LIMITED"))
-                .count();
-        assertThat(rateLimited).isGreaterThanOrEqualTo(5);
-        verify(agent, atLeast(10)).run(any(), anyLong(), any(), any(), any(), any());
+        await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> {
+            long rateLimited = payloads.stream()
+                    .filter(p -> p.contains("RATE_LIMITED"))
+                    .count();
+            assertThat(rateLimited).isGreaterThanOrEqualTo(5);
+            verify(agent, atLeast(10)).run(any(), anyLong(), any(), any(), any(), any());
+        });
     }
 
     @Test
@@ -162,8 +170,7 @@ class AgentWebSocketHandlerTest {
         handler.handleTextMessage(rawSession,
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-b\",\"message\":\"ok\"}"));
 
-        TimeUnit.MILLISECONDS.sleep(200);
-        verify(agent).run(any(), anyLong(), any(), any(), any(), any());
+        verify(agent, timeout(2_000)).run(any(), anyLong(), any(), any(), any(), any());
     }
 
     @Test
@@ -180,8 +187,8 @@ class AgentWebSocketHandlerTest {
         handler.handleTextMessage(rawSession,
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-c\",\"message\":\"hi\"}"));
 
-        verify(characterStateService, timeout(ASYNC_VERIFY_TIMEOUT_MS)).recordInteraction(66L);
-        verify(characterStateService, timeout(ASYNC_VERIFY_TIMEOUT_MS)).updateEmotion(66L, "hi");
+        verify(characterStateService).recordInteraction(66L);
+        verify(characterStateService).updateEmotion(66L, "hi");
     }
 
     @Test
@@ -197,7 +204,7 @@ class AgentWebSocketHandlerTest {
                         java.time.Instant.parse("2026-07-04T12:00:00Z"),
                         NotificationChannel.FLOATING)
         ));
-        List<String> payloads = new ArrayList<>();
+        List<String> payloads = new CopyOnWriteArrayList<>();
         doAnswer(inv -> {
             TextMessage msg = inv.getArgument(0);
             payloads.add(msg.getPayload());
@@ -240,7 +247,7 @@ class AgentWebSocketHandlerTest {
                 """));
 
         ArgumentCaptor<String> contextCaptor = ArgumentCaptor.forClass(String.class);
-        verify(agent, timeout(ASYNC_VERIFY_TIMEOUT_MS)).run(
+        verify(agent).run(
                 eq("hi"),
                 eq(88L),
                 eq(memory),
@@ -267,7 +274,7 @@ class AgentWebSocketHandlerTest {
         doNothing().when(agent).run(any(), anyLong(), any(), any(), any(), any());
         handler.handleTextMessage(rawSession,
                 new TextMessage("{\"type\":\"chat\",\"sessionId\":\"sess-chat-e\",\"message\":\"hi\"}"));
-        verify(agent, timeout(ASYNC_VERIFY_TIMEOUT_MS)).run(any(), anyLong(), any(), any(), any(), any());
+        verify(agent).run(any(), anyLong(), any(), any(), any(), any());
 
         List<AgentTurn> turns = List.of(
                 AgentTurn.user("角色有哪些？"),
@@ -293,6 +300,32 @@ class AgentWebSocketHandlerTest {
         handler.afterConnectionEstablished(rawSession);
         handler.afterConnectionClosed(rawSession, org.springframework.web.socket.CloseStatus.NORMAL);
 
-        verify(cognitiveEngine, timeout(ASYNC_VERIFY_TIMEOUT_MS)).triggerIfDue();
+        verify(cognitiveEngine).triggerIfDue();
+    }
+
+    @Test
+    void chatLifecycleWorksWhenOptionalLearningAndNotificationExtensionsAreDisabled() {
+        StaticListableBeanFactory emptyFactory = new StaticListableBeanFactory();
+        AgentWebSocketHandler coreOnlyHandler = new AgentWebSocketHandler(
+                agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
+                agentMetrics, characterStateService,
+                emptyFactory.getBeanProvider(InsightService.class),
+                emptyFactory.getBeanProvider(CognitiveEngine.class),
+                emptyFactory.getBeanProvider(NotificationService.class),
+                Runnable::run);
+        when(rawSession.getId()).thenReturn("sess-core-only");
+        when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=core-only"));
+        when(ticketStore.consume("core-only")).thenReturn(201L);
+        when(memoryStore.getOrCreateMemory(201L, "chat-core-only")).thenReturn(memory);
+
+        assertDoesNotThrow(() -> {
+            coreOnlyHandler.afterConnectionEstablished(rawSession);
+            coreOnlyHandler.handleTextMessage(rawSession,
+                    new TextMessage("{\"type\":\"chat\",\"sessionId\":\"chat-core-only\",\"message\":\"hello\"}"));
+            coreOnlyHandler.afterConnectionClosed(rawSession, org.springframework.web.socket.CloseStatus.NORMAL);
+        });
+
+        verify(agent).run(any(), eq(201L), eq(memory), eq("sess-core-only"), any(), any());
+        verifyNoInteractions(insightService, notificationService);
     }
 }

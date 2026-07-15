@@ -8,22 +8,24 @@ import com.chtholly.post.model.PostDetailRow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
-import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SearchIndexServiceTest {
@@ -114,6 +116,25 @@ class SearchIndexServiceTest {
 
         assertThat(service.tryUpsertPost(10L)).isFalse();
         verify(es, never()).index(any(co.elastic.clients.elasticsearch.core.IndexRequest.class));
+    }
+
+    @Test
+    void softDeletePropagatesElasticsearchFailureSoOutboxCanRetry() throws Exception {
+        ElasticsearchClient elasticsearch = mock(ElasticsearchClient.class);
+        when(elasticsearch.index(any(co.elastic.clients.elasticsearch.core.IndexRequest.class)))
+                .thenThrow(new IOException("elasticsearch unavailable"));
+        SearchIndexService service = new SearchIndexService(
+                elasticsearch,
+                mock(PostMapper.class),
+                mock(CounterService.class),
+                new ObjectMapper(),
+                mock(RestTemplate.class),
+                "http://localhost:8888");
+
+        assertThatThrownBy(() -> service.softDeletePost(99L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("99")
+                .hasCauseInstanceOf(IOException.class);
     }
 
     private PostDetailRow row(long id, String contentUrl) {

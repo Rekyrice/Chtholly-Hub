@@ -23,6 +23,30 @@ export type TraceDetail = {
   errorMessage: string | null;
   toolCalls: unknown;
   tracePayload: unknown;
+  steps: TraceStep[];
+  unassignedEvents: TraceEvent[];
+};
+
+export type TraceEvent = {
+  sequence: number | null;
+  stepIndex: number | null;
+  type: "llm" | "tool";
+  name: string | null;
+  durationMs: number | null;
+  success: boolean | null;
+  inputSummary: string | null;
+  observationSummary: string | null;
+  inputChars: number | null;
+  outputChars: number | null;
+  firstTokenMs: number | null;
+};
+
+export type TraceStep = {
+  stepIndex: number;
+  action: string | null;
+  llmDurationMs: number | null;
+  toolDurationMs: number | null;
+  events: TraceEvent[];
 };
 
 export type FailurePattern = {

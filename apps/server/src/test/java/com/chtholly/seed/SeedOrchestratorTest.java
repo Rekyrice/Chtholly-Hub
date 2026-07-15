@@ -1,5 +1,6 @@
 package com.chtholly.seed;
 
+import ch.qos.logback.classic.Level;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.search.index.SearchIndexService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -67,7 +69,7 @@ class SeedOrchestratorTest {
                 subject(1L, "葬送的芙莉莲", 8.9),
                 subject(2L, "评分不够的作品", 7.0)));
 
-        SeedRunSummary summary = orchestrator.run(new SeedRunOptions(SeedRunMode.FULL, true));
+        SeedRunSummary summary = runWithInfoLoggingSuppressed(new SeedRunOptions(SeedRunMode.FULL, true));
 
         assertThat(summary.accounts()).isEqualTo(8);
         assertThat(summary.posts()).isBetween(32, 40);
@@ -122,7 +124,7 @@ class SeedOrchestratorTest {
 
     @Test
     void given_contentOnlyDryRun_when_run_then_buildsPostsWithoutSocialGraph() {
-        SeedRunSummary summary = orchestrator.run(new SeedRunOptions(SeedRunMode.CONTENT_ONLY, true));
+        SeedRunSummary summary = runWithInfoLoggingSuppressed(new SeedRunOptions(SeedRunMode.CONTENT_ONLY, true));
 
         assertThat(summary.accounts()).isEqualTo(8);
         assertThat(summary.posts()).isBetween(32, 40);
@@ -206,6 +208,18 @@ class SeedOrchestratorTest {
         verify(mapper).markSeed(eq("accounts"), any());
         verify(searchIndexService, times(32)).upsertPost(any(Long.class));
         verify(interactionService, times(32)).scheduleMultiRoundInteraction(any(), any());
+    }
+
+    private SeedRunSummary runWithInfoLoggingSuppressed(SeedRunOptions options) {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(SeedOrchestrator.class);
+        Level originalLevel = logger.getLevel();
+        logger.setLevel(Level.WARN);
+        try {
+            return orchestrator.run(options);
+        } finally {
+            logger.setLevel(originalLevel);
+        }
     }
 
     private static BangumiSubjectSeed subject(long id, String title, double score) {

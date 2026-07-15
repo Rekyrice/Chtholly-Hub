@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, MailWarning, ScrollText, Shield, Users } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { authService } from "@/lib/services/authService";
-import { getStoredAuth } from "@/lib/auth/tokens";
+import { emitAuthChange, loadCurrentUserOnce, useStoredAuth } from "@/lib/auth/auth-store";
+import { getAccessToken } from "@/lib/auth/tokens";
 import { cn } from "@/lib/utils";
 
 type AdminShellProps = {
@@ -27,40 +27,50 @@ function isAdminRole(role?: string | null) {
 export default function AdminShell({ children }: AdminShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const auth = useStoredAuth();
+  const user = auth?.user ?? null;
+  const isAdmin = isAdminRole(user?.role);
+  const [remoteAuthorized, setRemoteAuthorized] = useState<boolean | null>(null);
+  const authorized = isAdmin ? true : remoteAuthorized;
 
   useEffect(() => {
-    let alive = true;
-    const stored = getStoredAuth()?.user;
-    if (isAdminRole(stored?.role)) {
-      setAuthorized(true);
+    if (isAdmin) return;
+    const accessToken = auth?.accessToken ?? getAccessToken();
+    if (!accessToken) {
+      router.replace("/hub");
       return;
     }
 
-    void authService.me()
+    let alive = true;
+    void loadCurrentUserOnce(accessToken)
       .then((user) => {
         if (!alive) return;
+        emitAuthChange();
         if (isAdminRole(user.role)) {
-          setAuthorized(true);
+          return;
         } else {
-          setAuthorized(false);
+          setRemoteAuthorized(false);
           router.replace("/hub");
         }
       })
       .catch(() => {
         if (!alive) return;
-        setAuthorized(false);
+        setRemoteAuthorized(false);
         router.replace("/hub");
       });
 
     return () => {
       alive = false;
     };
-  }, [router]);
+  }, [auth?.accessToken, isAdmin, router]);
 
   const activePath = useMemo(() => {
-    if (pathname === "/admin") return "/admin";
-    return ADMIN_LINKS.find((item) => pathname.startsWith(`${item.href}/`) || pathname === item.href)?.href ?? "/admin";
+    const matched = [...ADMIN_LINKS]
+      .sort((left, right) => right.href.length - left.href.length)
+      .find((item) => item.href === "/admin"
+        ? pathname === item.href
+        : pathname === item.href || pathname.startsWith(`${item.href}/`));
+    return matched?.href ?? "/admin";
   }, [pathname]);
 
   if (authorized !== true) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Check, Copy, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -10,15 +10,29 @@ type ShareButtonProps = {
   className?: string;
 };
 
+function subscribeLocation(onStoreChange: () => void) {
+  window.addEventListener("popstate", onStoreChange);
+  window.addEventListener("hashchange", onStoreChange);
+  return () => {
+    window.removeEventListener("popstate", onStoreChange);
+    window.removeEventListener("hashchange", onStoreChange);
+  };
+}
+
+function getLocationHref() {
+  return window.location.href;
+}
+
 export default function ShareButton({ href, title, className }: ShareButtonProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [targetUrl, setTargetUrl] = useState(href ?? "");
-
-  useEffect(() => {
-    setTargetUrl(href ? new URL(href, window.location.origin).toString() : window.location.href);
-  }, [href]);
+  const locationHref = useSyncExternalStore(subscribeLocation, getLocationHref, () => "");
+  const targetUrl = href
+    ? locationHref
+      ? new URL(href, locationHref).toString()
+      : href
+    : locationHref;
 
   const shareTitle = title ?? "Chtholly Hub";
   const twitterHref = `https://twitter.com/intent/tweet?url=${encodeURIComponent(targetUrl)}&text=${encodeURIComponent(shareTitle)}`;

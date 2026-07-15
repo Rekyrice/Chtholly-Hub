@@ -28,6 +28,85 @@ type ApiFetchInternalOptions = ApiFetchOptions & {
   _retriedWithoutAuth?: boolean;
 };
 
+const MAX_ERROR_MESSAGE_LENGTH = 240;
+const HTML_SNIFF_PREFIX_LENGTH = 1024;
+
+function safeErrorMessageText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (!normalized) return null;
+  if (normalized.length <= MAX_ERROR_MESSAGE_LENGTH) return normalized;
+
+  let end = MAX_ERROR_MESSAGE_LENGTH - 1;
+  const endsWithHighSurrogate = /[\uD800-\uDBFF]/u.test(normalized.charAt(end - 1));
+  const continuesWithLowSurrogate = /[\uDC00-\uDFFF]/u.test(normalized.charAt(end));
+  if (endsWithHighSurrogate && continuesWithLowSurrogate) {
+    end -= 1;
+  }
+
+  return `${normalized.slice(0, end)}…`;
+}
+
+function isHtmlErrorBody(contentType: string | null, rawText: string): boolean {
+  const mediaType = contentType?.split(";", 1)[0].trim().toLowerCase();
+  if (mediaType === "text/html" || mediaType === "application/xhtml+xml") {
+    return true;
+  }
+
+  let prefix = rawText.slice(0, HTML_SNIFF_PREFIX_LENGTH).trimStart();
+  let consumedLeadingMetadata = false;
+  while (prefix) {
+    if (prefix.startsWith("<!--")) {
+      const commentEnd = prefix.indexOf("-->");
+      if (commentEnd === -1) return true;
+      consumedLeadingMetadata = true;
+      prefix = prefix.slice(commentEnd + 3).trimStart();
+      continue;
+    }
+
+    if (/^<\?xml(?=\s|\?>)/iu.test(prefix)) {
+      const declarationEnd = prefix.indexOf("?>");
+      if (declarationEnd === -1) return true;
+      consumedLeadingMetadata = true;
+      prefix = prefix.slice(declarationEnd + 2).trimStart();
+      continue;
+    }
+
+    break;
+  }
+
+  if (consumedLeadingMetadata && !prefix) return true;
+
+  return /^(?:<!doctype\s+html(?=\s|>)|<(?:html|head|body|title|meta|base|link|style|script|noscript|main|section|article|header|footer|nav|div|h[1-6]|p|pre|table|form|iframe)(?=[\s/>]))/iu.test(
+    prefix,
+  );
+}
+
+function resolveApiErrorMessage(
+  status: number,
+  hasAccessToken: boolean,
+  contentType: string | null,
+  rawText: string,
+  errorData: unknown,
+  parsedJson: boolean,
+): string {
+  if (status === 401 && hasAccessToken) {
+    return "登录已过期，请重新登录";
+  }
+
+  if (!isHtmlErrorBody(contentType, rawText)) {
+    const dataMessage =
+      typeof errorData === "object" && errorData !== null && "message" in errorData
+        ? safeErrorMessageText((errorData as { message?: unknown }).message)
+        : null;
+    const message = dataMessage ?? (parsedJson ? null : safeErrorMessageText(rawText));
+    if (message) return message;
+  }
+
+  return `请求失败（${status}）`;
+}
+
 let refreshPromise: Promise<string | null> | null = null;
 
 async function refreshAccessTokenOnce(): Promise<string | null> {
@@ -139,6 +218,7 @@ async function apiFetchInternal<TResponse>(
   }
 
   if (!response.ok) {
+    const contentType = response.headers.get("content-type");
     let rawText = "";
     try {
       rawText = await response.text();
@@ -146,21 +226,23 @@ async function apiFetchInternal<TResponse>(
       rawText = "";
     }
     let errorData: unknown = rawText;
+    let parsedJson = false;
     if (rawText) {
       try {
         errorData = JSON.parse(rawText);
+        parsedJson = true;
       } catch {
         // 保留原始文本
       }
     }
-    const message =
-      response.status === 401 && token
-        ? "登录已过期，请重新登录"
-        : typeof errorData === "object" &&
-            errorData !== null &&
-            "message" in errorData
-          ? (errorData as { message: string }).message
-          : rawText || `请求失败：${response.status}`;
+    const message = resolveApiErrorMessage(
+      response.status,
+      Boolean(token),
+      contentType,
+      rawText,
+      errorData,
+      parsedJson,
+    );
     throw new ApiError(response.status, message, errorData);
   }
 

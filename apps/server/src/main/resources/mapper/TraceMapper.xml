@@ -67,6 +67,15 @@
             <if test="userId != null">
                 AND user_id = #{userId}
             </if>
+            <if test="from != null">
+                AND started_at &gt;= #{from}
+            </if>
+            <if test="to != null">
+                AND started_at &lt; #{to}
+            </if>
+            <if test="correlationId != null and correlationId != ''">
+                AND correlation_id = #{correlationId}
+            </if>
         </where>
         ORDER BY started_at DESC, id DESC
         LIMIT #{limit} OFFSET #{offset}
@@ -81,6 +90,15 @@
             </if>
             <if test="userId != null">
                 AND user_id = #{userId}
+            </if>
+            <if test="from != null">
+                AND started_at &gt;= #{from}
+            </if>
+            <if test="to != null">
+                AND started_at &lt; #{to}
+            </if>
+            <if test="correlationId != null and correlationId != ''">
+                AND correlation_id = #{correlationId}
             </if>
         </where>
     </select>

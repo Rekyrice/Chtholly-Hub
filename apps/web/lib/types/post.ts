@@ -19,6 +19,7 @@ export type FeedItem = {
   liked?: boolean;
   faved?: boolean;
   isTop?: boolean;
+  publishTime?: string;
 };
 
 /** Feed 分页响应 */

@@ -1,14 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Heart, MessageCircle, User } from "lucide-react";
+import { Clock, Heart, MessageCircle, User } from "lucide-react";
 import FollowButton from "@/components/site/FollowButton";
 import type { FeedItem } from "@/lib/types/post";
 import { siteConfig } from "@/lib/site.config";
+import { formatDate } from "@/lib/utils";
 
 interface PostCardProps {
   post: FeedItem;
   authorName?: string;
-  /** 搜索摘要：description 含 ES 高亮 em 标签时用 HTML 渲染 */
+  /** 搜索摘要：启用 search-snippet 样式 */
   highlightDescription?: boolean;
 }
 
@@ -50,6 +51,15 @@ export default function PostCard({
         </h2>
 
         <div className="entry-meta">
+          {post.publishTime && (
+            <time
+              dateTime={post.publishTime}
+              className="mr-4 inline-flex items-center gap-1"
+            >
+              <Clock size={13} className="inline" />
+              {formatDate(post.publishTime)}
+            </time>
+          )}
           <span className="mr-4 inline-flex items-center gap-1">
             <User size={13} className="inline" />
             {post.authorHandle ? (
@@ -68,15 +78,17 @@ export default function PostCard({
         </div>
       </div>
 
-      {post.description &&
-        (highlightDescription ? (
-          <div
-            className="entry-summary search-snippet"
-            dangerouslySetInnerHTML={{ __html: post.description }}
-          />
-        ) : (
-          <div className="entry-summary">{post.description}</div>
-        ))}
+      {post.description && (
+        <div
+          className={
+            highlightDescription
+              ? "entry-summary search-snippet"
+              : "entry-summary"
+          }
+        >
+          {post.description}
+        </div>
+      )}
 
       <Link href={`/post/${post.slug}`} className="post-card-stats" aria-label="查看文章互动数据">
         <span>

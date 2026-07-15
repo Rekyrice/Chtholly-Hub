@@ -1,5 +1,8 @@
 package com.chtholly.agent.cognitive;
 
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
+
 import com.chtholly.agent.comment.CommentGenerationService;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.post.api.dto.PostSummary;
@@ -25,6 +28,7 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 @Slf4j
 @Service
+@ConditionalOnAgentExtensions({AgentExtensionGroup.LEARNING, AgentExtensionGroup.EXPERIENCE})
 public class CognitiveEngine {
 
     private static final Duration RECENT_POST_WINDOW = Duration.ofHours(6);

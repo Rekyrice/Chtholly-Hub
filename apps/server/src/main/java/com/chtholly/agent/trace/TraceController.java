@@ -33,8 +33,19 @@ public class TraceController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) Long userId) {
-        return traceQueryService.listTraces(page, size, status, userId);
+            @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false) String correlationId) {
+        DateRange range = hasDateRange(from, to) ? parseDateRange(from, to) : new DateRange(null, null);
+        return traceQueryService.listTraces(
+                page,
+                size,
+                status,
+                userId,
+                range.from(),
+                range.to(),
+                correlationId);
     }
 
     @GetMapping("/stats")

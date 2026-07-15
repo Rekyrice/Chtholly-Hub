@@ -1,5 +1,8 @@
 package com.chtholly.agent.graph;
 
+import com.chtholly.agent.config.AgentExtensionComponent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.mapping.KeywordProperty;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
@@ -7,7 +10,6 @@ import co.elastic.clients.elasticsearch._types.mapping.TextProperty;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 /**
@@ -15,7 +17,8 @@ import org.springframework.stereotype.Service;
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "seed.cli-read-only", havingValue = "false", matchIfMissing = true)
+@AgentExtensionComponent
+@ConditionalOnExpression("${agent.extensions.graph.enabled:true} && !${seed.cli-read-only:false}")
 public class KnowledgeGraphIndexInitializer {
 
     public static final String INDEX = "knowledge_entities_index";

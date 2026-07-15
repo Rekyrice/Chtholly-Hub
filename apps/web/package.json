@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "seed:fetch-source": "node scripts/seed/fetch-source-asset.mjs"
+    "seed:fetch-source": "node scripts/seed/fetch-source-asset.mjs",
+    "test": "vitest",
+    "test:run": "vitest run && node --test scripts/seed/fetch-source-asset.test.mjs scripts/seed/prepare-content-media.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -25,6 +27,9 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -33,6 +38,8 @@
     "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "jsdom": "^29.1.1",
+    "vitest": "^4.1.10"
   }
 }

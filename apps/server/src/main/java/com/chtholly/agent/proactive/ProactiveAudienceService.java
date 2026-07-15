@@ -1,5 +1,8 @@
 package com.chtholly.agent.proactive;
 
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
+
 import com.chtholly.agent.state.CharacterStateService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +13,8 @@ import java.util.List;
 
 /** Resolves the active audience shared by proactive domains. */
 @Service
+@ConditionalOnAgentExtensions({AgentExtensionGroup.PROACTIVE, AgentExtensionGroup.EXPERIENCE,
+        AgentExtensionGroup.COMMUNITY_ACTIONS})
 class ProactiveAudienceService {
     private final CharacterStateService characterStateService;
     private final CharacterStateUserActivityProvider activityProvider;

@@ -1,5 +1,4 @@
-import { AgentChatProvider } from "@/components/agent/AgentChatProvider";
-import { ProactiveNotification } from "@/components/ProactiveNotification";
+import DeferredAgentRuntime from "@/components/agent/DeferredAgentRuntime";
 import SiteChrome from "@/components/site/SiteChrome";
 
 export default function SiteLayout({
@@ -8,9 +7,9 @@ export default function SiteLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AgentChatProvider>
+    <>
       <SiteChrome>{children}</SiteChrome>
-      <ProactiveNotification />
-    </AgentChatProvider>
+      <DeferredAgentRuntime />
+    </>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { Camera, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { extractErrorMessage } from "@/lib/hooks/useErrorMessage";
@@ -82,7 +83,14 @@ export function AvatarUpload({ value, nickname, onUploaded, onError }: AvatarUpl
         aria-label="上传头像"
       >
         {displaySrc ? (
-          <img src={displaySrc} alt="头像预览" className="avatar-upload__image" />
+          <Image
+            src={displaySrc}
+            alt="头像预览"
+            fill
+            sizes="96px"
+            className="avatar-upload__image"
+            unoptimized={displaySrc.startsWith("blob:") || displaySrc.startsWith("data:")}
+          />
         ) : (
           <span className="avatar-upload__initial">{initial}</span>
         )}

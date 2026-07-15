@@ -15,9 +15,9 @@ import com.chtholly.agent.state.CharacterStateService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -33,13 +33,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /** Agent WebSocket：客户端发送 chat，服务端推送 ReAct 事件流。 */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 public class AgentWebSocketHandler extends TextWebSocketHandler {
 
@@ -55,16 +54,76 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final AgentWebSocketHeartbeat heartbeat;
     private final AgentMetrics agentMetrics;
     private final CharacterStateService characterStateService;
-    private final InsightService insightService;
+    private final ObjectProvider<InsightService> insightServiceProvider;
     private final ObjectProvider<CognitiveEngine> cognitiveEngineProvider;
-    private final NotificationService proactiveNotificationService;
-    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    private final ObjectProvider<NotificationService> proactiveNotificationServiceProvider;
+    private final Executor executor;
 
     /** 原始 sessionId -> 线程安全装饰 session（并发 send 串行化）。 */
     private final Map<String, WebSocketSession> safeSessions = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionUsers = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionConnectedAt = new ConcurrentHashMap<>();
     private final Map<String, String> sessionChatSessionIds = new ConcurrentHashMap<>();
+
+    /**
+     * Creates the production WebSocket handler with a virtual-thread executor.
+     *
+     * @param agent ReAct agent runtime.
+     * @param objectMapper JSON serializer.
+     * @param memoryStore Conversation memory store.
+     * @param ticketStore One-time WebSocket ticket store.
+     * @param rateLimiter Per-session rate limiter.
+     * @param heartbeat WebSocket heartbeat coordinator.
+     * @param agentMetrics Agent metrics recorder.
+     * @param characterStateService Character state service.
+     * @param insightServiceProvider Optional conversation reflection service provider.
+     * @param cognitiveEngineProvider Optional cognitive engine provider.
+     * @param proactiveNotificationServiceProvider Optional proactive notification service provider.
+     */
+    @Autowired
+    public AgentWebSocketHandler(ChthollyAgent agent,
+                                 ObjectMapper objectMapper,
+                                 AgentMemoryStore memoryStore,
+                                 AgentWsTicketStore ticketStore,
+                                 AgentSessionRateLimiter rateLimiter,
+                                 AgentWebSocketHeartbeat heartbeat,
+                                 AgentMetrics agentMetrics,
+                                 CharacterStateService characterStateService,
+                                 ObjectProvider<InsightService> insightServiceProvider,
+                                 ObjectProvider<CognitiveEngine> cognitiveEngineProvider,
+                                 ObjectProvider<NotificationService> proactiveNotificationServiceProvider) {
+        // 生产环境继续使用虚拟线程，避免长耗时 Agent 调用阻塞 WebSocket 处理线程。
+        this(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat, agentMetrics,
+                characterStateService, insightServiceProvider, cognitiveEngineProvider,
+                proactiveNotificationServiceProvider,
+                Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    AgentWebSocketHandler(ChthollyAgent agent,
+                          ObjectMapper objectMapper,
+                          AgentMemoryStore memoryStore,
+                          AgentWsTicketStore ticketStore,
+                          AgentSessionRateLimiter rateLimiter,
+                          AgentWebSocketHeartbeat heartbeat,
+                          AgentMetrics agentMetrics,
+                          CharacterStateService characterStateService,
+                          ObjectProvider<InsightService> insightServiceProvider,
+                          ObjectProvider<CognitiveEngine> cognitiveEngineProvider,
+                          ObjectProvider<NotificationService> proactiveNotificationServiceProvider,
+                          Executor executor) {
+        this.agent = agent;
+        this.objectMapper = objectMapper;
+        this.memoryStore = memoryStore;
+        this.ticketStore = ticketStore;
+        this.rateLimiter = rateLimiter;
+        this.heartbeat = heartbeat;
+        this.agentMetrics = agentMetrics;
+        this.characterStateService = characterStateService;
+        this.insightServiceProvider = insightServiceProvider;
+        this.cognitiveEngineProvider = cognitiveEngineProvider;
+        this.proactiveNotificationServiceProvider = proactiveNotificationServiceProvider;
+        this.executor = executor;
+    }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -81,8 +140,12 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         safeSessions.put(session.getId(), safe);
         sessionUsers.put(session.getId(), userId);
         sessionConnectedAt.put(session.getId(), System.currentTimeMillis());
-        proactiveNotificationService.registerSession(userId, session.getId(), notification -> sendProactiveNotification(safe, notification));
-        sendPendingProactiveNotifications(userId, safe);
+        NotificationService proactiveNotificationService = proactiveNotificationServiceProvider.getIfAvailable();
+        if (proactiveNotificationService != null) {
+            proactiveNotificationService.registerSession(
+                    userId, session.getId(), notification -> sendProactiveNotification(safe, notification));
+            sendPendingProactiveNotifications(proactiveNotificationService, userId, safe);
+        }
         heartbeat.start(safe);
         agentMetrics.wsConnected();
         log.info("[{}] [AgentWS] Connected: userId={}, sessionId={}", correlationId, userId, session.getId());
@@ -94,7 +157,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (userId == null) {
             return;
         }
-        executor.submit(() -> {
+        executor.execute(() -> {
             String correlationId = (String) session.getAttributes().get(CorrelationIdSupport.MDC_CORRELATION_ID);
             String path = session.getUri() == null ? "/api/v1/agent/ws" : session.getUri().getPath();
             CorrelationIdSupport.runWithContext(
@@ -115,7 +178,10 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         String chatSessionId = sessionChatSessionIds.remove(session.getId());
         reflectOnConversation(userId, chatSessionId);
         triggerCognitiveCycleIfDue();
-        proactiveNotificationService.unregisterSession(userId, session.getId());
+        NotificationService proactiveNotificationService = proactiveNotificationServiceProvider.getIfAvailable();
+        if (proactiveNotificationService != null) {
+            proactiveNotificationService.unregisterSession(userId, session.getId());
+        }
         safeSessions.remove(session.getId());
         rateLimiter.removeSession(session.getId());
         heartbeat.stop(session.getId());
@@ -224,6 +290,10 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (userId == null || !AgentChatSessionSupport.isValid(chatSessionId)) {
             return;
         }
+        InsightService insightService = insightServiceProvider.getIfAvailable();
+        if (insightService == null) {
+            return;
+        }
         try {
             List<AgentTurn> conversation = memoryStore.getTurns(userId, chatSessionId);
             insightService.reflectOnConversation(userId, conversation);
@@ -238,7 +308,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (cognitiveEngine == null) {
             return;
         }
-        executor.submit(() -> {
+        executor.execute(() -> {
             try {
                 cognitiveEngine.triggerIfDue();
             } catch (Exception e) {
@@ -254,7 +324,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void sendPendingProactiveNotifications(Long userId, WebSocketSession session) {
+    private void sendPendingProactiveNotifications(
+            NotificationService proactiveNotificationService, Long userId, WebSocketSession session) {
         for (Notification notification : proactiveNotificationService.getPendingNotifications(userId)) {
             sendProactiveNotification(session, notification);
         }

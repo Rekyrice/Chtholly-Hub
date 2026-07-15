@@ -1,9 +1,11 @@
 package com.chtholly.counter.event;
 
 import com.chtholly.counter.schema.CounterKeys;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.HashOperations;
@@ -16,18 +18,16 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.times;
-import org.mockito.ArgumentCaptor;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class CounterAggregationProcessorTest {
@@ -61,7 +61,7 @@ class CounterAggregationProcessorTest {
         verify(setOps).members(CounterKeys.aggIndexKey());
         verify(redis, never()).keys(anyString());
         verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
-                CounterKeys.sdsKey("post", "42"), aggKey, CounterKeys.aggIndexKey())),
+                        CounterKeys.sdsKey("post", "42"), aggKey, CounterKeys.aggIndexKey())),
                 eq("5"), eq("4"), eq("0"));
     }
 
@@ -71,7 +71,7 @@ class CounterAggregationProcessorTest {
         when(setOps.members(CounterKeys.aggIndexKey())).thenReturn(Set.of(aggKey));
         when(hashOps.entries(aggKey)).thenReturn(Map.of("1", "3"));
         when(redis.execute(any(DefaultRedisScript.class), eq(List.of(
-                CounterKeys.sdsKey("post", "99"), aggKey, CounterKeys.aggIndexKey())),
+                        CounterKeys.sdsKey("post", "99"), aggKey, CounterKeys.aggIndexKey())),
                 any(), any(), any()))
                 .thenThrow(new RuntimeException("lua down"));
 
@@ -92,7 +92,7 @@ class CounterAggregationProcessorTest {
 
         ArgumentCaptor<DefaultRedisScript<Long>> script = ArgumentCaptor.forClass(DefaultRedisScript.class);
         verify(redis).execute(script.capture(), eq(List.of(
-                CounterKeys.sdsKey("post", "42"), aggKey, CounterKeys.aggIndexKey())),
+                        CounterKeys.sdsKey("post", "42"), aggKey, CounterKeys.aggIndexKey())),
                 eq("5"), eq("4"), eq("0"));
         String lua = script.getValue().getScriptAsString();
         assertThat(lua).contains("HGET", "HDEL", "HLEN", "SREM");
@@ -101,65 +101,77 @@ class CounterAggregationProcessorTest {
     }
 
     @Test
-    void given_event_when_applyEvent_then_registersAggKeyViaLua() {
-        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any())).thenReturn(1L);
+    void given_duplicateEvent_when_applyEvent_then_aggregatesOnlyOnce() {
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any()))
+                .thenReturn(1L, 0L);
+        CounterEvent event = CounterEvent.of("evt-1", "post", "7", "like", 0, 100L, 1);
 
-        CounterEvent event = CounterEvent.of("post", "7", "like", 0, 100L, 1);
-        processor.applyEvent(event);
+        assertThat(processor.applyEvent(event)).isTrue();
+        assertThat(processor.applyEvent(event)).isFalse();
 
-        verify(redis).execute(any(DefaultRedisScript.class),
-                eq(List.of(CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey())),
-                eq("0"), eq("1"));
+        verify(redis, times(2)).execute(any(DefaultRedisScript.class),
+                eq(List.of(CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
+                        "counter:event:evt-1")),
+                eq("0"), eq("1"), eq("604800"));
     }
 
     @Test
-    void givenSameEventIdTwice_whenApply_thenPersistentDedupeAcceptsOnlyFirst() {
-        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any())).thenReturn(1L, 0L);
-        CounterEvent event = CounterEvent.of("post", "7", "view", 0, 0L, 10, "seed-view:ns:7:10");
+    void givenSameSeedEventIdTwice_whenApply_thenPersistentDedupeAcceptsOnlyFirst() {
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any()))
+                .thenReturn(1L, 0L);
+        CounterEvent event = CounterEvent.of(
+                "post", "7", "view", 0, 0L, 10, "seed-view:ns:7:10");
 
         assertThat(processor.applyEvent(event)).isTrue();
         assertThat(processor.applyEvent(event)).isFalse();
 
         ArgumentCaptor<DefaultRedisScript<Long>> script = ArgumentCaptor.forClass(DefaultRedisScript.class);
         verify(redis, times(2)).execute(script.capture(), eq(List.of(
-                CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
-                CounterKeys.eventDedupeKey("seed-view:ns:7:10"))), eq("0"), eq("10"));
-        assertThat(script.getValue().getScriptAsString()).contains("SETNX", "HINCRBY", "SADD");
-        assertThat(script.getValue().getScriptAsString().indexOf("SETNX"))
+                        CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
+                        "counter:event:seed-view:ns:7:10")),
+                eq("0"), eq("10"), eq("604800"));
+        assertThat(script.getValue().getScriptAsString()).contains("SET", "NX", "EX", "HINCRBY", "SADD");
+        assertThat(script.getValue().getScriptAsString().indexOf("SET', eventKey"))
                 .isLessThan(script.getValue().getScriptAsString().indexOf("HINCRBY"));
     }
 
     @Test
     void givenDifferentBaselineEventIds_whenApply_thenBothCanAddTheirDeltas() {
-        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any())).thenReturn(1L);
-        CounterEvent first = CounterEvent.of("post", "7", "view", 0, 0L, 10, "seed-view:ns:7:10");
-        CounterEvent second = CounterEvent.of("post", "7", "view", 0, 0L, 5, "seed-view:ns:7:15");
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
+        CounterEvent first = CounterEvent.of(
+                "post", "7", "view", 0, 0L, 10, "seed-view:ns:7:10");
+        CounterEvent second = CounterEvent.of(
+                "post", "7", "view", 0, 0L, 5, "seed-view:ns:7:15");
 
         assertThat(processor.applyEvent(first)).isTrue();
         assertThat(processor.applyEvent(second)).isTrue();
 
         verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
-                CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
-                CounterKeys.eventDedupeKey("seed-view:ns:7:10"))), eq("0"), eq("10"));
+                        CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
+                        "counter:event:seed-view:ns:7:10")),
+                eq("0"), eq("10"), eq("604800"));
         verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
-                CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
-                CounterKeys.eventDedupeKey("seed-view:ns:7:15"))), eq("0"), eq("5"));
+                        CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
+                        "counter:event:seed-view:ns:7:15")),
+                eq("0"), eq("5"), eq("604800"));
     }
 
     @Test
-    void givenBlankEventId_whenApply_thenUsesBackwardCompatibleAggregationPath() {
-        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any())).thenReturn(1L);
-        CounterEvent legacy = CounterEvent.of("post", "7", "like", 1, 100L, 1);
+    void generatedEventIdUsesPersistentDedupePath() {
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
+        CounterEvent event = CounterEvent.of("post", "7", "like", 1, 100L, 1);
 
-        assertThat(processor.applyEvent(legacy)).isTrue();
+        assertThat(event.getEventId()).isNotBlank();
+        assertThat(processor.applyEvent(event)).isTrue();
 
         verify(redis).execute(any(DefaultRedisScript.class),
-                eq(List.of(CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey())),
-                eq("1"), eq("1"));
+                eq(List.of(CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
+                        "counter:event:" + event.getEventId())),
+                eq("1"), eq("1"), eq("604800"));
     }
 
     @Test
-    void legacyKafkaJsonWithoutEventIdRemainsReadable() throws Exception {
+    void legacyKafkaJsonWithoutEventIdRemainsReadableButCannotBeApplied() throws Exception {
         CounterEvent event = new ObjectMapper().readValue(
                 "{\"entityType\":\"post\",\"entityId\":\"7\",\"metric\":\"like\","
                         + "\"idx\":1,\"userId\":9,\"delta\":1}",
@@ -167,5 +179,8 @@ class CounterAggregationProcessorTest {
 
         assertThat(event.getEventId()).isNull();
         assertThat(event.getDelta()).isEqualTo(1);
+        assertThatThrownBy(() -> processor.applyEvent(event))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("ID");
     }
 }

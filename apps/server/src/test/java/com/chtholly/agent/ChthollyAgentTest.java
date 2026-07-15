@@ -1,333 +1,299 @@
 package com.chtholly.agent;
 
-import com.chtholly.agent.config.AgentProperties;
+import com.chtholly.agent.config.AgentContextLabels;
 import com.chtholly.agent.config.AgentDomainConfig;
+import com.chtholly.agent.config.AgentErrorMessages;
+import com.chtholly.agent.config.AgentProperties;
+import com.chtholly.agent.config.AgentSystemPromptConfig;
 import com.chtholly.agent.context.ContextEngine;
+import com.chtholly.agent.memory.AgentConversationMemory;
+import com.chtholly.agent.memory.AgentTurn;
+import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.observability.AgentObservationService;
+import com.chtholly.agent.runtime.AgentLlmInvoker;
+import com.chtholly.agent.runtime.AgentLoopExecutor;
+import com.chtholly.agent.runtime.AgentLoopRequest;
+import com.chtholly.agent.runtime.AgentLoopResult;
 import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.observation.Observation;
-import io.micrometer.observation.ObservationHandler;
-import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Answers;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.boot.context.properties.bind.Binder;
-import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
-import org.springframework.boot.env.YamlPropertySourceLoader;
-import org.springframework.core.env.PropertySource;
-import org.springframework.core.io.ClassPathResource;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ChthollyAgentTest {
 
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
-    private ChatClient chatClient;
+    @Mock
+    private AgentLlmInvoker llmInvoker;
+    @Mock
+    private AgentLoopExecutor loopExecutor;
     @Mock
     private AgentMetrics agentMetrics;
-
-    private AgentObservationService agentObservationService;
-    private final List<String> observationEvents = new ArrayList<>();
-
-    private AgentProperties properties;
-    private ObjectMapper objectMapper;
-    private AgentJsonExtractor jsonExtractor;
-    private CharacterSoulService characterSoulService;
-    private AgentDomainConfig agentDomainConfig;
+    @Mock
+    private AgentObservationService observationService;
+    @Mock
+    private Observation agentSpan;
+    @Mock
+    private Observation llmSpan;
     @Mock
     private ContextEngine contextEngine;
     @Mock
     private TracePersistenceService tracePersistenceService;
+    @Mock
+    private AgentConversationMemory memory;
+
+    private AgentProperties properties;
+    private AgentDomainConfig domainConfig;
     private ChthollyAgent agent;
     private List<AgentEvent> events;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        jsonExtractor = new AgentJsonExtractor(objectMapper);
         properties = new AgentProperties();
-        properties.setMaxSteps(5);
-        properties.setLlmTimeoutSeconds(5);
+        properties.setMaxSteps(4);
         properties.setStreamCharDelayMs(0);
-        properties.setToolTimeoutSeconds(5);
-        characterSoulService = new CharacterSoulService("""
-                # 珂朵莉
-
-                认真到笨拙，但不会编造答案。
-                """);
-        agentDomainConfig = loadAgentDomainConfig();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        observationRegistry.observationConfig().observationHandler(new ObservationHandler<>() {
-            @Override
-            public void onStart(Observation.Context context) {
-                observationEvents.add("start:" + context.getName());
-            }
-
-            @Override
-            public void onStop(Observation.Context context) {
-                observationEvents.add("stop:" + context.getName());
-            }
-
-            @Override
-            public boolean supportsContext(Observation.Context context) {
-                return true;
-            }
-        });
-        agentObservationService = new AgentObservationService(observationRegistry);
-        when(contextEngine.buildSystemPrompt(
-                anyLong(),
-                nullable(String.class),
-                nullable(String.class),
-                any(),
-                anyString(),
-                anyString()
-        )).thenReturn("## ContextEngine Prompt");
-        agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(mockTool()), jsonExtractor,
-                agentMetrics, agentObservationService, characterSoulService, contextEngine,
-                tracePersistenceService, agentDomainConfig);
+        properties.setModel("test-model");
+        domainConfig = domainConfig();
+        when(observationService.startAgentSpan(anyString(), anyLong())).thenReturn(agentSpan);
+        agent = new ChthollyAgent(
+                llmInvoker,
+                loopExecutor,
+                properties,
+                new ObjectMapper(),
+                List.of(tool("search")),
+                agentMetrics,
+                observationService,
+                new CharacterSoulService("soul"),
+                contextEngine,
+                tracePersistenceService,
+                domainConfig);
         events = new ArrayList<>();
-        observationEvents.clear();
     }
 
     @Test
-    void given_toolCall_when_run_then_createsAgentLlmAndToolObservationSpans() {
-        AtomicInteger llmCalls = new AtomicInteger();
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
-                .thenAnswer(inv -> {
-                    if (llmCalls.getAndIncrement() == 0) {
-                        return "{\"action\":\"test_tool\",\"input\":{\"keyword\":\"re0\"}}";
-                    }
-                    return "{\"action\":\"final\",\"answer\":\"占位\"}";
-                });
-        stubStream("根据工具结果回答");
+    void runBuildsContextAndPassesCompleteRequestToLoop() {
+        when(memory.formatForPrompt()).thenReturn("history");
+        when(contextEngine.buildSystemPrompt(
+                anyLong(), anyString(), anyString(), any(), anyString(), anyString()))
+                .thenReturn("assembled system");
+        when(loopExecutor.execute(any(), any(), any(), any()))
+                .thenReturn(AgentLoopResult.terminal(
+                        AgentLoopResult.Status.MAX_STEPS,
+                        List.of("transcript"),
+                        "stopped"));
 
-        agent.run("查一下 re0", 2L, null, events::add);
+        agent.run("  question  ", 7L, memory, "session", "page", events::add);
 
-        assertThat(observationEvents).contains(
-                "start:agent.run",
-                "start:agent.llm.call",
-                "stop:agent.llm.call",
-                "start:agent.tool.execute",
-                "stop:agent.tool.execute",
-                "stop:agent.run");
+        verify(contextEngine).buildSystemPrompt(
+                eq(7L), eq("session"), eq("page"), any(), eq("history"), eq("question"));
+        ArgumentCaptor<AgentLoopRequest> requestCaptor = ArgumentCaptor.forClass(AgentLoopRequest.class);
+        verify(loopExecutor).execute(requestCaptor.capture(), any(), eq(agentSpan), any());
+        AgentLoopRequest request = requestCaptor.getValue();
+        assertThat(request.systemPrompt()).isEqualTo("assembled system");
+        assertThat(request.question()).isEqualTo("question");
+        assertThat(request.userId()).isEqualTo(7L);
+        assertThat(request.historyBlock()).isEqualTo("history");
+        assertThat(request.tools()).containsKey("search");
+        assertThat(request.maxSteps()).isEqualTo(4);
     }
 
     @Test
-    void given_finalAction_when_run_then_completesInOneStep() {
-        stubLlmCall("{\"action\":\"final\",\"answer\":\"占位\"}");
-        stubStream("一步完成的回答");
+    void finalReadyStreamsAnswerWritesMemoryAndPersistsSuccessfulTrace() {
+        when(memory.formatForPrompt()).thenReturn("history");
+        when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
+                .thenReturn("assembled system");
+        when(loopExecutor.execute(any(), any(), any(), any()))
+                .thenReturn(AgentLoopResult.finalReady(
+                        List.of("history", "current question"),
+                        2,
+                        123));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("final ", "answer"));
 
-        agent.run("问题", 1L, null, events::add);
+        agent.run("question", 7L, memory, events::add);
 
-        assertThat(eventTypes()).contains("think", "delta", "final");
-        assertThat(eventTypes()).doesNotContain("act", "observe", "error");
-        assertThat(lastContent("final")).isEqualTo("一步完成的回答");
+        verify(llmInvoker).stream(anyString(), anyString(), eq(0.3), eq(1024));
+        ArgumentCaptor<AgentTurn> turnCaptor = ArgumentCaptor.forClass(AgentTurn.class);
+        verify(memory, times(2)).add(turnCaptor.capture());
+        assertThat(turnCaptor.getAllValues()).extracting(AgentTurn::content)
+                .containsExactly("question", "final answer");
+        assertThat(eventTypes()).containsExactly("delta", "delta", "final");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        assertThat(traceCaptor.getValue().getTerminatedBy()).isEqualTo("final_answer");
+        assertThat(traceCaptor.getValue().getStatus()).isNotNull();
+        com.fasterxml.jackson.databind.JsonNode steps = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap().get("steps"));
+        assertThat(steps).hasSize(1);
+        assertThat(steps.path(0).path("action").asText()).isEqualTo("final_answer");
+        assertThat(steps.path(0).path("stepIndex").asInt()).isEqualTo(2);
+        assertThat(steps.path(0).path("llmMs").asLong()).isGreaterThanOrEqualTo(123);
     }
 
     @Test
-    void given_toolCall_when_run_then_toolExecutedAndObservationFed() {
-        AtomicInteger llmCalls = new AtomicInteger();
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
-                .thenAnswer(inv -> {
-                    if (llmCalls.getAndIncrement() == 0) {
-                        return "{\"action\":\"test_tool\",\"input\":{\"keyword\":\"re0\"}}";
-                    }
-                    return "{\"action\":\"final\",\"answer\":\"占位\"}";
-                });
-        stubStream("根据工具结果回答");
-
-        agent.run("查一下 re0", 2L, null, events::add);
-
-        assertThat(eventTypes()).containsSubsequence("think", "act", "observe", "think", "final");
-        assertThat(findFirst("act").path("tool").asText()).isEqualTo("test_tool");
-        assertThat(findFirst("observe").path("content").asText()).isEqualTo("mock observation");
-    }
-
-    @Test
-    void given_agentRuns_when_buildingPrompt_then_usesContextEnginePrompt() {
-        stubLlmCall("{\"action\":\"final\",\"answer\":\"占位\"}");
-        stubStream("嗯，还行吧");
-
-        agent.run("你很厉害", 1L, null, events::add);
-
-        org.mockito.Mockito.verify(contextEngine).buildSystemPrompt(
-                eq(1L),
-                isNull(),
-                isNull(),
-                any(),
-                eq(""),
-                eq("你很厉害"));
-        org.mockito.ArgumentCaptor<String> systemCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
-        org.mockito.Mockito.verify(chatClient.prompt(), org.mockito.Mockito.atLeastOnce()).system(systemCaptor.capture());
-        assertThat(systemCaptor.getAllValues()).contains("## ContextEngine Prompt");
-    }
-
-    @Test
-    void given_toolThrows_when_run_then_errorBecomesObservation() {
-        AgentTool failingTool = new AgentTool() {
-            @Override
-            public String name() {
-                return "fail_tool";
-            }
-
-            @Override
-            public String description() {
-                return "fail";
-            }
-
-            @Override
-            public String execute(Map<String, Object> input, long userId) {
-                throw new RuntimeException("boom");
-            }
-        };
-        agent = new ChthollyAgent(chatClient, properties, objectMapper, List.of(failingTool), jsonExtractor,
-                agentMetrics, agentObservationService, characterSoulService, contextEngine,
-                tracePersistenceService, agentDomainConfig);
-
-        AtomicInteger llmCalls = new AtomicInteger();
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
-                .thenAnswer(inv -> {
-                    if (llmCalls.getAndIncrement() == 0) {
-                        return "{\"action\":\"fail_tool\",\"input\":{}}";
-                    }
-                    return "{\"action\":\"final\",\"answer\":\"占位\"}";
-                });
-        stubStream("继续回答");
-
-        agent.run("测试", 1L, null, events::add);
-
-        assertThat(findFirst("observe").path("content").asText()).contains("工具执行失败");
-        assertThat(eventTypes()).contains("final");
-    }
-
-    @Test
-    void given_unparseableLlmOutput_when_run_then_retriesInsteadOfError() {
-        AtomicInteger llmCalls = new AtomicInteger();
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
-                .thenAnswer(inv -> {
-                    if (llmCalls.getAndIncrement() == 0) {
-                        return "这不是合法 JSON";
-                    }
-                    return "{\"action\":\"final\",\"answer\":\"占位\"}";
-                });
-        stubStream("重试后成功");
-
-        agent.run("re0 有几季", 1L, null, events::add);
-
-        assertThat(eventTypes()).contains("observe", "final");
-        assertThat(eventTypes()).doesNotContain("error");
-    }
-
-    @Test
-    void given_llmSlow_when_run_then_timeoutHandled() {
-        properties.setLlmTimeoutSeconds(1);
-        ChatClient.CallResponseSpec callSpec = org.mockito.Mockito.mock(ChatClient.CallResponseSpec.class);
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call())
-                .thenReturn(callSpec);
-        when(callSpec.content()).thenAnswer(inv -> {
-            Thread.sleep(1500);
-            return "{\"action\":\"final\",\"answer\":\"late\"}";
+    void nonFinalLoopOutcomeDoesNotStreamOrWriteMemoryButStillPersistsTrace() {
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
+                .thenReturn("assembled system");
+        when(loopExecutor.execute(any(), any(), any(), any())).thenAnswer(invocation -> {
+            AgentExecutionTrace trace = invocation.getArgument(1);
+            trace.terminateMaxSteps();
+            trace.setErrorMessage("stopped");
+            return AgentLoopResult.terminal(
+                    AgentLoopResult.Status.MAX_STEPS,
+                    List.of("transcript"),
+                    "stopped");
         });
 
-        agent.run("超时测试", 1L, null, events::add);
+        agent.run("question", 7L, memory, events::add);
 
-        assertThat(eventTypes()).contains("error");
-        assertThat(findFirst("error").path("message").asText()).contains("超时");
+        verify(llmInvoker, never()).stream(anyString(), anyString(), anyDouble(), anyInt());
+        verify(memory, never()).add(any());
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        assertThat(traceCaptor.getValue().getTerminatedBy()).isEqualTo("max_steps");
     }
 
     @Test
-    void given_alwaysToolCall_when_maxStepsReached_then_terminatesWithoutInfiniteLoop() {
-        properties.setMaxSteps(2);
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
-                .thenReturn("{\"action\":\"test_tool\",\"input\":{\"keyword\":\"x\"}}");
+    void emptyQuestionEmitsErrorWithoutBuildingContextOrEnteringLoopAndPersistsTrace() {
+        agent.run("  ", 7L, null, events::add);
 
-        agent.run("循环测试", 1L, null, events::add);
-
-        assertThat(eventTypes()).contains("error");
-        assertThat(findFirst("error").path("message").asText()).contains("最大推理步数");
-        assertThat(eventTypes().stream().filter(t -> "act".equals(t)).count()).isEqualTo(2);
+        assertThat(eventTypes()).containsExactly("error");
+        assertThat(events.getFirst().data().path("message").asText()).isEqualTo("QUESTION_EMPTY");
+        verify(contextEngine, never()).buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString());
+        verify(loopExecutor, never()).execute(any(), any(), any(), any());
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        assertThat(traceCaptor.getValue().getErrorMessage()).isEqualTo("QUESTION_EMPTY");
     }
 
-    private AgentTool mockTool() {
-        return new AgentTool() {
-            @Override
-            public String name() {
-                return "test_tool";
-            }
+    @Test
+    void publicOverloadWithoutSessionPassesNullContextParameters() {
+        when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
+                .thenReturn("system");
+        when(loopExecutor.execute(any(), any(), any(), any()))
+                .thenReturn(AgentLoopResult.terminal(
+                        AgentLoopResult.Status.LLM_ERROR,
+                        List.of(),
+                        "failed"));
 
-            @Override
-            public String description() {
-                return "测试工具";
-            }
+        agent.run("question", 7L, null, events::add);
 
-            @Override
-            public String execute(Map<String, Object> input, long userId) {
-                return "mock observation";
-            }
-        };
+        verify(contextEngine).buildSystemPrompt(
+                eq(7L), isNull(), isNull(), any(), eq(""), eq("question"));
     }
 
-    private AgentDomainConfig loadAgentDomainConfig() {
-        try {
-            List<PropertySource<?>> sources = new YamlPropertySourceLoader()
-                    .load("agent-domain", new ClassPathResource("agent-domain.yml"));
-            return new Binder(ConfigurationPropertySources.from(sources))
-                    .bind("agent.domain", AgentDomainConfig.class)
-                    .get();
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
-        }
-    }
+    @Test
+    void agentSpanDurationMatchesFinishedPersistedTrace() {
+        when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
+                .thenReturn("system");
+        when(loopExecutor.execute(any(), any(), any(), any())).thenAnswer(invocation -> {
+            Thread.sleep(20);
+            AgentExecutionTrace trace = invocation.getArgument(1);
+            trace.terminateMaxSteps();
+            trace.setErrorMessage("stopped");
+            return AgentLoopResult.terminal(
+                    AgentLoopResult.Status.MAX_STEPS,
+                    List.of("transcript"),
+                    "stopped");
+        });
 
-    private void stubLlmCall(String json) {
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
-                .thenReturn(json);
-    }
+        agent.run("question", 7L, null, events::add);
 
-    private void stubStream(String text) {
-        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).stream().content())
-                .thenReturn(Flux.fromArray(text.split("")));
+        ArgumentCaptor<Map<String, String>> attributesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpan(eq(agentSpan), attributesCaptor.capture());
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        long spanDuration = Long.parseLong(attributesCaptor.getValue().get("agent.duration_ms"));
+        assertThat(spanDuration).isEqualTo(traceCaptor.getValue().getDurationMs());
+        assertThat(spanDuration).isGreaterThanOrEqualTo(15);
     }
 
     private List<String> eventTypes() {
         return events.stream().map(AgentEvent::type).toList();
     }
 
-    private com.fasterxml.jackson.databind.JsonNode findFirst(String type) {
-        return events.stream()
-                .filter(e -> type.equals(e.type()))
-                .findFirst()
-                .orElseThrow()
-                .data();
+    private AgentTool tool(String name) {
+        return new AgentTool() {
+            @Override
+            public String name() {
+                return name;
+            }
+
+            @Override
+            public String description() {
+                return "test tool";
+            }
+
+            @Override
+            public String execute(java.util.Map<String, Object> input, long userId) {
+                return "unused";
+            }
+        };
     }
 
-    private String lastContent(String type) {
-        return events.stream()
-                .filter(e -> type.equals(e.type()))
-                .reduce((a, b) -> b)
-                .orElseThrow()
-                .data()
-                .path("content")
-                .asText();
+    private AgentDomainConfig domainConfig() {
+        return new AgentDomainConfig(
+                new AgentSystemPromptConfig(
+                        "fallback",
+                        "parse observation",
+                        "parse think",
+                        "Answer with {soul}",
+                        "Produce final answer",
+                        "final think",
+                        "tool {toolName}",
+                        "site guidance",
+                        "bangumi guidance",
+                        List.of("empty")),
+                new AgentErrorMessages(
+                        "QUESTION_EMPTY",
+                        "MODEL_TIMEOUT",
+                        "MODEL_FAILED",
+                        "MODEL_INTERRUPTED",
+                        "RESPONSE_TIMEOUT",
+                        "RESPONSE_FAILED",
+                        "MAX {maxSteps}",
+                        "UNKNOWN {toolName}",
+                        "TOOL_FAILED {message}",
+                        "TOOL_INTERRUPTED",
+                        "NO_RESULT"),
+                null,
+                new AgentContextLabels(
+                        "time",
+                        "User:",
+                        "page",
+                        "Assistant:",
+                        "Observation:",
+                        "Current",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        ","));
     }
 }

@@ -17,16 +17,21 @@ export function useWallpaperRotation(intervalMs = 300_000) {
   );
 
   useEffect(() => {
-    setWallpaper(AGENT_WALLPAPERS[Math.floor(Math.random() * AGENT_WALLPAPERS.length)]);
+    const initialTimer = window.setTimeout(() => {
+      setWallpaper(AGENT_WALLPAPERS[Math.floor(Math.random() * AGENT_WALLPAPERS.length)]);
+    }, 0);
 
-    const timer = setInterval(() => {
+    const timer = window.setInterval(() => {
       setWallpaper((prev) => {
         const index = AGENT_WALLPAPERS.indexOf(prev as (typeof AGENT_WALLPAPERS)[number]);
         const nextIndex = index >= 0 ? (index + 1) % AGENT_WALLPAPERS.length : 0;
         return AGENT_WALLPAPERS[nextIndex];
       });
     }, intervalMs);
-    return () => clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
   }, [intervalMs]);
 
   return wallpaper;

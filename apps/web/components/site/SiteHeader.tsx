@@ -5,7 +5,11 @@ import HeroParticles from "@/components/site/HeroParticles";
 import HeroTypewriter from "@/components/site/HeroTypewriter";
 import { siteConfig } from "@/lib/site.config";
 
-export default function SiteHeader() {
+export interface SiteHeaderProps {
+  onQuoteTransition?: (index: number, durationMs: number) => void;
+}
+
+export default function SiteHeader({ onQuoteTransition }: SiteHeaderProps) {
   const [parallaxY, setParallaxY] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
 
@@ -34,6 +38,7 @@ export default function SiteHeader() {
     <header className="site-header" data-testid="site-header">
       <div
         className="site-header-bg"
+        data-testid="site-header-background"
         style={
           reduceMotion
             ? undefined
@@ -44,7 +49,10 @@ export default function SiteHeader() {
       <div className="site-header-overlay" />
       <div className="site-header-content">
         <h1 className="site-header-title">{siteConfig.name}</h1>
-        <HeroTypewriter quotes={siteConfig.heroQuotes} />
+        <HeroTypewriter
+          quotes={siteConfig.heroQuotes}
+          onLineTransition={onQuoteTransition}
+        />
       </div>
     </header>
   );

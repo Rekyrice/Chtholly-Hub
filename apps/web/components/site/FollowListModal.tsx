@@ -18,6 +18,36 @@ type FollowListModalProps = {
   onClose: () => void;
 };
 
+export type RequestCommitGate = {
+  mount: () => void;
+  next: () => number;
+  invalidate: () => void;
+  unmount: () => void;
+  canCommit: (version: number) => boolean;
+};
+
+export function createRequestCommitGate(): RequestCommitGate {
+  let mounted = false;
+  let generation = 0;
+  return {
+    mount: () => {
+      mounted = true;
+    },
+    next: () => {
+      generation += 1;
+      return generation;
+    },
+    invalidate: () => {
+      generation += 1;
+    },
+    unmount: () => {
+      mounted = false;
+      generation += 1;
+    },
+    canCommit: (version) => mounted && generation === version,
+  };
+}
+
 function userInitial(user: ProfileResponse) {
   return (user.nickname || user.handle || "?").charAt(0);
 }
@@ -28,6 +58,22 @@ export default function FollowListModal({
   initialTab,
   onClose,
 }: FollowListModalProps) {
+  if (!open) return null;
+  return (
+    <FollowListModalContent
+      key={`${String(userId)}:${initialTab}`}
+      userId={userId}
+      initialTab={initialTab}
+      onClose={onClose}
+    />
+  );
+}
+
+function FollowListModalContent({
+  userId,
+  initialTab,
+  onClose,
+}: Omit<FollowListModalProps, "open">) {
   const [tab, setTab] = useState<FollowListTab>(initialTab);
   const [items, setItems] = useState<ProfileResponse[]>([]);
   const [cursor, setCursor] = useState<string | null | undefined>(null);
@@ -35,9 +81,18 @@ export default function FollowListModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const [requestCommitGate] = useState(createRequestCommitGate);
+
+  useEffect(() => {
+    requestCommitGate.mount();
+    return () => requestCommitGate.unmount();
+  }, [requestCommitGate]);
 
   const loadPage = useCallback(
-    async (nextCursor?: string | null, replace = false) => {
+    async (nextCursor?: string | null, replace = false, isAlive: () => boolean = () => true) => {
+      const requestVersion = requestCommitGate.next();
+      const isCurrentRequest = () =>
+        requestCommitGate.canCommit(requestVersion) && isAlive();
       setLoading(true);
       setError(null);
       try {
@@ -46,35 +101,42 @@ export default function FollowListModal({
             ? relationService.following(userId, 20, nextCursor)
             : relationService.followers(userId, 20, nextCursor);
         const page: PageResponse<ProfileResponse> = await request;
+        if (!isCurrentRequest()) return;
         setItems((current) => (replace ? page.items : [...current, ...page.items]));
         setCursor(page.nextCursor);
         setHasMore(page.hasMore);
       } catch {
+        if (!isCurrentRequest()) return;
         if (replace) setItems([]);
         setError("列表暂时没有加载出来，稍后再试试。");
         setHasMore(false);
       } finally {
-        setLoading(false);
+        if (isCurrentRequest()) setLoading(false);
       }
     },
-    [tab, userId],
+    [requestCommitGate, tab, userId],
   );
 
   useEffect(() => {
-    if (!open) return;
-    setTab(initialTab);
-  }, [initialTab, open]);
+    let alive = true;
+    const timer = window.setTimeout(() => void loadPage(null, true, () => alive), 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [loadPage, tab]);
 
-  useEffect(() => {
-    if (!open) return;
+  const selectTab = (nextTab: FollowListTab) => {
+    if (nextTab === tab) return;
+    requestCommitGate.invalidate();
     setItems([]);
     setCursor(null);
     setHasMore(false);
-    void loadPage(null, true);
-  }, [loadPage, open, tab]);
+    setTab(nextTab);
+  };
 
   useEffect(() => {
-    if (!open || !hasMore || loading) return;
+    if (!hasMore || loading) return;
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const observer = new IntersectionObserver((entries) => {
@@ -84,18 +146,15 @@ export default function FollowListModal({
     });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [cursor, hasMore, loadPage, loading, open]);
+  }, [cursor, hasMore, loadPage, loading]);
 
   useEffect(() => {
-    if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, open]);
-
-  if (!open) return null;
+  }, [onClose]);
 
   return (
     <div className="follow-modal" role="dialog" aria-modal="true" aria-label="关注列表">
@@ -108,7 +167,7 @@ export default function FollowListModal({
               role="tab"
               aria-selected={tab === "following"}
               className={cn("follow-modal__tab", tab === "following" && "follow-modal__tab--active")}
-              onClick={() => setTab("following")}
+              onClick={() => selectTab("following")}
             >
               关注
             </button>
@@ -117,7 +176,7 @@ export default function FollowListModal({
               role="tab"
               aria-selected={tab === "followers"}
               className={cn("follow-modal__tab", tab === "followers" && "follow-modal__tab--active")}
-              onClick={() => setTab("followers")}
+              onClick={() => selectTab("followers")}
             >
               粉丝
             </button>

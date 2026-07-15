@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 /**
  * 计数事件模型。
  *
@@ -17,6 +19,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CounterEvent {
+    private String eventId;
     private String entityType;
     private String entityId;
     private String metric; // like | fav | view
@@ -31,26 +34,27 @@ public class CounterEvent {
     /** 操作用户展示信息（点赞通知用，事件源填充） */
     private String actorNickname;
     private String actorAvatar;
-    /** Optional persistent idempotency key; absent in legacy Kafka JSON. */
-    private String eventId;
 
     public CounterEvent(String entityType, String entityId, String metric, int idx, long userId, int delta) {
-        this.entityType = entityType;
-        this.entityId = entityId;
-        this.metric = metric;
-        this.idx = idx;
-        this.userId = userId;
-        this.delta = delta;
+        this(UUID.randomUUID().toString(), entityType, entityId, metric, idx, userId, delta,
+                null, null, null, null, null);
     }
 
     public static CounterEvent of(String entityType, String entityId, String metric, int idx, long userId, int delta) {
         return new CounterEvent(entityType, entityId, metric, idx, userId, delta);
     }
 
+    /** Creates a seed event with a stable ID while retaining the content-pack call shape. */
     public static CounterEvent of(
             String entityType, String entityId, String metric, int idx, long userId, int delta, String eventId) {
-        CounterEvent event = new CounterEvent(entityType, entityId, metric, idx, userId, delta);
-        event.setEventId(eventId);
-        return event;
+        return new CounterEvent(eventId, entityType, entityId, metric, idx, userId, delta,
+                null, null, null, null, null);
+    }
+
+    /** Creates an event with a stable ID for broker retry and replay. */
+    public static CounterEvent of(String eventId, String entityType, String entityId,
+                                  String metric, int idx, long userId, int delta) {
+        return new CounterEvent(eventId, entityType, entityId, metric, idx, userId, delta,
+                null, null, null, null, null);
     }
 }
