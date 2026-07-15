@@ -3,6 +3,7 @@ export type CommentItem = {
   postId: string;
   parentId: string | null;
   userId: string;
+  authorHandle: string | null;
   authorNickname: string;
   authorAvatar: string | null;
   content: string;

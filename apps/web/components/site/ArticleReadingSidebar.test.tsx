@@ -16,6 +16,7 @@ describe("ArticleReadingSidebar", () => {
         ]}
         readingMinutes={6}
         authorId="user-1"
+        authorHandle="rekyrice"
         authorNickname="Rekyrice"
         tags={["动画", "随笔"]}
         askHref="/agent?context=post"
@@ -29,7 +30,7 @@ describe("ArticleReadingSidebar", () => {
     expect(screen.getByRole("link", { name: "开始" })).toHaveAttribute("href", "#开始");
     expect(screen.getByRole("link", { name: "细节" })).toHaveAttribute("href", "#细节");
     expect(screen.getByText("约 6 分钟阅读")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Rekyrice" })).toHaveAttribute("href", "/hub?ownerId=user-1");
+    expect(screen.getByRole("link", { name: "Rekyrice" })).toHaveAttribute("href", "/user/rekyrice");
     expect(screen.getByRole("link", { name: "动画" })).toHaveAttribute("href", "/tag/%E5%8A%A8%E7%94%BB");
     expect(screen.getByRole("link", { name: "问珂朵莉" })).toHaveAttribute("href", "/agent?context=post");
     expect(screen.getByTestId("chtholly-reading-companion")).toBeInTheDocument();

@@ -12,6 +12,7 @@ type ArticleReadingSidebarProps = {
   headings: MarkdownHeading[];
   readingMinutes: number;
   authorId?: string;
+  authorHandle?: string;
   authorNickname: string;
   tags: string[];
   askHref: string;
@@ -25,6 +26,7 @@ export default function ArticleReadingSidebar({
   headings,
   readingMinutes,
   authorId,
+  authorHandle,
   authorNickname,
   tags,
   askHref,
@@ -33,7 +35,11 @@ export default function ArticleReadingSidebar({
   timeOfDay,
   compact = false,
 }: ArticleReadingSidebarProps) {
-  const authorHref = authorId ? `/hub?ownerId=${encodeURIComponent(authorId)}` : "/hub";
+  const authorHref = authorHandle
+    ? `/user/${encodeURIComponent(authorHandle)}`
+    : authorId
+      ? `/hub?ownerId=${encodeURIComponent(authorId)}`
+      : "/hub";
 
   return (
     <aside
