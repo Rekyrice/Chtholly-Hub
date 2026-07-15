@@ -8,6 +8,7 @@
   birthday: null
   school: null
   tags: [Java, Python, 排错]
+  joinedAt: 2026-02-04T12:26:00Z
   voice: null
 - seedKey: algo-runner
   legacyHandle: algo-runner
@@ -19,17 +20,19 @@
   birthday: null
   school: null
   tags: [RAG, Agent, 实验]
+  joinedAt: 2026-02-18T03:41:00Z
   voice: null
 - seedKey: anime-critic
   legacyHandle: anime-critic
   nickname: 佐仓市民A
   handle: skra7
-  bio: null
+  bio: 每周挑一两集写点东西，作画好看时会反复倒回去。
   avatarAsset: avatar-anime-critic
   gender: undisclosed
   birthday: null
   school: null
   tags: [动画, 观后感, 演出]
+  joinedAt: 2026-02-25T15:08:00Z
   voice: null
 - seedKey: design-sis
   legacyHandle: design-sis
@@ -41,6 +44,7 @@
   birthday: null
   school: null
   tags: [动画, 声音, 演出]
+  joinedAt: 2026-03-02T09:17:00Z
   voice: null
 - seedKey: moyu-master
   legacyHandle: moyu-master
@@ -52,6 +56,7 @@
   birthday: null
   school: null
   tags: [游戏, 动画, 补番]
+  joinedAt: 2026-03-08T13:52:00Z
   voice: null
 - seedKey: indie-dev
   legacyHandle: indie-dev
@@ -63,6 +68,7 @@
   birthday: null
   school: null
   tags: [OST, 动画音乐, 声优]
+  joinedAt: 2026-03-15T06:33:00Z
   voice: null
 - seedKey: book-notes
   legacyHandle: book-notes
@@ -74,15 +80,17 @@
   birthday: null
   school: null
   tags: [阅读, 页边笔记, 随笔]
+  joinedAt: 2026-02-10T11:46:00Z
   voice: null
 - seedKey: photo-walker
   legacyHandle: photo-walker
   nickname: 北口改札
   handle: ktgc24
-  bio: null
+  bio: 下班后沿着车站乱走，偶尔拍到一张能看的。
   avatarAsset: avatar-photo-walker
   gender: undisclosed
   birthday: null
   school: null
   tags: [散步, 摄影, 街道]
+  joinedAt: 2026-02-22T08:05:00Z
   voice: null

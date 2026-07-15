@@ -8,6 +8,7 @@
 | [`deploy/`](deploy/) | `ecs-bootstrap.sh`、`ecs-init-db.sh` | 单机生产 Compose 首次部署与数据库初始化 |
 | [`git-hooks/`](git-hooks/) | `prepare-commit-msg` | 可选 Git 提交信息钩子；仓库不会自动安装 |
 | [`oss/`](oss/README.md) | `upload-seed-markdown.mjs`、`upload-markdown.mjs` | 上传 Phase A 或单篇 Markdown 正文 |
+| [`seed-content/`](seed-content/) | `render-community-interaction-review.mjs` | 生成 content-v3 社区资料与互动的本地只读审阅页 |
 
 日常 Windows 开发从 Monorepo 根目录运行：
 
