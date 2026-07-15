@@ -9,6 +9,8 @@ import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.post.util.FeedCursor;
+import com.chtholly.user.model.PublicAuthorSnapshot;
+import com.chtholly.user.service.PublicAuthorQueryService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -46,6 +48,7 @@ public class PersonalPostFeedService {
     private final HotKeyDetector hotKey;
     private final FeedTimelineService feedTimelineService;
     private final FeedTimelineProperties feedTimelineProperties;
+    private final PublicAuthorQueryService publicAuthorQueryService;
 
     public PersonalPostFeedService(
             PostMapper mapper,
@@ -55,7 +58,8 @@ public class PersonalPostFeedService {
             @Qualifier("feedMineCache") Cache<String, PageResponse<FeedItemResponse>> feedMineCache,
             HotKeyDetector hotKey,
             FeedTimelineService feedTimelineService,
-            FeedTimelineProperties feedTimelineProperties
+            FeedTimelineProperties feedTimelineProperties,
+            PublicAuthorQueryService publicAuthorQueryService
     ) {
         this.mapper = mapper;
         this.redis = redis;
@@ -65,6 +69,7 @@ public class PersonalPostFeedService {
         this.hotKey = hotKey;
         this.feedTimelineService = feedTimelineService;
         this.feedTimelineProperties = feedTimelineProperties;
+        this.publicAuthorQueryService = publicAuthorQueryService;
     }
 
     private String nextCursorFromRows(List<PostFeedRow> rows) {
@@ -102,7 +107,7 @@ public class PersonalPostFeedService {
             boolean faved = uid != null && Boolean.TRUE.equals(favBatch.get(postId));
             out.add(it.withUserFlags(liked, faved));
         }
-        return out;
+        return refreshAuthors(out);
     }
 
 
@@ -169,7 +174,9 @@ public class PersonalPostFeedService {
             hotKey.record(key);
             maybeExtendTtlMine(key);
             log.info("feed.mine source=local key={} page={} size={} user={}", key, safePage, safeSize, userId);
-            return local;
+            List<FeedItemResponse> enriched = enrich(ensureMineAuthorId(local.items(), userId), userId);
+            return PageResponse.offset(enriched, local.page(), local.size(), local.total(),
+                    local.hasMore(), local.nextCursor());
         }
 
         String cached = redis.opsForValue().get(key);
@@ -185,7 +192,7 @@ public class PersonalPostFeedService {
                     hotKey.record(key);
                     maybeExtendTtlMine(key);
                     log.info("feed.mine source=page key={} page={} size={} user={}", key, safePage, safeSize, userId);
-                List<FeedItemResponse> enriched = enrich(cachedResp.items(), userId);
+                List<FeedItemResponse> enriched = enrich(ensureMineAuthorId(cachedResp.items(), userId), userId);
                 return PageResponse.offset(enriched, cachedResp.page(), cachedResp.size(), cachedResp.total(),
                         cachedResp.hasMore(), cachedResp.nextCursor());
             }
@@ -280,8 +287,11 @@ public class PersonalPostFeedService {
             if (cached != null) {
                 try {
                     List<PostFeedRow> rows = objectMapper.readValue(cached, new TypeReference<>() {});
-                    all.addAll(rows);
-                    continue;
+                    if (rows.stream().allMatch(row -> row.getAuthorId() != null)) {
+                        all.addAll(rows);
+                        continue;
+                    }
+                    log.debug("feed.following bigv cache layout miss authorId={}", authorId);
                 } catch (Exception e) {
                     log.debug("feed.following bigv cache parse miss authorId={}", authorId);
                 }
@@ -327,7 +337,65 @@ public class PersonalPostFeedService {
                     liked,
                     faved).withTop(isTop));
         }
-        return items;
+        return refreshAuthors(items);
+    }
+
+    private List<FeedItemResponse> ensureMineAuthorId(List<FeedItemResponse> items, long userId) {
+        if (items == null || items.isEmpty()) {
+            return Collections.emptyList();
+        }
+        String authorId = String.valueOf(userId);
+        return items.stream()
+                .map(item -> item.authorId() == null || item.authorId().isBlank()
+                        ? item.withAuthor(authorId, item.authorHandle(), item.authorAvatar(),
+                                item.authorNickname(), item.tagJson())
+                        : item)
+                .toList();
+    }
+
+    private List<FeedItemResponse> refreshAuthors(List<FeedItemResponse> items) {
+        if (items == null || items.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> authorIds = items.stream()
+                .map(FeedItemResponse::authorId)
+                .map(PersonalPostFeedService::parseLongOrNull)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.collectingAndThen(
+                        java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new), List::copyOf));
+        Map<Long, PublicAuthorSnapshot> authors = Map.of();
+        if (!authorIds.isEmpty()) {
+            try {
+                authors = publicAuthorQueryService.findByIds(authorIds);
+            } catch (RuntimeException exception) {
+                log.warn("Failed to refresh personal feed author profiles, authorIds={}", authorIds, exception);
+            }
+        }
+        Map<Long, PublicAuthorSnapshot> resolved = authors;
+        return items.stream().map(item -> {
+            Long authorId = parseLongOrNull(item.authorId());
+            PublicAuthorSnapshot author = authorId == null ? null : resolved.get(authorId);
+            if (author != null) {
+                return item.withAuthor(String.valueOf(author.id()), author.handle(), author.avatar(),
+                        author.nickname(), author.tagsJson());
+            }
+            if (item.authorNickname() == null || item.authorNickname().isBlank()) {
+                return item.withAuthor(item.authorId(), item.authorHandle(), item.authorAvatar(),
+                        "已注销用户", item.tagJson());
+            }
+            return item;
+        }).toList();
+    }
+
+    private static Long parseLongOrNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     /**
@@ -358,7 +426,7 @@ public class PersonalPostFeedService {
                     liked,
                     faved).withTop(null));
         }
-        return items;
+        return refreshAuthors(items);
     }
 
 
