@@ -395,14 +395,16 @@
     </select>
 
     <select id="findDetailEtagById" parameterType="long" resultType="com.chtholly.post.model.PostDetailEtagRow">
-        SELECT p.status, p.update_time AS updateTime
+        SELECT p.status, p.update_time AS updateTime, u.updated_at AS authorUpdateTime
         FROM posts p
+        JOIN users u ON u.id = p.creator_id
         WHERE p.id = #{id}
     </select>
 
     <select id="findDetailEtagBySlug" parameterType="string" resultType="com.chtholly.post.model.PostDetailEtagRow">
-        SELECT p.status, p.update_time AS updateTime
+        SELECT p.status, p.update_time AS updateTime, u.updated_at AS authorUpdateTime
         FROM posts p
+        JOIN users u ON u.id = p.creator_id
         WHERE p.slug = #{slug}
     </select>
 

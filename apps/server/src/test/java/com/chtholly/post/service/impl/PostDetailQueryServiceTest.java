@@ -4,6 +4,7 @@ import com.chtholly.cache.hotkey.HotKeyDetector;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.PostDetailEtagRow;
 import com.chtholly.user.model.PublicAuthorSnapshot;
 import com.chtholly.user.service.PublicAuthorQueryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -100,6 +101,27 @@ class PostDetailQueryServiceTest {
 
         assertThat(response.authorHandle()).isEqualTo("old-handle");
         assertThat(response.authorBio()).isEqualTo("旧简介");
+    }
+
+    @Test
+    void authorProfileUpdateChangesDetailEtagEvenWhenPostIsUnchanged() {
+        PostDetailEtagRow before = new PostDetailEtagRow();
+        before.setStatus("published");
+        before.setUpdateTime(Instant.parse("2026-07-01T00:00:00Z"));
+        before.setAuthorUpdateTime(Instant.parse("2026-07-02T00:00:00Z"));
+        PostDetailEtagRow after = new PostDetailEtagRow();
+        after.setStatus("published");
+        after.setUpdateTime(before.getUpdateTime());
+        after.setAuthorUpdateTime(Instant.parse("2026-07-03T00:00:00Z"));
+        when(mapper.findDetailEtagById(42L)).thenReturn(before, after);
+        PostDetailQueryService service = new PostDetailQueryService(
+                mapper, new ObjectMapper(), counterService, redis, Caffeine.newBuilder().build(), hotKey,
+                publicAuthorQueryService);
+
+        String oldEtag = service.computeEtag(42L);
+        String newEtag = service.computeEtag(42L);
+
+        assertThat(newEtag).isNotEqualTo(oldEtag);
     }
 
     private PostDetailResponse detail(

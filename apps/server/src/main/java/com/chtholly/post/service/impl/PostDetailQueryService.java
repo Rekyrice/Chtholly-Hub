@@ -210,8 +210,10 @@ public class PostDetailQueryService {
             throw new ResourceNotFoundException("内容不存在");
         }
         Instant updatedAt = row.getUpdateTime();
+        Instant authorUpdatedAt = row.getAuthorUpdateTime();
         return HttpCacheHelper.hashEtag(row.getStatus(), String.valueOf(LAYOUT_VERSION),
-                updatedAt != null ? updatedAt.toString() : "");
+                updatedAt != null ? updatedAt.toString() : "",
+                authorUpdatedAt != null ? authorUpdatedAt.toString() : "");
     }
 
     private void recordHotKeyAndExtendTtl(long id, String pageKey) {
