@@ -25,6 +25,7 @@ class ContentPackV3CommunityContractTest {
         pack.accounts().forEach(account -> {
             accountKeys.add(account.seedKey());
             assertThat(account.bio()).isNotBlank();
+            assertThat(account.bio().codePointCount(0, account.bio().length())).isBetween(20, 60);
             assertThat(account.tags()).hasSizeBetween(2, 4);
             assertThat(account.joinedAt()).isNotNull();
             assertThat(account.joinedAt()).isBetween(
