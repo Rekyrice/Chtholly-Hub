@@ -94,19 +94,26 @@ Write-Host "Running seed (profile=$env:SPRING_PROFILES_ACTIVE)..." -ForegroundCo
 $logFile = Join-Path $RepoRoot "apps/server/target/seed-run.log"
 $errorLogFile = Join-Path $RepoRoot "apps/server/target/seed-run.err.log"
 
-$applicationArguments = "--seed.mode=$Mode --spring.main.web-application-type=none"
+$applicationArguments = "--seed.mode=$Mode --spring.main.web-application-type=none --spring.main.lazy-initialization=true"
 if ($DryRun) {
     $applicationArguments += " --seed.dry-run=true"
-}
-if ($isContentPack) {
-    # Content-pack jobs do not start a servlet container; defer unrelated web beans such as WebSocket setup.
-    $applicationArguments += " --spring.main.lazy-initialization=true"
 }
 if ($isContentPack -and $DryRun) {
     $applicationArguments += " --seed.cli-read-only=true --kafka.enabled=false --canal.enabled=false"
     $applicationArguments += " --bangumi.enabled=false"
 }
 $bootRunProperty = "-Dspring-boot.run.arguments=`"$applicationArguments`""
+
+function Stop-SeedProcessTree {
+    param([System.Diagnostics.Process]$Process)
+    if ($null -eq $Process) { return }
+    try { $Process.Refresh() } catch { return }
+    if ($Process.HasExited) { return }
+    & taskkill.exe /PID $Process.Id /T /F 2>$null | Out-Null
+    if (-not $Process.HasExited) {
+        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+    }
+}
 
 $proc = Start-Process -FilePath "mvn" `
     -ArgumentList @("spring-boot:run", "-Dmaven.test.skip=true", $bootRunProperty) `
@@ -116,7 +123,7 @@ $proc = Start-Process -FilePath "mvn" `
     -PassThru `
     -NoNewWindow
 
-$timeoutMinutes = if ($Mode -eq "content_only" -or $Mode -eq "content-only" -or $isContentPack) { 20 } else { 8 }
+$timeoutMinutes = if ($Mode -eq "full" -or $Mode -eq "content_only" -or $Mode -eq "content-only" -or $isContentPack) { 20 } else { 8 }
 $deadline = (Get-Date).AddMinutes($timeoutMinutes)
 $finished = $false
 $contentPackReport = $null
@@ -131,7 +138,7 @@ while ((Get-Date) -lt $deadline) {
                 break
             } catch {
                 Write-Host "Seed returned malformed content-pack report JSON. See $logFile" -ForegroundColor Red
-                if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+                Stop-SeedProcessTree $proc
                 exit 1
             }
         }
@@ -141,7 +148,7 @@ while ((Get-Date) -lt $deadline) {
         }
         if ($tail -match "APPLICATION FAILED TO START") {
             Write-Host "Seed startup failed. See $logFile" -ForegroundColor Red
-            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+            Stop-SeedProcessTree $proc
             exit 1
         }
     }
@@ -149,9 +156,7 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 2
 }
 
-if (-not $proc.HasExited) {
-    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-}
+Stop-SeedProcessTree $proc
 
 if (-not $finished) {
     Write-Host "Seed did not produce a completion report. See $logFile" -ForegroundColor Red
