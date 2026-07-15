@@ -139,25 +139,34 @@ public class ContentPackDatabaseWriter {
             ContentPackIdentityResolver resolver) {
         Map<String, Long> accountIds = new LinkedHashMap<>();
         for (SeedAccountDefinition account : pack.accounts()) {
+            SeedContentIdentity before = mapper.findIdentity(namespace, ACCOUNT, account.seedKey());
             long id = resolver.resolveAccountId(account, version);
             PublishedAsset avatar = requireAsset(published, account.avatarAsset(), "avatar for " + account.seedKey());
-            Instant updatedAt = Instant.now();
-            Instant createdAt = account.joinedAt() == null ? updatedAt : account.joinedAt();
-            SeedUserRow row = new SeedUserRow(
-                    id, seedEmail(account), account.nickname(), avatar.publicUrl(), account.bio(), account.handle(),
-                    account.gender(), account.birthday(), account.school(), json(account.tags()), createdAt, updatedAt);
-            if (mapper.seedUserExistsById(id)) {
-                mapper.updateSeedUserById(row);
-            } else {
-                mapper.insertSeedUser(row);
-            }
             Map<String, Object> publicState = new LinkedHashMap<>();
             publicState.put("nickname", account.nickname());
             publicState.put("handle", account.handle());
             publicState.put("bio", account.bio());
             publicState.put("avatar", avatar.sha256());
             publicState.put("tags", account.tags());
-            updateIdentityHash(namespace, ACCOUNT, account.seedKey(), version, sha256(json(publicState)), "{}");
+            publicState.put("joinedAt", account.joinedAt());
+            String contentHash = sha256(json(publicState));
+            boolean exists = mapper.seedUserExistsById(id);
+            if (exists && before != null && contentHash.equals(before.contentHash())) {
+                updateIdentityHash(namespace, ACCOUNT, account.seedKey(), version, contentHash, "{}");
+                accountIds.put(account.seedKey(), id);
+                continue;
+            }
+            Instant updatedAt = Instant.now();
+            Instant createdAt = account.joinedAt() == null ? updatedAt : account.joinedAt();
+            SeedUserRow row = new SeedUserRow(
+                    id, seedEmail(account), account.nickname(), avatar.publicUrl(), account.bio(), account.handle(),
+                    account.gender(), account.birthday(), account.school(), json(account.tags()), createdAt, updatedAt);
+            if (exists) {
+                mapper.updateSeedUserById(row);
+            } else {
+                mapper.insertSeedUser(row);
+            }
+            updateIdentityHash(namespace, ACCOUNT, account.seedKey(), version, contentHash, "{}");
             accountIds.put(account.seedKey(), id);
         }
         return accountIds;

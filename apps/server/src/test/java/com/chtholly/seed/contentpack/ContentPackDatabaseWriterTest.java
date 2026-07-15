@@ -41,6 +41,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -49,6 +50,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -301,6 +303,37 @@ class ContentPackDatabaseWriterTest {
         assertThat(row.getValue().createdAt()).isEqualTo(joinedAt);
         String xml = Files.readString(Path.of("src/main/resources/mapper/ContentPackMapper.xml"));
         assertThat(xml).contains("#{createdAt}, #{updatedAt}");
+    }
+
+    @Test
+    void givenSameAccountManifestTwice_whenWrite_thenSecondRunDoesNotDriftUserTimestamps() {
+        SeedAccountDefinition original = account("author");
+        SeedAccountDefinition stable = new SeedAccountDefinition(
+                original.seedKey(), original.legacyHandle(), original.nickname(), original.handle(), original.bio(),
+                original.avatarAsset(), original.gender(), original.birthday(), original.school(), original.tags(),
+                Instant.parse("2026-03-12T08:30:00Z"), original.voice());
+        AtomicReference<SeedContentIdentity> identity = new AtomicReference<>(
+                new SeedContentIdentity(NAMESPACE, "ACCOUNT", "author", 42L, VERSION, null, null));
+        when(mapper.findIdentity(NAMESPACE, "ACCOUNT", "author")).thenAnswer(ignored -> identity.get());
+        when(mapper.seedUserExistsById(42L)).thenReturn(true);
+        when(mapper.updateIdentityHash(eq(NAMESPACE), eq("ACCOUNT"), eq("author"), eq(VERSION), any(), any()))
+                .thenAnswer(invocation -> {
+                    identity.set(new SeedContentIdentity(
+                            NAMESPACE, "ACCOUNT", "author", 42L, VERSION, invocation.getArgument(4), "{}"));
+                    return 1;
+                });
+        ContentPack pack = pack(List.of(stable), List.of(), List.of(), List.of());
+
+        writer.write(pack, emptyPublished());
+        ArgumentCaptor<SeedUserRow> firstWrite = ArgumentCaptor.forClass(SeedUserRow.class);
+        verify(mapper).updateSeedUserById(firstWrite.capture());
+        assertThat(firstWrite.getValue().createdAt()).isEqualTo(stable.joinedAt());
+        clearInvocations(mapper);
+
+        writer.write(pack, emptyPublished());
+
+        verify(mapper, never()).updateSeedUserById(any());
+        verify(mapper, never()).insertSeedUser(any());
     }
 
     @Test

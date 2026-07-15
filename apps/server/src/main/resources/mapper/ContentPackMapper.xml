@@ -130,6 +130,7 @@
             birthday = #{birthday},
             school = #{school},
             tags_json = #{tagsJson},
+            created_at = #{createdAt},
             updated_at = #{updatedAt}
         WHERE id = #{id}
     </update>
