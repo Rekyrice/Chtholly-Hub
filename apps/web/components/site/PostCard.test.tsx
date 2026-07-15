@@ -23,4 +23,24 @@ describe("PostCard", () => {
     expect(container.querySelector("img[src=x]")).not.toBeInTheDocument();
     expect(container.querySelector("em")).not.toBeInTheDocument();
   });
+
+  it("shows the publication date in the article metadata", () => {
+    const post: FeedItem = {
+      id: "post-2",
+      slug: "dated-post",
+      title: "Dated post",
+      description: "Summary",
+      tags: [],
+      authorNickname: "Author",
+      publishTime: "2026-07-13T08:30:00Z",
+    };
+
+    const { container } = render(<PostCard post={post} />);
+
+    expect(container.querySelector("time")).toHaveAttribute(
+      "dateTime",
+      post.publishTime,
+    );
+    expect(container.querySelector("time")).not.toBeEmptyDOMElement();
+  });
 });
