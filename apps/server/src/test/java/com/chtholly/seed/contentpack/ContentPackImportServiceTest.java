@@ -79,8 +79,21 @@ class ContentPackImportServiceTest {
         ContentPackImportReport report = service.run(root, true);
 
         assertThat(report.status()).isEqualTo("validated");
-        verifyNoInteractions(snapshotWriter, mediaPublisher, databaseWriter, reactionApplier,
+        verify(databaseWriter).validateExternalPostReferences(pack);
+        verifyNoInteractions(snapshotWriter, mediaPublisher, reactionApplier,
                 userCounterService, cacheInvalidator, searchIndexService, redisson);
+    }
+
+    @Test
+    void givenInvalidExternalPostReference_whenDryRun_thenFailsBeforeSnapshotAndMedia() {
+        doThrow(new IllegalArgumentException("missing site-owner public post: missing"))
+                .when(databaseWriter).validateExternalPostReferences(pack);
+
+        ContentPackImportReport report = service.run(root, true);
+
+        assertThat(report.status()).isEqualTo("failed");
+        assertThat(report.failedStage()).isEqualTo("external-target");
+        verifyNoInteractions(snapshotWriter, mediaPublisher, reactionApplier, redisson);
     }
 
     @Test
@@ -90,7 +103,8 @@ class ContentPackImportServiceTest {
         ContentPackImportReport report = service.run(root, true);
 
         assertThat(report.status()).isEqualTo("validated");
-        verifyNoInteractions(redisson, snapshotWriter, mediaPublisher, databaseWriter);
+        verify(databaseWriter).validateExternalPostReferences(org.mockito.ArgumentMatchers.any());
+        verifyNoInteractions(redisson, snapshotWriter, mediaPublisher);
     }
 
     @Test
@@ -114,7 +128,9 @@ class ContentPackImportServiceTest {
 
         assertThat(report.status()).isEqualTo("failed");
         assertThat(report.failedStage()).isEqualTo("manifest-stage");
-        verifyNoInteractions(snapshotWriter, mediaPublisher, databaseWriter);
+        verify(databaseWriter).validateExternalPostReferences(org.mockito.ArgumentMatchers.any());
+        verify(databaseWriter, never()).write(any(), any());
+        verifyNoInteractions(snapshotWriter, mediaPublisher);
     }
 
     @Test
@@ -136,7 +152,8 @@ class ContentPackImportServiceTest {
 
         assertThat(report.status()).isEqualTo("failed");
         assertThat(report.failedStage()).isEqualTo("media");
-        verifyNoInteractions(databaseWriter);
+        verify(databaseWriter).validateExternalPostReferences(pack);
+        verify(databaseWriter, never()).write(any(), any());
     }
 
     @Test
@@ -147,7 +164,9 @@ class ContentPackImportServiceTest {
 
         assertThat(report.status()).isEqualTo("failed");
         assertThat(report.failedStage()).isEqualTo("snapshot");
-        verifyNoInteractions(mediaPublisher, databaseWriter);
+        verify(databaseWriter).validateExternalPostReferences(pack);
+        verify(databaseWriter, never()).write(any(), any());
+        verifyNoInteractions(mediaPublisher);
         verify(lock).unlock();
     }
 

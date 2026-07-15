@@ -116,6 +116,16 @@ public class ContentPackDatabaseWriter {
                 retirements.unmatchedSlugs());
     }
 
+    /**
+     * Resolves every external interaction target through the same owner/public boundary as a formal import.
+     * This read-only gate is used by dry-run; formal writes resolve again inside their transaction.
+     */
+    @Transactional(readOnly = true)
+    public void validateExternalPostReferences(ContentPack pack) {
+        Objects.requireNonNull(pack, "pack");
+        resolveExternalPostIds(pack);
+    }
+
     private void requireValidReservedIdentities(ContentPack pack) {
         for (SeedAccountDefinition account : pack.accounts()) {
             if (ContentPackValidator.SITE_OWNER_AUTHOR.equals(account.seedKey())) {

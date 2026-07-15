@@ -132,6 +132,12 @@ public final class ContentPackImportService {
         if (!quality.errors().isEmpty()) {
             return failed(pack, "quality", validation, quality, null);
         }
+        try {
+            databaseWriter.validateExternalPostReferences(pack);
+        } catch (RuntimeException exception) {
+            log.warn("Content-pack external target validation failed: {}", exception.getMessage());
+            return failed(pack, "external-target", validation, quality, null);
+        }
         if (dryRun) {
             return report("validated", null, pack, null, null,
                     List.of(), List.of(), List.of(), validation, quality);
