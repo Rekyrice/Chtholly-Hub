@@ -163,7 +163,7 @@
   .hub-recommendation__slide {
     display: grid;
     grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
-    min-height: 310px;
+    block-size: 310px;
     overflow: hidden;
     border-radius: 12px;
     color: var(--color-text);
@@ -173,7 +173,8 @@
 
   .hub-recommendation__image {
     position: relative;
-    min-height: 310px;
+    min-height: 0;
+    block-size: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -199,6 +200,8 @@
     display: grid;
     align-content: center;
     gap: 12px;
+    min-height: 0;
+    overflow: hidden;
     padding: 28px;
   }
 
@@ -225,19 +228,27 @@
   }
 
   .hub-recommendation__content h3 {
+    display: -webkit-box;
+    overflow: hidden;
     margin: 0;
     color: var(--color-text);
     font-size: clamp(24px, 4vw, 38px);
     font-weight: 700;
     line-height: 1.18;
     letter-spacing: 0;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .hub-recommendation__quote {
+    display: -webkit-box;
+    overflow: hidden;
     margin: 0;
     color: var(--color-text-secondary);
     font-size: 0.98rem;
     line-height: 1.8;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
   }
 
   .hub-recommendation__controls {
@@ -482,11 +493,12 @@
     }
 
     .hub-recommendation__slide {
-      min-height: 0;
+      grid-template-rows: 260px minmax(0, 1fr);
+      block-size: 520px;
     }
 
     .hub-recommendation__image {
-      min-height: 260px;
+      min-height: 0;
     }
 
     .hub-recommendation__controls {
@@ -511,7 +523,12 @@
     }
 
     .hub-recommendation__image {
-      min-height: 210px;
+      min-height: 0;
+    }
+
+    .hub-recommendation__slide {
+      grid-template-rows: 210px minmax(0, 1fr);
+      block-size: 460px;
     }
 
     .hub-recommendation__content {
