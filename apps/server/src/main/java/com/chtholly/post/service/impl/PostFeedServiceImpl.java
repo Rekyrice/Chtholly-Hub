@@ -12,6 +12,8 @@ import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.util.FeedCursor;
+import com.chtholly.user.model.PublicAuthorSnapshot;
+import com.chtholly.user.service.PublicAuthorQueryService;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.chtholly.cache.singleflight.SingleFlightLockRegistry;
 import com.chtholly.cache.hotkey.HotKeyDetector;
@@ -30,6 +32,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,9 +61,10 @@ public class PostFeedServiceImpl implements PostFeedService {
     private final Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     private final HotKeyDetector hotKey;
     private final PersonalPostFeedService personalFeedService;
+    private final PublicAuthorQueryService publicAuthorQueryService;
     private static final Logger log = LoggerFactory.getLogger(PostFeedServiceImpl.class);
     private static final String FEED_PUBLIC_PAGES_KEY = "feed:public:pages";
-    private static final int LAYOUT_VER = 2;
+    private static final int LAYOUT_VER = 3;
     private final SingleFlightLockRegistry singleFlight = new SingleFlightLockRegistry();
 
     /**
@@ -81,7 +85,8 @@ public class PostFeedServiceImpl implements PostFeedService {
             CounterService counterService,
             @Qualifier("feedPublicCache") Cache<String, PageResponse<FeedItemResponse>> feedPublicCache,
             HotKeyDetector hotKey,
-            PersonalPostFeedService personalFeedService
+            PersonalPostFeedService personalFeedService,
+            PublicAuthorQueryService publicAuthorQueryService
     ) {
         this.mapper = mapper;
         this.redis = redis;
@@ -90,6 +95,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         this.feedPublicCache = feedPublicCache;
         this.hotKey = hotKey;
         this.personalFeedService = personalFeedService;
+        this.publicAuthorQueryService = publicAuthorQueryService;
     }
 
     /**
@@ -400,14 +406,49 @@ public class PostFeedServiceImpl implements PostFeedService {
             favBatch = counterService.batchIsFaved(uid, postIds);
         }
 
+        Map<Long, PublicAuthorSnapshot> authors = Map.of();
+        List<Long> authorIds = base.stream()
+                .map(FeedItemResponse::authorId)
+                .map(PostFeedServiceImpl::parseLongOrNull)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.collectingAndThen(
+                        java.util.stream.Collectors.toCollection(LinkedHashSet::new),
+                        List::copyOf));
+        if (!authorIds.isEmpty()) {
+            try {
+                authors = publicAuthorQueryService.findByIds(authorIds);
+            } catch (RuntimeException e) {
+                log.warn("Failed to refresh feed author profiles, authorIds={}", authorIds, e);
+            }
+        }
+
         List<FeedItemResponse> out = new ArrayList<>(base.size());
         for (FeedItemResponse it : base) {
             long postId = Long.parseLong(it.id());
             boolean liked = uid != null && Boolean.TRUE.equals(likedBatch.get(postId));
             boolean faved = uid != null && Boolean.TRUE.equals(favBatch.get(postId));
-            out.add(it.withUserFlags(liked, faved));
+            FeedItemResponse enriched = it.withUserFlags(liked, faved);
+            Long authorId = parseLongOrNull(it.authorId());
+            PublicAuthorSnapshot author = authorId == null ? null : authors.get(authorId);
+            if (author != null) {
+                enriched = enriched.withAuthor(
+                        String.valueOf(author.id()), author.handle(), author.avatar(), author.nickname(), author.tagsJson());
+            } else if (enriched.authorNickname() == null || enriched.authorNickname().isBlank()) {
+                enriched = enriched.withAuthor(enriched.authorId(), enriched.authorHandle(), enriched.authorAvatar(),
+                        "已注销用户", enriched.tagJson());
+            }
+            out.add(enriched);
         }
         return out;
+    }
+
+    private static Long parseLongOrNull(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     /**
@@ -449,7 +490,11 @@ public class PostFeedServiceImpl implements PostFeedService {
             }
 
             try {
-                items.add(objectMapper.readValue(itemJson, FeedItemResponse.class));
+                FeedItemResponse item = objectMapper.readValue(itemJson, FeedItemResponse.class);
+                if (item.authorId() == null || item.authorId().isBlank()) {
+                    return null;
+                }
+                items.add(item);
             } catch (Exception e) {
                 return null;
             }
