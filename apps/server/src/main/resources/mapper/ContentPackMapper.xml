@@ -79,6 +79,16 @@
         LIMIT 1
     </select>
 
+    <select id="findSiteOwnerPublicPostIdBySlug" resultType="java.lang.Long">
+        SELECT id
+        FROM posts
+        WHERE slug = #{slug}
+          AND creator_id = #{ownerUserId}
+          AND status = 'published'
+          AND visible = 'public'
+        LIMIT 1
+    </select>
+
     <insert id="upsertIdentity">
         INSERT INTO seed_content_identity (
             namespace, entity_type, seed_key, entity_id, pack_version,
@@ -134,7 +144,7 @@
             tags_json, role, created_at, updated_at
         ) VALUES (
             #{id}, #{email}, #{nickname}, #{avatar}, #{bio}, #{handle}, #{gender},
-            #{birthday}, #{school}, #{tagsJson}, 'USER', #{updatedAt}, #{updatedAt}
+            #{birthday}, #{school}, #{tagsJson}, 'USER', #{createdAt}, #{updatedAt}
         )
     </insert>
 

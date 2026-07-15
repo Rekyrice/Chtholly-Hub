@@ -264,6 +264,46 @@ class ContentPackDatabaseWriterTest {
     }
 
     @Test
+    void givenCommentOnOwnerPublicPost_whenWrite_thenResolvesSlugAndPersistsExternalPostId() {
+        stubAccount("author", 42L);
+        when(mapper.findSiteOwnerPublicPostIdBySlug("owner-note", 1L)).thenReturn(808L);
+        when(mapper.findIdentity(NAMESPACE, "COMMENT", "external-comment")).thenReturn(null);
+        when(idGenerator.nextId()).thenReturn(701L);
+        SeedCommentDefinition comment = new SeedCommentDefinition(
+                "external-comment", null, null, "owner-note", "author", null, "看完又翻回去读了一遍。",
+                Instant.parse("2026-07-10T00:00:00Z"));
+
+        WriteResult result = writer.write(
+                pack(List.of(account("author")), List.of(), List.of(comment), List.of()), emptyPublished());
+
+        ArgumentCaptor<SeedCommentRow> row = ArgumentCaptor.forClass(SeedCommentRow.class);
+        verify(mapper).upsertSeedComment(row.capture());
+        assertThat(row.getValue().postId()).isEqualTo(808L);
+        assertThat(result.identities().externalPostIdsBySlug()).containsEntry("owner-note", 808L);
+    }
+
+    @Test
+    void givenStableJoinedAt_whenWritingAccount_thenCarriesItToInsertRowAndMapperXml() throws Exception {
+        Instant joinedAt = Instant.parse("2026-03-12T08:30:00Z");
+        SeedAccountDefinition original = account("author");
+        SeedAccountDefinition account = new SeedAccountDefinition(
+                original.seedKey(), original.legacyHandle(), original.nickname(), original.handle(), original.bio(),
+                original.avatarAsset(), original.gender(), original.birthday(), original.school(), original.tags(),
+                joinedAt, original.voice());
+        when(mapper.findIdentity(NAMESPACE, "ACCOUNT", "author")).thenReturn(null);
+        when(mapper.findLegacyUserId("author-old@seed.chtholly.invalid")).thenReturn(null);
+        when(idGenerator.nextId()).thenReturn(42L);
+
+        writer.write(pack(List.of(account), List.of(), List.of(), List.of()), emptyPublished());
+
+        ArgumentCaptor<SeedUserRow> row = ArgumentCaptor.forClass(SeedUserRow.class);
+        verify(mapper).insertSeedUser(row.capture());
+        assertThat(row.getValue().createdAt()).isEqualTo(joinedAt);
+        String xml = Files.readString(Path.of("src/main/resources/mapper/ContentPackMapper.xml"));
+        assertThat(xml).contains("#{createdAt}, #{updatedAt}");
+    }
+
+    @Test
     void givenDeclaredFollow_whenWrite_thenUpsertsBothSidesAndDeactivatesOnlySeedPairs() {
         stubAccount("author", 42L);
         stubAccount("reader", 43L);

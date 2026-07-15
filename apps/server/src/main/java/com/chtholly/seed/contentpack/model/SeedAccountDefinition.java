@@ -1,6 +1,7 @@
 package com.chtholly.seed.contentpack.model;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -17,6 +18,7 @@ public record SeedAccountDefinition(
         LocalDate birthday,
         String school,
         List<String> tags,
+        Instant joinedAt,
         AuthorVoice voice) {
 
     /**
@@ -24,6 +26,22 @@ public record SeedAccountDefinition(
      */
     public SeedAccountDefinition {
         tags = List.copyOf(tags);
+    }
+
+    /** Creates an account from legacy packs that did not declare a stable join time. */
+    public SeedAccountDefinition(
+            String seedKey,
+            String legacyHandle,
+            String nickname,
+            String handle,
+            String bio,
+            String avatarAsset,
+            String gender,
+            LocalDate birthday,
+            String school,
+            List<String> tags,
+            AuthorVoice voice) {
+        this(seedKey, legacyHandle, nickname, handle, bio, avatarAsset, gender, birthday, school, tags, null, voice);
     }
 
     /**

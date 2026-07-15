@@ -320,6 +320,53 @@ class ContentPackValidatorTest {
     }
 
     @Test
+    void acceptsExactlyOneInteractionPostReferenceAndRejectsAmbiguousReferences() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedCommentDefinition externalComment = new SeedCommentDefinition(
+                "external-comment", null, null, "owner-post", loaded.accounts().getFirst().seedKey(), null,
+                "这条评论引用站长已有的公开文章。", Instant.parse("2026-07-10T00:00:00Z"));
+        SeedReactionDefinition ambiguousReaction = new SeedReactionDefinition(
+                "ambiguous-reaction", loaded.posts().getFirst().seedKey(), "owner-post",
+                loaded.accounts().getFirst().seedKey(), "like");
+        SeedViewDefinition missingReference = new SeedViewDefinition("missing-reference", null, null, 20L);
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), List.of(externalComment), loaded.follows(), List.of(ambiguousReaction),
+                List.of(missingReference));
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains(
+                "interaction post reference must use exactly one of postSeedKey or postSlug: ambiguous-reaction"));
+        assertTrue(exception.getMessage().contains(
+                "interaction post reference must use exactly one of postSeedKey or postSlug: missing-reference"));
+        assertTrue(!exception.getMessage().contains("missing comment post: external-comment"));
+    }
+
+    @Test
+    void contentV3RequiresCompleteCommunityAccountProfiles() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedAccountDefinition original = loaded.accounts().getFirst();
+        SeedAccountDefinition incomplete = new SeedAccountDefinition(
+                original.seedKey(), original.legacyHandle(), original.nickname(), original.handle(), " ",
+                original.avatarAsset(), original.gender(), original.birthday(), original.school(), List.of("动漫"),
+                null, original.voice());
+        ContentPack pack = new ContentPack(
+                loaded.root(), new ContentPackManifest("content-v3", loaded.manifest().namespace(), "review", 1,
+                loaded.posts().size(), loaded.manifest().expectedCategories()), List.of(incomplete), loaded.assets(),
+                loaded.sources(), loaded.posts(), loaded.retirements(), loaded.comments(), loaded.follows(),
+                loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("missing account bio: " + incomplete.seedKey()));
+        assertTrue(exception.getMessage().contains("account tags must contain 2 to 4 values: " + incomplete.seedKey()));
+        assertTrue(exception.getMessage().contains("missing account joinedAt: " + incomplete.seedKey()));
+    }
+
+    @Test
     void contentV3RequiresKnownStructuredSourceForEveryPost() throws Exception {
         ContentPack loaded = loader.load(fixtureRoot("valid"));
         SeedPostDefinition original = loaded.posts().getFirst();

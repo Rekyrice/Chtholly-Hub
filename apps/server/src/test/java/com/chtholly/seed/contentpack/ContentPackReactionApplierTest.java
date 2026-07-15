@@ -73,6 +73,18 @@ class ContentPackReactionApplierTest {
     }
 
     @Test
+    void givenOwnerPublicPostSlug_whenApply_thenUsesResolvedExternalPostId() {
+        ResolvedIdentities withOwnerPost = new ResolvedIdentities(
+                identities.namespace(), identities.accountIds(), identities.postIds(), Map.of("owner-note", 808L));
+        SeedReactionDefinition reaction = new SeedReactionDefinition(
+                "owner-like", null, "owner-note", "reader", "like");
+
+        applier.apply(List.of(reaction), List.of(), withOwnerPost);
+
+        verify(counterService).like("post", "808", 43L);
+    }
+
+    @Test
     void givenObsoleteSeedReaction_whenApply_thenRemovesOnlySeedAccountFacts() {
         when(counterService.isLiked("post", "99", 42L)).thenReturn(true);
         when(counterService.isLiked("post", "99", 43L)).thenReturn(false);

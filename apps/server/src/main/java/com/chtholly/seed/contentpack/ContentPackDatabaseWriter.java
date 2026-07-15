@@ -99,14 +99,16 @@ public class ContentPackDatabaseWriter {
             throw new IllegalArgumentException("published namespace does not match content pack");
         }
 
+        Map<String, Long> externalPostIdsBySlug = resolveExternalPostIds(pack);
+
         ContentPackIdentityResolver resolver = new ContentPackIdentityResolver(namespace, mapper, idGenerator);
         Map<String, Long> accountIds = writeAccounts(pack, published, namespace, version, resolver);
         PostWriteState posts = writePosts(pack, published, accountIds, namespace, version, resolver);
         RetirementWriteState retirements = retirePosts(pack, Set.copyOf(posts.postIds().values()));
-        writeComments(pack, accountIds, posts.postIds(), namespace, version);
+        writeComments(pack, accountIds, posts.postIds(), externalPostIdsBySlug, namespace, version);
         writeFollows(pack, accountIds, namespace, version);
         return new WriteResult(
-                new ResolvedIdentities(namespace, accountIds, posts.postIds()),
+                new ResolvedIdentities(namespace, accountIds, posts.postIds(), externalPostIdsBySlug),
                 posts.changedPostIds(),
                 posts.createdPostCountsByAuthor(),
                 retirements.retiredPostIds(),
@@ -139,9 +141,11 @@ public class ContentPackDatabaseWriter {
         for (SeedAccountDefinition account : pack.accounts()) {
             long id = resolver.resolveAccountId(account, version);
             PublishedAsset avatar = requireAsset(published, account.avatarAsset(), "avatar for " + account.seedKey());
+            Instant updatedAt = Instant.now();
+            Instant createdAt = account.joinedAt() == null ? updatedAt : account.joinedAt();
             SeedUserRow row = new SeedUserRow(
                     id, seedEmail(account), account.nickname(), avatar.publicUrl(), account.bio(), account.handle(),
-                    account.gender(), account.birthday(), account.school(), json(account.tags()), Instant.now());
+                    account.gender(), account.birthday(), account.school(), json(account.tags()), createdAt, updatedAt);
             if (mapper.seedUserExistsById(id)) {
                 mapper.updateSeedUserById(row);
             } else {
@@ -277,12 +281,14 @@ public class ContentPackDatabaseWriter {
             ContentPack pack,
             Map<String, Long> accountIds,
             Map<String, Long> postIds,
+            Map<String, Long> externalPostIdsBySlug,
             String namespace,
             String version) {
         Map<String, Long> commentIds = new LinkedHashMap<>();
         for (SeedCommentDefinition comment : pack.comments()) {
             SeedContentIdentity existing = mapper.findIdentity(namespace, COMMENT, comment.seedKey());
-            long postId = requireIdentity(postIds, comment.postSeedKey(), "comment post");
+            long postId = resolveInteractionPostId(
+                    comment.postSeedKey(), comment.postSlug(), postIds, externalPostIdsBySlug, "comment post");
             long authorId = requireIdentity(accountIds, comment.authorSeedKey(), "comment author");
             long commentId;
             if (existing != null) {
@@ -305,7 +311,8 @@ public class ContentPackDatabaseWriter {
             Long parentId = comment.parentSeedKey() == null
                     ? null
                     : requireIdentity(commentIds, comment.parentSeedKey(), "comment parent");
-            long postId = requireIdentity(postIds, comment.postSeedKey(), "comment post");
+            long postId = resolveInteractionPostId(
+                    comment.postSeedKey(), comment.postSlug(), postIds, externalPostIdsBySlug, "comment post");
             long authorId = requireIdentity(accountIds, comment.authorSeedKey(), "comment author");
             mapper.upsertSeedComment(new SeedCommentRow(
                     id, postId, parentId, authorId, comment.content(), comment.createdAt()));
@@ -456,6 +463,44 @@ public class ContentPackDatabaseWriter {
         return value;
     }
 
+    private Map<String, Long> resolveExternalPostIds(ContentPack pack) {
+        Set<String> slugs = new LinkedHashSet<>();
+        pack.comments().forEach(comment -> addExternalSlug(slugs, comment.postSlug()));
+        pack.reactions().forEach(reaction -> addExternalSlug(slugs, reaction.postSlug()));
+        pack.views().forEach(view -> addExternalSlug(slugs, view.postSlug()));
+        if (slugs.isEmpty()) {
+            return Map.of();
+        }
+        long ownerUserId = requireSiteOwnerUserId();
+        Map<String, Long> resolved = new LinkedHashMap<>();
+        for (String slug : slugs) {
+            Long postId = mapper.findSiteOwnerPublicPostIdBySlug(slug, ownerUserId);
+            if (postId == null || postId <= 0) {
+                throw new IllegalArgumentException("missing site-owner public post: " + slug);
+            }
+            resolved.put(slug, postId);
+        }
+        return Collections.unmodifiableMap(resolved);
+    }
+
+    private static void addExternalSlug(Set<String> slugs, String slug) {
+        if (slug != null && !slug.isBlank()) {
+            slugs.add(slug);
+        }
+    }
+
+    private static long resolveInteractionPostId(
+            String postSeedKey,
+            String postSlug,
+            Map<String, Long> postIds,
+            Map<String, Long> externalPostIdsBySlug,
+            String field) {
+        if (postSeedKey != null && !postSeedKey.isBlank()) {
+            return requireIdentity(postIds, postSeedKey, field);
+        }
+        return requireIdentity(externalPostIdsBySlug, postSlug, field);
+    }
+
     private static String requireText(String value, String field) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(field + " must not be blank");
@@ -503,7 +548,8 @@ public class ContentPackDatabaseWriter {
     /** Immutable account mutation row. */
     public record SeedUserRow(
             long id, String email, String nickname, String avatar, String bio, String handle,
-            String gender, java.time.LocalDate birthday, String school, String tagsJson, Instant updatedAt) {
+            String gender, java.time.LocalDate birthday, String school, String tagsJson,
+            Instant createdAt, Instant updatedAt) {
     }
 
     /** Immutable published post mutation row. */
@@ -528,11 +574,20 @@ public class ContentPackDatabaseWriter {
 
     /** Stable account and post IDs consumed by post-commit runtime-state reconciliation. */
     public record ResolvedIdentities(
-            String namespace, Map<String, Long> accountIds, Map<String, Long> postIds) {
+            String namespace,
+            Map<String, Long> accountIds,
+            Map<String, Long> postIds,
+            Map<String, Long> externalPostIdsBySlug) {
         public ResolvedIdentities {
             namespace = requireText(namespace, "identity namespace");
             accountIds = Collections.unmodifiableMap(new LinkedHashMap<>(accountIds));
             postIds = Collections.unmodifiableMap(new LinkedHashMap<>(postIds));
+            externalPostIdsBySlug = Collections.unmodifiableMap(new LinkedHashMap<>(externalPostIdsBySlug));
+        }
+
+        /** Creates legacy identities that do not include existing site-owner posts. */
+        public ResolvedIdentities(String namespace, Map<String, Long> accountIds, Map<String, Long> postIds) {
+            this(namespace, accountIds, postIds, Map.of());
         }
     }
 

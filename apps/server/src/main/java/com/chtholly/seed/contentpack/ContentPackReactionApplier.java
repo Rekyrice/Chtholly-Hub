@@ -95,7 +95,8 @@ public final class ContentPackReactionApplier {
         Set<ReactionFact> declaredLikes = new HashSet<>();
         Set<ReactionFact> declaredFavs = new HashSet<>();
         for (SeedReactionDefinition reaction : reactions) {
-            long postId = identities.postIds().get(reaction.postSeedKey());
+            long postId = resolvePostId(
+                    identities, reaction.postSeedKey(), reaction.postSlug(), "reaction post");
             long accountId = identities.accountIds().get(reaction.accountSeedKey());
             ReactionFact fact = new ReactionFact(accountId, postId);
             switch (reaction.type()) {
@@ -124,11 +125,11 @@ public final class ContentPackReactionApplier {
             if (!"like".equals(reaction.type()) && !"fav".equals(reaction.type())) {
                 throw new IllegalArgumentException("Unsupported reaction: " + reaction.type());
             }
-            requireId(identities.postIds(), reaction.postSeedKey(), "reaction post");
+            resolvePostId(identities, reaction.postSeedKey(), reaction.postSlug(), "reaction post");
             requireId(identities.accountIds(), reaction.accountSeedKey(), "reaction account");
         }
         for (SeedViewDefinition view : views) {
-            requireId(identities.postIds(), view.postSeedKey(), "view post");
+            resolvePostId(identities, view.postSeedKey(), view.postSlug(), "view post");
             if (view.minimumCount() < 0 || view.minimumCount() > Integer.MAX_VALUE) {
                 throw new IllegalArgumentException("view baseline outside Int32 range: " + view.seedKey());
             }
@@ -139,8 +140,10 @@ public final class ContentPackReactionApplier {
             ResolvedIdentities identities,
             Set<ReactionFact> declaredLikes,
             Set<ReactionFact> declaredFavs) {
+        Set<Long> targetPostIds = new HashSet<>(identities.postIds().values());
+        targetPostIds.addAll(identities.externalPostIdsBySlug().values());
         for (long accountId : identities.accountIds().values()) {
-            for (long postId : identities.postIds().values()) {
+            for (long postId : targetPostIds) {
                 String entityId = String.valueOf(postId);
                 ReactionFact fact = new ReactionFact(accountId, postId);
                 if (!declaredLikes.contains(fact)
@@ -158,7 +161,7 @@ public final class ContentPackReactionApplier {
     private List<Long> applyViews(List<SeedViewDefinition> views, ResolvedIdentities identities) {
         List<ViewTarget> awaitingVisibility = new ArrayList<>();
         for (SeedViewDefinition view : views) {
-            long postId = identities.postIds().get(view.postSeedKey());
+            long postId = resolvePostId(identities, view.postSeedKey(), view.postSlug(), "view post");
             String entityId = String.valueOf(postId);
             publishViewDeltaUnderLock(view, entityId, identities.namespace());
             awaitingVisibility.add(new ViewTarget(entityId, postId, view.minimumCount()));
@@ -244,6 +247,14 @@ public final class ContentPackReactionApplier {
             throw new IllegalArgumentException("missing resolved " + field + ": " + key);
         }
         return id;
+    }
+
+    private static long resolvePostId(
+            ResolvedIdentities identities, String postSeedKey, String postSlug, String field) {
+        if (postSeedKey != null && !postSeedKey.isBlank()) {
+            return requireId(identities.postIds(), postSeedKey, field);
+        }
+        return requireId(identities.externalPostIdsBySlug(), postSlug, field);
     }
 
     /**

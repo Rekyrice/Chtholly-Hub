@@ -49,6 +49,17 @@ public interface ContentPackMapper {
     Long findLegacyPostId(@Param("slug") String slug);
 
     /**
+     * Resolves an existing public post owned by the configured site owner.
+     *
+     * @param slug exact public slug
+     * @param ownerUserId configured site-owner user ID
+     * @return post ID, or {@code null} when the slug is absent or outside the allowed owner/public boundary
+     */
+    Long findSiteOwnerPublicPostIdBySlug(
+            @Param("slug") String slug,
+            @Param("ownerUserId") long ownerUserId);
+
+    /**
      * Inserts an identity or refreshes metadata only when the immutable mapping agrees.
      *
      * @param row resolved stable identity
