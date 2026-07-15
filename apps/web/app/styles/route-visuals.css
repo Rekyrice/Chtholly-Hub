@@ -143,6 +143,18 @@
     );
   }
 
+  .site-shell--route-visual .article-detail-card {
+    background: color-mix(
+      in srgb,
+      var(--color-surface) calc(var(--surface-reading-alpha) * 100%),
+      transparent
+    );
+  }
+
+  .site-shell--route-visual .article-detail-card .prose-anime {
+    background: transparent;
+  }
+
   [data-route-visual="login"] .post-card,
   [data-route-visual="reset-password"] .post-card {
     background: color-mix(

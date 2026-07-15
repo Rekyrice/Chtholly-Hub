@@ -33,6 +33,18 @@
     .prose-anime {
       padding: 0 24px;
     }
+
+    .article-detail-card .article-reading-sidebar--compact {
+      margin: 0 24px 28px;
+    }
+
+    .article-detail-card .prose-anime {
+      padding: 28px 24px 40px;
+    }
+
+    .article-detail-tags {
+      padding: 20px 24px 24px;
+    }
   }
 
   @media (max-width: 640px) {
@@ -141,6 +153,18 @@
 
     .prose-anime {
       padding: 0 16px;
+    }
+
+    .article-detail-card .article-reading-sidebar--compact {
+      margin: 0 16px 24px;
+    }
+
+    .article-detail-card .prose-anime {
+      padding: 24px 16px 36px;
+    }
+
+    .article-detail-tags {
+      padding: 18px 16px 22px;
     }
 
     .site-header-title {

@@ -75,7 +75,7 @@ export default async function PostPage({ params }: Props) {
     <div className="article-detail-layout">
       <ReadingProgress />
       <main className="article-main">
-        <article className="post-card">
+        <article className="post-card article-detail-card">
           {cover && (
             <div className="post-card-image">
               <div className="relative w-full aspect-[1038/576]">
@@ -129,7 +129,7 @@ export default async function PostPage({ params }: Props) {
           <MarkdownContent content={markdown} />
 
           {post.tags.length > 0 && (
-            <div className="px-[72px] pb-6 pt-5 border-t border-border max-md:px-6">
+            <div className="article-detail-tags">
               <div className="flex flex-wrap items-center gap-2">
                 <Tag size={14} className="text-text-secondary" />
                 {post.tags.map((tag) => (
