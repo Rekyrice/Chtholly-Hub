@@ -74,24 +74,27 @@ public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
 
         JsonNode eventPayload = objectMapper.readTree(payloadNode.asText());
         String entity = text(eventPayload.get("entity"));
-        if (!"post".equals(entity)) {
-            return;
-        }
         String op = text(eventPayload.get("op"));
-        Long postId = asLong(eventPayload.get("id"));
-        if (postId == null) {
+        Long aggregateId = asLong(eventPayload.get("id"));
+        if (aggregateId == null) {
             return;
         }
 
-        if ("delete".equalsIgnoreCase(op)) {
-            indexService.softDeletePost(postId);
-        } else {
-            try {
-                indexService.upsertPost(postId);
-            } catch (Exception e) {
-                log.error("Canal outbox processing failed", e);
-                throw e;
+        if ("user".equals(entity) && "author_profile_changed".equalsIgnoreCase(op)) {
+            indexService.reindexPublishedPostsByAuthor(aggregateId);
+        } else if ("post".equals(entity)) {
+            if ("delete".equalsIgnoreCase(op)) {
+                indexService.softDeletePost(aggregateId);
+            } else {
+                try {
+                    indexService.upsertPost(aggregateId);
+                } catch (Exception e) {
+                    log.error("Canal outbox processing failed", e);
+                    throw e;
+                }
             }
+        } else {
+            return;
         }
         if (eventId != null) {
             idempotencyGuard.markConsumed(IDEMPOTENCY_SCOPE, eventId);

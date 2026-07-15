@@ -70,6 +70,7 @@ public class SearchIndexInitializer {
                 .properties("body", Property.of(p -> p.text(TextProperty.of(b -> b.analyzer(bodyAnalyzer)))))
                 .properties("tags", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("author_id", Property.of(p -> p.long_(LongNumberProperty.of(b -> b))))
+                .properties("author_handle", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("author_avatar", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("author_nickname", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("author_tag_json", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))

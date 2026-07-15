@@ -430,6 +430,16 @@
           AND visible = 'public'
     </select>
 
+    <select id="listPublicPublishedIdsByCreator" resultType="long">
+        SELECT id
+        FROM posts
+        WHERE creator_id = #{creatorId}
+          AND status = 'published'
+          AND visible = 'public'
+        ORDER BY id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <select id="listMyPublishedIds" parameterType="long" resultType="long">
         SELECT id FROM posts WHERE creator_id = #{creatorId} AND status = 'published'
     </select>

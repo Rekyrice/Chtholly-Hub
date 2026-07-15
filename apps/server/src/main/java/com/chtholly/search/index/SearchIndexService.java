@@ -107,6 +107,32 @@ public class SearchIndexService {
         return indexed;
     }
 
+    /**
+     * 重建指定作者的全部公开已发布文章，用于作者公开资料变更后的最终一致性同步。
+     */
+    public int reindexPublishedPostsByAuthor(long authorId) {
+        int limit = 200;
+        int offset = 0;
+        int indexed = 0;
+        while (true) {
+            List<Long> postIds = postMapper.listPublicPublishedIdsByCreator(authorId, limit, offset);
+            if (postIds == null || postIds.isEmpty()) {
+                break;
+            }
+            for (Long postId : postIds) {
+                if (postId != null) {
+                    upsertPost(postId);
+                    indexed++;
+                }
+            }
+            if (postIds.size() < limit) {
+                break;
+            }
+            offset += postIds.size();
+        }
+        return indexed;
+    }
+
     private long countPublishedDocuments() throws Exception {
         return es.count(c -> c.index(INDEX)
                 .query(q -> q.term(t -> t.field("status").value("published")))).count();
@@ -154,6 +180,7 @@ public class SearchIndexService {
         doc.put("title", row.getTitle());
         doc.put("description", row.getDescription());
         doc.put("author_id", row.getCreatorId());
+        doc.put("author_handle", row.getAuthorHandle());
         doc.put("author_avatar", row.getAuthorAvatar());
         doc.put("author_nickname", row.getAuthorNickname());
         doc.put("author_tag_json", row.getAuthorTagJson());
