@@ -64,7 +64,7 @@ describe("SiteChrome", () => {
     { path: "/search", visual: "search", header: true, footer: true, agentBackground: false },
     { path: "/write", visual: "write", header: false, footer: false, agentBackground: false },
     { path: "/agent", visual: null, header: false, footer: false, agentBackground: true },
-    { path: "/chtholly", visual: null, header: false, footer: true, agentBackground: false },
+    { path: "/chtholly", visual: "chtholly", header: false, footer: true, agentBackground: false },
     { path: "/admin", visual: "admin", header: true, footer: true, agentBackground: false },
   ] as const;
 
@@ -186,6 +186,16 @@ describe("SiteChrome", () => {
     navigation.pathname = "/hub";
     rerender(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
     expect(screen.getByTestId("route-page-background")).toHaveAttribute("data-active-index", "0");
+  });
+
+  it("drives post detail images from the same quote transition as Hub", () => {
+    navigation.pathname = "/post/winter-list";
+    render(<SiteChrome><span data-testid="content">content</span></SiteChrome>);
+
+    fireEvent.click(screen.getByTestId("site-header"));
+
+    expect(screen.getByTestId("route-page-background")).toHaveAttribute("data-active-index", "2");
+    expect(screen.getByTestId("route-page-background")).toHaveAttribute("data-transition-ms", "3600");
   });
 
   it("keeps the quote callback stable when the typewriter reports the same index", () => {

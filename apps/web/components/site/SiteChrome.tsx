@@ -47,7 +47,9 @@ function RouteVisualLayers({ routeVisual, showHeader }: RouteVisualLayersProps) 
       )}
       {showHeader && (
         <SiteHeader
-          onQuoteTransition={routeVisual?.id === "hub" ? handleQuoteTransition : undefined}
+          onQuoteTransition={routeVisual?.id === "hub" || routeVisual?.id === "post"
+            ? handleQuoteTransition
+            : undefined}
         />
       )}
     </>

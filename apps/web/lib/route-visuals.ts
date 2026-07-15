@@ -17,6 +17,7 @@ const DEFAULT_POSITION = "50% 50%";
 const DEFAULT_OVERLAY_ALPHA = 0.2;
 const DEFAULT_BLUR_PX = 1;
 const DEFAULT_SATURATE = 0.98;
+const HUB_BACKGROUND_FILES = ["hub-01.webp", "hub-02.webp", "hub-03.webp"] as const;
 
 function background(
   imageFiles: readonly string[],
@@ -48,7 +49,7 @@ function routeVisual(
 }
 
 export const ROUTE_VISUALS: readonly RouteVisualConfig[] = Object.freeze([
-  routeVisual("hub", ["hub-01.webp", "hub-02.webp", "hub-03.webp"]),
+  routeVisual("hub", HUB_BACKGROUND_FILES),
   routeVisual("search", ["search.webp"]),
   routeVisual("write", ["write.webp"]),
   routeVisual("login", ["login.webp"]),
@@ -59,7 +60,8 @@ export const ROUTE_VISUALS: readonly RouteVisualConfig[] = Object.freeze([
   routeVisual("settings", ["settings.webp"]),
   routeVisual("archive", ["archive.webp"]),
   routeVisual("tag", ["tag.webp"]),
-  routeVisual("post", ["post.webp"]),
+  routeVisual("post", HUB_BACKGROUND_FILES),
+  routeVisual("chtholly", ["archive.webp"]),
   routeVisual("admin", ["admin.webp"]),
 ]);
 
@@ -78,6 +80,7 @@ const ROUTE_SEGMENTS: ReadonlyArray<readonly [segment: string, visualId: string]
   ["/archive", "archive"],
   ["/tag", "tag"],
   ["/post", "post"],
+  ["/chtholly", "chtholly"],
   ["/admin", "admin"],
 ];
 

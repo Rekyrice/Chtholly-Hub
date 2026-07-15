@@ -17,7 +17,8 @@ describe("route visuals", () => {
     ["/settings", "settings", ["settings.webp"]],
     ["/archive", "archive", ["archive.webp"]],
     ["/tag", "tag", ["tag.webp"]],
-    ["/post", "post", ["post.webp"]],
+    ["/post", "post", ["hub-01.webp", "hub-02.webp", "hub-03.webp"]],
+    ["/chtholly", "chtholly", ["archive.webp"]],
     ["/admin", "admin", ["admin.webp"]],
   ] as const;
 
@@ -28,7 +29,7 @@ describe("route visuals", () => {
     expect(config?.page.images.map((image) => image.split("/").at(-1))).toEqual(expectedFiles);
   });
 
-  it.each(["/", "/agent", "/agent/history", "/chtholly", "/chtholly/chat"])(
+  it.each(["/", "/agent", "/agent/history"])(
     "does not decorate excluded route %s",
     (pathname) => {
       expect(getRouteVisualConfig(pathname)).toBeNull();
@@ -46,6 +47,8 @@ describe("route visuals", () => {
     ["/hub/topic", "hub"],
     ["/reset-password/token", "reset-password"],
     ["/user/alice", "user"],
+    ["/post/winter-list", "post"],
+    ["/chtholly/chat", "chtholly"],
     ["/admin/posts", "admin"],
   ])("matches nested route %s", (pathname, expectedId) => {
     expect(getRouteVisualConfig(pathname)?.id).toBe(expectedId);
