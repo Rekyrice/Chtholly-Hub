@@ -19,8 +19,10 @@ public class PostDetailRow {
     private String contentUrl;
     private String contentEtag;
     private String contentSha256;
+    private String authorHandle;
     private String authorAvatar;
     private String authorNickname;
+    private String authorBio;
     private String authorTagJson;
     private Instant publishTime;
     private Boolean isTop;
