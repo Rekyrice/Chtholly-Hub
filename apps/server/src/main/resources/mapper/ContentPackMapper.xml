@@ -307,58 +307,39 @@
     </insert>
 
     <update id="deactivateSeedFollowingExcept">
-        UPDATE following
-        SET rel_status = 0,
-            updated_at = CURRENT_TIMESTAMP(3)
-        WHERE rel_status = 1
-        <choose>
-            <when test="accountIds != null and accountIds.size() > 0">
-                AND from_user_id IN
-                <foreach collection="accountIds" item="accountId" open="(" separator="," close=")">
-                    #{accountId}
-                </foreach>
-                AND to_user_id IN
-                <foreach collection="accountIds" item="accountId" open="(" separator="," close=")">
-                    #{accountId}
-                </foreach>
-            </when>
-            <otherwise>
-                AND 1 = 0
-            </otherwise>
-        </choose>
+        UPDATE following f
+        JOIN seed_content_identity i
+          ON i.entity_id = f.id
+         AND i.namespace = #{namespace}
+         AND i.entity_type = 'FOLLOW'
+        SET f.rel_status = 0,
+            f.updated_at = CURRENT_TIMESTAMP(3)
+        WHERE f.rel_status = 1
         <if test="declaredPairs != null and declaredPairs.size() > 0">
             AND NOT (
             <foreach collection="declaredPairs" item="pair" separator=" OR ">
-                (from_user_id = #{pair.fromUserId} AND to_user_id = #{pair.toUserId})
+                (f.from_user_id = #{pair.fromUserId} AND f.to_user_id = #{pair.toUserId})
             </foreach>
             )
         </if>
     </update>
 
     <update id="deactivateSeedFollowerExcept">
-        UPDATE follower
-        SET rel_status = 0,
-            updated_at = CURRENT_TIMESTAMP(3)
-        WHERE rel_status = 1
-        <choose>
-            <when test="accountIds != null and accountIds.size() > 0">
-                AND from_user_id IN
-                <foreach collection="accountIds" item="accountId" open="(" separator="," close=")">
-                    #{accountId}
-                </foreach>
-                AND to_user_id IN
-                <foreach collection="accountIds" item="accountId" open="(" separator="," close=")">
-                    #{accountId}
-                </foreach>
-            </when>
-            <otherwise>
-                AND 1 = 0
-            </otherwise>
-        </choose>
+        UPDATE follower r
+        JOIN following f
+          ON f.from_user_id = r.from_user_id
+         AND f.to_user_id = r.to_user_id
+        JOIN seed_content_identity i
+          ON i.entity_id = f.id
+         AND i.namespace = #{namespace}
+         AND i.entity_type = 'FOLLOW'
+        SET r.rel_status = 0,
+            r.updated_at = CURRENT_TIMESTAMP(3)
+        WHERE r.rel_status = 1
         <if test="declaredPairs != null and declaredPairs.size() > 0">
             AND NOT (
             <foreach collection="declaredPairs" item="pair" separator=" OR ">
-                (from_user_id = #{pair.fromUserId} AND to_user_id = #{pair.toUserId})
+                (r.from_user_id = #{pair.fromUserId} AND r.to_user_id = #{pair.toUserId})
             </foreach>
             )
         </if>

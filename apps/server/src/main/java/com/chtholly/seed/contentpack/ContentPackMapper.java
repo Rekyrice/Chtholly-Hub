@@ -164,21 +164,21 @@ public interface ContentPackMapper {
     int upsertFollower(SeedFollowRow row);
 
     /**
-     * @param accountIds complete resolved Seed account ID set
+     * @param namespace stable content-pack namespace
      * @param declaredPairs currently declared directed pairs
      * @return affected rows
      */
     int deactivateSeedFollowingExcept(
-            @Param("accountIds") Set<Long> accountIds,
+            @Param("namespace") String namespace,
             @Param("declaredPairs") List<FollowPair> declaredPairs);
 
     /**
-     * @param accountIds complete resolved Seed account ID set
+     * @param namespace stable content-pack namespace
      * @param declaredPairs currently declared directed pairs
      * @return affected rows
      */
     int deactivateSeedFollowerExcept(
-            @Param("accountIds") Set<Long> accountIds,
+            @Param("namespace") String namespace,
             @Param("declaredPairs") List<FollowPair> declaredPairs);
 
     /** @param namespace stable content namespace @return redacted public Seed user rows */

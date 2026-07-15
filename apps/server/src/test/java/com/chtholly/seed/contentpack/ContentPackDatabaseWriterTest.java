@@ -352,8 +352,8 @@ class ContentPackDatabaseWriterTest {
 
         verify(mapper).upsertFollowing(new SeedFollowRow(801L, 42L, 43L, follow.createdAt()));
         verify(mapper).upsertFollower(new SeedFollowRow(802L, 42L, 43L, follow.createdAt()));
-        verify(mapper).deactivateSeedFollowingExcept(eq(Set.of(42L, 43L)), anyList());
-        verify(mapper).deactivateSeedFollowerExcept(eq(Set.of(42L, 43L)), anyList());
+        verify(mapper).deactivateSeedFollowingExcept(eq(NAMESPACE), anyList());
+        verify(mapper).deactivateSeedFollowerExcept(eq(NAMESPACE), anyList());
     }
 
     @Test
@@ -572,7 +572,11 @@ class ContentPackDatabaseWriterTest {
         Path mapperPath = Path.of("src/main/resources/mapper/ContentPackMapper.xml");
         String xml = Files.readString(mapperPath);
         assertThat(xml).doesNotContain("${");
-        assertThat(xml).contains("<otherwise>", "AND 1 = 0", "#{pair.fromUserId}", "#{ordinal}");
+        assertThat(xml).contains(
+                "i.namespace = #{namespace}",
+                "i.entity_type = 'FOLLOW'",
+                "#{pair.fromUserId}",
+                "#{ordinal}");
 
         Configuration configuration = new Configuration();
         try (var input = Files.newInputStream(mapperPath)) {

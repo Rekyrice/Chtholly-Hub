@@ -389,9 +389,8 @@ public class ContentPackDatabaseWriter {
                     json(Map.of("followerId", followerId)));
             declaredPairs.add(new FollowPair(fromId, toId));
         }
-        Set<Long> seedAccountIds = Set.copyOf(accountIds.values());
-        mapper.deactivateSeedFollowingExcept(seedAccountIds, List.copyOf(declaredPairs));
-        mapper.deactivateSeedFollowerExcept(seedAccountIds, List.copyOf(declaredPairs));
+        mapper.deactivateSeedFollowingExcept(namespace, List.copyOf(declaredPairs));
+        mapper.deactivateSeedFollowerExcept(namespace, List.copyOf(declaredPairs));
     }
 
     static String contentHash(SeedPostDefinition post, long creatorId, PublishedContent published) {

@@ -85,18 +85,25 @@ class ContentPackReactionApplierTest {
     }
 
     @Test
-    void givenObsoleteSeedReaction_whenApply_thenRemovesOnlySeedAccountFacts() {
-        when(counterService.isLiked("post", "99", 42L)).thenReturn(true);
-        when(counterService.isLiked("post", "99", 43L)).thenReturn(false);
-        when(counterService.isFaved("post", "99", 42L)).thenReturn(false);
-        when(counterService.isFaved("post", "99", 43L)).thenReturn(true);
-
+    void givenUndeclaredExistingReaction_whenApply_thenPreservesUserOwnedFacts() {
         applier.apply(List.of(), List.of(), identities);
 
-        verify(counterService).unlike("post", "99", 42L);
-        verify(counterService).unfav("post", "99", 43L);
-        verify(counterService, never()).unlike("post", "99", 9000L);
-        verify(counterService, never()).unfav("post", "99", 9000L);
+        verify(counterService, never()).isLiked(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyLong());
+        verify(counterService, never()).isFaved(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyLong());
+        verify(counterService, never()).unlike(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyLong());
+        verify(counterService, never()).unfav(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test
