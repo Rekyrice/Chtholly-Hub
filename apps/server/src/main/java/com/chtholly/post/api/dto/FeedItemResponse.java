@@ -22,6 +22,8 @@ public record FeedItemResponse(
         String description,
         String coverImage,
         List<String> tags,
+        String authorId,
+        String authorHandle,
         String authorAvatar,
         String authorNickname,
         String tagJson,
@@ -49,8 +51,28 @@ public record FeedItemResponse(
             Boolean liked,
             Boolean faved,
             Boolean isTop) {
-        this(id, slug, title, description, coverImage, tags, authorAvatar, authorNickname,
+        this(id, slug, title, description, coverImage, tags, null, null, authorAvatar, authorNickname,
                 tagJson, likeCount, favoriteCount, liked, faved, isTop, null);
+    }
+
+    public FeedItemResponse(
+            String id,
+            String slug,
+            String title,
+            String description,
+            String coverImage,
+            List<String> tags,
+            String authorAvatar,
+            String authorNickname,
+            String tagJson,
+            Long likeCount,
+            Long favoriteCount,
+            Boolean liked,
+            Boolean faved,
+            Boolean isTop,
+            Instant publishTime) {
+        this(id, slug, title, description, coverImage, tags, null, null, authorAvatar, authorNickname,
+                tagJson, likeCount, favoriteCount, liked, faved, isTop, publishTime);
     }
 
     /**
@@ -71,6 +93,7 @@ public record FeedItemResponse(
         return create(
                 String.valueOf(row.getId()), row.getSlug(), row.getTitle(), row.getDescription(),
                 images.isEmpty() ? null : images.getFirst(), parseJsonList(row.getTags()),
+                row.getAuthorId() == null ? null : String.valueOf(row.getAuthorId()), row.getAuthorHandle(),
                 row.getAuthorAvatar(), row.getAuthorNickname(), row.getAuthorTagJson(),
                 counts.likes(), counts.favorites(), liked, faved, row.getIsTop(), row.getPublishTime());
     }
@@ -89,6 +112,7 @@ public record FeedItemResponse(
                 asString(source.get("content_id")), asString(source.get("slug")),
                 asString(source.get("title")), asString(source.get("description")),
                 images.isEmpty() ? null : images.getFirst(), asStringList(source.get("tags")),
+                asString(source.get("author_id")), asString(source.get("author_handle")),
                 asString(source.get("author_avatar")), asString(source.get("author_nickname")),
                 asString(source.get("author_tag_json")), asLong(source.get("like_count")),
                 asLong(source.get("favorite_count")), liked, faved, asBoolean(source.get("is_top")),
@@ -115,6 +139,17 @@ public record FeedItemResponse(
         return copy(description, likeCount, favoriteCount, liked, faved, top);
     }
 
+    public FeedItemResponse withAuthor(
+            String nextAuthorId,
+            String nextAuthorHandle,
+            String nextAuthorAvatar,
+            String nextAuthorNickname,
+            String nextTagJson) {
+        return create(id, slug, title, description, coverImage, tags, nextAuthorId, nextAuthorHandle,
+                nextAuthorAvatar, nextAuthorNickname, nextTagJson, likeCount, favoriteCount,
+                liked, faved, isTop, publishTime);
+    }
+
     private FeedItemResponse copy(
             String nextDescription,
             Long nextLikeCount,
@@ -122,7 +157,8 @@ public record FeedItemResponse(
             Boolean nextLiked,
             Boolean nextFaved,
             Boolean nextIsTop) {
-        return create(id, slug, title, nextDescription, coverImage, tags, authorAvatar, authorNickname,
+        return create(id, slug, title, nextDescription, coverImage, tags, authorId, authorHandle,
+                authorAvatar, authorNickname,
                 tagJson, nextLikeCount, nextFavoriteCount, nextLiked, nextFaved, nextIsTop, publishTime);
     }
 
@@ -133,6 +169,8 @@ public record FeedItemResponse(
             String description,
             String coverImage,
             List<String> tags,
+            String authorId,
+            String authorHandle,
             String authorAvatar,
             String authorNickname,
             String tagJson,
@@ -142,7 +180,7 @@ public record FeedItemResponse(
             Boolean faved,
             Boolean isTop,
             Instant publishTime) {
-        return new FeedItemResponse(id, slug, title, description, coverImage, tags, authorAvatar,
+        return new FeedItemResponse(id, slug, title, description, coverImage, tags, authorId, authorHandle, authorAvatar,
                 authorNickname, tagJson, likeCount, favoriteCount, liked, faved, isTop, publishTime);
     }
 

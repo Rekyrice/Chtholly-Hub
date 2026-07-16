@@ -123,6 +123,17 @@ public final class ContentPackValidator {
             if (!pack.assets().containsKey(account.avatarAsset())) {
                 errors.add("missing avatar asset: " + account.seedKey() + " -> " + account.avatarAsset());
             }
+            if (isContentV3(pack)) {
+                if (account.bio() == null || account.bio().isBlank()) {
+                    errors.add("missing account bio: " + account.seedKey());
+                }
+                if (account.tags() == null || account.tags().size() < 2 || account.tags().size() > 4) {
+                    errors.add("account tags must contain 2 to 4 values: " + account.seedKey());
+                }
+                if (account.joinedAt() == null) {
+                    errors.add("missing account joinedAt: " + account.seedKey());
+                }
+            }
         }
     }
 
@@ -319,8 +330,13 @@ public final class ContentPackValidator {
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
         Set<String> comments = keys(pack.comments(), SeedCommentDefinition::seedKey);
         for (SeedCommentDefinition comment : pack.comments()) {
-            SeedPostDefinition post = posts.get(comment.postSeedKey());
-            if (post == null) {
+            boolean validReference = hasExactlyOnePostReference(comment.postSeedKey(), comment.postSlug());
+            if (!validReference) {
+                errors.add("interaction post reference must use exactly one of postSeedKey or postSlug: "
+                        + comment.seedKey());
+            }
+            SeedPostDefinition post = isBlank(comment.postSeedKey()) ? null : posts.get(comment.postSeedKey());
+            if (!isBlank(comment.postSeedKey()) && post == null) {
                 errors.add("missing comment post: " + comment.seedKey() + " -> " + comment.postSeedKey());
             }
             if (!accounts.contains(comment.authorSeedKey())) {
@@ -358,7 +374,8 @@ public final class ContentPackValidator {
             if (parent == null) {
                 continue;
             }
-            if (!java.util.Objects.equals(comment.postSeedKey(), parent.postSeedKey())) {
+            if (!java.util.Objects.equals(postReference(comment.postSeedKey(), comment.postSlug()),
+                    postReference(parent.postSeedKey(), parent.postSlug()))) {
                 errors.add("comment parent post mismatch: " + comment.seedKey() + " -> " + parent.seedKey());
             }
             if (comment.createdAt() != null && parent.createdAt() != null
@@ -387,7 +404,11 @@ public final class ContentPackValidator {
             if (!REACTION_TYPES.contains(reaction.type())) {
                 errors.add("invalid reaction type: " + reaction.seedKey() + " -> " + reaction.type());
             }
-            if (!posts.contains(reaction.postSeedKey())) {
+            if (!hasExactlyOnePostReference(reaction.postSeedKey(), reaction.postSlug())) {
+                errors.add("interaction post reference must use exactly one of postSeedKey or postSlug: "
+                        + reaction.seedKey());
+            }
+            if (!isBlank(reaction.postSeedKey()) && !posts.contains(reaction.postSeedKey())) {
                 errors.add("missing reaction post: " + reaction.seedKey() + " -> " + reaction.postSeedKey());
             }
             if (!accounts.contains(reaction.accountSeedKey())) {
@@ -417,7 +438,11 @@ public final class ContentPackValidator {
         addDuplicates(pack.views(), SeedViewDefinition::seedKey, "duplicate view seedKey: ", errors);
         Set<String> posts = keys(pack.posts(), SeedPostDefinition::seedKey);
         for (SeedViewDefinition view : pack.views()) {
-            if (!posts.contains(view.postSeedKey())) {
+            if (!hasExactlyOnePostReference(view.postSeedKey(), view.postSlug())) {
+                errors.add("interaction post reference must use exactly one of postSeedKey or postSlug: "
+                        + view.seedKey());
+            }
+            if (!isBlank(view.postSeedKey()) && !posts.contains(view.postSeedKey())) {
                 errors.add("missing view post: " + view.seedKey() + " -> " + view.postSeedKey());
             }
             if (view.minimumCount() < 0) {
@@ -491,6 +516,21 @@ public final class ContentPackValidator {
 
     private boolean doesNotFollow(Instant interaction, Instant publication) {
         return interaction != null && publication != null && !interaction.isAfter(publication);
+    }
+
+    private static boolean hasExactlyOnePostReference(String postSeedKey, String postSlug) {
+        return isBlank(postSeedKey) != isBlank(postSlug);
+    }
+
+    private static String postReference(String postSeedKey, String postSlug) {
+        if (!isBlank(postSeedKey)) {
+            return "seed:" + postSeedKey;
+        }
+        return isBlank(postSlug) ? null : "slug:" + postSlug;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     /**

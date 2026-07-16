@@ -41,6 +41,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -49,6 +50,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -264,6 +266,77 @@ class ContentPackDatabaseWriterTest {
     }
 
     @Test
+    void givenCommentOnOwnerPublicPost_whenWrite_thenResolvesSlugAndPersistsExternalPostId() {
+        stubAccount("author", 42L);
+        when(mapper.findSiteOwnerPublicPostIdBySlug("owner-note", 1L)).thenReturn(808L);
+        when(mapper.findIdentity(NAMESPACE, "COMMENT", "external-comment")).thenReturn(null);
+        when(idGenerator.nextId()).thenReturn(701L);
+        SeedCommentDefinition comment = new SeedCommentDefinition(
+                "external-comment", null, null, "owner-note", "author", null, "看完又翻回去读了一遍。",
+                Instant.parse("2026-07-10T00:00:00Z"));
+
+        WriteResult result = writer.write(
+                pack(List.of(account("author")), List.of(), List.of(comment), List.of()), emptyPublished());
+
+        ArgumentCaptor<SeedCommentRow> row = ArgumentCaptor.forClass(SeedCommentRow.class);
+        verify(mapper).upsertSeedComment(row.capture());
+        assertThat(row.getValue().postId()).isEqualTo(808L);
+        assertThat(result.identities().externalPostIdsBySlug()).containsEntry("owner-note", 808L);
+    }
+
+    @Test
+    void givenStableJoinedAt_whenWritingAccount_thenCarriesItToInsertRowAndMapperXml() throws Exception {
+        Instant joinedAt = Instant.parse("2026-03-12T08:30:00Z");
+        SeedAccountDefinition original = account("author");
+        SeedAccountDefinition account = new SeedAccountDefinition(
+                original.seedKey(), original.legacyHandle(), original.nickname(), original.handle(), original.bio(),
+                original.avatarAsset(), original.gender(), original.birthday(), original.school(), original.tags(),
+                joinedAt, original.voice());
+        when(mapper.findIdentity(NAMESPACE, "ACCOUNT", "author")).thenReturn(null);
+        when(mapper.findLegacyUserId("author-old@seed.chtholly.invalid")).thenReturn(null);
+        when(idGenerator.nextId()).thenReturn(42L);
+
+        writer.write(pack(List.of(account), List.of(), List.of(), List.of()), emptyPublished());
+
+        ArgumentCaptor<SeedUserRow> row = ArgumentCaptor.forClass(SeedUserRow.class);
+        verify(mapper).insertSeedUser(row.capture());
+        assertThat(row.getValue().createdAt()).isEqualTo(joinedAt);
+        String xml = Files.readString(Path.of("src/main/resources/mapper/ContentPackMapper.xml"));
+        assertThat(xml).contains("#{createdAt}, #{updatedAt}");
+    }
+
+    @Test
+    void givenSameAccountManifestTwice_whenWrite_thenSecondRunDoesNotDriftUserTimestamps() {
+        SeedAccountDefinition original = account("author");
+        SeedAccountDefinition stable = new SeedAccountDefinition(
+                original.seedKey(), original.legacyHandle(), original.nickname(), original.handle(), original.bio(),
+                original.avatarAsset(), original.gender(), original.birthday(), original.school(), original.tags(),
+                Instant.parse("2026-03-12T08:30:00Z"), original.voice());
+        AtomicReference<SeedContentIdentity> identity = new AtomicReference<>(
+                new SeedContentIdentity(NAMESPACE, "ACCOUNT", "author", 42L, VERSION, null, null));
+        when(mapper.findIdentity(NAMESPACE, "ACCOUNT", "author")).thenAnswer(ignored -> identity.get());
+        when(mapper.seedUserExistsById(42L)).thenReturn(true);
+        when(mapper.updateIdentityHash(eq(NAMESPACE), eq("ACCOUNT"), eq("author"), eq(VERSION), any(), any()))
+                .thenAnswer(invocation -> {
+                    identity.set(new SeedContentIdentity(
+                            NAMESPACE, "ACCOUNT", "author", 42L, VERSION, invocation.getArgument(4), "{}"));
+                    return 1;
+                });
+        ContentPack pack = pack(List.of(stable), List.of(), List.of(), List.of());
+
+        writer.write(pack, emptyPublished());
+        ArgumentCaptor<SeedUserRow> firstWrite = ArgumentCaptor.forClass(SeedUserRow.class);
+        verify(mapper).updateSeedUserById(firstWrite.capture());
+        assertThat(firstWrite.getValue().createdAt()).isEqualTo(stable.joinedAt());
+        clearInvocations(mapper);
+
+        writer.write(pack, emptyPublished());
+
+        verify(mapper, never()).updateSeedUserById(any());
+        verify(mapper, never()).insertSeedUser(any());
+    }
+
+    @Test
     void givenDeclaredFollow_whenWrite_thenUpsertsBothSidesAndDeactivatesOnlySeedPairs() {
         stubAccount("author", 42L);
         stubAccount("reader", 43L);
@@ -279,8 +352,8 @@ class ContentPackDatabaseWriterTest {
 
         verify(mapper).upsertFollowing(new SeedFollowRow(801L, 42L, 43L, follow.createdAt()));
         verify(mapper).upsertFollower(new SeedFollowRow(802L, 42L, 43L, follow.createdAt()));
-        verify(mapper).deactivateSeedFollowingExcept(eq(Set.of(42L, 43L)), anyList());
-        verify(mapper).deactivateSeedFollowerExcept(eq(Set.of(42L, 43L)), anyList());
+        verify(mapper).deactivateSeedFollowingExcept(eq(NAMESPACE), anyList());
+        verify(mapper).deactivateSeedFollowerExcept(eq(NAMESPACE), anyList());
     }
 
     @Test
@@ -499,7 +572,11 @@ class ContentPackDatabaseWriterTest {
         Path mapperPath = Path.of("src/main/resources/mapper/ContentPackMapper.xml");
         String xml = Files.readString(mapperPath);
         assertThat(xml).doesNotContain("${");
-        assertThat(xml).contains("<otherwise>", "AND 1 = 0", "#{pair.fromUserId}", "#{ordinal}");
+        assertThat(xml).contains(
+                "i.namespace = #{namespace}",
+                "i.entity_type = 'FOLLOW'",
+                "#{pair.fromUserId}",
+                "#{ordinal}");
 
         Configuration configuration = new Configuration();
         try (var input = Files.newInputStream(mapperPath)) {

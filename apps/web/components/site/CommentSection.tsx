@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { extractErrorMessage } from "@/lib/hooks/useErrorMessage";
@@ -82,6 +83,10 @@ function CommentBubble({
   canReply?: boolean;
 }) {
   const isChtholly = comment.chtholly;
+  const profileHref = comment.authorHandle
+    ? `/user/${encodeURIComponent(comment.authorHandle)}`
+    : null;
+  const authorName = comment.authorNickname || "用户";
 
   return (
     <div
@@ -92,9 +97,26 @@ function CommentBubble({
     >
       <div className="comment-header flex items-center gap-2 flex-wrap">
         {isChtholly && <ChthollyIllustration size="xs" state="calm" />}
-        <span className="comment-author text-sm font-medium text-text">
-          {isChtholly ? "珂朵莉" : comment.authorNickname || "用户"}
-        </span>
+        {!isChtholly && profileHref && (
+          <Link href={profileHref} className="shrink-0 rounded-full overflow-hidden" aria-label={authorName}>
+            {comment.authorAvatar ? (
+              <Image src={comment.authorAvatar} alt={authorName} width={32} height={32} className="size-8 object-cover" />
+            ) : (
+              <span className="size-8 rounded-full bg-sky/10 text-sky inline-flex items-center justify-center text-xs font-semibold">
+                {authorName.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+          </Link>
+        )}
+        {isChtholly ? (
+          <span className="comment-author text-sm font-medium text-text">珂朵莉</span>
+        ) : profileHref ? (
+          <Link href={profileHref} className="comment-author text-sm font-medium text-text">
+            {authorName}
+          </Link>
+        ) : (
+          <span className="comment-author text-sm font-medium text-text">{authorName}</span>
+        )}
         {isChtholly && <span className="comment-badge">珂朵莉的想法</span>}
         <span className="comment-time text-xs text-text-secondary">{formatDate(comment.createdAt)}</span>
       </div>

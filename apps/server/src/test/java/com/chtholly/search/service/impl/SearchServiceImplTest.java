@@ -18,6 +18,7 @@ import com.chtholly.counter.service.CounterService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.api.dto.HubFeedResponse;
+import com.chtholly.user.service.PublicAuthorQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,12 +49,15 @@ class SearchServiceImplTest {
     private ElasticsearchClient es;
     @Mock
     private CounterService counterService;
+    @Mock
+    private PublicAuthorQueryService publicAuthorQueryService;
 
     private SearchServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        SearchHitMapper hitMapper = new SearchHitMapper(counterService);
+        lenient().when(publicAuthorQueryService.findByIds(any())).thenReturn(Map.of());
+        SearchHitMapper hitMapper = new SearchHitMapper(counterService, publicAuthorQueryService);
         service = new SearchServiceImpl(
                 es,
                 hitMapper,

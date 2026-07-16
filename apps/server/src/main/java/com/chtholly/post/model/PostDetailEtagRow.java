@@ -9,4 +9,5 @@ import java.time.Instant;
 public class PostDetailEtagRow {
     private String status;
     private Instant updateTime;
+    private Instant authorUpdateTime;
 }

@@ -83,6 +83,10 @@ public interface PostMapper {
     /** 公开个人主页：已发布且 public 可见的帖子数 */
     long countPublicPublishedByCreator(@Param("creatorId") long creatorId);
 
+    List<Long> listPublicPublishedIdsByCreator(@Param("creatorId") long creatorId,
+                                                @Param("limit") int limit,
+                                                @Param("offset") int offset);
+
     // 列出我的已发布帖子ID列表
     List<Long> listMyPublishedIds(@Param("creatorId") long creatorId);
 

@@ -14,19 +14,18 @@ import org.redisson.api.RedissonClient;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Reconciles Seed-owned runtime reactions through the public counter boundary after MySQL commit.
+ * Applies declared runtime reactions through the public counter boundary after MySQL commit.
  *
- * <p>Only resolved Seed accounts are inspected for removal. Real-user facts and monotonically
- * increasing visitor views are never decremented.
+ * <p>Reaction declarations are additive because the counter subsystem does not persist content-pack
+ * ownership. Existing likes and favorites are therefore never removed by an import; visitor views
+ * remain monotonic as well.
  */
 @Component
 public final class ContentPackReactionApplier {
@@ -76,7 +75,7 @@ public final class ContentPackReactionApplier {
     }
 
     /**
-     * Applies declared likes/favorites, removes obsolete Seed facts and raises view minima.
+     * Applies declared likes/favorites and raises view minima without removing user-owned facts.
      *
      * @param reactions declared Seed likes and favorites
      * @param views minimum non-decreasing view baselines
@@ -92,26 +91,21 @@ public final class ContentPackReactionApplier {
         Objects.requireNonNull(identities, "identities");
         validate(reactions, views, identities);
 
-        Set<ReactionFact> declaredLikes = new HashSet<>();
-        Set<ReactionFact> declaredFavs = new HashSet<>();
         for (SeedReactionDefinition reaction : reactions) {
-            long postId = identities.postIds().get(reaction.postSeedKey());
+            long postId = resolvePostId(
+                    identities, reaction.postSeedKey(), reaction.postSlug(), "reaction post");
             long accountId = identities.accountIds().get(reaction.accountSeedKey());
-            ReactionFact fact = new ReactionFact(accountId, postId);
             switch (reaction.type()) {
                 case "like" -> {
                     counterService.like(ENTITY_TYPE, String.valueOf(postId), accountId);
-                    declaredLikes.add(fact);
                 }
                 case "fav" -> {
                     counterService.fav(ENTITY_TYPE, String.valueOf(postId), accountId);
-                    declaredFavs.add(fact);
                 }
                 default -> throw new IllegalStateException("validated reaction type changed");
             }
         }
 
-        reconcileObsolete(identities, declaredLikes, declaredFavs);
         List<Long> pendingViews = applyViews(views, identities);
         return new ReactionApplyResult(!pendingViews.isEmpty(), pendingViews);
     }
@@ -124,33 +118,13 @@ public final class ContentPackReactionApplier {
             if (!"like".equals(reaction.type()) && !"fav".equals(reaction.type())) {
                 throw new IllegalArgumentException("Unsupported reaction: " + reaction.type());
             }
-            requireId(identities.postIds(), reaction.postSeedKey(), "reaction post");
+            resolvePostId(identities, reaction.postSeedKey(), reaction.postSlug(), "reaction post");
             requireId(identities.accountIds(), reaction.accountSeedKey(), "reaction account");
         }
         for (SeedViewDefinition view : views) {
-            requireId(identities.postIds(), view.postSeedKey(), "view post");
+            resolvePostId(identities, view.postSeedKey(), view.postSlug(), "view post");
             if (view.minimumCount() < 0 || view.minimumCount() > Integer.MAX_VALUE) {
                 throw new IllegalArgumentException("view baseline outside Int32 range: " + view.seedKey());
-            }
-        }
-    }
-
-    private void reconcileObsolete(
-            ResolvedIdentities identities,
-            Set<ReactionFact> declaredLikes,
-            Set<ReactionFact> declaredFavs) {
-        for (long accountId : identities.accountIds().values()) {
-            for (long postId : identities.postIds().values()) {
-                String entityId = String.valueOf(postId);
-                ReactionFact fact = new ReactionFact(accountId, postId);
-                if (!declaredLikes.contains(fact)
-                        && counterService.isLiked(ENTITY_TYPE, entityId, accountId)) {
-                    counterService.unlike(ENTITY_TYPE, entityId, accountId);
-                }
-                if (!declaredFavs.contains(fact)
-                        && counterService.isFaved(ENTITY_TYPE, entityId, accountId)) {
-                    counterService.unfav(ENTITY_TYPE, entityId, accountId);
-                }
             }
         }
     }
@@ -158,7 +132,7 @@ public final class ContentPackReactionApplier {
     private List<Long> applyViews(List<SeedViewDefinition> views, ResolvedIdentities identities) {
         List<ViewTarget> awaitingVisibility = new ArrayList<>();
         for (SeedViewDefinition view : views) {
-            long postId = identities.postIds().get(view.postSeedKey());
+            long postId = resolvePostId(identities, view.postSeedKey(), view.postSlug(), "view post");
             String entityId = String.valueOf(postId);
             publishViewDeltaUnderLock(view, entityId, identities.namespace());
             awaitingVisibility.add(new ViewTarget(entityId, postId, view.minimumCount()));
@@ -246,6 +220,14 @@ public final class ContentPackReactionApplier {
         return id;
     }
 
+    private static long resolvePostId(
+            ResolvedIdentities identities, String postSeedKey, String postSlug, String field) {
+        if (postSeedKey != null && !postSeedKey.isBlank()) {
+            return requireId(identities.postIds(), postSeedKey, field);
+        }
+        return requireId(identities.externalPostIdsBySlug(), postSlug, field);
+    }
+
     /**
      * Result of the bounded asynchronous view-count visibility check.
      *
@@ -256,9 +238,6 @@ public final class ContentPackReactionApplier {
         public ReactionApplyResult {
             pendingViewPostIds = List.copyOf(pendingViewPostIds);
         }
-    }
-
-    private record ReactionFact(long accountId, long postId) {
     }
 
     private record ViewTarget(String entityId, long postId, long minimum) {

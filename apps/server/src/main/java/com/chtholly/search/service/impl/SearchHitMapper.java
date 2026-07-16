@@ -3,11 +3,15 @@ package com.chtholly.search.service.impl;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.api.dto.FeedItemResponse;
+import com.chtholly.user.model.PublicAuthorSnapshot;
+import com.chtholly.user.service.PublicAuthorQueryService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 
 /**
@@ -17,12 +21,15 @@ import java.util.Map;
  * schema changes have one translation boundary.
  */
 @Component
+@Slf4j
 public class SearchHitMapper {
 
     private final CounterService counterService;
+    private final PublicAuthorQueryService publicAuthorQueryService;
 
-    public SearchHitMapper(CounterService counterService) {
+    public SearchHitMapper(CounterService counterService, PublicAuthorQueryService publicAuthorQueryService) {
         this.counterService = counterService;
+        this.publicAuthorQueryService = publicAuthorQueryService;
     }
 
     /** Maps post hits and enriches liked/faved state in two batch calls. */
@@ -58,7 +65,37 @@ public class SearchHitMapper {
             if (snippet != null && !snippet.isBlank()) item = item.withDescription(snippet);
             items.add(item.withTop(null));
         }
-        return List.copyOf(items);
+        List<Long> authorIds = items.stream()
+                .map(FeedItemResponse::authorId)
+                .map(this::asLong)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.collectingAndThen(
+                        java.util.stream.Collectors.toCollection(LinkedHashSet::new),
+                        List::copyOf));
+        Map<Long, PublicAuthorSnapshot> authors = Map.of();
+        if (!authorIds.isEmpty()) {
+            try {
+                authors = publicAuthorQueryService.findByIds(authorIds);
+            } catch (RuntimeException e) {
+                log.warn("Failed to refresh search author profiles, authorIds={}", authorIds, e);
+            }
+        }
+
+        List<FeedItemResponse> refreshed = new ArrayList<>(items.size());
+        for (FeedItemResponse item : items) {
+            Long authorId = asLong(item.authorId());
+            PublicAuthorSnapshot author = authorId == null ? null : authors.get(authorId);
+            if (author != null) {
+                refreshed.add(item.withAuthor(
+                        String.valueOf(author.id()), author.handle(), author.avatar(), author.nickname(), author.tagsJson()));
+            } else if (item.authorNickname() == null || item.authorNickname().isBlank()) {
+                refreshed.add(item.withAuthor(item.authorId(), item.authorHandle(), item.authorAvatar(),
+                        "已注销用户", item.tagJson()));
+            } else {
+                refreshed.add(item);
+            }
+        }
+        return List.copyOf(refreshed);
     }
 
     private String highlightedSnippet(Hit<Map<String, Object>> hit) {

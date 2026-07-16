@@ -17,18 +17,45 @@ import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.spy;
 
 class SearchIndexServiceTest {
+
+    @Test
+    void reindexPublishedPostsByAuthorPagesThroughOnlyResolvedPostIds() {
+        ElasticsearchClient es = mock(ElasticsearchClient.class);
+        PostMapper posts = mock(PostMapper.class);
+        when(posts.listPublicPublishedIdsByCreator(7L, 200, 0)).thenReturn(List.of(11L, 12L, 13L));
+        SearchIndexService service = spy(new SearchIndexService(
+                es,
+                posts,
+                mock(CounterService.class),
+                new ObjectMapper(),
+                mock(RestTemplate.class),
+                "http://localhost:8888"));
+        doNothing().when(service).upsertPost(anyLong());
+
+        int indexed = service.reindexPublishedPostsByAuthor(7L);
+
+        assertThat(indexed).isEqualTo(3);
+        verify(service).upsertPost(11L);
+        verify(service).upsertPost(12L);
+        verify(service).upsertPost(13L);
+        verify(posts).listPublicPublishedIdsByCreator(7L, 200, 0);
+    }
 
     @Test
     void given_relativeContentUrl_when_tryUpsert_then_fetchesAbsoluteLocalUrl() throws Exception {
@@ -53,6 +80,7 @@ class SearchIndexServiceTest {
                 ArgumentCaptor.forClass(co.elastic.clients.elasticsearch.core.IndexRequest.class);
         verify(es).index(request.capture());
         assertThat(request.getValue().document()).containsEntry("body", "完整正文");
+        assertThat(request.getValue().document()).containsEntry("author_handle", "rekyrice");
     }
 
     @Test
@@ -146,6 +174,7 @@ class SearchIndexServiceTest {
         row.setDescription("description");
         row.setStatus("published");
         row.setContentUrl(contentUrl);
+        row.setAuthorHandle("rekyrice");
         return row;
     }
 }

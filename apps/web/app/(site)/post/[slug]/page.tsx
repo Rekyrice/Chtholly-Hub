@@ -100,7 +100,13 @@ export default async function PostPage({ params }: Props) {
                   {formatDate(post.publishTime)}
                 </span>
               )}
-              <span className="mr-4">{post.authorNickname}</span>
+              <span className="mr-4">
+                {post.authorHandle ? (
+                  <Link href={`/user/${encodeURIComponent(post.authorHandle)}`}>{post.authorNickname}</Link>
+                ) : (
+                  post.authorNickname
+                )}
+              </span>
             </div>
             <ArticleActions
               postId={post.id}
@@ -118,6 +124,7 @@ export default async function PostPage({ params }: Props) {
             headings={headings}
             readingMinutes={readingMinutes}
             authorId={post.authorId}
+            authorHandle={post.authorHandle}
             authorNickname={post.authorNickname}
             tags={post.tags}
             askHref={askHref}
@@ -150,8 +157,10 @@ export default async function PostPage({ params }: Props) {
         </article>
         <AuthorCard
           authorId={post.authorId}
+          authorHandle={post.authorHandle}
           avatar={post.authorAvatar}
           nickname={post.authorNickname}
+          bio={post.authorBio}
           postId={post.id}
           postTitle={post.title}
           postTop={post.isTop}
@@ -166,6 +175,7 @@ export default async function PostPage({ params }: Props) {
         headings={headings}
         readingMinutes={readingMinutes}
         authorId={post.authorId}
+        authorHandle={post.authorHandle}
         authorNickname={post.authorNickname}
         tags={post.tags}
         askHref={askHref}

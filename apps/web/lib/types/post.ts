@@ -40,8 +40,10 @@ export type PostDetailResponse = {
   images: string[];
   tags: string[];
   authorId?: string;
+  authorHandle?: string;
   authorAvatar?: string;
   authorNickname: string;
+  authorBio?: string | null;
   authorTagJson?: string;
   likeCount: number;
   favoriteCount: number;

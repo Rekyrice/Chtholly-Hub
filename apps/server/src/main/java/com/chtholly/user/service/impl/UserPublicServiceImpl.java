@@ -8,10 +8,14 @@ import com.chtholly.user.api.dto.PublicUserResponse;
 import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
 import com.chtholly.user.service.UserPublicService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Resolves public user profile data by handle for profile pages.
@@ -22,6 +26,7 @@ public class UserPublicServiceImpl implements UserPublicService {
 
     private final UserMapper userMapper;
     private final PostMapper postMapper;
+    private final ObjectMapper objectMapper;
 
     /**
      * Loads a public profile snapshot including published post count.
@@ -46,9 +51,29 @@ public class UserPublicServiceImpl implements UserPublicService {
                 user.getNickname(),
                 user.getAvatar(),
                 user.getBio(),
+                parseTags(user.getTagsJson()),
                 user.getCreatedAt(),
                 postCount
         );
+    }
+
+    private List<String> parseTags(String tagsJson) {
+        if (tagsJson == null || tagsJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> tags = objectMapper.readValue(tagsJson, new TypeReference<>() {});
+            if (tags == null) {
+                return List.of();
+            }
+            return tags.stream()
+                    .filter(java.util.Objects::nonNull)
+                    .map(String::trim)
+                    .filter(tag -> !tag.isEmpty())
+                    .toList();
+        } catch (JsonProcessingException | ClassCastException ignored) {
+            return List.of();
+        }
     }
 
     @Override

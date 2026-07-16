@@ -126,6 +126,8 @@
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,
@@ -153,6 +155,8 @@
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,
@@ -177,6 +181,8 @@
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,
@@ -266,6 +272,8 @@
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,
@@ -288,6 +296,8 @@
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,
@@ -313,6 +323,8 @@
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,
@@ -338,8 +350,10 @@
             p.content_url AS contentUrl,
             p.content_etag AS contentEtag,
             p.content_sha256 AS contentSha256,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
+            u.bio AS authorBio,
             u.tags_json AS authorTagJson,
             p.publish_time AS publishTime,
             p.is_top AS isTop,
@@ -363,8 +377,10 @@
             p.content_url AS contentUrl,
             p.content_etag AS contentEtag,
             p.content_sha256 AS contentSha256,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
+            u.bio AS authorBio,
             u.tags_json AS authorTagJson,
             p.publish_time AS publishTime,
             p.is_top AS isTop,
@@ -379,14 +395,16 @@
     </select>
 
     <select id="findDetailEtagById" parameterType="long" resultType="com.chtholly.post.model.PostDetailEtagRow">
-        SELECT p.status, p.update_time AS updateTime
+        SELECT p.status, p.update_time AS updateTime, u.updated_at AS authorUpdateTime
         FROM posts p
+        JOIN users u ON u.id = p.creator_id
         WHERE p.id = #{id}
     </select>
 
     <select id="findDetailEtagBySlug" parameterType="string" resultType="com.chtholly.post.model.PostDetailEtagRow">
-        SELECT p.status, p.update_time AS updateTime
+        SELECT p.status, p.update_time AS updateTime, u.updated_at AS authorUpdateTime
         FROM posts p
+        JOIN users u ON u.id = p.creator_id
         WHERE p.slug = #{slug}
     </select>
 
@@ -414,6 +432,16 @@
           AND visible = 'public'
     </select>
 
+    <select id="listPublicPublishedIdsByCreator" resultType="long">
+        SELECT id
+        FROM posts
+        WHERE creator_id = #{creatorId}
+          AND status = 'published'
+          AND visible = 'public'
+        ORDER BY id
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <select id="listMyPublishedIds" parameterType="long" resultType="long">
         SELECT id FROM posts WHERE creator_id = #{creatorId} AND status = 'published'
     </select>
@@ -426,6 +454,8 @@
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,
@@ -460,6 +490,8 @@
             p.description,
             p.tags,
             p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
             u.avatar AS authorAvatar,
             u.nickname AS authorNickname,
             u.tags_json AS authorTagJson,

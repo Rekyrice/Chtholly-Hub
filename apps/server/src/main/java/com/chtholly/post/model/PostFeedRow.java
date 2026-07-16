@@ -15,6 +15,8 @@ public class PostFeedRow {
     private String description;
     private String tags;       // JSON 字符串
     private String imgUrls;    // JSON 字符串
+    private Long authorId;
+    private String authorHandle;
     private String authorAvatar;
     private String authorNickname;
     private String authorTagJson; // 作者的领域标签 JSON

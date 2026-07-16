@@ -11,6 +11,8 @@ import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostDetailEtagRow;
 import com.chtholly.post.model.PostDetailRow;
+import com.chtholly.user.model.PublicAuthorSnapshot;
+import com.chtholly.user.service.PublicAuthorQueryService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -36,7 +38,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class PostDetailQueryService {
 
-    static final int LAYOUT_VERSION = 2;
+    static final int LAYOUT_VERSION = 3;
     private static final Logger log = LoggerFactory.getLogger(PostDetailQueryService.class);
 
     private final PostMapper mapper;
@@ -45,6 +47,7 @@ public class PostDetailQueryService {
     private final StringRedisTemplate redis;
     private final Cache<String, PostDetailResponse> localCache;
     private final HotKeyDetector hotKey;
+    private final PublicAuthorQueryService publicAuthorQueryService;
     private final SingleFlightLockRegistry singleFlight = new SingleFlightLockRegistry();
 
     public PostDetailQueryService(
@@ -53,7 +56,8 @@ public class PostDetailQueryService {
             CounterService counterService,
             StringRedisTemplate redis,
             @Qualifier("postDetailCache") Cache<String, PostDetailResponse> localCache,
-            HotKeyDetector hotKey
+            HotKeyDetector hotKey,
+            PublicAuthorQueryService publicAuthorQueryService
     ) {
         this.mapper = mapper;
         this.objectMapper = objectMapper;
@@ -61,6 +65,7 @@ public class PostDetailQueryService {
         this.redis = redis;
         this.localCache = localCache;
         this.hotKey = hotKey;
+        this.publicAuthorQueryService = publicAuthorQueryService;
     }
 
     static String cacheKey(long id) {
@@ -130,8 +135,9 @@ public class PostDetailQueryService {
         return new PostDetailResponse(
                 String.valueOf(row.getId()), row.getSlug(), row.getTitle(), row.getDescription(),
                 row.getContentUrl(), parseArray(row.getImgUrls()), parseArray(row.getTags()),
-                String.valueOf(row.getCreatorId()), row.getAuthorAvatar(), row.getAuthorNickname(),
-                row.getAuthorTagJson(), counts.getOrDefault("like", 0L), counts.getOrDefault("fav", 0L),
+                String.valueOf(row.getCreatorId()), row.getAuthorHandle(), row.getAuthorAvatar(),
+                row.getAuthorNickname(), row.getAuthorBio(), row.getAuthorTagJson(),
+                counts.getOrDefault("like", 0L), counts.getOrDefault("fav", 0L),
                 null, null, row.getIsTop(), row.getVisible(), row.getType(), row.getPublishTime());
     }
 
@@ -157,9 +163,31 @@ public class PostDetailQueryService {
             likes = counts.getOrDefault("like", likes == null ? 0L : likes);
             favorites = counts.getOrDefault("fav", favorites == null ? 0L : favorites);
         }
+
+        String authorHandle = base.authorHandle();
+        String authorAvatar = base.authorAvatar();
+        String authorNickname = base.authorNickname();
+        String authorBio = base.authorBio();
+        String authorTagJson = base.authorTagJson();
+        try {
+            long authorId = Long.parseLong(base.authorId());
+            PublicAuthorSnapshot snapshot = publicAuthorQueryService.findById(authorId).orElse(null);
+            if (snapshot != null) {
+                authorHandle = snapshot.handle();
+                authorAvatar = snapshot.avatar();
+                authorNickname = snapshot.nickname();
+                authorBio = snapshot.bio();
+                authorTagJson = snapshot.tagsJson();
+            }
+        } catch (RuntimeException e) {
+            log.warn("Failed to refresh public author profile, authorId={}", base.authorId(), e);
+        }
+        if (authorNickname == null || authorNickname.isBlank()) {
+            authorNickname = "已注销用户";
+        }
         return new PostDetailResponse(
                 base.id(), base.slug(), base.title(), base.description(), base.contentUrl(), base.images(), base.tags(),
-                base.authorId(), base.authorAvatar(), base.authorNickname(), base.authorTagJson(), likes, favorites,
+                base.authorId(), authorHandle, authorAvatar, authorNickname, authorBio, authorTagJson, likes, favorites,
                 userId != null && counterService.isLiked("post", base.id(), userId),
                 userId != null && counterService.isFaved("post", base.id(), userId),
                 base.isTop(), base.visible(), base.type(), base.publishTime());
@@ -182,8 +210,10 @@ public class PostDetailQueryService {
             throw new ResourceNotFoundException("内容不存在");
         }
         Instant updatedAt = row.getUpdateTime();
+        Instant authorUpdatedAt = row.getAuthorUpdateTime();
         return HttpCacheHelper.hashEtag(row.getStatus(), String.valueOf(LAYOUT_VERSION),
-                updatedAt != null ? updatedAt.toString() : "");
+                updatedAt != null ? updatedAt.toString() : "",
+                authorUpdatedAt != null ? authorUpdatedAt.toString() : "");
     }
 
     private void recordHotKeyAndExtendTtl(long id, String pageKey) {

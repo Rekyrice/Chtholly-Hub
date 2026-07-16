@@ -20,6 +20,8 @@ class FeedItemResponseFactoryTest {
         row.setDescription("A calm post");
         row.setTags("[\"anime\",\"daily\"]");
         row.setImgUrls("[\"/cover.jpg\",\"/inline.jpg\"]");
+        row.setAuthorId(7L);
+        row.setAuthorHandle("sakura-reader");
         row.setAuthorAvatar("/avatar.jpg");
         row.setAuthorNickname("Sakura");
         row.setAuthorTagJson("[\"reader\"]");
@@ -35,6 +37,8 @@ class FeedItemResponseFactoryTest {
         assertThat(item.id()).isEqualTo("42");
         assertThat(item.tags()).containsExactly("anime", "daily");
         assertThat(item.coverImage()).isEqualTo("/cover.jpg");
+        assertThat(item.authorId()).isEqualTo("7");
+        assertThat(item.authorHandle()).isEqualTo("sakura-reader");
         assertThat(item.likeCount()).isEqualTo(7L);
         assertThat(item.favoriteCount()).isEqualTo(3L);
         assertThat(item.liked()).isTrue();
@@ -52,6 +56,8 @@ class FeedItemResponseFactoryTest {
                 Map.entry("description", "Indexed description"),
                 Map.entry("tags", List.of("search", "anime")),
                 Map.entry("img_urls", List.of("/es-cover.jpg")),
+                Map.entry("author_id", 9L),
+                Map.entry("author_handle", "yukino-notes"),
                 Map.entry("author_avatar", "/es-avatar.jpg"),
                 Map.entry("author_nickname", "Yukino"),
                 Map.entry("author_tag_json", "[]"),
@@ -65,6 +71,8 @@ class FeedItemResponseFactoryTest {
 
         assertThat(item.id()).isEqualTo("99");
         assertThat(item.coverImage()).isEqualTo("/es-cover.jpg");
+        assertThat(item.authorId()).isEqualTo("9");
+        assertThat(item.authorHandle()).isEqualTo("yukino-notes");
         assertThat(item.description()).isEqualTo("Highlighted description");
         assertThat(item.likeCount()).isEqualTo(11L);
         assertThat(item.favoriteCount()).isEqualTo(5L);

@@ -34,7 +34,8 @@ public class SearchIndexInitializer {
     @PostConstruct
     public void ensureIndex() {
         try {
-            if (!es.indices().exists(e -> e.index(INDEX)).value()) {
+            boolean exists = es.indices().exists(e -> e.index(INDEX)).value();
+            if (!exists) {
                 try {
                     es.indices().create(c -> applyMappings(c, "ik_max_word", "ik_smart", "ik_max_word"));
                     log.info("Search index {} created with IK analyzers", INDEX);
@@ -43,11 +44,25 @@ public class SearchIndexInitializer {
                     es.indices().create(c -> applyMappings(c, "standard", "standard", "standard"));
                     log.info("Search index {} created with standard analyzer", INDEX);
                 }
+            } else {
+                ensureAdditiveMappings();
             }
             // 索引就绪后再回灌，避免 @PostConstruct 乱序导致 index_not_found 跳过回灌
             searchIndexService.ensureBackfill();
         } catch (Exception e) {
             log.warn("Search index init failed: {}", e.getMessage());
+        }
+    }
+
+    private void ensureAdditiveMappings() {
+        try {
+            es.indices().putMapping(mapping -> mapping
+                    .index(INDEX)
+                    .properties("author_handle", Property.of(
+                            property -> property.keyword(KeywordProperty.of(builder -> builder)))));
+        } catch (Exception exception) {
+            // Search is degradable; a mapping upgrade failure must not block application startup or backfill retries.
+            log.warn("Search index {} mapping upgrade failed: {}", INDEX, exception.getMessage());
         }
     }
 
@@ -70,6 +85,7 @@ public class SearchIndexInitializer {
                 .properties("body", Property.of(p -> p.text(TextProperty.of(b -> b.analyzer(bodyAnalyzer)))))
                 .properties("tags", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("author_id", Property.of(p -> p.long_(LongNumberProperty.of(b -> b))))
+                .properties("author_handle", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("author_avatar", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("author_nickname", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("author_tag_json", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))

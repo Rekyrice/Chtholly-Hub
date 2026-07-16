@@ -188,9 +188,18 @@ public class PostController {
         PageResponse<FeedItemResponse> body = feedService.getPublicFeed(page, cursor, size, ownerId, tag, userId);
         String pageKey = feedService.publicFeedPageKey(page, cursor, size, ownerId, tag);
         long hourSlot = System.currentTimeMillis() / 3600000L;
-        int itemCount = body.items() != null ? body.items().size() : 0;
-        String etag = HttpCacheHelper.hashEtag(pageKey, String.valueOf(hourSlot), String.valueOf(itemCount));
+        String etag = computeFeedEtag(body, pageKey, hourSlot);
         return HttpCacheHelper.conditionalPublic(body, etag, ifNoneMatch);
+    }
+
+    static String computeFeedEtag(PageResponse<FeedItemResponse> body, String pageKey, long hourSlot) {
+        List<FeedItemResponse> items = body.items() == null ? List.of() : body.items();
+        return HttpCacheHelper.hashEtag(
+                pageKey,
+                String.valueOf(hourSlot),
+                String.valueOf(body.hasMore()),
+                String.valueOf(body.nextCursor()),
+                items.toString());
     }
 
     /**

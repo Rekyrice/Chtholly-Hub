@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarDays, FileText } from "lucide-react";
 import Sidebar from "@/components/site/Sidebar";
@@ -95,6 +96,20 @@ export default async function UserPage({ params }: Props) {
               <p className="member-hero__bio member-hero__bio--empty">
                 这个人还没有写简介。也许只是还没想好怎么介绍自己。
               </p>
+            )}
+
+            {(user.tags ?? []).length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2" aria-label="用户标签">
+                {(user.tags ?? []).map((tag) => (
+                  <Link
+                    href={`/tag/${encodeURIComponent(tag)}`}
+                    className="tag-badge no-underline"
+                    key={tag}
+                  >
+                    {tag}
+                  </Link>
+                ))}
+              </div>
             )}
 
             <div className="member-hero__meta">
