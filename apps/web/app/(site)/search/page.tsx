@@ -26,7 +26,7 @@ export default async function SearchPage({ searchParams }: Props) {
   let degraded = false;
   if (keyword) {
     try {
-      const result = await searchService.search(keyword, 20);
+      const result = await searchService.search({ q: keyword, size: 20 });
       items = result.items;
       degraded = result.degraded === true;
     } catch {
