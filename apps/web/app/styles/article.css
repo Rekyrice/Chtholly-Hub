@@ -1217,6 +1217,12 @@
     }
   }
 
+  @media (min-width: 1280px) {
+    .article-detail-layout {
+      width: min(1260px, calc(100vw - 16px));
+    }
+  }
+
   .prose-anime {
     font-size: var(--blog-font-size);
     line-height: var(--blog-line-height);

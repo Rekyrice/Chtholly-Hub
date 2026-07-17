@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const page = readFileSync("app/(site)/post/[slug]/page.tsx", "utf8");
+const siteChrome = readFileSync("components/site/SiteChrome.tsx", "utf8");
 const article = readFileSync("app/styles/article.css", "utf8");
 const visuals = readFileSync("app/styles/route-visuals.css", "utf8");
 const responsive = readFileSync("app/styles/responsive.css", "utf8");
@@ -34,14 +35,33 @@ describe("article editorial reading style", () => {
     expect(readableWidthAt1024).toBeGreaterThanOrEqual(600);
   });
 
+  it("keeps the 1279 to 1280 boundary at the full 760px reading width", () => {
+    expect(article).toMatch(
+      /@media \(min-width:\s*1280px\)[\s\S]*?\.article-detail-layout\s*\{[^}]*width:\s*min\(1260px, calc\(100vw - 16px\)\);/,
+    );
+
+    const shellAt1279 = Math.min(1260, 1279 - 32);
+    const mainAt1279 = shellAt1279 - 312 - 28;
+    const readableAt1279 = Math.min(760, mainAt1279 - 48);
+    const shellAt1280 = Math.min(1260, 1280 - 16);
+    const mainAt1280 = shellAt1280 - 312 - 28;
+    const readableAt1280 = Math.min(760, mainAt1280 - 160);
+
+    expect(shellAt1280).toBe(1260);
+    expect(mainAt1280).toBe(920);
+    expect(readableAt1280).toBe(760);
+    expect(readableAt1280).toBeGreaterThanOrEqual(readableAt1279);
+  });
+
   it("places one full sidebar between the article and follow-up content", () => {
     const sidebars = [...page.matchAll(/<ArticleReadingSidebar[\s\S]*?\/>/g)];
     const fullSidebar = sidebars.find((match) => !/\scompact\s/.test(match[0]));
     const primaryIndex = page.indexOf('className="article-primary article-main"');
     const followupIndex = page.indexOf('className="article-followup article-main"');
 
-    expect(page).toContain('<main className="article-detail-layout">');
-    expect(page).not.toContain('<main className="article-main">');
+    expect(siteChrome).toMatch(/<main[\s\S]*?\{children\}[\s\S]*?<\/main>/);
+    expect(page).toContain('<div className="article-detail-layout">');
+    expect(page).not.toMatch(/<main\b/);
     expect(sidebars).toHaveLength(2);
     expect(sidebars.filter((match) => /\scompact\s/.test(match[0]))).toHaveLength(1);
     expect(primaryIndex).toBeGreaterThan(-1);

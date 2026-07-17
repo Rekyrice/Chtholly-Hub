@@ -68,7 +68,7 @@ export default async function PostPage({ params }: Props) {
   const clues = buildReadingClues(post.description, markdown);
 
   return (
-    <main className="article-detail-layout">
+    <div className="article-detail-layout">
       <ReadingProgress />
       <div className="article-primary article-main">
         <article className="post-card article-detail-card">
@@ -189,7 +189,7 @@ export default async function PostPage({ params }: Props) {
         <PostQnA postId={post.id} />
         <CommentSection postId={post.id} />
       </div>
-    </main>
+    </div>
   );
 }
 
