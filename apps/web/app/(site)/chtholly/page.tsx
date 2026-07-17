@@ -5,11 +5,13 @@ import ChthollyRoomHero from "@/components/site/ChthollyRoomHero";
 import ChthollyTopicWindow from "@/components/site/ChthollyTopicWindow";
 import { agentService } from "@/lib/services/agentService";
 import { postService } from "@/lib/services/postService";
+import { tagService } from "@/lib/services/tagService";
 import { topicService } from "@/lib/services/topicService";
 import type { ChthollyIllustrationProps } from "@/components/site/ChthollyIllustration";
 import type { AgentExperienceTimeline } from "@/lib/types/agent";
 import type { FeedItem } from "@/lib/types/post";
-import type { TopicCluster } from "@/lib/types/topic";
+import type { TagItem } from "@/lib/types/tag";
+import type { TopicOverview } from "@/lib/types/topic";
 
 export const metadata = {
   title: "Chtholly",
@@ -21,10 +23,11 @@ export const revalidate = 60;
 export default async function ChthollyRoom() {
   const mood = 0;
   const timeOfDay = getCurrentTimePeriod();
-  const [timeline, feedItems, topics] = await Promise.all([
+  const [timeline, feedItems, topicOverview, topicSignals] = await Promise.all([
     loadExperienceTimeline(),
     loadRecommendations(),
-    loadTopics(),
+    loadTopicOverview(),
+    loadTopicSignals(),
   ]);
 
   return (
@@ -35,19 +38,19 @@ export default async function ChthollyRoom() {
         timeOfDay={timeOfDay}
       />
 
-      <div className="chtholly-room-content-grid">
+      <div className="chtholly-room-sections">
         <section className="chtholly-room-panel chtholly-room-experience">
-          <RoomPanelHeading eyebrow="MEMORY" title="她最近在想什么" />
+          <RoomPanelHeading eyebrow="MEMORY" title="今夜书桌" />
           <ChthollyExperienceTimeline timeline={timeline} />
         </section>
 
         <section className="chtholly-room-panel chtholly-room-topic">
-          <RoomPanelHeading eyebrow="TOPICS" title="她注意到的主题" />
-          <ChthollyTopicWindow topics={topics} />
+          <RoomPanelHeading eyebrow="WINDOW NOTES" title="窗边便笺" />
+          <ChthollyTopicWindow initialOverview={topicOverview} signals={topicSignals} />
         </section>
 
         <section className="chtholly-room-panel chtholly-room-recommendation">
-          <RoomPanelHeading eyebrow="BOOKSHELF" title="她留下的推荐" />
+          <RoomPanelHeading eyebrow="BOOKSHELF" title="她的书架" />
           <ChthollyRecommendationShelf items={feedItems} />
         </section>
       </div>
@@ -81,9 +84,22 @@ async function loadRecommendations(): Promise<FeedItem[]> {
   }
 }
 
-async function loadTopics(): Promise<TopicCluster[]> {
+async function loadTopicOverview(): Promise<TopicOverview> {
   try {
-    return await topicService.list();
+    return await topicService.overview();
+  } catch {
+    return {
+      items: [],
+      state: "FAILED",
+      windowDays: 7,
+      reason: "REQUEST_FAILED",
+    };
+  }
+}
+
+async function loadTopicSignals(): Promise<TagItem[]> {
+  try {
+    return await tagService.list(6);
   } catch {
     return [];
   }
