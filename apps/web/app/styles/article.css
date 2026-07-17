@@ -746,10 +746,13 @@
   }
 
   .article-detail-layout {
+    position: relative;
     display: grid;
-    width: 100%;
+    width: min(1260px, calc(100vw - 32px));
     max-width: 1260px;
     margin: 0 auto;
+    left: 50%;
+    transform: translateX(-50%);
     grid-template-columns: minmax(0, 920px);
     gap: 28px;
     justify-content: center;

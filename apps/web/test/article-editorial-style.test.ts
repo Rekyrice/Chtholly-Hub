@@ -10,7 +10,7 @@ describe("article editorial reading style", () => {
   it("uses a 920/28/312 desktop grid and one continuous translucent reading surface", () => {
     expect(page).toContain('className="post-card article-detail-card"');
     expect(article).toMatch(
-      /\.article-detail-layout\s*\{[^}]*max-width:\s*1260px;[^}]*grid-template-columns:\s*minmax\(0, 920px\);/,
+      /\.article-detail-layout\s*\{[^}]*width:\s*min\(1260px, calc\(100vw - 32px\)\);[^}]*max-width:\s*1260px;[^}]*margin:\s*0 auto;[^}]*left:\s*50%;[^}]*transform:\s*translateX\(-50%\);[^}]*grid-template-columns:\s*minmax\(0, 920px\);/,
     );
     expect(article).toMatch(/\.article-main\s*\{[^}]*max-width:\s*920px;/);
     expect(article).toMatch(
