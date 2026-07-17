@@ -246,6 +246,16 @@ describe("ChthollyRoom", () => {
     expect(css).toContain(".chtholly-room-hero__character .chtholly-illustration--hero");
     expect(css).toContain("width: min(100%, 560px)");
   });
+
+  it("keeps topic focus visible and lets long editorial text wrap", () => {
+    const css = readFileSync("app/styles/community.css", "utf8");
+
+    expect(css).toContain(".room-topic-result:focus-visible");
+    expect(css).toContain(
+      ".room-book h3,\n  .room-topic-note__heading strong,\n  .room-topic-note > p,\n  .room-topic-note__entities li,\n  .room-experience-featured__text,\n  .room-memory-timeline p,\n  .room-weekly-letters p",
+    );
+    expect(css).not.toContain(".room-empty-note");
+  });
 });
 
 function deferred<T>() {

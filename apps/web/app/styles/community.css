@@ -384,15 +384,6 @@
     font-size: 11px;
   }
 
-  .room-empty-note {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 18px;
-    align-items: center;
-    color: var(--color-text-secondary);
-  }
-
-  .room-empty-note p,
   .room-muted {
     margin: 0;
     color: var(--color-text-secondary);
@@ -496,6 +487,22 @@
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+
+  .room-topic-result:focus-visible,
+  .room-topic-state--failed button:focus-visible {
+    outline: 3px solid currentColor;
+    outline-offset: 4px;
+  }
+
+  .room-book h3,
+  .room-topic-note__heading strong,
+  .room-topic-note > p,
+  .room-topic-note__entities li,
+  .room-experience-featured__text,
+  .room-memory-timeline p,
+  .room-weekly-letters p {
+    overflow-wrap: anywhere;
   }
 
   .room-topic-list > .room-topic-note {

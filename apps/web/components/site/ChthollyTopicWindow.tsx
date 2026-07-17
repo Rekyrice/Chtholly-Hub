@@ -18,6 +18,8 @@ export default function ChthollyTopicWindow({
   const [isRetrying, setIsRetrying] = useState(false);
   const mountedRef = useRef(true);
   const requestIdRef = useRef(0);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const shouldFocusResultRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -25,6 +27,24 @@ export default function ChthollyTopicWindow({
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    requestIdRef.current += 1;
+    shouldFocusResultRef.current = false;
+    /* eslint-disable react-hooks/set-state-in-effect -- incoming server data replaces the retry island snapshot */
+    setOverview(initialOverview);
+    setIsRetrying(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [initialOverview]);
+
+  useEffect(() => {
+    if (isRetrying) return;
+
+    if (shouldFocusResultRef.current) {
+      shouldFocusResultRef.current = false;
+      resultRef.current?.focus();
+    }
+  }, [isRetrying, overview]);
 
   async function retryOverview() {
     if (isRetrying) return;
@@ -35,14 +55,16 @@ export default function ChthollyTopicWindow({
     try {
       const nextOverview = await topicService.overview();
       if (mountedRef.current && requestId === requestIdRef.current) {
+        shouldFocusResultRef.current = true;
         setOverview(nextOverview);
       }
     } catch {
       if (mountedRef.current && requestId === requestIdRef.current) {
+        shouldFocusResultRef.current = true;
         setOverview({
           items: [],
           state: "FAILED",
-          windowDays: 7,
+          windowDays: overview.windowDays,
           reason: "REQUEST_FAILED",
         });
       }
@@ -53,6 +75,40 @@ export default function ChthollyTopicWindow({
     }
   }
 
+  return (
+    <div
+      ref={resultRef}
+      className="room-topic-result"
+      role="region"
+      aria-label="话题整理结果"
+      aria-busy={isRetrying}
+      data-window-days={overview.windowDays}
+      tabIndex={-1}
+    >
+      <span className="sr-only" role="status" aria-live="polite">
+        {isRetrying ? "正在重新查看话题整理结果" : getOverviewAnnouncement(overview)}
+      </span>
+      <OverviewContent
+        overview={overview}
+        signals={signals}
+        isRetrying={isRetrying}
+        onRetry={retryOverview}
+      />
+    </div>
+  );
+}
+
+function OverviewContent({
+  overview,
+  signals,
+  isRetrying,
+  onRetry,
+}: {
+  overview: TopicOverview;
+  signals: TagItem[];
+  isRetrying: boolean;
+  onRetry: () => void;
+}) {
   if (overview.state === "READY") {
     if (overview.items.length === 0) {
       return (
@@ -95,13 +151,28 @@ export default function ChthollyTopicWindow({
   }
 
   return (
-    <div className="room-topic-state room-topic-state--failed" aria-live="polite">
+    <div className="room-topic-state room-topic-state--failed">
       <p>话题整理暂时没有完成</p>
-      <button type="button" disabled={isRetrying} onClick={retryOverview}>
+      <button
+        type="button"
+        disabled={isRetrying}
+        onClick={onRetry}
+      >
         {isRetrying ? "重新查看中…" : "重新查看"}
       </button>
     </div>
   );
+}
+
+function getOverviewAnnouncement(overview: TopicOverview) {
+  if (overview.state === "READY") {
+    return overview.items.length > 0
+      ? `话题整理已完成，共 ${overview.items.length} 条结果`
+      : "话题整理已完成，暂时没有结果";
+  }
+  if (overview.state === "SPARSE") return "话题整理完成，近期信号仍较稀疏";
+  if (overview.state === "PENDING") return "话题整理仍在进行中";
+  return "话题整理请求失败，可以重新查看";
 }
 
 function TopicNote({ topic }: { topic: TopicCluster }) {

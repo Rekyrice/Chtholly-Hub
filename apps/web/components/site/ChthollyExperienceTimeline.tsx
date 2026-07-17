@@ -80,8 +80,8 @@ export default function ChthollyExperienceTimeline({
           <section className="room-weekly-letters">
             <h3>本周来信</h3>
             <ul>
-              {timeline.weeklySummaries.map((summary, index) => (
-                <li key={`${summary.weekKey}-${index}`}>
+              {timeline.weeklySummaries.map((summary) => (
+                <li key={`${summary.weekKey}-${summary.summary}`}>
                   <p>{summary.summary}</p>
                   <span>{summary.weekKey}</span>
                 </li>

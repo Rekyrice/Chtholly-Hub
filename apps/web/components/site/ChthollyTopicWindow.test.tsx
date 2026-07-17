@@ -1,5 +1,4 @@
-import type { ComponentType } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ChthollyTopicWindow from "@/components/site/ChthollyTopicWindow";
@@ -27,18 +26,27 @@ const readyOverview: TopicOverview = {
   reason: null,
 };
 
+const signals = [
+  { id: "1", name: "动画", slug: "anime", usageCount: 12 },
+  { id: "2", name: "随笔", slug: "essay", usageCount: 9 },
+];
+
 function renderWindow(initialOverview: TopicOverview) {
-  const Window = ChthollyTopicWindow as ComponentType<Record<string, unknown>>;
   return render(
-    <Window
-      topics={[]}
+    <ChthollyTopicWindow
       initialOverview={initialOverview}
-      signals={[
-        { id: "1", name: "动画", slug: "anime", usageCount: 12 },
-        { id: "2", name: "随笔", slug: "essay", usageCount: 9 },
-      ]}
+      signals={signals}
     />,
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
 }
 
 describe("ChthollyTopicWindow", () => {
@@ -63,6 +71,66 @@ describe("ChthollyTopicWindow", () => {
       "2026-07-13T00:00:00Z",
     );
     expect(screen.queryByRole("heading", { name: "窗边便笺" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "话题整理结果" })).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("话题整理已完成，共 1 条结果");
+  });
+
+  it("syncs a changed initial overview without resetting internal updates", () => {
+    const { rerender } = renderWindow({
+      items: [],
+      state: "FAILED",
+      windowDays: 30,
+      reason: "REQUEST_FAILED",
+    });
+
+    rerender(<ChthollyTopicWindow initialOverview={readyOverview} signals={signals} />);
+    expect(screen.getByText("冬季追番")).toBeInTheDocument();
+
+    rerender(
+      <ChthollyTopicWindow
+        initialOverview={{ items: [], state: "PENDING", windowDays: 14 }}
+        signals={signals}
+      />,
+    );
+    expect(screen.getByText("正在整理近期内容")).toBeInTheDocument();
+    expect(screen.queryByText("冬季追番")).not.toBeInTheDocument();
+  });
+
+  it("ignores an old retry result after a new initial overview arrives", async () => {
+    const user = userEvent.setup();
+    const retry = deferred<TopicOverview>();
+    vi.mocked(topicService.overview).mockReturnValue(retry.promise);
+    const { rerender } = renderWindow({
+      items: [],
+      state: "FAILED",
+      windowDays: 30,
+      reason: "REQUEST_FAILED",
+    });
+
+    await user.click(screen.getByRole("button", { name: "重新查看" }));
+    rerender(
+      <ChthollyTopicWindow
+        initialOverview={{ items: [], state: "SPARSE", windowDays: 14 }}
+        signals={signals}
+      />,
+    );
+
+    expect(screen.getByText("近几天还没有形成稳定的话题")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "话题整理结果" })).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+
+    await act(async () => {
+      retry.resolve(readyOverview);
+      await retry.promise;
+    });
+
+    expect(screen.getByText("近几天还没有形成稳定的话题")).toBeInTheDocument();
+    expect(screen.queryByText("冬季追番")).not.toBeInTheDocument();
   });
 
   it("shows sparse copy and labels tags only as recent signals", () => {
@@ -88,9 +156,10 @@ describe("ChthollyTopicWindow", () => {
     expect(screen.getByText("这次整理没有留下可以展示的话题。稍后再来看看吧。")).toBeInTheDocument();
   });
 
-  it("retries only the overview request and renders the returned state", async () => {
+  it("announces retry progress and focuses the stable result after success", async () => {
     const user = userEvent.setup();
-    vi.mocked(topicService.overview).mockResolvedValue(readyOverview);
+    const retry = deferred<TopicOverview>();
+    vi.mocked(topicService.overview).mockReturnValue(retry.promise);
     renderWindow({
       items: [],
       state: "FAILED",
@@ -99,9 +168,21 @@ describe("ChthollyTopicWindow", () => {
     });
 
     expect(screen.getByText("话题整理暂时没有完成")).toBeInTheDocument();
+    const result = screen.getByRole("region", { name: "话题整理结果" });
     await user.click(screen.getByRole("button", { name: "重新查看" }));
 
+    expect(result).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("正在重新查看话题整理结果");
+
+    await act(async () => {
+      retry.resolve(readyOverview);
+      await retry.promise;
+    });
+
     expect(await screen.findByText("冬季追番")).toBeInTheDocument();
+    await waitFor(() => expect(result).toHaveFocus());
+    expect(result).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByRole("status")).toHaveTextContent("话题整理已完成，共 1 条结果");
     expect(topicService.overview).toHaveBeenCalledTimes(1);
   });
 
@@ -127,12 +208,20 @@ describe("ChthollyTopicWindow", () => {
     vi.mocked(topicService.overview).mockRejectedValue(new Error("offline"));
     renderWindow({ items: [], state: "FAILED", windowDays: 30 });
 
-    await user.click(screen.getByRole("button", { name: "重新查看" }));
+    const result = screen.getByRole("region", { name: "话题整理结果" });
+    const retryButton = screen.getByRole("button", { name: "重新查看" });
+    await user.click(retryButton);
 
     await waitFor(() => {
       expect(screen.getByText("话题整理暂时没有完成")).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: "重新查看" })).toBeEnabled();
+    expect(retryButton).toBeEnabled();
+    expect(result).toHaveFocus();
+    expect(result).toHaveAttribute("aria-busy", "false");
+    expect(result).toHaveAttribute("data-window-days", "30");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "话题整理请求失败，可以重新查看",
+    );
     expect(topicService.overview).toHaveBeenCalledTimes(1);
   });
 });
