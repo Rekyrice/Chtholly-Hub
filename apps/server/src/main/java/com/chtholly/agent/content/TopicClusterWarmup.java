@@ -1,6 +1,8 @@
 package com.chtholly.agent.content;
 
 import com.chtholly.agent.config.AgentExtensionComponent;
+import com.chtholly.agent.config.AgentExtensionGroup;
+import com.chtholly.agent.config.ConditionalOnAgentExtensions;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,7 +17,8 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @AgentExtensionComponent
-@ConditionalOnProperty(prefix = "agent.extensions.content", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnAgentExtensions(AgentExtensionGroup.CONTENT)
+@ConditionalOnProperty(name = "seed.cli-read-only", havingValue = "false", matchIfMissing = true)
 @RequiredArgsConstructor
 public class TopicClusterWarmup {
 

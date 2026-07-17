@@ -18,6 +18,7 @@ import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -46,6 +47,13 @@ import java.util.stream.Collectors;
 @AgentExtensionComponent
 @ConditionalOnProperty(prefix = "agent.extensions.content", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class TopicClusteringService {
+
+    private static final String COMMIT_SNAPSHOT_LUA = """
+            redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[3])
+            redis.call('SET', KEYS[2], ARGV[2], 'PX', ARGV[4])
+            return 1
+            """;
+    private static final DefaultRedisScript<Long> COMMIT_SNAPSHOT_SCRIPT = createCommitSnapshotScript();
 
     static final String TOPICS_KEY = "agent:topic-clusters";
     static final String STATUS_KEY = "agent:topic-clusters:status";
@@ -121,13 +129,13 @@ public class TopicClusteringService {
                     previousSuccessAt,
                     "REFRESHING"));
             List<TopicCluster> clusters = clusterRecentPosts(DEFAULT_WINDOW);
-            storeClusters(clusters);
             boolean empty = clusters.isEmpty();
-            storeRunStatus(new TopicClusterRunStatus(
+            TopicClusterRunStatus finalStatus = new TopicClusterRunStatus(
                     empty ? TopicClusterState.SPARSE : TopicClusterState.READY,
                     attemptAt,
                     clock.instant(),
-                    empty ? "INSUFFICIENT_SIGNALS" : null));
+                    empty ? "INSUFFICIENT_SIGNALS" : null);
+            commitSnapshot(clusters, finalStatus);
             success = true;
             log.info("Topic clustering stored {} clusters", clusters.size());
         } catch (RuntimeException refreshFailure) {
@@ -156,12 +164,10 @@ public class TopicClusteringService {
     }
 
     /**
-     * Refreshes topic clusters only when either the snapshot or status key is missing.
+     * Refreshes topic clusters when persisted snapshot payloads are missing or inconsistent.
      */
     public void refreshIfMissing() {
-        boolean topicsPresent = Boolean.TRUE.equals(redis.hasKey(TOPICS_KEY));
-        boolean statusPresent = Boolean.TRUE.equals(redis.hasKey(STATUS_KEY));
-        if (!topicsPresent || !statusPresent) {
+        if (!loadPersistedSnapshot().reusable()) {
             updateTopicClusters();
         }
     }
@@ -215,17 +221,7 @@ public class TopicClusteringService {
      * @return stored clusters, or empty when missing/invalid
      */
     public List<TopicCluster> getStoredClusters() {
-        String raw = redis.opsForValue().get(TOPICS_KEY);
-        if (raw == null || raw.isBlank()) {
-            return List.of();
-        }
-        try {
-            return objectMapper.readValue(raw, new TypeReference<>() {
-            });
-        } catch (Exception e) {
-            log.warn("Deserialize topic clusters failed: {}", e.getMessage());
-            return List.of();
-        }
+        return readClusterPayload().clusters();
     }
 
     /**
@@ -234,19 +230,9 @@ public class TopicClusteringService {
      * @return current topic-cluster overview
      */
     public TopicClusterOverview getOverview() {
-        List<TopicCluster> clusters = getStoredClusters();
-        TopicClusterRunStatus status = getRunStatus();
-        if (!clusters.isEmpty()) {
-            return new TopicClusterOverview(
-                    clusters,
-                    TopicClusterState.READY,
-                    status == null ? null : status.lastAttemptAt(),
-                    status == null ? null : status.lastSuccessAt(),
-                    Math.toIntExact(DEFAULT_WINDOW.toDays()),
-                    status != null && status.state() == TopicClusterState.FAILED
-                            ? "LAST_REFRESH_FAILED"
-                            : null);
-        }
+        PersistedSnapshot snapshot = loadPersistedSnapshot();
+        List<TopicCluster> clusters = snapshot.clusters();
+        TopicClusterRunStatus status = snapshot.status();
         if (status == null) {
             return new TopicClusterOverview(
                     List.of(),
@@ -256,8 +242,29 @@ public class TopicClusteringService {
                     Math.toIntExact(DEFAULT_WINDOW.toDays()),
                     "NOT_GENERATED");
         }
+        if (!snapshot.reusable()) {
+            String reason = status.state() == TopicClusterState.PENDING
+                    ? status.reason()
+                    : "INVALID_SNAPSHOT";
+            return new TopicClusterOverview(
+                    List.of(),
+                    TopicClusterState.PENDING,
+                    status.lastAttemptAt(),
+                    status.lastSuccessAt(),
+                    Math.toIntExact(DEFAULT_WINDOW.toDays()),
+                    reason == null || reason.isBlank() ? "REFRESHING" : reason);
+        }
+        if (status.state() == TopicClusterState.FAILED && !clusters.isEmpty()) {
+            return new TopicClusterOverview(
+                    clusters,
+                    TopicClusterState.READY,
+                    status.lastAttemptAt(),
+                    status.lastSuccessAt(),
+                    Math.toIntExact(DEFAULT_WINDOW.toDays()),
+                    "LAST_REFRESH_FAILED");
+        }
         return new TopicClusterOverview(
-                List.of(),
+                clusters,
                 status.state(),
                 status.lastAttemptAt(),
                 status.lastSuccessAt(),
@@ -283,15 +290,6 @@ public class TopicClusteringService {
                 .orElse(null);
     }
 
-    void storeClusters(List<TopicCluster> clusters) {
-        try {
-            String json = objectMapper.writeValueAsString(clusters == null ? List.of() : clusters);
-            redis.opsForValue().set(TOPICS_KEY, json, REDIS_TTL);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Serialize topic clusters failed", e);
-        }
-    }
-
     private TopicClusterRunStatus getRunStatus() {
         String raw = redis.opsForValue().get(STATUS_KEY);
         if (raw == null || raw.isBlank()) {
@@ -299,7 +297,7 @@ public class TopicClusteringService {
         }
         try {
             TopicClusterRunStatus status = objectMapper.readValue(raw, TopicClusterRunStatus.class);
-            if (status.state() == null) {
+            if (status == null || status.state() == null) {
                 log.warn("Deserialize topic cluster status produced a missing state");
                 return null;
             }
@@ -310,12 +308,66 @@ public class TopicClusteringService {
         }
     }
 
+    private PersistedSnapshot loadPersistedSnapshot() {
+        ClusterPayload clusterPayload = readClusterPayload();
+        return new PersistedSnapshot(clusterPayload.clusters(), clusterPayload.valid(), getRunStatus());
+    }
+
+    private ClusterPayload readClusterPayload() {
+        String raw = redis.opsForValue().get(TOPICS_KEY);
+        if (raw == null || raw.isBlank()) {
+            return new ClusterPayload(List.of(), false);
+        }
+        try {
+            List<TopicCluster> clusters = objectMapper.readValue(raw, new TypeReference<>() {
+            });
+            if (clusters == null) {
+                log.warn("Deserialize topic clusters produced a null snapshot");
+                return new ClusterPayload(List.of(), false);
+            }
+            return new ClusterPayload(List.copyOf(clusters), true);
+        } catch (Exception e) {
+            log.warn("Deserialize topic clusters failed: {}", e.getMessage());
+            return new ClusterPayload(List.of(), false);
+        }
+    }
+
     private void storeRunStatus(TopicClusterRunStatus status) {
         try {
             redis.opsForValue().set(STATUS_KEY, objectMapper.writeValueAsString(status), STATUS_TTL);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Serialize topic cluster status failed", e);
         }
+    }
+
+    private void commitSnapshot(List<TopicCluster> clusters, TopicClusterRunStatus finalStatus) {
+        String clustersJson = serialize(clusters == null ? List.of() : clusters, "topic clusters");
+        String statusJson = serialize(finalStatus, "topic cluster status");
+        Long committed = redis.execute(
+                COMMIT_SNAPSHOT_SCRIPT,
+                List.of(TOPICS_KEY, STATUS_KEY),
+                clustersJson,
+                statusJson,
+                String.valueOf(REDIS_TTL.toMillis()),
+                String.valueOf(STATUS_TTL.toMillis()));
+        if (!Long.valueOf(1L).equals(committed)) {
+            throw new IllegalStateException("Atomic topic snapshot commit failed");
+        }
+    }
+
+    private String serialize(Object value, String description) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Serialize " + description + " failed", e);
+        }
+    }
+
+    private static DefaultRedisScript<Long> createCommitSnapshotScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(COMMIT_SNAPSHOT_LUA);
+        script.setResultType(Long.class);
+        return script;
     }
 
     private boolean embedAvailable() {
@@ -446,7 +498,7 @@ public class TopicClusteringService {
             }
             ContentAnalysis analysis = postService.getContentAnalysis(post.id());
             if (analysis == null || analysis.entities() == null) {
-                for (String tag : safeTags(post)) {
+                for (String tag : normalizeTags(safeTags(post))) {
                     counts.merge(tag, 1, Integer::sum);
                 }
                 continue;
@@ -462,7 +514,8 @@ public class TopicClusteringService {
             }
         }
         return counts.entrySet().stream()
-                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
                 .limit(5)
                 .map(Map.Entry::getKey)
                 .toList();
@@ -624,5 +677,26 @@ public class TopicClusteringService {
         private final List<PostSummary> members = new ArrayList<>();
         private final Set<String> tags = new HashSet<>();
         private float[] centroid;
+    }
+
+    private record ClusterPayload(List<TopicCluster> clusters, boolean valid) {
+    }
+
+    private record PersistedSnapshot(
+            List<TopicCluster> clusters,
+            boolean topicsValid,
+            TopicClusterRunStatus status
+    ) {
+        private boolean reusable() {
+            if (!topicsValid || status == null) {
+                return false;
+            }
+            return switch (status.state()) {
+                case READY -> !clusters.isEmpty();
+                case SPARSE -> clusters.isEmpty();
+                case FAILED -> true;
+                case PENDING -> false;
+            };
+        }
     }
 }

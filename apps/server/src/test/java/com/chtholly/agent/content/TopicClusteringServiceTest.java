@@ -14,6 +14,7 @@ import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -61,6 +63,13 @@ class TopicClusteringServiceTest {
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         lenient().when(redis.opsForValue()).thenReturn(valueOps);
+        lenient().when(redis.execute(
+                any(DefaultRedisScript.class),
+                anyList(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString())).thenReturn(1L);
     }
 
     @Test
@@ -95,6 +104,23 @@ class TopicClusteringServiceTest {
 
         assertThat(clusters).hasSize(1);
         assertThat(clusters.getFirst().postIds()).containsExactly(1L, 2L);
+    }
+
+    @Test
+    void clusterRecentPosts_normalizesAndStablySortsFallbackTagEntities() {
+        when(embeddingModelProvider.getIfAvailable()).thenReturn(null);
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of(
+                post(1L, "First", "first", List.of(" Spring ", " Java ")),
+                post(2L, "Second", "second", List.of("spring", "java"))
+        ));
+        when(postService.getContentAnalysis(any())).thenReturn(null);
+
+        List<TopicCluster> clusters = service(prompt -> "", false)
+                .clusterRecentPosts(Duration.ofDays(7));
+
+        assertThat(clusters).singleElement()
+                .extracting(TopicCluster::keyEntities)
+                .isEqualTo(List.of("java", "spring"));
     }
 
     @Test
@@ -153,7 +179,7 @@ class TopicClusteringServiceTest {
     }
 
     @Test
-    void updateTopicClusters_storesJsonInRedis_whenLockAcquired() {
+    void updateTopicClusters_commitsReadySnapshotAtomically_whenLockAcquired() {
         when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
         when(embeddingModelProvider.getIfAvailable()).thenReturn(null);
         when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of(
@@ -167,15 +193,25 @@ class TopicClusteringServiceTest {
                 """, true);
         service.updateTopicClusters();
 
-        ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-        verify(valueOps).set(eq("agent:topic-clusters"), jsonCaptor.capture(), eq(Duration.ofHours(24)));
-        ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
-        verify(valueOps, times(2)).set(
-                eq("agent:topic-clusters:status"), statusCaptor.capture(), eq(Duration.ofDays(30)));
+        ArgumentCaptor<String> clustersJsonCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> finalStatusCaptor = ArgumentCaptor.forClass(String.class);
+        verify(redis).execute(
+                any(DefaultRedisScript.class),
+                eq(List.of("agent:topic-clusters", "agent:topic-clusters:status")),
+                clustersJsonCaptor.capture(),
+                finalStatusCaptor.capture(),
+                eq(String.valueOf(Duration.ofHours(24).toMillis())),
+                eq(String.valueOf(Duration.ofDays(30).toMillis())));
+        ArgumentCaptor<String> pendingStatusCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOps).set(
+                eq("agent:topic-clusters:status"), pendingStatusCaptor.capture(), eq(Duration.ofDays(30)));
+        verify(valueOps, never()).set(eq("agent:topic-clusters"), anyString(), any(Duration.class));
         verify(lockService).unlock("lock:scheduled:topicClustering");
         verify(lockService).recordRun(eq("topicClustering"), any(Long.class), eq(true));
-        assertThat(jsonCaptor.getValue()).contains("芙莉莲讨论");
-        TopicClusterRunStatus status = readStatus(statusCaptor.getAllValues().getLast());
+        assertThat(clustersJsonCaptor.getValue()).contains("芙莉莲讨论");
+        TopicClusterRunStatus pending = readStatus(pendingStatusCaptor.getValue());
+        assertThat(pending.state()).isEqualTo(TopicClusterState.PENDING);
+        TopicClusterRunStatus status = readStatus(finalStatusCaptor.getValue());
         assertThat(status.state()).isEqualTo(TopicClusterState.READY);
         assertThat(status.lastAttemptAt()).isEqualTo(NOW);
         assertThat(status.lastSuccessAt()).isEqualTo(NOW);
@@ -183,18 +219,25 @@ class TopicClusteringServiceTest {
     }
 
     @Test
-    void updateTopicClusters_persistsSparseEmptySnapshot() {
+    void updateTopicClusters_commitsSparseEmptySnapshotAtomically() {
         when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
         when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of());
 
         TopicClusteringService service = service(prompt -> "", false);
         service.updateTopicClusters();
 
-        verify(valueOps).set("agent:topic-clusters", "[]", Duration.ofHours(24));
+        ArgumentCaptor<String> clustersJsonCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
-        verify(valueOps, times(2)).set(
-                eq("agent:topic-clusters:status"), statusCaptor.capture(), eq(Duration.ofDays(30)));
-        TopicClusterRunStatus status = readStatus(statusCaptor.getAllValues().getLast());
+        verify(redis).execute(
+                any(DefaultRedisScript.class),
+                eq(List.of("agent:topic-clusters", "agent:topic-clusters:status")),
+                clustersJsonCaptor.capture(),
+                statusCaptor.capture(),
+                eq(String.valueOf(Duration.ofHours(24).toMillis())),
+                eq(String.valueOf(Duration.ofDays(30).toMillis())));
+        assertThat(clustersJsonCaptor.getValue()).isEqualTo("[]");
+        verify(valueOps, never()).set(eq("agent:topic-clusters"), anyString(), any(Duration.class));
+        TopicClusterRunStatus status = readStatus(statusCaptor.getValue());
         assertThat(status.state()).isEqualTo(TopicClusterState.SPARSE);
         assertThat(status.lastAttemptAt()).isEqualTo(NOW);
         assertThat(status.lastSuccessAt()).isEqualTo(NOW);
@@ -233,16 +276,17 @@ class TopicClusteringServiceTest {
     }
 
     @Test
-    void updateTopicClusters_marksRunFailedWhenSnapshotStorageFails() {
-        RuntimeException storageFailure = new IllegalStateException("redis write unavailable");
+    void updateTopicClusters_marksRunFailedWhenAtomicCommitFails() {
+        RuntimeException storageFailure = new IllegalStateException("atomic snapshot write unavailable");
         when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
         when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of());
-        doAnswer(invocation -> {
-            if ("agent:topic-clusters".equals(invocation.getArgument(0))) {
-                throw storageFailure;
-            }
-            return null;
-        }).when(valueOps).set(anyString(), anyString(), any(Duration.class));
+        when(redis.execute(
+                any(DefaultRedisScript.class),
+                anyList(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString())).thenThrow(storageFailure);
 
         TopicClusteringService service = service(prompt -> "", false);
 
@@ -250,8 +294,31 @@ class TopicClusteringServiceTest {
         ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
         verify(valueOps, times(2)).set(
                 eq("agent:topic-clusters:status"), statusCaptor.capture(), eq(Duration.ofDays(30)));
+        verify(valueOps, never()).set(eq("agent:topic-clusters"), anyString(), any(Duration.class));
         assertThat(readStatus(statusCaptor.getAllValues().getLast()).state())
                 .isEqualTo(TopicClusterState.FAILED);
+        verify(lockService).recordRun(eq("topicClustering"), any(Long.class), eq(false));
+        verify(lockService).unlock("lock:scheduled:topicClustering");
+    }
+
+    @Test
+    void updateTopicClusters_rejectsNullAtomicCommitResult() {
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of());
+        when(redis.execute(
+                any(DefaultRedisScript.class),
+                anyList(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString())).thenReturn(null);
+
+        TopicClusteringService service = service(prompt -> "", false);
+
+        assertThatThrownBy(service::updateTopicClusters)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Atomic topic snapshot commit failed");
+        verify(valueOps, never()).set(eq("agent:topic-clusters"), anyString(), any(Duration.class));
         verify(lockService).recordRun(eq("topicClustering"), any(Long.class), eq(false));
         verify(lockService).unlock("lock:scheduled:topicClustering");
     }
@@ -352,6 +419,73 @@ class TopicClusteringServiceTest {
     }
 
     @Test
+    void getStoredClusters_treatsJsonNullAsEmpty() {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("null");
+
+        assertThat(service(prompt -> "", false).getStoredClusters()).isEmpty();
+    }
+
+    @Test
+    void getOverview_treatsJsonNullStatusAsMissing() {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn("null");
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.state()).isEqualTo(TopicClusterState.PENDING);
+        assertThat(overview.reason()).isEqualTo("NOT_GENERATED");
+    }
+
+    @Test
+    void getOverview_rejectsReadyStateWithEmptySnapshot() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.READY, NOW, NOW, null)));
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEmpty();
+        assertThat(overview.state()).isEqualTo(TopicClusterState.PENDING);
+        assertThat(overview.reason()).isEqualTo("INVALID_SNAPSHOT");
+    }
+
+    @Test
+    void getOverview_rejectsReadyStateWithMissingSnapshot() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn(null);
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.READY, NOW, NOW, null)));
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.state()).isEqualTo(TopicClusterState.PENDING);
+        assertThat(overview.reason()).isEqualTo("INVALID_SNAPSHOT");
+    }
+
+    @Test
+    void getOverview_rejectsSparseStateWithNonEmptySnapshot() throws Exception {
+        List<TopicCluster> clusters = List.of(new TopicCluster(
+                "Java",
+                "Java 生态讨论",
+                List.of(1L, 2L),
+                2,
+                List.of("java"),
+                NOW));
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(clusters));
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(
+                        TopicClusterState.SPARSE,
+                        NOW,
+                        NOW,
+                        "INSUFFICIENT_SIGNALS")));
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEmpty();
+        assertThat(overview.state()).isEqualTo(TopicClusterState.PENDING);
+        assertThat(overview.reason()).isEqualTo("INVALID_SNAPSHOT");
+    }
+
+    @Test
     void getOverview_exposesPersistedSparseState() throws Exception {
         Instant attemptAt = NOW.minusSeconds(30);
         when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
@@ -372,9 +506,28 @@ class TopicClusteringServiceTest {
     }
 
     @Test
-    void refreshIfMissing_doesNotRefreshWhenBothKeysExist() {
-        when(redis.hasKey("agent:topic-clusters")).thenReturn(true);
-        when(redis.hasKey("agent:topic-clusters:status")).thenReturn(true);
+    void refreshIfMissing_doesNotRefreshValidReadySnapshot() throws Exception {
+        List<TopicCluster> clusters = List.of(new TopicCluster(
+                "Java", "Java 生态讨论", List.of(1L, 2L), 2, List.of("java"), NOW));
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(clusters));
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.READY, NOW, NOW, null)));
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService, never()).tryLock(anyString(), any(Duration.class));
+        verify(redis, never()).hasKey(anyString());
+    }
+
+    @Test
+    void refreshIfMissing_doesNotRefreshValidSparseSnapshot() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(
+                        TopicClusterState.SPARSE,
+                        NOW,
+                        NOW,
+                        "INSUFFICIENT_SIGNALS")));
 
         service(prompt -> "", false).refreshIfMissing();
 
@@ -382,22 +535,86 @@ class TopicClusteringServiceTest {
     }
 
     @Test
-    void refreshIfMissing_refreshesWhenStatusKeyIsMissing() {
-        when(redis.hasKey("agent:topic-clusters")).thenReturn(true);
-        when(redis.hasKey("agent:topic-clusters:status")).thenReturn(false);
-        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
-        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of());
+    void refreshIfMissing_refreshesWhenSnapshotPayloadIsMissing() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn(null);
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.READY, NOW, NOW, null)));
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
 
         service(prompt -> "", false).refreshIfMissing();
 
         verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
-        verify(valueOps).set("agent:topic-clusters", "[]", Duration.ofHours(24));
     }
 
     @Test
-    void refreshIfMissing_refreshesWhenTopicsKeyIsMissing() {
-        when(redis.hasKey("agent:topic-clusters")).thenReturn(false);
-        when(redis.hasKey("agent:topic-clusters:status")).thenReturn(true);
+    void refreshIfMissing_refreshesStalePendingState() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.PENDING, NOW, null, "REFRESHING")));
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
+    }
+
+    @Test
+    void refreshIfMissing_refreshesJsonNullPayloads() {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("null");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn("null");
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
+    }
+
+    @Test
+    void refreshIfMissing_refreshesCorruptSnapshotPayload() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("not-json");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.READY, NOW, NOW, null)));
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
+    }
+
+    @Test
+    void refreshIfMissing_refreshesBlankSnapshotPayload() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("   ");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.SPARSE, NOW, NOW, "INSUFFICIENT_SIGNALS")));
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
+    }
+
+    @Test
+    void refreshIfMissing_refreshesCorruptStatusPayload() {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn("not-json");
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
+    }
+
+    @Test
+    void refreshIfMissing_refreshesSparseStateWithNonEmptySnapshot() throws Exception {
+        List<TopicCluster> clusters = List.of(new TopicCluster(
+                "Java", "Java 生态讨论", List.of(1L, 2L), 2, List.of("java"), NOW));
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(clusters));
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(
+                        TopicClusterState.SPARSE,
+                        NOW,
+                        NOW,
+                        "INSUFFICIENT_SIGNALS")));
         when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
 
         service(prompt -> "", false).refreshIfMissing();
