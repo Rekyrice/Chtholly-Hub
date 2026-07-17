@@ -7,6 +7,7 @@ import co.elastic.clients.elasticsearch._types.aggregations.StringTermsAggregate
 import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
 import co.elastic.clients.elasticsearch.core.MsearchRequest;
 import co.elastic.clients.elasticsearch.core.MsearchResponse;
+import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.msearch.MultiSearchItem;
 import co.elastic.clients.elasticsearch.core.msearch.MultiSearchResponseItem;
 import co.elastic.clients.elasticsearch.core.search.Hit;
@@ -18,6 +19,7 @@ import com.chtholly.counter.service.CounterService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.api.dto.HubFeedResponse;
+import com.chtholly.search.service.SearchSort;
 import com.chtholly.user.service.PublicAuthorQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -95,7 +97,8 @@ class SearchServiceImplTest {
         when(esResp.hits()).thenReturn(hitsMeta);
         when(es.search(any(Function.class), any(Class.class))).thenReturn(esResp);
 
-        PageResponse<FeedItemResponse> response = service.search("re0", 10, null, null, null);
+        PageResponse<FeedItemResponse> response = service.search(
+                "re0", 10, null, null, SearchSort.RELEVANCE, null);
 
         assertThat(response.degraded()).isFalse();
         assertThat(response.items()).hasSize(1);
@@ -109,7 +112,8 @@ class SearchServiceImplTest {
     void given_esThrows_when_search_then_returnsDegradedResponse() throws Exception {
         when(es.search(any(Function.class), any(Class.class))).thenThrow(new RuntimeException("ES down"));
 
-        PageResponse<FeedItemResponse> response = service.search("fail", 10, null, null, null);
+        PageResponse<FeedItemResponse> response = service.search(
+                "fail", 10, null, null, SearchSort.RELEVANCE, null);
 
         assertThat(response.degraded()).isTrue();
         assertThat(response.items()).isEmpty();
@@ -143,16 +147,128 @@ class SearchServiceImplTest {
         when(esResp.hits()).thenReturn(hitsMeta);
         when(es.search(any(Function.class), any(Class.class))).thenReturn(esResp);
 
-        PageResponse<FeedItemResponse> first = service.search("cursor", 1, null, null, null);
+        PageResponse<FeedItemResponse> first = service.search(
+                "cursor", 1, null, null, SearchSort.RELEVANCE, null);
 
         assertThat(first.nextCursor()).isNotNull();
         String decoded = new String(Base64.getUrlDecoder().decode(first.nextCursor()));
         assertThat(decoded).isEqualTo("1.25,1234567890,5,8,99");
 
-        PageResponse<FeedItemResponse> second = service.search("cursor", 1, null, first.nextCursor(), null);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Function<SearchRequest.Builder, ObjectBuilder<SearchRequest>>> captor =
+                ArgumentCaptor.forClass(Function.class);
+
+        PageResponse<FeedItemResponse> second = service.search(
+                "cursor", 1, null, first.nextCursor(), SearchSort.RELEVANCE, null);
 
         assertThat(second.degraded()).isFalse();
-        verify(es, times(2)).search(any(Function.class), any(Class.class));
+        verify(es, times(2)).search(captor.capture(), any(Class.class));
+        SearchRequest secondRequest = captor.getAllValues().get(1).apply(new SearchRequest.Builder()).build();
+        assertThat(secondRequest.searchAfter()).hasSize(5);
+        assertThat(secondRequest.searchAfter().getFirst().doubleValue()).isEqualTo(1.25);
+        assertThat(secondRequest.searchAfter().get(4).longValue()).isEqualTo(99L);
+    }
+
+    @Test
+    void given_newestSort_when_search_then_usesPublishTimeAndContentIdDescending() throws Exception {
+        co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> response = emptySearchResponse();
+        when(es.search(any(Function.class), any(Class.class))).thenReturn(response);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Function<SearchRequest.Builder, ObjectBuilder<SearchRequest>>> captor =
+                ArgumentCaptor.forClass(Function.class);
+
+        service.search("latest", 10, null, null, SearchSort.NEWEST, null);
+
+        verify(es).search(captor.capture(), any(Class.class));
+        SearchRequest request = captor.getValue().apply(new SearchRequest.Builder()).build();
+        assertThat(request.sort()).hasSize(2);
+        assertThat(request.sort().get(0).field().field()).isEqualTo("publish_time");
+        assertThat(request.sort().get(0).field().order()).isEqualTo(co.elastic.clients.elasticsearch._types.SortOrder.Desc);
+        assertThat(request.sort().get(1).field().field()).isEqualTo("content_id");
+        assertThat(request.sort().get(1).field().order()).isEqualTo(co.elastic.clients.elasticsearch._types.SortOrder.Desc);
+    }
+
+    @Test
+    void given_relevanceOrNullSort_when_search_then_usesStableFiveFieldOrder() throws Exception {
+        co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> response = emptySearchResponse();
+        when(es.search(any(Function.class), any(Class.class))).thenReturn(response);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Function<SearchRequest.Builder, ObjectBuilder<SearchRequest>>> captor =
+                ArgumentCaptor.forClass(Function.class);
+
+        service.search("ranked", 10, null, null, SearchSort.RELEVANCE, null);
+        service.search("ranked", 10, null, null, null, null);
+
+        verify(es, times(2)).search(captor.capture(), any(Class.class));
+        for (Function<SearchRequest.Builder, ObjectBuilder<SearchRequest>> requestFactory : captor.getAllValues()) {
+            SearchRequest request = requestFactory.apply(new SearchRequest.Builder()).build();
+            assertThat(request.sort()).hasSize(5);
+            assertThat(request.sort().getFirst().isScore()).isTrue();
+            assertThat(request.sort().getFirst().score().order())
+                    .isEqualTo(co.elastic.clients.elasticsearch._types.SortOrder.Desc);
+            assertThat(request.sort().subList(1, 5))
+                    .extracting(sort -> sort.field().field())
+                    .containsExactly("publish_time", "like_count", "view_count", "content_id");
+            assertThat(request.sort().subList(1, 5))
+                    .allSatisfy(sort -> assertThat(sort.field().order())
+                            .isEqualTo(co.elastic.clients.elasticsearch._types.SortOrder.Desc));
+        }
+    }
+
+    @Test
+    void given_newestSortValues_when_searchThenContinue_then_roundTripsTwoLongSearchAfterValues() throws Exception {
+        Map<String, Object> source = Map.of(
+                "content_id", 99L,
+                "title", "Newest Cursor",
+                "slug", "newest-cursor"
+        );
+        @SuppressWarnings("unchecked")
+        Hit<Map<String, Object>> hit = mock(Hit.class);
+        when(hit.source()).thenReturn(source);
+        when(hit.highlight()).thenReturn(null);
+        when(hit.sort()).thenReturn(List.of(FieldValue.of(1700000000L), FieldValue.of(99L)));
+        co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> response =
+                searchResponse(List.of(hit));
+        when(es.search(any(Function.class), any(Class.class))).thenReturn(response);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Function<SearchRequest.Builder, ObjectBuilder<SearchRequest>>> captor =
+                ArgumentCaptor.forClass(Function.class);
+
+        PageResponse<FeedItemResponse> first = service.search(
+                "latest", 1, null, null, SearchSort.NEWEST, null);
+        PageResponse<FeedItemResponse> second = service.search(
+                "latest", 1, null, first.nextCursor(), SearchSort.NEWEST, null);
+
+        assertThat(new String(Base64.getUrlDecoder().decode(first.nextCursor())))
+                .isEqualTo("1700000000,99");
+        assertThat(second.degraded()).isFalse();
+        verify(es, times(2)).search(captor.capture(), any(Class.class));
+        SearchRequest secondRequest = captor.getAllValues().get(1).apply(new SearchRequest.Builder()).build();
+        assertThat(secondRequest.searchAfter()).hasSize(2);
+        assertThat(secondRequest.searchAfter()).allSatisfy(value -> assertThat(value.isLong()).isTrue());
+        assertThat(secondRequest.searchAfter().getFirst().longValue()).isEqualTo(1700000000L);
+        assertThat(secondRequest.searchAfter().get(1).longValue()).isEqualTo(99L);
+    }
+
+    @Test
+    void given_cursorFromDifferentSort_when_search_then_ignoresItDeterministically() throws Exception {
+        co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> response = emptySearchResponse();
+        when(es.search(any(Function.class), any(Class.class))).thenReturn(response);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Function<SearchRequest.Builder, ObjectBuilder<SearchRequest>>> captor =
+                ArgumentCaptor.forClass(Function.class);
+        String newestCursor = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("1700000000,99".getBytes());
+        String relevanceCursor = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("1.25,1700000000,5,8,99".getBytes());
+
+        service.search("ranked", 10, null, newestCursor, SearchSort.RELEVANCE, null);
+        service.search("latest", 10, null, relevanceCursor, SearchSort.NEWEST, null);
+
+        verify(es, times(2)).search(captor.capture(), any(Class.class));
+        assertThat(captor.getAllValues())
+                .allSatisfy(factory -> assertThat(
+                        factory.apply(new SearchRequest.Builder()).build().searchAfter()).isEmpty());
     }
 
     @Test
@@ -235,6 +351,22 @@ class SearchServiceImplTest {
         @SuppressWarnings("unchecked")
         MsearchResponse<Map<String, Object>> response = mock(MsearchResponse.class);
         when(response.responses()).thenReturn(List.of(items));
+        return response;
+    }
+
+    private co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> emptySearchResponse() {
+        return searchResponse(List.of());
+    }
+
+    private co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> searchResponse(
+            List<Hit<Map<String, Object>>> hits) {
+        @SuppressWarnings("unchecked")
+        co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> response = mock(
+                co.elastic.clients.elasticsearch.core.SearchResponse.class);
+        @SuppressWarnings("unchecked")
+        HitsMetadata<Map<String, Object>> hitsMetadata = mock(HitsMetadata.class);
+        when(hitsMetadata.hits()).thenReturn(hits);
+        when(response.hits()).thenReturn(hitsMetadata);
         return response;
     }
 

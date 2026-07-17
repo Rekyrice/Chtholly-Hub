@@ -3,6 +3,7 @@ package com.chtholly.integration;
 import com.chtholly.post.service.PostService;
 import com.chtholly.relation.outbox.OutboxTopics;
 import com.chtholly.search.service.SearchService;
+import com.chtholly.search.service.SearchSort;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -90,7 +91,8 @@ class PostPublishingGoldenPathIT extends AbstractGoldenPathIT {
         kafka.send(OutboxTopics.CANAL_OUTBOX, canalEnvelope(eventId, payload)).get();
 
         Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
-            var result = searchService.search("Golden Kafka Search", 10, null, null, null);
+            var result = searchService.search(
+                    "Golden Kafka Search", 10, null, null, SearchSort.RELEVANCE, null);
             assertThat(result.degraded()).isFalse();
             assertThat(result.items()).anySatisfy(item -> {
                 assertThat(item.id()).isEqualTo(String.valueOf(postId));
