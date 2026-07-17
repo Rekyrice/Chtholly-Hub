@@ -1,41 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
-import { postService } from "@/lib/services/postService";
-import type { PostDetailResponse, RelatedPostSummary } from "@/lib/types/post";
+import type { RelatedPostCardModel } from "@/lib/relatedPosts";
 
 type RelatedPostsProps = {
-  postId: string;
+  cards: RelatedPostCardModel[];
 };
 
-type RelatedCard = RelatedPostSummary & {
-  href?: string;
-};
-
-export default async function RelatedPosts({ postId }: RelatedPostsProps) {
-  let related: RelatedPostSummary[] = [];
-  try {
-    related = await postService.related(postId);
-  } catch {
-    related = [];
-  }
-
-  if (related.length === 0) {
+export default function RelatedPosts({ cards }: RelatedPostsProps) {
+  if (cards.length === 0) {
     return null;
   }
-
-  const cards = await Promise.all(
-    related.slice(0, 3).map(async (item): Promise<RelatedCard> => {
-      try {
-        const detail = await postService.detailById(item.id);
-        return mergeRelatedDetail(item, detail);
-      } catch {
-        return {
-          ...item,
-          href: item.slug ? `/post/${item.slug}` : undefined,
-        };
-      }
-    }),
-  );
 
   return (
     <section className="related-posts" aria-labelledby="related-posts-title">
@@ -52,19 +26,7 @@ export default async function RelatedPosts({ postId }: RelatedPostsProps) {
   );
 }
 
-function mergeRelatedDetail(item: RelatedPostSummary, detail: PostDetailResponse): RelatedCard {
-  return {
-    ...item,
-    slug: detail.slug,
-    title: item.title || detail.title,
-    description: item.description || detail.description,
-    coverImage: detail.images?.[0],
-    authorNickname: detail.authorNickname,
-    href: `/post/${detail.slug}`,
-  };
-}
-
-function RelatedPostCard({ post }: { post: RelatedCard }) {
+function RelatedPostCard({ post }: { post: RelatedPostCardModel }) {
   const body = post.summary || post.description || "这篇文章也提到了相近的线索。";
   const content = (
     <>

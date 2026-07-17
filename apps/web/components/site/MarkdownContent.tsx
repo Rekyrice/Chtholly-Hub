@@ -12,7 +12,7 @@ export default function MarkdownContent({ content }: MarkdownContentProps) {
   const headingIdsByLine = new Map(headings.map((heading) => [heading.sourceLine, heading.id]));
 
   return (
-    <div className="prose-anime pb-12">
+    <div className="prose-anime pb-12" data-article-body>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
