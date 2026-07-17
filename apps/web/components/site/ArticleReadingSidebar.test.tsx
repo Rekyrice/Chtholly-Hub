@@ -126,6 +126,16 @@ describe("ArticleReadingSidebar", () => {
 });
 
 describe("buildReadingClues", () => {
+  it("removes an ATX heading marker from the description", () => {
+    expect(buildReadingClues("# **标题**", "")).toEqual(["标题"]);
+  });
+
+  it("removes every unordered-list marker from a multiline description", () => {
+    expect(buildReadingClues("- 第一条\n- 第二条", "")).toEqual([
+      "第一条第二条",
+    ]);
+  });
+
   it("keeps heading text while removing the ATX heading marker", () => {
     expect(buildReadingClues("", "# **标题**")).toEqual(["标题"]);
   });

@@ -292,17 +292,17 @@ export function buildReadingClues(description: string, markdown: string) {
   );
   const prose = markdownLines
     .filter((line) => !hasBodyLine || !isAtxHeading(line))
-    .map(stripMarkdownBlockMarkers)
     .filter((line) => !/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(line))
-    .join(" ");
+    .join("\n");
   const candidates = [
-    description,
-    ...prose.split(/(?<=[。！？!?])|(?<=\.)\s+/u),
+    normalizeReadingClueCandidate(description),
+    ...normalizeReadingClueCandidate(prose).split(
+      /(?<=[。！？!?])|(?<=\.)\s+/u,
+    ),
   ];
   const clues: string[] = [];
 
-  for (const candidate of candidates) {
-    const plain = stripMarkdownMarkup(candidate);
+  for (const plain of candidates) {
     if (!plain || clues.includes(plain)) continue;
     clues.push(plain.length > 72 ? `${plain.slice(0, 71)}…` : plain);
     if (clues.length === 3) break;
@@ -329,8 +329,11 @@ function stripMarkdownBlockMarkers(line: string) {
   }
 }
 
-function stripMarkdownMarkup(value: string) {
+function normalizeReadingClueCandidate(value: string) {
   return value
+    .split(/\r?\n/)
+    .map(stripMarkdownBlockMarkers)
+    .join(" ")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/`([^`]+)`/g, "$1")
