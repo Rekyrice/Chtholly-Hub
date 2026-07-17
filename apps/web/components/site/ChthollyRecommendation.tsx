@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ChevronLeft, ChevronRight, Flame, Sparkles } from "lucide-react";
 import type { RecommendedFeedItem } from "@/lib/services/recommendationService";
 import type { FeedItem } from "@/lib/types/post";
@@ -15,6 +15,22 @@ type ChthollyRecommendationProps = {
   /** 推荐与 fallback 皆空时的兴趣引导空状态 */
   emptyInterest?: boolean;
 };
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribeToReducedMotion(onStoreChange: () => void) {
+  const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY);
+  mediaQuery.addEventListener("change", onStoreChange);
+  return () => mediaQuery.removeEventListener("change", onStoreChange);
+}
+
+function getReducedMotionSnapshot() {
+  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
+}
+
+function getServerReducedMotionSnapshot() {
+  return false;
+}
 
 export default function ChthollyRecommendation({
   posts,
@@ -33,16 +49,21 @@ function ChthollyRecommendationSlides({
   const [index, setIndex] = useState(0);
   const [isPointerInside, setIsPointerInside] = useState(false);
   const [isFocusWithin, setIsFocusWithin] = useState(false);
+  const prefersReducedMotion = useSyncExternalStore(
+    subscribeToReducedMotion,
+    getReducedMotionSnapshot,
+    getServerReducedMotionSnapshot,
+  );
 
   useEffect(() => {
     if (slides.length <= 1) return;
     if (isPointerInside || isFocusWithin) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion) return;
     const timer = window.setInterval(() => {
       setIndex((current) => (current + 1) % slides.length);
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [isFocusWithin, isPointerInside, slides.length]);
+  }, [isFocusWithin, isPointerInside, prefersReducedMotion, slides.length]);
 
   const headingEyebrow = personalized ? "For You" : "Chtholly Picks";
   const headingTitle = personalized ? "为你推荐" : "热门推荐";
@@ -104,7 +125,7 @@ function ChthollyRecommendationSlides({
               alt=""
               fill
               priority
-              sizes="(max-width: 1024px) 100vw, 820px"
+              sizes="(max-width: 767px) 100vw, (max-width: 1024px) 52vw, 58vw"
             />
           ) : (
             <span>{active.tags[0] ?? "Chtholly Hub"}</span>

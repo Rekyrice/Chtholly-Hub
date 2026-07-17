@@ -25,11 +25,38 @@ const secondPost: FeedItem = {
 };
 
 function mockReducedMotion(matches: boolean) {
-  vi.mocked(window.matchMedia).mockReturnValue({
-    matches,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  } as unknown as MediaQueryList);
+  let current = matches;
+  const listeners = new Set<(event: MediaQueryListEvent) => void>();
+  const addEventListener = vi.fn(
+    (_type: "change", listener: (event: MediaQueryListEvent) => void) => {
+      listeners.add(listener);
+    },
+  );
+  const removeEventListener = vi.fn(
+    (_type: "change", listener: (event: MediaQueryListEvent) => void) => {
+      listeners.delete(listener);
+    },
+  );
+  const media = "(prefers-reduced-motion: reduce)";
+  const mediaQueryList = {
+    get matches() {
+      return current;
+    },
+    media,
+    addEventListener,
+    removeEventListener,
+  } as unknown as MediaQueryList;
+  vi.mocked(window.matchMedia).mockReturnValue(mediaQueryList);
+
+  return {
+    addEventListener,
+    removeEventListener,
+    setMatches(next: boolean) {
+      current = next;
+      const event = { matches: current, media } as MediaQueryListEvent;
+      listeners.forEach((listener) => listener(event));
+    },
+  };
 }
 
 describe("ChthollyRecommendation", () => {
@@ -86,6 +113,19 @@ describe("ChthollyRecommendation", () => {
     expect(screen.getByText("2026年07月18日", { selector: "time" })).toHaveAttribute(
       "dateTime",
       post.publishTime,
+    );
+  });
+
+  it("declares responsive image sizes that match the recommendation columns", () => {
+    const { container } = render(
+      <ChthollyRecommendation posts={[{ ...post, coverImage: "/cover.jpg" }]} />,
+    );
+
+    expect(
+      container.querySelector(".hub-recommendation__image img"),
+    ).toHaveAttribute(
+      "sizes",
+      "(max-width: 767px) 100vw, (max-width: 1024px) 52vw, 58vw",
     );
   });
 
@@ -158,5 +198,38 @@ describe("ChthollyRecommendation", () => {
 
     act(() => vi.advanceTimersByTime(10000));
     expect(screen.getByText(title, { selector: "h3" })).toBeInTheDocument();
+  });
+
+  it("stops and resumes autoplay when the reduced-motion preference changes", () => {
+    vi.useFakeTimers();
+    const motion = mockReducedMotion(false);
+    render(<ChthollyRecommendation posts={[post, secondPost]} />);
+
+    act(() => vi.advanceTimersByTime(4000));
+    act(() => motion.setMatches(true));
+    act(() => vi.advanceTimersByTime(2000));
+    expect(screen.getByText(title, { selector: "h3" })).toBeInTheDocument();
+
+    act(() => motion.setMatches(false));
+    act(() => vi.advanceTimersByTime(4999));
+    expect(screen.getByText(title, { selector: "h3" })).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByText(secondPost.title, { selector: "h3" })).toBeInTheDocument();
+  });
+
+  it("removes the reduced-motion listener on unmount", () => {
+    const motion = mockReducedMotion(false);
+    const { unmount } = render(
+      <ChthollyRecommendation posts={[post, secondPost]} />,
+    );
+
+    expect(motion.addEventListener).toHaveBeenCalledWith(
+      "change",
+      expect.any(Function),
+    );
+    const listener = motion.addEventListener.mock.calls[0][1];
+    unmount();
+
+    expect(motion.removeEventListener).toHaveBeenCalledWith("change", listener);
   });
 });
