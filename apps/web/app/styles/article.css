@@ -562,11 +562,6 @@
     animation: qna-caret 0.9s steps(2, start) infinite;
   }
 
-  .post-qna-turn__answer--error {
-    border-color: color-mix(in srgb, var(--color-sunset) 34%, var(--color-border));
-    color: var(--color-sunset);
-  }
-
   @keyframes qna-caret {
     0%,
     45% {

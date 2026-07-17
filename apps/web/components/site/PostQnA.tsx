@@ -26,11 +26,11 @@ export default function PostQnA({ postId }: PostQnAProps) {
   const [turns, setTurns] = useState<QnATurn[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     return () => {
-      eventSourceRef.current?.close();
+      abortControllerRef.current?.abort();
     };
   }, []);
 
@@ -47,16 +47,18 @@ export default function PostQnA({ postId }: PostQnAProps) {
       current.map((turn) => (turn.id === turnId ? { ...turn, status } : turn)),
     );
     setStreaming(false);
-    eventSourceRef.current?.close();
-    eventSourceRef.current = null;
   };
 
-  const submitQuestion = (event: FormEvent<HTMLFormElement>) => {
+  const submitQuestion = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = question.trim();
     if (!text || streaming) return;
 
     const turnId = createTurnId();
+    const history = turns
+      .filter((turn) => turn.status === "done" && turn.answer.trim())
+      .slice(-4)
+      .map((turn) => ({ question: turn.question, answer: turn.answer }));
     setTurns((current) => [
       ...current,
       {
@@ -70,25 +72,40 @@ export default function PostQnA({ postId }: PostQnAProps) {
     setStreaming(true);
     setError(null);
 
-    const source = postAiService.qaStream(postId, text);
-    eventSourceRef.current = source;
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    let receivedContent = false;
+    let receivedDone = false;
 
-    source.onmessage = (message) => {
-      const data = message.data ?? "";
-      if (data === "[DONE]") {
+    try {
+      for await (const streamEvent of postAiService.qaStream(
+        postId,
+        text,
+        history,
+        controller.signal,
+      )) {
+        if (streamEvent.type === "delta") {
+          receivedContent = true;
+          appendAnswer(turnId, streamEvent.data);
+          continue;
+        }
+        receivedDone = true;
         finishTurn(turnId);
-        return;
       }
-      appendAnswer(turnId, data);
-    };
-
-    source.addEventListener("complete", () => finishTurn(turnId));
-    source.addEventListener("done", () => finishTurn(turnId));
-
-    source.onerror = () => {
-      setError("回答暂时中断了。可以稍后再问一次。");
+      if (!receivedDone) {
+        throw new Error("文章问答流未发送完成事件");
+      }
+    } catch {
+      if (controller.signal.aborted || receivedDone) return;
+      setError(receivedContent
+        ? "回答暂时中断了。已保留收到的内容，可以稍后再问一次。"
+        : "回答暂时中断了。可以稍后再问一次。");
       finishTurn(turnId, "error");
-    };
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    }
   };
 
   return (
@@ -114,7 +131,6 @@ export default function PostQnA({ postId }: PostQnAProps) {
                 className={cn(
                   "post-qna-turn__answer",
                   turn.status === "streaming" && "post-qna-turn__answer--streaming",
-                  turn.status === "error" && "post-qna-turn__answer--error",
                 )}
               >
                 {turn.answer || (turn.status === "streaming" ? "珂朵莉正在想……" : "没有收到回答。")}

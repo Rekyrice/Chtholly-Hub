@@ -1,5 +1,6 @@
 package com.chtholly.llm.rag;
 
+import com.chtholly.agent.CharacterSoulService;
 import com.chtholly.agent.search.SearchResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,6 +30,8 @@ public class RagQueryService {
     private final ChatClient chatClient;
     // 索引服务：确保帖子在问答前已建立/更新索引
     private final RagIndexService indexService;
+    // 统一角色设定：文章问答与完整 Agent 使用同一份珂朵莉人格
+    private final CharacterSoulService characterSoulService;
 
     /**
      * Searches indexed post chunks and returns unified agent search results.
@@ -59,23 +62,36 @@ public class RagQueryService {
      * 使用 WebFlux 返回回答内容的流。
      */
     public Flux<String> streamAnswerFlux(long postId, String question, int topK, int maxTokens) {
+        return streamAnswerFlux(postId, question, List.of(), topK, maxTokens);
+    }
+
+    /**
+     * Streams a post-scoped answer with local article conversation history.
+     *
+     * @param postId current post ID
+     * @param question current reader question
+     * @param history completed turns from this article page
+     * @param topK maximum retrieved chunk count
+     * @param maxTokens maximum generated tokens
+     * @return answer fragments
+     */
+    public Flux<String> streamAnswerFlux(long postId,
+                                         String question,
+                                         List<RagConversationTurn> history,
+                                         int topK,
+                                         int maxTokens) {
         // 轻量保障：如索引不存在或指纹未变更则跳过，否则重建
         indexService.ensureIndexed(postId);
 
         // 检索上下文：先宽召回，再按 postId 做服务端过滤
         List<String> contexts = searchContexts(String.valueOf(postId), question, Math.max(1, topK));
-        // 组装上下文文本，分隔符用于提示词中分块标识
-        String context = String.join("\n\n---\n\n", contexts);
-
-        // 系统提示：限定只依据提供的上下文作答，无法确定需明确说明
-        String system = "你是中文知识助手。只能依据提供的帖子上下文回答；无法确定的请说明不确定。";
-        // 用户消息：包含问题和召回到的上下文
-        String user = "问题：" + question + "\n\n上下文如下（可能不完整）：\n" + context + "\n\n请基于以上上下文作答。";
+        PostQaPromptBuilder.Prompt prompt = PostQaPromptBuilder.build(
+                characterSoulService.getSoulContent(), contexts, history, question);
 
         return chatClient
                 .prompt() // 构建对话
-                .system(system)
-                .user(user)
+                .system(prompt.system())
+                .user(prompt.user())
                 .options(DeepSeekChatOptions.builder()
                         .model("deepseek-chat") // 指定 DeepSeek 模型
                         .temperature(0.2)       // 低温度：更稳健、少发散
