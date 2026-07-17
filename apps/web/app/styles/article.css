@@ -767,7 +767,7 @@
 
   .article-reading-sidebar {
     display: grid;
-    gap: 14px;
+    gap: 18px;
     min-width: 0;
   }
 
@@ -1261,7 +1261,7 @@
     margin: 1em auto;
   }
 
-  .prose-anime p:has(> img:only-child) + p:has(> em:only-child) {
+  .prose-anime .article-image-caption {
     max-width: 88%;
     margin: -0.35rem auto 2rem;
     color: var(--color-text-secondary);

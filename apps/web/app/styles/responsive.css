@@ -69,6 +69,10 @@
   }
 
   @media (max-width: 640px) {
+    .article-reading-sidebar:not(.article-reading-sidebar--compact) {
+      gap: 14px;
+    }
+
     .article-ask-chtholly {
       align-items: flex-start;
       margin-top: 32px;

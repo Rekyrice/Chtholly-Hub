@@ -126,6 +126,22 @@ describe("ArticleReadingSidebar", () => {
 });
 
 describe("buildReadingClues", () => {
+  it("keeps heading text while removing the ATX heading marker", () => {
+    expect(buildReadingClues("", "# **标题**")).toEqual(["标题"]);
+  });
+
+  it("removes every unordered-list marker before joining lines without punctuation", () => {
+    expect(buildReadingClues("", "- 第一条\n- 第二条")).toEqual([
+      "第一条第二条",
+    ]);
+  });
+
+  it("removes blockquote and ordered-list markers on their own lines", () => {
+    expect(buildReadingClues("", "> 引用内容\n1. 有序内容")).toEqual([
+      "引用内容有序内容",
+    ]);
+  });
+
   it("builds at most three short plain-text clues from description and markdown sentences", () => {
     const clues = buildReadingClues(
       "**群岛**上的相遇。",

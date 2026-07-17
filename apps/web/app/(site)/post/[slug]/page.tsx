@@ -281,10 +281,18 @@ function getCurrentTimeOfDay(): ChthollyIllustrationProps["timeOfDay"] {
 }
 
 export function buildReadingClues(description: string, markdown: string) {
-  const prose = markdown
+  const markdownLines = markdown
     .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, " ")
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*#{1,6}\s+/.test(line))
+    .split(/\r?\n/);
+  const hasBodyLine = markdownLines.some(
+    (line) =>
+      line.trim() &&
+      !isAtxHeading(line) &&
+      !/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(line),
+  );
+  const prose = markdownLines
+    .filter((line) => !hasBodyLine || !isAtxHeading(line))
+    .map(stripMarkdownBlockMarkers)
     .filter((line) => !/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(line))
     .join(" ");
   const candidates = [
@@ -303,13 +311,30 @@ export function buildReadingClues(description: string, markdown: string) {
   return clues;
 }
 
+function isAtxHeading(line: string) {
+  return /^\s{0,3}#{1,6}(?:[ \t]+|$)/.test(line);
+}
+
+function stripMarkdownBlockMarkers(line: string) {
+  let stripped = line;
+
+  while (true) {
+    const next = stripped
+      .replace(/^\s{0,3}#{1,6}(?:[ \t]+|$)/, "")
+      .replace(/^\s{0,3}>[ \t]?/, "")
+      .replace(/^\s{0,3}(?:[-+*]|\d+[.)])[ \t]+/, "");
+
+    if (next === stripped) return stripped;
+    stripped = next;
+  }
+}
+
 function stripMarkdownMarkup(value: string) {
   return value
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/<[^>]+>/g, " ")
-    .replace(/^\s*(?:>|[-+*]|\d+[.)])\s+/g, "")
     .replace(/[*_~]/g, "")
     .replace(/\s+/g, " ")
     .replace(/([\p{Script=Han}])\s+(?=[\p{Script=Han}])/gu, "$1")

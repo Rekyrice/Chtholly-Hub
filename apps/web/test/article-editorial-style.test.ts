@@ -35,17 +35,27 @@ describe("article editorial reading style", () => {
 
   it("renders four adjacent sidebar surfaces with sticky desktop overflow protection", () => {
     expect(article).toMatch(
+      /\.article-reading-sidebar\s*\{[^}]*display:\s*grid;[^}]*gap:\s*18px;/,
+    );
+    expect(article).toMatch(
+      /\.article-reading-sidebar--compact\s*\{[^}]*gap:\s*12px;/,
+    );
+    expect(article).toMatch(
       /\.article-reading-navigator__progress-block,[\s\S]*?\.article-reading-sidebar__section\s*\{[^}]*border-radius:\s*14px;[^}]*backdrop-filter:\s*blur/,
     );
     expect(article).toMatch(
       /\.article-reading-sidebar:not\(\.article-reading-sidebar--compact\)\s*\{[^}]*position:\s*sticky;[^}]*top:\s*76px;[^}]*max-height:\s*calc\(100vh - 92px\);[^}]*overflow-y:\s*auto;/,
     );
+    expect(responsive).toMatch(
+      /@media \(max-width:\s*640px\)[\s\S]*?\.article-reading-sidebar:not\(\.article-reading-sidebar--compact\)\s*\{[^}]*gap:\s*14px;/,
+    );
   });
 
   it("renders only image-adjacent captions smaller, narrower, and centered", () => {
     expect(article).toMatch(
-      /\.prose-anime p:has\(> img:only-child\) \+ p:has\(> em:only-child\)\s*\{[^}]*max-width:\s*88%;[^}]*font-size:\s*0\.8rem;[^}]*line-height:\s*1\.55;[^}]*text-align:\s*center;/,
+      /\.prose-anime \.article-image-caption\s*\{[^}]*max-width:\s*88%;[^}]*font-size:\s*0\.8rem;[^}]*line-height:\s*1\.55;[^}]*text-align:\s*center;/,
     );
+    expect(article).not.toContain(":has(> img:only-child)");
   });
 
   it("switches to 48px tablet insets and 16px mobile insets", () => {
