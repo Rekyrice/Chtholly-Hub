@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Flame, Sparkles } from "lucide-react";
 import type { RecommendedFeedItem } from "@/lib/services/recommendationService";
 import type { FeedItem } from "@/lib/types/post";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 
 type ChthollyRecommendationProps = {
   posts: Array<FeedItem | RecommendedFeedItem>;
@@ -31,15 +31,18 @@ function ChthollyRecommendationSlides({
 }: ChthollyRecommendationProps) {
   const slides = useMemo(() => posts.slice(0, 5), [posts]);
   const [index, setIndex] = useState(0);
+  const [isPointerInside, setIsPointerInside] = useState(false);
+  const [isFocusWithin, setIsFocusWithin] = useState(false);
 
   useEffect(() => {
     if (slides.length <= 1) return;
+    if (isPointerInside || isFocusWithin) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const timer = window.setInterval(() => {
       setIndex((current) => (current + 1) % slides.length);
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [slides.length]);
+  }, [isFocusWithin, isPointerInside, slides.length]);
 
   const headingEyebrow = personalized ? "For You" : "Chtholly Picks";
   const headingTitle = personalized ? "为你推荐" : "热门推荐";
@@ -72,7 +75,19 @@ function ChthollyRecommendationSlides({
   };
 
   return (
-    <section className="hub-recommendation" aria-label={headingTitle}>
+    <section
+      className="hub-recommendation"
+      aria-label={headingTitle}
+      onMouseEnter={() => setIsPointerInside(true)}
+      onMouseLeave={() => setIsPointerInside(false)}
+      onFocus={() => setIsFocusWithin(true)}
+      onBlur={(event) => {
+        const nextFocus = event.relatedTarget;
+        if (!(nextFocus instanceof Node) || !event.currentTarget.contains(nextFocus)) {
+          setIsFocusWithin(false);
+        }
+      }}
+    >
       <div className="hub-section-heading">
         <p>{headingEyebrow}</p>
         <h2>
@@ -96,39 +111,45 @@ function ChthollyRecommendationSlides({
           )}
         </div>
         <div className="hub-recommendation__content">
-          {reason ? (
-            <span className="hub-recommendation__reason">{reason}</span>
-          ) : null}
+          <span className="hub-recommendation__reason">{reason ?? headingTitle}</span>
           <p className="hub-recommendation__meta">
             {active.authorNickname || "仓库居民"}
             {active.tags[0] ? ` · ${active.tags[0]}` : ""}
           </p>
-          <h3>{active.title}</h3>
-          {active.description ? (
-            <p className="hub-recommendation__quote">{active.description}</p>
-          ) : null}
+          <h3 className="hub-recommendation__title">{active.title}</h3>
+          <p className="hub-recommendation__quote">{active.description}</p>
+          <div className="hub-recommendation__date">
+            {active.publishTime ? (
+              <time dateTime={active.publishTime}>{formatDate(active.publishTime)}</time>
+            ) : null}
+          </div>
         </div>
       </Link>
 
-      <div className="hub-recommendation__controls">
-        <button type="button" onClick={() => go(-1)} aria-label="上一条推荐">
-          <ChevronLeft size={18} />
-        </button>
-        <span>
-          {index + 1}/{slides.length}
-        </span>
-        <button type="button" onClick={() => go(1)} aria-label="下一条推荐">
-          <ChevronRight size={18} />
-        </button>
-      </div>
-
-      <div className="hub-recommendation__dots" aria-hidden="true">
-        {slides.map((post, dotIndex) => (
-          <span
-            key={post.id}
-            className={cn(dotIndex === index && "hub-recommendation__dot--active")}
-          />
-        ))}
+      <div
+        className="hub-recommendation__control-row"
+        role="group"
+        aria-label="推荐轮播控制"
+      >
+        <div className="hub-recommendation__dots" aria-hidden="true">
+          {slides.map((post, dotIndex) => (
+            <span
+              key={post.id}
+              className={cn(dotIndex === index && "hub-recommendation__dot--active")}
+            />
+          ))}
+        </div>
+        <div className="hub-recommendation__controls">
+          <button type="button" onClick={() => go(-1)} aria-label="上一条推荐">
+            <ChevronLeft size={18} />
+          </button>
+          <span>
+            {index + 1}/{slides.length}
+          </span>
+          <button type="button" onClick={() => go(1)} aria-label="下一条推荐">
+            <ChevronRight size={18} />
+          </button>
+        </div>
       </div>
     </section>
   );
