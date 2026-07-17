@@ -7,6 +7,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -393,6 +396,29 @@ class TopicClusteringServiceTest {
         assertThat(overview.reason()).isEqualTo("LAST_REFRESH_FAILED");
     }
 
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"not-json", "null", "[]"})
+    void getOverview_exposesFailedStatusWhenNoUsableSnapshotExists(String topicsPayload) throws Exception {
+        Instant attemptAt = NOW.minusSeconds(30);
+        Instant successAt = NOW.minus(Duration.ofHours(6));
+        when(valueOps.get("agent:topic-clusters")).thenReturn(topicsPayload);
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(
+                        TopicClusterState.FAILED,
+                        attemptAt,
+                        successAt,
+                        "REFRESH_FAILED")));
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEmpty();
+        assertThat(overview.state()).isEqualTo(TopicClusterState.FAILED);
+        assertThat(overview.lastAttemptAt()).isEqualTo(attemptAt);
+        assertThat(overview.lastSuccessAt()).isEqualTo(successAt);
+        assertThat(overview.reason()).isEqualTo("REFRESH_FAILED");
+    }
+
     @Test
     void getOverview_keepsReadySnapshotVisibleWhileRefreshIsPending() throws Exception {
         Instant attemptAt = NOW.minusSeconds(30);
@@ -687,6 +713,24 @@ class TopicClusteringServiceTest {
     void refreshIfMissing_refreshesCorruptStatusPayload() throws Exception {
         when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(storedClusters(NOW)));
         when(valueOps.get("agent:topic-clusters:status")).thenReturn("not-json");
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"not-json", "null", "[]"})
+    void refreshIfMissing_refreshesFailedStatusWhenNoUsableSnapshotExists(String topicsPayload) throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn(topicsPayload);
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(
+                        TopicClusterState.FAILED,
+                        NOW,
+                        NOW.minus(Duration.ofHours(6)),
+                        "REFRESH_FAILED")));
         when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
 
         service(prompt -> "", false).refreshIfMissing();

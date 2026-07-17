@@ -243,6 +243,15 @@ public class TopicClusteringService {
                     Math.toIntExact(DEFAULT_WINDOW.toDays()),
                     lastRefreshFailed ? "LAST_REFRESH_FAILED" : null);
         }
+        if (status != null && status.state() == TopicClusterState.FAILED) {
+            return new TopicClusterOverview(
+                    List.of(),
+                    TopicClusterState.FAILED,
+                    status.lastAttemptAt(),
+                    status.lastSuccessAt(),
+                    Math.toIntExact(DEFAULT_WINDOW.toDays()),
+                    status.reason());
+        }
         if (status == null) {
             return new TopicClusterOverview(
                     List.of(),
@@ -695,7 +704,7 @@ public class TopicClusteringService {
             return switch (status.state()) {
                 case READY -> !clusters.isEmpty();
                 case SPARSE -> clusters.isEmpty();
-                case FAILED -> true;
+                case FAILED -> !clusters.isEmpty();
                 case PENDING -> false;
             };
         }
