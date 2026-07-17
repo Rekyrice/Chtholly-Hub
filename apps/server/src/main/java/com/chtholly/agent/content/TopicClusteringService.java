@@ -9,6 +9,7 @@ import com.chtholly.content.Entity;
 import com.chtholly.post.api.dto.PostSummary;
 import com.chtholly.post.service.PostService;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -47,13 +48,16 @@ import java.util.stream.Collectors;
 public class TopicClusteringService {
 
     static final String TOPICS_KEY = "agent:topic-clusters";
+    static final String STATUS_KEY = "agent:topic-clusters:status";
     static final String LOCK_KEY = "lock:scheduled:topicClustering";
     static final Duration REDIS_TTL = Duration.ofHours(24);
+    static final Duration STATUS_TTL = Duration.ofDays(30);
     static final Duration LOCK_TTL = Duration.ofMinutes(15);
+    static final Duration DEFAULT_WINDOW = Duration.ofDays(7);
     static final double SIMILARITY_THRESHOLD = 0.7;
     static final int MIN_CLUSTER_SIZE = 2;
     static final int MAX_POSTS = 200;
-    static final int MIN_SHARED_TAGS = 2;
+    static final int MIN_SHARED_TAGS = 1;
 
     private final PostService postService;
     private final StringRedisTemplate redis;
@@ -106,17 +110,59 @@ public class TopicClusteringService {
         }
         long startNanos = System.nanoTime();
         boolean success = false;
+        Instant attemptAt = clock.instant();
+        TopicClusterRunStatus previousStatus = null;
         try {
-            List<TopicCluster> clusters = clusterRecentPosts(Duration.ofDays(7));
+            previousStatus = getRunStatus();
+            Instant previousSuccessAt = previousStatus == null ? null : previousStatus.lastSuccessAt();
+            storeRunStatus(new TopicClusterRunStatus(
+                    TopicClusterState.PENDING,
+                    attemptAt,
+                    previousSuccessAt,
+                    "REFRESHING"));
+            List<TopicCluster> clusters = clusterRecentPosts(DEFAULT_WINDOW);
             storeClusters(clusters);
+            boolean empty = clusters.isEmpty();
+            storeRunStatus(new TopicClusterRunStatus(
+                    empty ? TopicClusterState.SPARSE : TopicClusterState.READY,
+                    attemptAt,
+                    clock.instant(),
+                    empty ? "INSUFFICIENT_SIGNALS" : null));
             success = true;
             log.info("Topic clustering stored {} clusters", clusters.size());
-        } catch (Exception e) {
-            log.error("Topic clustering failed", e);
+        } catch (RuntimeException refreshFailure) {
+            Instant previousSuccessAt = previousStatus == null ? null : previousStatus.lastSuccessAt();
+            try {
+                storeRunStatus(new TopicClusterRunStatus(
+                        TopicClusterState.FAILED,
+                        attemptAt,
+                        previousSuccessAt,
+                        "REFRESH_FAILED"));
+            } catch (RuntimeException statusFailure) {
+                if (statusFailure != refreshFailure) {
+                    refreshFailure.addSuppressed(statusFailure);
+                }
+            }
+            log.error("Topic clustering failed", refreshFailure);
+            throw refreshFailure;
         } finally {
             long durationMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
-            lockService.recordRun("topicClustering", durationMs, success);
-            lockService.unlock(LOCK_KEY);
+            try {
+                lockService.recordRun("topicClustering", durationMs, success);
+            } finally {
+                lockService.unlock(LOCK_KEY);
+            }
+        }
+    }
+
+    /**
+     * Refreshes topic clusters only when either the snapshot or status key is missing.
+     */
+    public void refreshIfMissing() {
+        boolean topicsPresent = Boolean.TRUE.equals(redis.hasKey(TOPICS_KEY));
+        boolean statusPresent = Boolean.TRUE.equals(redis.hasKey(STATUS_KEY));
+        if (!topicsPresent || !statusPresent) {
+            updateTopicClusters();
         }
     }
 
@@ -128,7 +174,7 @@ public class TopicClusteringService {
      */
     public List<TopicCluster> clusterRecentPosts(Duration window) {
         Duration safeWindow = window == null || window.isNegative() || window.isZero()
-                ? Duration.ofDays(7)
+                ? DEFAULT_WINDOW
                 : window;
         List<PostSummary> posts = postService.getRecentPosts(safeWindow, MAX_POSTS);
         if (posts == null || posts.isEmpty()) {
@@ -183,6 +229,43 @@ public class TopicClusteringService {
     }
 
     /**
+     * Returns the current topic-cluster snapshot with lifecycle metadata.
+     *
+     * @return current topic-cluster overview
+     */
+    public TopicClusterOverview getOverview() {
+        List<TopicCluster> clusters = getStoredClusters();
+        TopicClusterRunStatus status = getRunStatus();
+        if (!clusters.isEmpty()) {
+            return new TopicClusterOverview(
+                    clusters,
+                    TopicClusterState.READY,
+                    status == null ? null : status.lastAttemptAt(),
+                    status == null ? null : status.lastSuccessAt(),
+                    Math.toIntExact(DEFAULT_WINDOW.toDays()),
+                    status != null && status.state() == TopicClusterState.FAILED
+                            ? "LAST_REFRESH_FAILED"
+                            : null);
+        }
+        if (status == null) {
+            return new TopicClusterOverview(
+                    List.of(),
+                    TopicClusterState.PENDING,
+                    null,
+                    null,
+                    Math.toIntExact(DEFAULT_WINDOW.toDays()),
+                    "NOT_GENERATED");
+        }
+        return new TopicClusterOverview(
+                List.of(),
+                status.state(),
+                status.lastAttemptAt(),
+                status.lastSuccessAt(),
+                Math.toIntExact(DEFAULT_WINDOW.toDays()),
+                status.reason());
+    }
+
+    /**
      * Finds a stored cluster by topic name (case-insensitive).
      *
      * @param topicName topic label
@@ -204,8 +287,34 @@ public class TopicClusteringService {
         try {
             String json = objectMapper.writeValueAsString(clusters == null ? List.of() : clusters);
             redis.opsForValue().set(TOPICS_KEY, json, REDIS_TTL);
-        } catch (Exception e) {
-            log.warn("Store topic clusters failed: {}", e.getMessage());
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Serialize topic clusters failed", e);
+        }
+    }
+
+    private TopicClusterRunStatus getRunStatus() {
+        String raw = redis.opsForValue().get(STATUS_KEY);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            TopicClusterRunStatus status = objectMapper.readValue(raw, TopicClusterRunStatus.class);
+            if (status.state() == null) {
+                log.warn("Deserialize topic cluster status produced a missing state");
+                return null;
+            }
+            return status;
+        } catch (JsonProcessingException e) {
+            log.warn("Deserialize topic cluster status failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void storeRunStatus(TopicClusterRunStatus status) {
+        try {
+            redis.opsForValue().set(STATUS_KEY, objectMapper.writeValueAsString(status), STATUS_TTL);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Serialize topic cluster status failed", e);
         }
     }
 
@@ -268,8 +377,8 @@ public class TopicClusteringService {
                     bestIdx = i;
                 }
             }
-            // 共享标签数 > 2 才并入已有簇，否则新建
-            if (bestIdx >= 0 && bestShared > MIN_SHARED_TAGS) {
+            // 精确规范化标签达到可信阈值时才合并，避免热门标签替代真实聚类结果
+            if (bestIdx >= 0 && bestShared >= MIN_SHARED_TAGS) {
                 MutableCluster target = clusters.get(bestIdx);
                 target.members.add(post);
                 target.tags.addAll(postTags);

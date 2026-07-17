@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import com.chtholly.agent.api.dto.TopicClusterResponse;
 import com.chtholly.agent.api.dto.TopicPostResponse;
+import com.chtholly.agent.api.dto.TopicOverviewResponse;
 import com.chtholly.agent.content.TopicCluster;
 import com.chtholly.agent.content.TopicClusteringService;
 import com.chtholly.common.exception.BusinessException;
@@ -48,6 +49,31 @@ public class TopicController {
                         cluster.keyEntities(),
                         cluster.clusteredAt()))
                 .toList();
+    }
+
+    /**
+     * Returns topic clusters together with their refresh lifecycle state.
+     *
+     * @return current topic-cluster overview
+     */
+    @GetMapping("/overview")
+    public TopicOverviewResponse overview() {
+        var overview = topicClusteringService.getOverview();
+        List<TopicClusterResponse> items = overview.items().stream()
+                .map(cluster -> new TopicClusterResponse(
+                        cluster.topicName(),
+                        cluster.summary(),
+                        cluster.size(),
+                        cluster.keyEntities(),
+                        cluster.clusteredAt()))
+                .toList();
+        return new TopicOverviewResponse(
+                items,
+                overview.state(),
+                overview.lastAttemptAt(),
+                overview.lastSuccessAt(),
+                overview.windowDays(),
+                overview.reason());
     }
 
     /**

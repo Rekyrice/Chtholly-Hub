@@ -22,12 +22,18 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -76,6 +82,49 @@ class TopicClusteringServiceTest {
     }
 
     @Test
+    void clusterRecentPosts_groupsTwoPostsWithOneExactNormalizedTag() {
+        when(embeddingModelProvider.getIfAvailable()).thenReturn(null);
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of(
+                post(1L, "旅程的终点", "时间与告别", List.of(" 芙莉莲 ")),
+                post(2L, "千年的旅途", "关于记忆", List.of("芙莉莲"))
+        ));
+        when(postService.getContentAnalysis(any())).thenReturn(null);
+
+        List<TopicCluster> clusters = service(prompt -> "", false)
+                .clusterRecentPosts(Duration.ofDays(7));
+
+        assertThat(clusters).hasSize(1);
+        assertThat(clusters.getFirst().postIds()).containsExactly(1L, 2L);
+    }
+
+    @Test
+    void clusterRecentPosts_doesNotGroupPostsWithoutSharedTags() {
+        when(embeddingModelProvider.getIfAvailable()).thenReturn(null);
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of(
+                post(1L, "旅程的终点", "时间与告别", List.of("芙莉莲")),
+                post(2L, "CLI 重构", "工程笔记", List.of("Rust"))
+        ));
+
+        List<TopicCluster> clusters = service(prompt -> "", false)
+                .clusterRecentPosts(Duration.ofDays(7));
+
+        assertThat(clusters).isEmpty();
+    }
+
+    @Test
+    void clusterRecentPosts_doesNotCreateClusterForSinglePost() {
+        when(embeddingModelProvider.getIfAvailable()).thenReturn(null);
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of(
+                post(1L, "旅程的终点", "时间与告别", List.of("芙莉莲"))
+        ));
+
+        List<TopicCluster> clusters = service(prompt -> "", false)
+                .clusterRecentPosts(Duration.ofDays(7));
+
+        assertThat(clusters).isEmpty();
+    }
+
+    @Test
     void clusterRecentPosts_groupsByEmbeddingSimilarity() {
         when(embeddingModelProvider.getIfAvailable()).thenReturn(embeddingModel);
         when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of(
@@ -120,9 +169,124 @@ class TopicClusteringServiceTest {
 
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
         verify(valueOps).set(eq("agent:topic-clusters"), jsonCaptor.capture(), eq(Duration.ofHours(24)));
+        ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOps, times(2)).set(
+                eq("agent:topic-clusters:status"), statusCaptor.capture(), eq(Duration.ofDays(30)));
         verify(lockService).unlock("lock:scheduled:topicClustering");
         verify(lockService).recordRun(eq("topicClustering"), any(Long.class), eq(true));
         assertThat(jsonCaptor.getValue()).contains("芙莉莲讨论");
+        TopicClusterRunStatus status = readStatus(statusCaptor.getAllValues().getLast());
+        assertThat(status.state()).isEqualTo(TopicClusterState.READY);
+        assertThat(status.lastAttemptAt()).isEqualTo(NOW);
+        assertThat(status.lastSuccessAt()).isEqualTo(NOW);
+        assertThat(status.reason()).isNull();
+    }
+
+    @Test
+    void updateTopicClusters_persistsSparseEmptySnapshot() {
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of());
+
+        TopicClusteringService service = service(prompt -> "", false);
+        service.updateTopicClusters();
+
+        verify(valueOps).set("agent:topic-clusters", "[]", Duration.ofHours(24));
+        ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOps, times(2)).set(
+                eq("agent:topic-clusters:status"), statusCaptor.capture(), eq(Duration.ofDays(30)));
+        TopicClusterRunStatus status = readStatus(statusCaptor.getAllValues().getLast());
+        assertThat(status.state()).isEqualTo(TopicClusterState.SPARSE);
+        assertThat(status.lastAttemptAt()).isEqualTo(NOW);
+        assertThat(status.lastSuccessAt()).isEqualTo(NOW);
+        assertThat(status.reason()).isEqualTo("INSUFFICIENT_SIGNALS");
+        verify(lockService).recordRun(eq("topicClustering"), any(Long.class), eq(true));
+        verify(lockService).unlock("lock:scheduled:topicClustering");
+    }
+
+    @Test
+    void updateTopicClusters_persistsFailedStateAndRethrowsOriginalFailure() throws Exception {
+        RuntimeException failure = new IllegalStateException("recent posts unavailable");
+        Instant previousSuccessAt = NOW.minus(Duration.ofHours(2));
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.READY, previousSuccessAt, previousSuccessAt, null)));
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenThrow(failure);
+
+        TopicClusteringService service = service(prompt -> "", false);
+
+        assertThatThrownBy(service::updateTopicClusters).isSameAs(failure);
+        ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOps, times(2)).set(
+                eq("agent:topic-clusters:status"), statusCaptor.capture(), eq(Duration.ofDays(30)));
+        TopicClusterRunStatus status = readStatus(statusCaptor.getAllValues().getLast());
+        TopicClusterRunStatus pending = readStatus(statusCaptor.getAllValues().getFirst());
+        assertThat(pending.state()).isEqualTo(TopicClusterState.PENDING);
+        assertThat(pending.lastAttemptAt()).isEqualTo(NOW);
+        assertThat(pending.lastSuccessAt()).isEqualTo(previousSuccessAt);
+        assertThat(pending.reason()).isEqualTo("REFRESHING");
+        assertThat(status.state()).isEqualTo(TopicClusterState.FAILED);
+        assertThat(status.lastAttemptAt()).isEqualTo(NOW);
+        assertThat(status.lastSuccessAt()).isEqualTo(previousSuccessAt);
+        assertThat(status.reason()).isEqualTo("REFRESH_FAILED");
+        verify(lockService).recordRun(eq("topicClustering"), any(Long.class), eq(false));
+        verify(lockService).unlock("lock:scheduled:topicClustering");
+    }
+
+    @Test
+    void updateTopicClusters_marksRunFailedWhenSnapshotStorageFails() {
+        RuntimeException storageFailure = new IllegalStateException("redis write unavailable");
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of());
+        doAnswer(invocation -> {
+            if ("agent:topic-clusters".equals(invocation.getArgument(0))) {
+                throw storageFailure;
+            }
+            return null;
+        }).when(valueOps).set(anyString(), anyString(), any(Duration.class));
+
+        TopicClusteringService service = service(prompt -> "", false);
+
+        assertThatThrownBy(service::updateTopicClusters).isSameAs(storageFailure);
+        ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
+        verify(valueOps, times(2)).set(
+                eq("agent:topic-clusters:status"), statusCaptor.capture(), eq(Duration.ofDays(30)));
+        assertThat(readStatus(statusCaptor.getAllValues().getLast()).state())
+                .isEqualTo(TopicClusterState.FAILED);
+        verify(lockService).recordRun(eq("topicClustering"), any(Long.class), eq(false));
+        verify(lockService).unlock("lock:scheduled:topicClustering");
+    }
+
+    @Test
+    void updateTopicClusters_preservesOriginalFailureWhenFailedStatusCannotBeStored() {
+        RuntimeException refreshFailure = new IllegalStateException("recent posts unavailable");
+        RuntimeException statusFailure = new IllegalStateException("status write unavailable");
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenThrow(refreshFailure);
+        doNothing().doThrow(statusFailure).when(valueOps)
+                .set(eq("agent:topic-clusters:status"), anyString(), eq(Duration.ofDays(30)));
+
+        TopicClusteringService service = service(prompt -> "", false);
+
+        Throwable thrown = catchThrowable(service::updateTopicClusters);
+        assertThat(thrown).isSameAs(refreshFailure);
+        assertThat(thrown.getSuppressed()).containsExactly(statusFailure);
+        verify(lockService).recordRun(eq("topicClustering"), any(Long.class), eq(false));
+        verify(lockService).unlock("lock:scheduled:topicClustering");
+    }
+
+    @Test
+    void updateTopicClusters_preservesFailureWhenStatusWritesThrowSameInstance() {
+        RuntimeException statusFailure = new IllegalStateException("status write unavailable");
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
+        doThrow(statusFailure).when(valueOps)
+                .set(eq("agent:topic-clusters:status"), anyString(), eq(Duration.ofDays(30)));
+
+        TopicClusteringService service = service(prompt -> "", false);
+
+        Throwable thrown = catchThrowable(service::updateTopicClusters);
+        assertThat(thrown).isSameAs(statusFailure);
+        verify(lockService).recordRun(eq("topicClustering"), any(Long.class), eq(false));
+        verify(lockService).unlock("lock:scheduled:topicClustering");
     }
 
     @Test
@@ -134,6 +298,111 @@ class TopicClusteringServiceTest {
 
         verify(postService, never()).getRecentPosts(any(), anyInt());
         verify(lockService, never()).unlock(anyString());
+        verify(valueOps, never()).set(eq("agent:topic-clusters:status"), anyString(), any(Duration.class));
+    }
+
+    @Test
+    void getOverview_exposesReadySnapshotWithLastRefreshFailure() throws Exception {
+        Instant attemptAt = NOW.minusSeconds(30);
+        Instant successAt = NOW.minus(Duration.ofHours(6));
+        List<TopicCluster> stored = List.of(new TopicCluster(
+                "治愈系动画讨论",
+                "大家在聊温柔的故事",
+                List.of(1L, 2L),
+                2,
+                List.of("芙莉莲"),
+                successAt));
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(stored));
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.FAILED, attemptAt, successAt, "REFRESH_FAILED")));
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEqualTo(stored);
+        assertThat(overview.state()).isEqualTo(TopicClusterState.READY);
+        assertThat(overview.lastAttemptAt()).isEqualTo(attemptAt);
+        assertThat(overview.lastSuccessAt()).isEqualTo(successAt);
+        assertThat(overview.windowDays()).isEqualTo(7);
+        assertThat(overview.reason()).isEqualTo("LAST_REFRESH_FAILED");
+    }
+
+    @Test
+    void getOverview_exposesPendingWhenSnapshotWasNeverGenerated() {
+        when(valueOps.get("agent:topic-clusters")).thenReturn(null);
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(null);
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEmpty();
+        assertThat(overview.state()).isEqualTo(TopicClusterState.PENDING);
+        assertThat(overview.lastAttemptAt()).isNull();
+        assertThat(overview.lastSuccessAt()).isNull();
+        assertThat(overview.reason()).isEqualTo("NOT_GENERATED");
+    }
+
+    @Test
+    void getOverview_treatsCorruptStatusAsMissing() {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn("not-json");
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.state()).isEqualTo(TopicClusterState.PENDING);
+        assertThat(overview.reason()).isEqualTo("NOT_GENERATED");
+    }
+
+    @Test
+    void getOverview_exposesPersistedSparseState() throws Exception {
+        Instant attemptAt = NOW.minusSeconds(30);
+        when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(
+                        TopicClusterState.SPARSE,
+                        attemptAt,
+                        NOW,
+                        "INSUFFICIENT_SIGNALS")));
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEmpty();
+        assertThat(overview.state()).isEqualTo(TopicClusterState.SPARSE);
+        assertThat(overview.lastAttemptAt()).isEqualTo(attemptAt);
+        assertThat(overview.lastSuccessAt()).isEqualTo(NOW);
+        assertThat(overview.reason()).isEqualTo("INSUFFICIENT_SIGNALS");
+    }
+
+    @Test
+    void refreshIfMissing_doesNotRefreshWhenBothKeysExist() {
+        when(redis.hasKey("agent:topic-clusters")).thenReturn(true);
+        when(redis.hasKey("agent:topic-clusters:status")).thenReturn(true);
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService, never()).tryLock(anyString(), any(Duration.class));
+    }
+
+    @Test
+    void refreshIfMissing_refreshesWhenStatusKeyIsMissing() {
+        when(redis.hasKey("agent:topic-clusters")).thenReturn(true);
+        when(redis.hasKey("agent:topic-clusters:status")).thenReturn(false);
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(true);
+        when(postService.getRecentPosts(Duration.ofDays(7), 200)).thenReturn(List.of());
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
+        verify(valueOps).set("agent:topic-clusters", "[]", Duration.ofHours(24));
+    }
+
+    @Test
+    void refreshIfMissing_refreshesWhenTopicsKeyIsMissing() {
+        when(redis.hasKey("agent:topic-clusters")).thenReturn(false);
+        when(redis.hasKey("agent:topic-clusters:status")).thenReturn(true);
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
     }
 
     @Test
@@ -182,5 +451,13 @@ class TopicClusteringServiceTest {
 
     private static PostSummary post(long id, String title, String description, List<String> tags) {
         return new PostSummary(id, title, description, NOW.minus(Duration.ofHours(id)), tags);
+    }
+
+    private TopicClusterRunStatus readStatus(String json) {
+        try {
+            return objectMapper.readValue(json, TopicClusterRunStatus.class);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
     }
 }
