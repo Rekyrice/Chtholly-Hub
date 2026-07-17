@@ -132,7 +132,8 @@ describe("buildReadingClues", () => {
 
   it("removes every unordered-list marker from a multiline description", () => {
     expect(buildReadingClues("- 第一条\n- 第二条", "")).toEqual([
-      "第一条第二条",
+      "第一条",
+      "第二条",
     ]);
   });
 
@@ -142,13 +143,33 @@ describe("buildReadingClues", () => {
 
   it("removes every unordered-list marker before joining lines without punctuation", () => {
     expect(buildReadingClues("", "- 第一条\n- 第二条")).toEqual([
-      "第一条第二条",
+      "第一条",
+      "第二条",
     ]);
   });
 
   it("removes blockquote and ordered-list markers on their own lines", () => {
     expect(buildReadingClues("", "> 引用内容\n1. 有序内容")).toEqual([
-      "引用内容有序内容",
+      "引用内容",
+      "有序内容",
+    ]);
+  });
+
+  it("deduplicates clues after different long sentences are truncated", () => {
+    const sharedPrefix = "长".repeat(71);
+
+    expect(
+      buildReadingClues(
+        "",
+        `${sharedPrefix}甲。${sharedPrefix}乙。最后一条。`,
+      ),
+    ).toEqual([`${sharedPrefix}…`, "最后一条。"]);
+  });
+
+  it("normalizes whitespace around sentence boundaries in ordinary prose", () => {
+    expect(buildReadingClues("", "第一句。 第二句。")).toEqual([
+      "第一句。",
+      "第二句。",
     ]);
   });
 

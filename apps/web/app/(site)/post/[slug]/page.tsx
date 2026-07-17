@@ -68,9 +68,9 @@ export default async function PostPage({ params }: Props) {
   const clues = buildReadingClues(post.description, markdown);
 
   return (
-    <div className="article-detail-layout">
+    <main className="article-detail-layout">
       <ReadingProgress />
-      <main className="article-main">
+      <div className="article-primary article-main">
         <article className="post-card article-detail-card">
           {cover && (
             <div className="post-card-image">
@@ -153,23 +153,8 @@ export default async function PostPage({ params }: Props) {
               </div>
             </div>
           )}
-
         </article>
-        <AuthorCard
-          authorId={post.authorId}
-          authorHandle={post.authorHandle}
-          avatar={post.authorAvatar}
-          nickname={post.authorNickname}
-          bio={post.authorBio}
-          postId={post.id}
-          postTitle={post.title}
-          postTop={post.isTop}
-          postVisibility={post.visible}
-        />
-        <RelatedPosts cards={relatedPosts} />
-        <PostQnA postId={post.id} />
-        <CommentSection postId={post.id} />
-      </main>
+      </div>
 
       <ArticleReadingSidebar
         headings={headings}
@@ -187,7 +172,24 @@ export default async function PostPage({ params }: Props) {
         readingState={readingState}
         timeOfDay={timeOfDay}
       />
-    </div>
+
+      <div className="article-followup article-main">
+        <AuthorCard
+          authorId={post.authorId}
+          authorHandle={post.authorHandle}
+          avatar={post.authorAvatar}
+          nickname={post.authorNickname}
+          bio={post.authorBio}
+          postId={post.id}
+          postTitle={post.title}
+          postTop={post.isTop}
+          postVisibility={post.visible}
+        />
+        <RelatedPosts cards={relatedPosts} />
+        <PostQnA postId={post.id} />
+        <CommentSection postId={post.id} />
+      </div>
+    </main>
   );
 }
 
@@ -295,16 +297,15 @@ export function buildReadingClues(description: string, markdown: string) {
     .filter((line) => !/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(line))
     .join("\n");
   const candidates = [
-    normalizeReadingClueCandidate(description),
-    ...normalizeReadingClueCandidate(prose).split(
-      /(?<=[。！？!?])|(?<=\.)\s+/u,
-    ),
+    ...buildReadingClueCandidates(description),
+    ...buildReadingClueCandidates(prose),
   ];
   const clues: string[] = [];
 
   for (const plain of candidates) {
-    if (!plain || clues.includes(plain)) continue;
-    clues.push(plain.length > 72 ? `${plain.slice(0, 71)}…` : plain);
+    const clipped = plain.length > 72 ? `${plain.slice(0, 71)}…` : plain;
+    if (!clipped || clues.includes(clipped)) continue;
+    clues.push(clipped);
     if (clues.length === 3) break;
   }
 
@@ -329,11 +330,22 @@ function stripMarkdownBlockMarkers(line: string) {
   }
 }
 
-function normalizeReadingClueCandidate(value: string) {
+function buildReadingClueCandidates(value: string) {
   return value
     .split(/\r?\n/)
-    .map(stripMarkdownBlockMarkers)
-    .join(" ")
+    .flatMap((line) => {
+      const normalized = normalizeReadingClueLine(line);
+      return normalized
+        ? normalized
+            .split(/(?<=[。！？!?])|(?<=\.)\s+/u)
+            .map((candidate) => candidate.trim())
+            .filter(Boolean)
+        : [];
+    });
+}
+
+function normalizeReadingClueLine(value: string) {
+  return stripMarkdownBlockMarkers(value)
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/`([^`]+)`/g, "$1")

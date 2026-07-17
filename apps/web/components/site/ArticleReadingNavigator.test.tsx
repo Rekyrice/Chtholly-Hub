@@ -133,6 +133,82 @@ describe("ArticleReadingNavigator", () => {
     );
   });
 
+  it("tracks a short article continuously until it is fully visible and passed", () => {
+    const body = document.createElement("div");
+    body.dataset.articleBody = "";
+    let bodyTop = 600;
+    Object.defineProperty(body, "scrollHeight", { value: 400 });
+    body.getBoundingClientRect = () => ({
+      top: bodyTop,
+      bottom: bodyTop + 400,
+      height: 400,
+      left: 0,
+      right: 760,
+      width: 760,
+      x: 0,
+      y: bodyTop,
+      toJSON: () => ({}),
+    });
+    document.body.append(body);
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
+
+    render(<ArticleReadingNavigator headings={[]} clues={[]} />);
+    flushLatestFrame();
+    expect(screen.getByRole("progressbar", { name: "正文阅读进度" })).toHaveAttribute(
+      "aria-valuenow",
+      "50",
+    );
+
+    bodyTop = 200;
+    act(() => window.dispatchEvent(new Event("scroll")));
+    flushLatestFrame();
+    expect(screen.getByRole("progressbar", { name: "正文阅读进度" })).toHaveAttribute(
+      "aria-valuenow",
+      "100",
+    );
+
+    bodyTop = -500;
+    act(() => window.dispatchEvent(new Event("scroll")));
+    flushLatestFrame();
+    expect(screen.getByRole("progressbar", { name: "正文阅读进度" })).toHaveAttribute(
+      "aria-valuenow",
+      "100",
+    );
+  });
+
+  it("keeps zero-height and missing article bodies at zero progress", () => {
+    const body = document.createElement("div");
+    body.dataset.articleBody = "";
+    Object.defineProperty(body, "scrollHeight", { value: 0 });
+    body.getBoundingClientRect = () => ({
+      top: 0,
+      bottom: 0,
+      height: 0,
+      left: 0,
+      right: 0,
+      width: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    document.body.append(body);
+
+    render(<ArticleReadingNavigator headings={[]} clues={[]} />);
+    flushLatestFrame();
+    expect(screen.getByRole("progressbar", { name: "正文阅读进度" })).toHaveAttribute(
+      "aria-valuenow",
+      "0",
+    );
+
+    body.remove();
+    act(() => window.dispatchEvent(new Event("scroll")));
+    flushLatestFrame();
+    expect(screen.getByRole("progressbar", { name: "正文阅读进度" })).toHaveAttribute(
+      "aria-valuenow",
+      "0",
+    );
+  });
+
   it("cancels pending work and removes listeners on unmount", () => {
     const removeListener = vi.spyOn(window, "removeEventListener");
     const { unmount } = render(

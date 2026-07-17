@@ -14,13 +14,43 @@ describe("article editorial reading style", () => {
     );
     expect(article).toMatch(/\.article-main\s*\{[^}]*max-width:\s*920px;/);
     expect(article).toMatch(
-      /@media \(min-width:\s*1024px\)[\s\S]*?\.article-detail-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 920px\) 312px;[^}]*gap:\s*28px;/,
+      /@media \(min-width:\s*1024px\)[\s\S]*?\.article-detail-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 920px\) 312px;[^}]*column-gap:\s*28px;[^}]*row-gap:\s*0;/,
     );
     expect(article).toMatch(
       /\.article-detail-card\s*\{[^}]*background:\s*color-mix\([^}]*transparent[^}]*backdrop-filter:\s*blur/,
     );
     expect(visuals).toMatch(
       /\.site-shell--route-visual \.article-detail-card\s*\{[^}]*--surface-reading-alpha/,
+    );
+  });
+
+  it("preserves a readable main column throughout the 1024 to 1279 two-column range", () => {
+    expect(article).toMatch(
+      /@media \(min-width:\s*1024px\) and \(max-width:\s*1279px\)[\s\S]*?\.article-detail-card \.entry-header\s*\{[^}]*padding:\s*52px 24px 28px;[\s\S]*?\.article-detail-card \.article-reading-sidebar--compact\s*\{[^}]*margin:\s*0 24px 36px;[\s\S]*?\.article-detail-card \.prose-anime\s*\{[^}]*width:\s*calc\(100% - 48px\);[^}]*max-width:\s*760px;[\s\S]*?\.article-detail-tags\s*\{[^}]*padding:\s*20px 24px 24px;/,
+    );
+
+    const mainWidthAt1024 = 1024 - 32 - 312 - 28;
+    const readableWidthAt1024 = mainWidthAt1024 - 48;
+    expect(readableWidthAt1024).toBeGreaterThanOrEqual(600);
+  });
+
+  it("places one full sidebar between the article and follow-up content", () => {
+    const sidebars = [...page.matchAll(/<ArticleReadingSidebar[\s\S]*?\/>/g)];
+    const fullSidebar = sidebars.find((match) => !/\scompact\s/.test(match[0]));
+    const primaryIndex = page.indexOf('className="article-primary article-main"');
+    const followupIndex = page.indexOf('className="article-followup article-main"');
+
+    expect(page).toContain('<main className="article-detail-layout">');
+    expect(page).not.toContain('<main className="article-main">');
+    expect(sidebars).toHaveLength(2);
+    expect(sidebars.filter((match) => /\scompact\s/.test(match[0]))).toHaveLength(1);
+    expect(primaryIndex).toBeGreaterThan(-1);
+    expect(fullSidebar?.index).toBeGreaterThan(primaryIndex);
+    expect(fullSidebar?.index).toBeLessThan(followupIndex);
+    expect(page.indexOf("<AuthorCard", followupIndex)).toBeGreaterThan(followupIndex);
+
+    expect(article).toMatch(
+      /@media \(min-width:\s*1024px\)[\s\S]*?\.article-primary\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;[\s\S]*?\.article-followup\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*2;[\s\S]*?\.article-detail-layout > \.article-reading-sidebar:not\(\.article-reading-sidebar--compact\)\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1 \/ span 2;/,
     );
   });
 

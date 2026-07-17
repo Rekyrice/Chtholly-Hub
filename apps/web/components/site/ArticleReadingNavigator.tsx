@@ -29,11 +29,11 @@ export default function ArticleReadingNavigator({
         const rect = articleBody.getBoundingClientRect();
         const bodyHeight = Math.max(articleBody.scrollHeight, rect.height);
         const scrollableDistance = bodyHeight - window.innerHeight;
-        const nextProgress = scrollableDistance > 0
-          ? (-rect.top / scrollableDistance) * 100
-          : rect.top <= 0
-            ? 100
-            : 0;
+        const nextProgress = bodyHeight <= 0
+          ? 0
+          : scrollableDistance > 0
+            ? (-rect.top / scrollableDistance) * 100
+            : ((window.innerHeight - rect.top) / bodyHeight) * 100;
         setProgress(Math.min(100, Math.max(0, Math.round(nextProgress))));
       } else {
         setProgress(0);
