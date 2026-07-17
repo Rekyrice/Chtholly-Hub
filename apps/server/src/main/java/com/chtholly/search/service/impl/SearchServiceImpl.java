@@ -278,15 +278,23 @@ public class SearchServiceImpl implements SearchService {
             for (int i = 0; i < parts.length; i++) {
                 String p = parts[i];
                 if (sort == SearchSort.RELEVANCE && i == 0) {
-                    out.add(FieldValue.of(Double.parseDouble(p)));
+                    double score = Double.parseDouble(p);
+                    if (!Double.isFinite(score) || score < 0) {
+                        throw new IllegalArgumentException("cursor score must be finite and non-negative");
+                    }
+                    out.add(FieldValue.of(score));
                 } else {
-                    out.add(FieldValue.of(Long.parseLong(p)));
+                    long value = Long.parseLong(p);
+                    if (value < 0) {
+                        throw new IllegalArgumentException("cursor long values must be non-negative");
+                    }
+                    out.add(FieldValue.of(value));
                 }
             }
 
             return out;
         } catch (Exception e) {
-            log.warn("Search cursor ignored because it is invalid for sort={}", sort);
+            log.debug("Search cursor ignored because it is invalid for sort={}", sort);
             return null;
         }
     }

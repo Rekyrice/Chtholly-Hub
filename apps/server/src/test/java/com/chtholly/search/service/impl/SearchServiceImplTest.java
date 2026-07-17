@@ -24,16 +24,22 @@ import com.chtholly.user.service.PublicAuthorQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -271,6 +277,36 @@ class SearchServiceImplTest {
                         factory.apply(new SearchRequest.Builder()).build().searchAfter()).isEmpty());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"NaN", "Infinity", "-Infinity", "1e309"})
+    void given_nonFiniteRelevanceScoreCursor_when_search_then_ignoresCursorAndReturnsFirstPage(
+            String score) throws Exception {
+        assertInvalidCursorIgnored(
+                score + ",1700000000,5,8,99",
+                SearchSort.RELEVANCE);
+    }
+
+    @Test
+    void given_negativeRelevanceScoreCursor_when_search_then_ignoresCursorAndReturnsFirstPage() throws Exception {
+        assertInvalidCursorIgnored(
+                "-0.01,1700000000,5,8,99",
+                SearchSort.RELEVANCE);
+    }
+
+    @ParameterizedTest
+    @MethodSource("negativeLongSortCursors")
+    void given_negativeLongSortValue_when_search_then_ignoresCursorAndReturnsFirstPage(
+            SearchSort sort, String decodedCursor) throws Exception {
+        assertInvalidCursorIgnored(decodedCursor, sort);
+    }
+
+    @ParameterizedTest
+    @MethodSource("malformedSortCursors")
+    void given_malformedSortValue_when_search_then_ignoresCursorAndReturnsFirstPage(
+            SearchSort sort, String decodedCursor) throws Exception {
+        assertInvalidCursorIgnored(decodedCursor, sort);
+    }
+
     @Test
     void given_msearchItems_when_hubFeed_then_mapsEveryRegionAndUsesSingleRequest() throws Exception {
         MultiSearchResponseItem<Map<String, Object>> latest =
@@ -368,6 +404,43 @@ class SearchServiceImplTest {
         when(hitsMetadata.hits()).thenReturn(hits);
         when(response.hits()).thenReturn(hitsMetadata);
         return response;
+    }
+
+    private void assertInvalidCursorIgnored(String decodedCursor, SearchSort sort) throws Exception {
+        co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> response = emptySearchResponse();
+        when(es.search(any(Function.class), any(Class.class))).thenReturn(response);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Function<SearchRequest.Builder, ObjectBuilder<SearchRequest>>> captor =
+                ArgumentCaptor.forClass(Function.class);
+        String cursor = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                decodedCursor.getBytes(StandardCharsets.UTF_8));
+
+        PageResponse<FeedItemResponse> result = service.search(
+                "cursor", 10, null, cursor, sort, null);
+
+        assertThat(result.degraded()).isFalse();
+        assertThat(result.items()).isEmpty();
+        verify(es).search(captor.capture(), any(Class.class));
+        SearchRequest request = captor.getValue().apply(new SearchRequest.Builder()).build();
+        assertThat(request.searchAfter()).isEmpty();
+    }
+
+    private static Stream<Arguments> negativeLongSortCursors() {
+        return Stream.of(
+                Arguments.of(SearchSort.RELEVANCE, "1.25,-1,5,8,99"),
+                Arguments.of(SearchSort.RELEVANCE, "1.25,1700000000,-1,8,99"),
+                Arguments.of(SearchSort.RELEVANCE, "1.25,1700000000,5,-1,99"),
+                Arguments.of(SearchSort.RELEVANCE, "1.25,1700000000,5,8,-1"),
+                Arguments.of(SearchSort.NEWEST, "-1,99"),
+                Arguments.of(SearchSort.NEWEST, "1700000000,-1"));
+    }
+
+    private static Stream<Arguments> malformedSortCursors() {
+        return Stream.of(
+                Arguments.of(SearchSort.RELEVANCE, "1.25,1700000000,5,8,9223372036854775808"),
+                Arguments.of(SearchSort.RELEVANCE, "1.25,1700000000,,8,99"),
+                Arguments.of(SearchSort.RELEVANCE, "1.25,not-a-long,5,8,99"),
+                Arguments.of(SearchSort.NEWEST, "9223372036854775808,99"));
     }
 
     private MultiSearchResponseItem<Map<String, Object>> resultItem(
