@@ -736,15 +736,6 @@
     white-space: nowrap;
   }
 
-  .search-snippet em {
-    font-style: normal;
-    font-weight: 600;
-    color: var(--blog-primary);
-    background: var(--color-snippet-highlight);
-    padding: 0 2px;
-    border-radius: 2px;
-  }
-
   .article-detail-layout {
     position: relative;
     display: grid;
@@ -1102,49 +1093,6 @@
     transform: translateY(-1px);
   }
 
-  .search-page-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 32px;
-    align-items: start;
-  }
-
-  .search-sidebar {
-    display: grid;
-    gap: 16px;
-    min-width: 0;
-  }
-
-  .search-sidebar__hint {
-    margin-bottom: 0;
-  }
-
-  .search-sidebar__hint .chtholly-illustration {
-    animation: none;
-  }
-
-  .search-empty {
-    min-height: 340px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 42px 24px;
-    text-align: center;
-  }
-
-  .search-empty p {
-    margin: 0;
-    font-size: 16px;
-    color: var(--color-text);
-  }
-
-  .search-empty .text-text-secondary {
-    font-size: 14px;
-    color: var(--color-text-secondary);
-  }
-
   @media (min-width: 1024px) {
     .article-detail-layout {
       grid-template-columns: minmax(0, 920px) 312px;
@@ -1174,28 +1122,6 @@
       scrollbar-color: color-mix(in srgb, var(--color-sky) 24%, transparent) transparent;
     }
 
-    .search-page-layout {
-      grid-template-columns: minmax(0, 1fr) 300px;
-    }
-
-    .search-sidebar {
-      position: sticky;
-      top: 68px;
-      max-height: calc(100vh - 68px);
-      overflow-y: auto;
-      scrollbar-width: none;
-      -ms-overflow-style: none;
-    }
-
-    .search-sidebar::-webkit-scrollbar {
-      display: none;
-    }
-
-    .search-sidebar .sidebar-scroll-hidden {
-      position: static;
-      max-height: none;
-      overflow: visible;
-    }
   }
 
   @media (min-width: 1024px) and (max-width: 1279px) {
