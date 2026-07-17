@@ -394,6 +394,69 @@ class TopicClusteringServiceTest {
     }
 
     @Test
+    void getOverview_keepsReadySnapshotVisibleWhileRefreshIsPending() throws Exception {
+        Instant attemptAt = NOW.minusSeconds(30);
+        Instant successAt = NOW.minus(Duration.ofHours(6));
+        List<TopicCluster> stored = storedClusters(successAt);
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(stored));
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.PENDING, attemptAt, successAt, "REFRESHING")));
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEqualTo(stored);
+        assertThat(overview.state()).isEqualTo(TopicClusterState.READY);
+        assertThat(overview.lastAttemptAt()).isEqualTo(attemptAt);
+        assertThat(overview.lastSuccessAt()).isEqualTo(successAt);
+        assertThat(overview.reason()).isNull();
+    }
+
+    @Test
+    void getOverview_keepsReadySnapshotVisibleWhenStatusIsMissing() throws Exception {
+        List<TopicCluster> stored = storedClusters(NOW);
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(stored));
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(null);
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEqualTo(stored);
+        assertThat(overview.state()).isEqualTo(TopicClusterState.READY);
+        assertThat(overview.lastAttemptAt()).isNull();
+        assertThat(overview.lastSuccessAt()).isNull();
+        assertThat(overview.reason()).isNull();
+    }
+
+    @Test
+    void getOverview_keepsReadySnapshotVisibleWhenStatusIsCorrupt() throws Exception {
+        List<TopicCluster> stored = storedClusters(NOW);
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(stored));
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn("not-json");
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEqualTo(stored);
+        assertThat(overview.state()).isEqualTo(TopicClusterState.READY);
+        assertThat(overview.lastAttemptAt()).isNull();
+        assertThat(overview.lastSuccessAt()).isNull();
+        assertThat(overview.reason()).isNull();
+    }
+
+    @Test
+    void getOverview_keepsReadySnapshotVisibleWhenStatusIsJsonNull() throws Exception {
+        List<TopicCluster> stored = storedClusters(NOW);
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(stored));
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn("null");
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEqualTo(stored);
+        assertThat(overview.state()).isEqualTo(TopicClusterState.READY);
+        assertThat(overview.lastAttemptAt()).isNull();
+        assertThat(overview.lastSuccessAt()).isNull();
+        assertThat(overview.reason()).isNull();
+    }
+
+    @Test
     void getOverview_exposesPendingWhenSnapshotWasNeverGenerated() {
         when(valueOps.get("agent:topic-clusters")).thenReturn(null);
         when(valueOps.get("agent:topic-clusters:status")).thenReturn(null);
@@ -416,6 +479,19 @@ class TopicClusteringServiceTest {
 
         assertThat(overview.state()).isEqualTo(TopicClusterState.PENDING);
         assertThat(overview.reason()).isEqualTo("NOT_GENERATED");
+    }
+
+    @Test
+    void getOverview_doesNotExposeCorruptTopicsAsReady() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn("not-json");
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
+                new TopicClusterRunStatus(TopicClusterState.READY, NOW, NOW, null)));
+
+        TopicClusterOverview overview = service(prompt -> "", false).getOverview();
+
+        assertThat(overview.items()).isEmpty();
+        assertThat(overview.state()).isEqualTo(TopicClusterState.PENDING);
+        assertThat(overview.reason()).isEqualTo("INVALID_SNAPSHOT");
     }
 
     @Test
@@ -462,7 +538,7 @@ class TopicClusteringServiceTest {
     }
 
     @Test
-    void getOverview_rejectsSparseStateWithNonEmptySnapshot() throws Exception {
+    void getOverview_keepsValidNonEmptySnapshotVisibleWhenSparseStatusIsInconsistent() throws Exception {
         List<TopicCluster> clusters = List.of(new TopicCluster(
                 "Java",
                 "Java 生态讨论",
@@ -480,9 +556,11 @@ class TopicClusteringServiceTest {
 
         TopicClusterOverview overview = service(prompt -> "", false).getOverview();
 
-        assertThat(overview.items()).isEmpty();
-        assertThat(overview.state()).isEqualTo(TopicClusterState.PENDING);
-        assertThat(overview.reason()).isEqualTo("INVALID_SNAPSHOT");
+        assertThat(overview.items()).isEqualTo(clusters);
+        assertThat(overview.state()).isEqualTo(TopicClusterState.READY);
+        assertThat(overview.lastAttemptAt()).isEqualTo(NOW);
+        assertThat(overview.lastSuccessAt()).isEqualTo(NOW);
+        assertThat(overview.reason()).isNull();
     }
 
     @Test
@@ -548,9 +626,21 @@ class TopicClusteringServiceTest {
 
     @Test
     void refreshIfMissing_refreshesStalePendingState() throws Exception {
-        when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
+        when(valueOps.get("agent:topic-clusters")).thenReturn(
+                objectMapper.writeValueAsString(storedClusters(NOW.minus(Duration.ofHours(6)))));
         when(valueOps.get("agent:topic-clusters:status")).thenReturn(objectMapper.writeValueAsString(
                 new TopicClusterRunStatus(TopicClusterState.PENDING, NOW, null, "REFRESHING")));
+        when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
+
+        service(prompt -> "", false).refreshIfMissing();
+
+        verify(lockService).tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15));
+    }
+
+    @Test
+    void refreshIfMissing_refreshesMissingStatusWithValidNonEmptySnapshot() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(storedClusters(NOW)));
+        when(valueOps.get("agent:topic-clusters:status")).thenReturn(null);
         when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
 
         service(prompt -> "", false).refreshIfMissing();
@@ -594,8 +684,8 @@ class TopicClusteringServiceTest {
     }
 
     @Test
-    void refreshIfMissing_refreshesCorruptStatusPayload() {
-        when(valueOps.get("agent:topic-clusters")).thenReturn("[]");
+    void refreshIfMissing_refreshesCorruptStatusPayload() throws Exception {
+        when(valueOps.get("agent:topic-clusters")).thenReturn(objectMapper.writeValueAsString(storedClusters(NOW)));
         when(valueOps.get("agent:topic-clusters:status")).thenReturn("not-json");
         when(lockService.tryLock("lock:scheduled:topicClustering", Duration.ofMinutes(15))).thenReturn(false);
 
@@ -668,6 +758,16 @@ class TopicClusteringServiceTest {
 
     private static PostSummary post(long id, String title, String description, List<String> tags) {
         return new PostSummary(id, title, description, NOW.minus(Duration.ofHours(id)), tags);
+    }
+
+    private static List<TopicCluster> storedClusters(Instant generatedAt) {
+        return List.of(new TopicCluster(
+                "Java",
+                "Java ecosystem discussion",
+                List.of(1L, 2L),
+                2,
+                List.of("java"),
+                generatedAt));
     }
 
     private TopicClusterRunStatus readStatus(String json) {

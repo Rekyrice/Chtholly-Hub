@@ -233,6 +233,16 @@ public class TopicClusteringService {
         PersistedSnapshot snapshot = loadPersistedSnapshot();
         List<TopicCluster> clusters = snapshot.clusters();
         TopicClusterRunStatus status = snapshot.status();
+        if (snapshot.topicsValid() && !clusters.isEmpty()) {
+            boolean lastRefreshFailed = status != null && status.state() == TopicClusterState.FAILED;
+            return new TopicClusterOverview(
+                    clusters,
+                    TopicClusterState.READY,
+                    status == null ? null : status.lastAttemptAt(),
+                    status == null ? null : status.lastSuccessAt(),
+                    Math.toIntExact(DEFAULT_WINDOW.toDays()),
+                    lastRefreshFailed ? "LAST_REFRESH_FAILED" : null);
+        }
         if (status == null) {
             return new TopicClusterOverview(
                     List.of(),
@@ -253,15 +263,6 @@ public class TopicClusteringService {
                     status.lastSuccessAt(),
                     Math.toIntExact(DEFAULT_WINDOW.toDays()),
                     reason == null || reason.isBlank() ? "REFRESHING" : reason);
-        }
-        if (status.state() == TopicClusterState.FAILED && !clusters.isEmpty()) {
-            return new TopicClusterOverview(
-                    clusters,
-                    TopicClusterState.READY,
-                    status.lastAttemptAt(),
-                    status.lastSuccessAt(),
-                    Math.toIntExact(DEFAULT_WINDOW.toDays()),
-                    "LAST_REFRESH_FAILED");
         }
         return new TopicClusterOverview(
                 clusters,
