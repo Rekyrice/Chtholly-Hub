@@ -20,7 +20,7 @@
 - Modify: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackValidatorTest.java`
 - Modify: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackV3CommunityContractTest.java`
 
-- [ ] 先写失败测试，要求 manifest 声明 96/72/24 评论、168/80 反应、28 关注、44 浏览和 44 个评论目标。
+- [ ] 先写失败测试，要求 manifest 能声明评论、根评论、回复、点赞、收藏、关注、浏览和评论目标数量，并拒绝与当前清单不一致的值；本任务先填入当前实际值，Task 6 再与完整互动清单一起原子升级为 96/72/24、168/80、28、44、44。
 - [ ] 增加 manifest 字段并让 Loader 正常反序列化。
 - [ ] Validator 检查数量、评论层级、目标覆盖、每帖上限、reaction/follow 唯一性和时间顺序。
 - [ ] 真实包合同增加账号参与范围、禁用模板话术和评论时间跨度断言。
@@ -55,7 +55,7 @@
 
 - [ ] 写失败测试，断言反应事实对账先于用户计数重建、缓存失效和搜索 upsert。
 - [ ] 将外部文章 ID 加入缓存失效与搜索重建集合。
-- [ ] 将内容包作者和外部站长加入用户计数重建集合。
+- [ ] 将内容包作者以及关注边新增或停用所影响的全部端点加入用户计数重建集合。
 - [ ] 失败继续返回可重跑的 `partial`，不得在 bitmap 已收敛时重复累计。
 - [ ] 运行 `ContentPackImportServiceTest` 与相关计数测试。
 - [ ] 提交：`fix: 调整内容包运行态收敛顺序`
@@ -71,7 +71,7 @@
 - Modify: `apps/server/src/test/java/com/chtholly/seed/contentpack/ContentPackDatabaseWriterTest.java`
 
 - [ ] 写失败测试，覆盖 `toAccountSeedKey`/`toHandle` 恰好一个、只允许站长 handle、禁止站长作为来源、自关注和重复边。
-- [ ] 解析站长用户并复用现有稳定 follow identity，同时写两侧关系镜像。
+- [ ] 解析站长用户并复用现有稳定 follow identity，同时写两侧关系镜像；写入结果必须返回新旧受管理边的全部端点，使删除外部边时也会重建站长计数。
 - [ ] 断言删除 manifest 边时只停用对应受管理关系，真实关系不受影响。
 - [ ] 运行 Validator、DatabaseWriter 和真实包合同测试。
 - [ ] 提交：`feat: 支持内容包账号关注站长`
