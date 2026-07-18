@@ -605,6 +605,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         }
 
         if (!idVals.isEmpty()) {
+            redis.delete(List.of(idsKey, hasMoreKey, idsKey + ":nextCursor"));
             redis.opsForList().leftPushAll(idsKey, idVals);
             redis.expire(idsKey, frTtl);
             if (idVals.size() == size && hasMore) {

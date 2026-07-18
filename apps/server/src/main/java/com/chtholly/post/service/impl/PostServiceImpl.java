@@ -27,6 +27,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -183,7 +185,7 @@ public class PostServiceImpl implements PostService {
     @Transactional
     public void confirmContent(long creatorId, long id, String objectKey, String etag, Long size, String sha256) {
         // 双删缓存：写前删一次、写后再删，降低并发读读到旧详情的窗口
-        invalidateCache(id);
+        invalidateCacheBeforeWrite(id);
 
         Post post = Post.builder()
                 .id(id)
@@ -216,7 +218,7 @@ public class PostServiceImpl implements PostService {
      */
     @Transactional
     public void updateMetadata(long creatorId, long id, String title, Long tagId, List<String> tags, List<String> imgUrls, String visible, Boolean isTop, String description) {
-        invalidateCache(id);
+        invalidateCacheBeforeWrite(id);
 
         Post existing = mapper.findById(id);
         if (existing == null || !existing.getCreatorId().equals(creatorId)) {
@@ -254,6 +256,7 @@ public class PostServiceImpl implements PostService {
         writePostOutbox(id, "PostMetadataUpdated", "upsert");
 
         invalidateCache(id);
+        runAfterCommit(() -> postFeedService.invalidateMyPublishedCache(creatorId));
     }
 
     /** Publishes a draft: assigns slug, syncs tags, increments user post counter, indexes search/RAG. */
@@ -304,12 +307,17 @@ public class PostServiceImpl implements PostService {
                 log.warn("PostPublishedEvent failed, postId={}: {}", id, e.getMessage());
             }
         }
+        runAfterCommit(() -> {
+            cacheInvalidator.invalidate(id);
+            cacheInvalidator.invalidateAllPublicFeedPages();
+            postFeedService.invalidateMyPublishedCache(creatorId);
+        });
     }
 
     /** Sets or clears pin status for the author's post. */
     @Transactional
     public void updateTop(long creatorId, long id, boolean isTop) {
-        invalidateCache(id);
+        invalidateCacheBeforeWrite(id);
 
         int updated = mapper.updateTop(id, creatorId, isTop);
 
@@ -319,7 +327,7 @@ public class PostServiceImpl implements PostService {
 
         invalidateCache(id);
         // 置顶会改排序与 isTop 标记，必须立刻丢掉 feed:mine 旧页
-        postFeedService.invalidateMyPublishedCache(creatorId);
+        runAfterCommit(() -> postFeedService.invalidateMyPublishedCache(creatorId));
     }
 
     /** Updates visibility (public/followers/school/private/unlisted). */
@@ -329,7 +337,7 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
         }
 
-        invalidateCache(id);
+        invalidateCacheBeforeWrite(id);
 
         int updated = mapper.updateVisibility(id, creatorId, visible);
 
@@ -338,14 +346,14 @@ public class PostServiceImpl implements PostService {
         }
 
         invalidateCache(id);
-        postFeedService.invalidateMyPublishedCache(creatorId);
+        runAfterCommit(() -> postFeedService.invalidateMyPublishedCache(creatorId));
     }
 
     /** Soft-deletes a post and removes it from search index when previously published. */
     @Transactional
     public void delete(long creatorId, long id) {
-        invalidateCache(id);
-        postFeedService.invalidateMyPublishedCache(creatorId);
+        invalidateCacheBeforeWrite(id);
+        runAfterCommit(() -> postFeedService.invalidateMyPublishedCache(creatorId));
 
         Post existing = mapper.findById(id);
         if (existing == null || !existing.getCreatorId().equals(creatorId)) {
@@ -380,7 +388,7 @@ public class PostServiceImpl implements PostService {
         if (!isValidVisible(visible)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
         }
-        invalidateCache(id);
+        invalidateCacheBeforeWrite(id);
         int updated = mapper.updateVisibilityById(id, visible);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "帖子不存在");
@@ -392,7 +400,7 @@ public class PostServiceImpl implements PostService {
     @Transactional
     @Override
     public void adminDelete(long id) {
-        invalidateCache(id);
+        invalidateCacheBeforeWrite(id);
         Post existing = mapper.findById(id);
         if (existing == null || "deleted".equals(existing.getStatus())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "帖子不存在");
@@ -501,7 +509,25 @@ public class PostServiceImpl implements PostService {
     }
 
     private void invalidateCache(long id) {
+        runAfterCommit(() -> cacheInvalidator.invalidate(id));
+    }
+
+    private void invalidateCacheBeforeWrite(long id) {
         cacheInvalidator.invalidate(id);
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()
+                && TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+            return;
+        }
+        action.run();
     }
 
     private List<String> parseStringArray(String json) {

@@ -17,6 +17,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.connection.DataType;
 import org.springframework.data.redis.core.ListOperations;
@@ -47,6 +48,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -175,6 +177,23 @@ class PostFeedServiceImplCacheReadModeTest {
         }
     }
 
+    @Test
+    void cacheReloadReplacesTheExistingIdListBeforePush() {
+        Cache<String, PageResponse<FeedItemResponse>> local = Caffeine.newBuilder().build();
+        ListOperations<String, String> lists = stubEmptyRedisFragments();
+        when(mapper.listFeedPublic(11, 0)).thenReturn(List.of(row(42L)));
+        stubEnrichment(42L);
+        PostFeedServiceImpl service = newService(CacheProperties.ReadMode.FULL_NO_SINGLEFLIGHT, local);
+        long hour = System.currentTimeMillis() / 3_600_000L;
+        String idsKey = "feed:public:ids:10:" + hour + ":1";
+
+        service.getPublicFeed(1, null, 10, null, null, null);
+
+        InOrder order = inOrder(redis, lists);
+        order.verify(redis).delete(List.of(idsKey, idsKey + ":hasMore", idsKey + ":nextCursor"));
+        order.verify(lists).leftPushAll(eq(idsKey), anyCollection());
+    }
+
     private PostFeedServiceImpl newService(
             CacheProperties.ReadMode readMode,
             Cache<String, PageResponse<FeedItemResponse>> local
@@ -195,7 +214,7 @@ class PostFeedServiceImplCacheReadModeTest {
     }
 
     @SuppressWarnings("unchecked")
-    private void stubEmptyRedisFragments() {
+    private ListOperations<String, String> stubEmptyRedisFragments() {
         ListOperations<String, String> lists = mock(ListOperations.class);
         ValueOperations<String, String> values = mock(ValueOperations.class);
         SetOperations<String, String> sets = mock(SetOperations.class);
@@ -207,6 +226,7 @@ class PostFeedServiceImplCacheReadModeTest {
         when(redis.type(anyString())).thenReturn(DataType.NONE);
         when(lists.range(anyString(), eq(0L), anyLong())).thenReturn(null);
         when(values.get(anyString())).thenReturn(null);
+        return lists;
     }
 
     @SuppressWarnings("unchecked")
