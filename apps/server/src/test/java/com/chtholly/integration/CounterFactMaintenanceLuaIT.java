@@ -208,8 +208,6 @@ class CounterFactMaintenanceLuaIT {
         CounterServiceImpl counterService = new CounterServiceImpl(
                 redis, delayed::set, redisson, mock(PostMapper.class), userMapper,
                 new CounterCalibrationService(redis, redisson));
-        CounterAggregationProcessor processor = new CounterAggregationProcessor(redis);
-
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
         assertThat(delayed.get().getFactEpoch()).isEqualTo(1L);
 
@@ -217,8 +215,6 @@ class CounterFactMaintenanceLuaIT {
                 Set.of(userId), Set.of(postId),
                 Map.of(postId, new ManagedPostReactionState(Set.of(userId), Set.of())));
 
-        assertThat(processor.applyEvent(delayed.get())).isFalse();
-        processor.flush();
         assertThat(bitCount("like", postId)).isEqualTo(1L);
         assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
                 CounterSchema.IDX_LIKE)).containsExactly(unsignedInt32(1L));
@@ -233,12 +229,16 @@ class CounterFactMaintenanceLuaIT {
     void pendingOldReactionAggregationIsClearedByMaintenanceBeforeFlush() {
         long postId = 90_002L;
         long userId = 43L;
-        CounterAggregationProcessor processor = new CounterAggregationProcessor(redis);
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, processor::applyEvent, redisson, mock(PostMapper.class), userMapper,
+                redis, ignored -> {}, redisson, mock(PostMapper.class), userMapper,
                 new CounterCalibrationService(redis, redisson));
 
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
+        redis.opsForHash().put(
+                CounterKeys.aggKey("post", String.valueOf(postId)),
+                String.valueOf(CounterSchema.IDX_LIKE), "1");
+        redis.opsForSet().add(
+                CounterKeys.aggIndexKey(), CounterKeys.aggKey("post", String.valueOf(postId)));
         assertThat(redis.opsForHash().get(
                 CounterKeys.aggKey("post", String.valueOf(postId)),
                 String.valueOf(CounterSchema.IDX_LIKE))).isEqualTo("1");
@@ -246,8 +246,6 @@ class CounterFactMaintenanceLuaIT {
         service.reconcileManagedPostReactions(
                 Set.of(userId), Set.of(postId),
                 Map.of(postId, new ManagedPostReactionState(Set.of(userId), Set.of())));
-        processor.flush();
-
         assertThat(bitCount("like", postId)).isEqualTo(1L);
         assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
                 CounterSchema.IDX_LIKE)).containsExactly(unsignedInt32(1L));

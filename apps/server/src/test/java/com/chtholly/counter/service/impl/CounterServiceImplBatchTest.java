@@ -130,6 +130,20 @@ class CounterServiceImplBatchTest {
     }
 
     @Test
+    void oversizedEntityIdentityFailsBeforeRedisMutationOrEventPublication() {
+        assertThatThrownBy(() -> counterService.like("x".repeat(33), "7".repeat(65), 42L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("identity");
+        assertThatThrownBy(() -> counterService.like("post", "bad:*", 42L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("identity");
+
+        verify(redis, never()).execute(
+                any(DefaultRedisScript.class), anyList(), any(Object[].class));
+        verify(counterEventPublisher, never()).publish(any());
+    }
+
+    @Test
     void changedReactionCarriesCurrentFactEpochAndChecksFenceBeforeBitmapMutation() {
         doReturn(List.of(1L, 7L)).when(redis)
                 .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));

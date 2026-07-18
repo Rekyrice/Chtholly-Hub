@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.counter.mapper.CounterPersistenceMapper">
+    <insert id="insertInbox">
+        INSERT IGNORE INTO counter_event_inbox
+            (event_id, entity_type, entity_id, metric, delta, user_id, fact_epoch, applied_at)
+        VALUES
+            (#{eventId}, #{entityType}, #{entityId}, #{metric}, #{delta},
+             #{userId}, #{factEpoch}, NOW(3))
+    </insert>
+
+    <select id="countMatchingInbox" resultType="int">
+        SELECT COUNT(1)
+        FROM counter_event_inbox
+        WHERE event_id = #{eventId}
+          AND entity_type = #{entityType}
+          AND entity_id = #{entityId}
+          AND metric = #{metric}
+          AND delta = #{delta}
+          AND user_id = #{userId}
+          AND fact_epoch = #{factEpoch}
+    </select>
+
+    <insert id="incrementSnapshots">
+        INSERT INTO counter_snapshot
+            (entity_type, entity_id, metric, count_value, fact_epoch, updated_at)
+        VALUES
+        <foreach collection="deltas" item="delta" separator=",">
+            (#{delta.entityType}, #{delta.entityId}, #{delta.metric}, #{delta.delta},
+             #{delta.factEpoch}, NOW(3))
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+            count_value = IF(fact_epoch = VALUES(fact_epoch),
+                count_value + VALUES(count_value), count_value),
+            updated_at = IF(fact_epoch = VALUES(fact_epoch), VALUES(updated_at), updated_at)
+    </insert>
+</mapper>

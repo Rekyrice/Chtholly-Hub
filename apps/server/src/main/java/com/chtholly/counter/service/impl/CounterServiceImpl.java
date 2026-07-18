@@ -118,6 +118,7 @@ public class CounterServiceImpl implements CounterService {
      * @param add 是否置位（true=添加，false=移除）
      */
     private boolean toggle(String etype, String eid, long uid, String metric, int idx, boolean add) {
+        CounterSchema.requirePersistableIdentity(etype, eid);
         // 固定分片定位：按用户ID映射到 chunk 与分片内 bit 偏移，避免单键膨胀与热点
         long chunk = BitmapShard.chunkOf(uid);
         // 分片内位偏移

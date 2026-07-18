@@ -168,6 +168,10 @@ counter:
     publish:
       max-attempts: ${COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS:3}
       ack-timeout: ${COUNTER_KAFKA_PUBLISH_ACK_TIMEOUT:PT3S}
+    consumer:
+      max-attempts: ${COUNTER_KAFKA_CONSUMER_MAX_ATTEMPTS:3}
+      retry-backoff: ${COUNTER_KAFKA_CONSUMER_RETRY_BACKOFF:PT1S}
+      dlt-ack-timeout: ${COUNTER_KAFKA_CONSUMER_DLT_ACK_TIMEOUT:PT3S}
   rebuild:
     enabled: false
     lock:

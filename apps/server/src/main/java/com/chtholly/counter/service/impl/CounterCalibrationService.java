@@ -139,9 +139,7 @@ public class CounterCalibrationService {
     }
 
     private static void requireIdentity(String entityType, String entityId) {
-        if (entityType == null || entityType.isBlank() || entityId == null || entityId.isBlank()) {
-            throw new IllegalArgumentException("Counter entity identity is required");
-        }
+        CounterSchema.requirePersistableIdentity(entityType, entityId);
     }
 
     public record ReconciliationResult(long likeCount, long favCount, long factEpoch) {}
