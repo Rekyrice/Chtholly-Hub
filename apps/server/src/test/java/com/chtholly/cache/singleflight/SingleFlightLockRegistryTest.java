@@ -94,6 +94,70 @@ class SingleFlightLockRegistryTest {
     }
 
     @Test
+    void queuedWaiterKeepsSameKeyRegisteredUntilItLeaves() throws Exception {
+        SingleFlightLockRegistry registry = new SingleFlightLockRegistry();
+        AtomicInteger activeActions = new AtomicInteger();
+        AtomicInteger maxActiveActions = new AtomicInteger();
+        AtomicReference<Thread> waiterThread = new AtomicReference<>();
+        CountDownLatch leaderEntered = new CountDownLatch(1);
+        CountDownLatch releaseLeader = new CountDownLatch(1);
+        CountDownLatch waiterEntered = new CountDownLatch(1);
+        CountDownLatch releaseWaiter = new CountDownLatch(1);
+        CountDownLatch newcomerEntered = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(3);
+
+        try {
+            Future<String> leader = executor.submit(() -> registry.runExclusive("detail:1", () -> {
+                enterAction(activeActions, maxActiveActions);
+                leaderEntered.countDown();
+                awaitLatch(releaseLeader, "leader was not released in time");
+                activeActions.decrementAndGet();
+                return "leader";
+            }));
+            assertThat(leaderEntered.await(5, TimeUnit.SECONDS)).isTrue();
+
+            Future<String> waiter = executor.submit(() -> {
+                waiterThread.set(Thread.currentThread());
+                return registry.runExclusive("detail:1", () -> {
+                    enterAction(activeActions, maxActiveActions);
+                    waiterEntered.countDown();
+                    awaitLatch(releaseWaiter, "waiter was not released in time");
+                    activeActions.decrementAndGet();
+                    return "waiter";
+                });
+            });
+            await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
+                    assertThat(waiterThread.get()).isNotNull()
+                            .extracting(Thread::getState)
+                            .isEqualTo(Thread.State.BLOCKED));
+
+            releaseLeader.countDown();
+            assertThat(waiterEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(leader.get(5, TimeUnit.SECONDS)).isEqualTo("leader");
+
+            Future<String> newcomer = executor.submit(() -> registry.runExclusive("detail:1", () -> {
+                enterAction(activeActions, maxActiveActions);
+                newcomerEntered.countDown();
+                activeActions.decrementAndGet();
+                return "newcomer";
+            }));
+
+            assertThat(newcomerEntered.await(500, TimeUnit.MILLISECONDS)).isFalse();
+            releaseWaiter.countDown();
+
+            assertThat(waiter.get(5, TimeUnit.SECONDS)).isEqualTo("waiter");
+            assertThat(newcomer.get(5, TimeUnit.SECONDS)).isEqualTo("newcomer");
+            assertThat(maxActiveActions.get()).isEqualTo(1);
+            assertThat(registry.registeredCount()).isZero();
+        } finally {
+            releaseLeader.countDown();
+            releaseWaiter.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
     void differentKeysRunInParallel() throws Exception {
         SingleFlightLockRegistry registry = new SingleFlightLockRegistry();
         AtomicInteger calls = new AtomicInteger();
@@ -129,5 +193,21 @@ class SingleFlightLockRegistryTest {
             calls.incrementAndGet();
             return null;
         });
+    }
+
+    private static void enterAction(AtomicInteger activeActions, AtomicInteger maxActiveActions) {
+        int active = activeActions.incrementAndGet();
+        maxActiveActions.accumulateAndGet(active, Math::max);
+    }
+
+    private static void awaitLatch(CountDownLatch latch, String timeoutMessage) {
+        try {
+            if (!latch.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException(timeoutMessage);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while waiting for test latch", e);
+        }
     }
 }
