@@ -81,14 +81,18 @@ class PostPublishingGoldenPathIT extends AbstractGoldenPathIT {
                 "SELECT status FROM posts WHERE id = ?", String.class, postId))
                 .isEqualTo("published");
         Map<String, Object> outbox = jdbc.queryForMap("""
-                SELECT id, payload FROM outbox
+                SELECT id, aggregate_type, type, payload FROM outbox
                 WHERE aggregate_type = 'post' AND aggregate_id = ? AND type = 'PostPublished'
                 """, postId);
         long eventId = ((Number) outbox.get("id")).longValue();
         String payload = String.valueOf(outbox.get("payload"));
 
         ELASTICSEARCH_PROXY.setConnectionCut(false);
-        kafka.send(OutboxTopics.CANAL_OUTBOX, canalEnvelope(eventId, payload)).get();
+        kafka.send(OutboxTopics.CANAL_OUTBOX, canalEnvelope(
+                eventId,
+                String.valueOf(outbox.get("aggregate_type")),
+                String.valueOf(outbox.get("type")),
+                payload)).get();
 
         Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
             var result = searchService.search(

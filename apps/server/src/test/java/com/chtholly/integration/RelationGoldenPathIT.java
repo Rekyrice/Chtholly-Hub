@@ -172,7 +172,7 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
 
     private Map<String, Object> outboxEvent(String type) {
         return jdbc.queryForMap("""
-                SELECT id, payload FROM outbox
+                SELECT id, aggregate_type, type, payload FROM outbox
                 WHERE aggregate_type = 'following' AND type = ?
                 ORDER BY created_at DESC LIMIT 1
                 """, type);
@@ -180,7 +180,11 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
 
     private void publishTwice(Map<String, Object> outbox) throws Exception {
         long eventId = ((Number) outbox.get("id")).longValue();
-        String envelope = canalEnvelope(eventId, String.valueOf(outbox.get("payload")));
+        String envelope = canalEnvelope(
+                eventId,
+                String.valueOf(outbox.get("aggregate_type")),
+                String.valueOf(outbox.get("type")),
+                String.valueOf(outbox.get("payload")));
         kafka.send(OutboxTopics.CANAL_OUTBOX, envelope).get(10, TimeUnit.SECONDS);
         kafka.send(OutboxTopics.CANAL_OUTBOX, envelope).get(10, TimeUnit.SECONDS);
     }

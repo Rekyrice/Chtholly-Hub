@@ -115,9 +115,11 @@ public abstract class AbstractGoldenPathIT {
         jdbc.execute("SET FOREIGN_KEY_CHECKS = 1");
     }
 
-    protected String canalEnvelope(long eventId, String payload) {
+    protected String canalEnvelope(long eventId, String aggregateType, String eventType, String payload) {
         ObjectNode row = objectMapper.createObjectNode();
         row.put("id", eventId);
+        row.put("aggregate_type", aggregateType);
+        row.put("type", eventType);
         row.put("payload", payload);
         ArrayNode data = objectMapper.createArrayNode().add(row);
         ObjectNode envelope = objectMapper.createObjectNode();

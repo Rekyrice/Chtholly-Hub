@@ -65,11 +65,15 @@ class DegradationGoldenPathIT extends AbstractGoldenPathIT {
         postService.publish(USER_ID, postId);
 
         Map<String, Object> outbox = jdbc.queryForMap("""
-                SELECT id, payload FROM outbox
+                SELECT id, aggregate_type, type, payload FROM outbox
                 WHERE aggregate_type = 'post' AND aggregate_id = ? AND type = 'PostPublished'
                 """, postId);
         long eventId = ((Number) outbox.get("id")).longValue();
-        String envelope = canalEnvelope(eventId, String.valueOf(outbox.get("payload")));
+        String envelope = canalEnvelope(
+                eventId,
+                String.valueOf(outbox.get("aggregate_type")),
+                String.valueOf(outbox.get("type")),
+                String.valueOf(outbox.get("payload")));
         kafka.send(OutboxTopics.CANAL_OUTBOX, envelope).get(10, TimeUnit.SECONDS);
 
         Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
