@@ -226,6 +226,7 @@ try {
         "CACHE_READ_MODE=$Variant",
         "CACHE_BENCHMARK_SCENARIO=$Scenario",
         'LOGGING_LEVEL_COM_CHTHOLLY=WARN',
+        'MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED=false',
         'MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus'
     ) | Set-Content -LiteralPath $serverEnvironmentFile -Encoding ascii
 
