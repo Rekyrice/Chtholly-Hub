@@ -12,8 +12,7 @@ class SeedCliScriptTest {
 
     @Test
     void contentPackFormalRun_usesSynchronousCountersAndDisablesUnrelatedBackgroundWork() throws IOException {
-        Path script = Path.of(System.getProperty("user.dir"), "../../scripts/dev/run-seed.ps1").normalize();
-        String source = Files.readString(script);
+        String source = readNormalizedScriptSource();
 
         assertThat(source)
                 .contains("if ($isContentPack) {")
@@ -28,8 +27,7 @@ class SeedCliScriptTest {
 
     @Test
     void contentPackDryRun_passesReadOnlyAndDisablesBackgroundInfrastructure() throws IOException {
-        Path script = Path.of(System.getProperty("user.dir"), "../../scripts/dev/run-seed.ps1").normalize();
-        String source = Files.readString(script);
+        String source = readNormalizedScriptSource();
 
         assertThat(source)
                 .contains("--seed.cli-read-only=true")
@@ -46,8 +44,7 @@ class SeedCliScriptTest {
 
     @Test
     void runner_restoresCallerWorkingDirectoryAfterCompile() throws IOException {
-        Path script = Path.of(System.getProperty("user.dir"), "../../scripts/dev/run-seed.ps1").normalize();
-        String source = Files.readString(script);
+        String source = readNormalizedScriptSource();
 
         assertThat(source)
                 .contains("Push-Location (Join-Path $RepoRoot \"apps/server\")")
@@ -57,8 +54,7 @@ class SeedCliScriptTest {
 
     @Test
     void runner_restoresCallerEnvironmentEvenWhenItExitsWithAReport() throws IOException {
-        Path script = Path.of(System.getProperty("user.dir"), "../../scripts/dev/run-seed.ps1").normalize();
-        String source = Files.readString(script);
+        String source = readNormalizedScriptSource();
 
         assertThat(source)
                 .contains("$originalEnvironment = @{}")
@@ -70,5 +66,10 @@ class SeedCliScriptTest {
                 .contains("finally {\n    Restore-SeedRunnerEnvironment\n}");
         assertThat(source.indexOf("$originalEnvironment = @{}"))
                 .isLessThan(source.indexOf(". (Join-Path $PSScriptRoot \"load-env.ps1\")"));
+    }
+
+    private static String readNormalizedScriptSource() throws IOException {
+        Path script = Path.of(System.getProperty("user.dir"), "../../scripts/dev/run-seed.ps1").normalize();
+        return Files.readString(script).replace("\r\n", "\n");
     }
 }
