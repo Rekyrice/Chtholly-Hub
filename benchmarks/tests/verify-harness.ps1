@@ -39,6 +39,7 @@ try {
         'benchmarks/k6/backend-scenarios.js',
         'benchmarks/schema/manifest.schema.json',
         'scripts/benchmark/run.ps1',
+        'scripts/benchmark/seed.ps1',
         'scripts/benchmark/summarize.ps1',
         'docs/benchmarks/evidence-index.yml'
     )
@@ -49,7 +50,7 @@ try {
     $schemaPath = Join-Path $repoRoot 'benchmarks/schema/manifest.schema.json'
     if (Test-Path -LiteralPath $schemaPath -PathType Leaf) {
         $schema = Get-Content -Raw -LiteralPath $schemaPath -Encoding UTF8 | ConvertFrom-Json
-        foreach ($requiredProperty in @('subjectCommit', 'harnessCommit', 'datasetCommit', 'profile', 'scenario', 'runId', 'status')) {
+        foreach ($requiredProperty in @('subjectCommit', 'harnessCommit', 'datasetCommit', 'environmentId', 'repetition', 'experiment', 'profile', 'scenario', 'runId', 'status')) {
             Assert-True -Condition ($schema.required -contains $requiredProperty) -Message "Manifest schema must require $requiredProperty"
         }
     }
@@ -66,16 +67,26 @@ try {
     if (Test-Path -LiteralPath $k6Path -PathType Leaf) {
         & node --check $k6Path
         Assert-True -Condition ($LASTEXITCODE -eq 0) -Message 'k6 scenario must be valid JavaScript syntax'
+        $k6Source = Get-Content -Raw -LiteralPath $k6Path -Encoding UTF8
+        Assert-True -Condition $k6Source.Contains('920000000000000001') -Message 'k6 default post IDs must match the deterministic seed range'
+        Assert-True -Condition $k6Source.Contains('910000000000000002') -Message 'k6 default user IDs must match the deterministic seed range'
     }
 
     $runScript = Join-Path $repoRoot 'scripts/benchmark/run.ps1'
+    $seedScript = Join-Path $repoRoot 'scripts/benchmark/seed.ps1'
     $summarizeScript = Join-Path $repoRoot 'scripts/benchmark/summarize.ps1'
-    if ((Test-Path -LiteralPath $runScript -PathType Leaf) -and (Test-Path -LiteralPath $summarizeScript -PathType Leaf)) {
+    if ((Test-Path -LiteralPath $runScript -PathType Leaf) -and (Test-Path -LiteralPath $seedScript -PathType Leaf) -and (Test-Path -LiteralPath $summarizeScript -PathType Leaf)) {
+        $seedPlan = & $seedScript -Profile smoke -ValidateOnly | Out-String | ConvertFrom-Json
+        Assert-True -Condition ($seedPlan.users -eq 200) -Message 'Smoke seed must declare 200 users'
+        Assert-True -Condition ($seedPlan.posts -eq 1000) -Message 'Smoke seed must declare 1000 posts'
+        Assert-True -Condition ($seedPlan.interactions -eq 10000) -Message 'Smoke seed must declare 10000 authoritative interaction states'
+        Assert-True -Condition ($seedPlan.relations -eq 10000) -Message 'Smoke seed must declare 10000 relations'
+
         $head = (git rev-parse HEAD).Trim()
         $runId = 'harness-contract-test'
         $runDirectory = Join-Path $repoRoot ".benchmark-results/$runId"
 
-        & $runScript -Profile smoke -Scenario all -RunId $runId -SubjectCommit $head -HarnessCommit $head -DatasetCommit $head -ValidateOnly
+        & $runScript -Profile smoke -Scenario all -RunId $runId -SubjectCommit $head -HarnessCommit $head -DatasetCommit $head -Repetition 1 -ValidateOnly
         Assert-True -Condition ($LASTEXITCODE -eq 0) -Message 'run.ps1 validation mode must succeed without starting services'
 
         $manifestPath = Join-Path $runDirectory 'manifest.json'
@@ -87,7 +98,16 @@ try {
             $manifest = Get-Content -Raw -LiteralPath $manifestPath -Encoding UTF8 | ConvertFrom-Json
             Assert-True -Condition ($manifest.status -eq 'VALIDATED') -Message 'Validation manifest status must be VALIDATED'
             Assert-True -Condition ($manifest.numberKind -eq 'CONFIG') -Message 'Validation manifest numberKind must be CONFIG'
+            Assert-True -Condition ($manifest.repetition -eq 1) -Message 'Validation manifest must record the repetition'
+            Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($manifest.environmentId)) -Message 'Validation manifest must record an environmentId'
+            Assert-True -Condition ($null -ne $manifest.experiment.hardFail) -Message 'Validation manifest must preregister hard failures'
         }
+
+        $runSource = Get-Content -Raw -LiteralPath $runScript -Encoding UTF8
+        Assert-True -Condition (-not $runSource.Contains('--untracked-files=no')) -Message 'Dirty detection must include untracked files'
+        Assert-True -Condition $runSource.Contains('BENCHMARK_POST_IDS') -Message 'Runner must pass deterministic post IDs to k6'
+        Assert-True -Condition $runSource.Contains('BENCHMARK_USER_IDS') -Message 'Runner must pass deterministic user IDs to k6'
+        Assert-True -Condition $runSource.Contains('warmup-k6.log') -Message 'Runner must execute and retain an independent warmup phase'
 
         & $summarizeScript -RunDirectory $runDirectory
         Assert-True -Condition ($LASTEXITCODE -eq 0) -Message 'summarize.ps1 must accept a validation run'

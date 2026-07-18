@@ -5,11 +5,11 @@ const baseUrl = __ENV.BASE_URL || 'http://host.docker.internal:8888';
 const scenario = __ENV.BENCHMARK_SCENARIO || 'all';
 const variant = __ENV.BENCHMARK_VARIANT || 'default';
 const seed = Number(__ENV.BENCHMARK_SEED || '20260715');
-const postIds = (__ENV.BENCHMARK_POST_IDS || '1,2,3,4,5')
+const postIds = (__ENV.BENCHMARK_POST_IDS || '920000000000000001,920000000000000002,920000000000000003,920000000000000004,920000000000000005')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
-const userIds = (__ENV.BENCHMARK_USER_IDS || '2,3,4,5,6')
+const userIds = (__ENV.BENCHMARK_USER_IDS || '910000000000000002,910000000000000003,910000000000000004,910000000000000005,910000000000000006')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);

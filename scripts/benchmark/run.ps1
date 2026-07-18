@@ -18,6 +18,9 @@ param(
     [ValidateRange(1, 4096)]
     [int]$Concurrency = 0,
 
+    [ValidateRange(1, 100)]
+    [int]$Repetition = 1,
+
     [string]$SubjectCommit,
     [string]$HarnessCommit,
     [string]$DatasetCommit,
@@ -93,8 +96,27 @@ if ($configuredConcurrency -notcontains $Concurrency) {
     throw "Concurrency $Concurrency is not declared for profile $Profile"
 }
 
-$dirty = -not [string]::IsNullOrWhiteSpace((git -C $repoRoot status --porcelain --untracked-files=no | Out-String))
+$dirty = -not [string]::IsNullOrWhiteSpace((git -C $repoRoot status --porcelain | Out-String))
 $startedAt = [DateTimeOffset]::UtcNow.ToString('o')
+$environment = [ordered]@{
+    capturedAt = $startedAt
+    os = [System.Environment]::OSVersion.VersionString
+    architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    processorCount = [System.Environment]::ProcessorCount
+    memoryBytes = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+    java = (Get-Item -LiteralPath (Get-Command java).Source).VersionInfo.ProductVersion
+    maven = ((& mvn -version | Select-Object -First 1) | Out-String).Trim()
+    docker = ((& docker version --format '{{.Client.Version}}|{{.Server.Version}}' 2>&1) | Out-String).Trim()
+    baseUrl = if ($env:BASE_URL) { $env:BASE_URL } else { 'http://host.docker.internal:8888' }
+}
+$environmentFingerprint = '{0}|{1}|{2}|{3}|{4}|{5}|{6}' -f $environment.os, $environment.architecture, $environment.processorCount, $environment.memoryBytes, $environment.java, $environment.maven, $environment.docker
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
+try {
+    $environmentHash = [BitConverter]::ToString($sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes($environmentFingerprint))).Replace('-', '').ToLowerInvariant()
+}
+finally {
+    $sha256.Dispose()
+}
 $manifest = [ordered]@{
     schemaVersion = 1
     runId = $RunId
@@ -104,6 +126,15 @@ $manifest = [ordered]@{
     subjectCommit = $subject
     harnessCommit = $harness
     datasetCommit = $dataset
+    environmentId = "sha256:$environmentHash"
+    repetition = $Repetition
+    experiment = [ordered]@{
+        hypothesis = 'The candidate preserves correctness and is compared on the preregistered primary metric.'
+        primaryMetric = 'http_req_duration_p95'
+        direction = 'LOWER'
+        confidenceMethod = 'Median of three independent repetitions with the raw distribution retained.'
+        hardFail = @('checks_rate_below_1', 'http_req_failed_above_0', 'manifest_identity_mismatch')
+    }
     numberKind = 'CONFIG'
     status = 'RUNNING'
     startedAt = $startedAt
@@ -124,18 +155,6 @@ $manifest = [ordered]@{
         mysql = 'BLOCKED_EXTERNAL'
         agentEvaluation = 'NOT_APPLICABLE'
     }
-}
-
-$environment = [ordered]@{
-    capturedAt = $startedAt
-    os = [System.Environment]::OSVersion.VersionString
-    architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-    processorCount = [System.Environment]::ProcessorCount
-    memoryBytes = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
-    java = (Get-Item -LiteralPath (Get-Command java).Source).VersionInfo.ProductVersion
-    maven = ((& mvn -version | Select-Object -First 1) | Out-String).Trim()
-    docker = ((& docker version --format '{{.Client.Version}}|{{.Server.Version}}' 2>&1) | Out-String).Trim()
-    baseUrl = if ($env:BASE_URL) { $env:BASE_URL } else { 'http://host.docker.internal:8888' }
 }
 
 if ($ValidateOnly) {
@@ -174,19 +193,42 @@ $dockerArguments = @(
     '-e', "BENCHMARK_SCENARIO=$Scenario",
     '-e', "BENCHMARK_VARIANT=$Variant",
     '-e', 'BENCHMARK_SEED=20260715',
+    '-e', 'BENCHMARK_POST_IDS=920000000000000001,920000000000000002,920000000000000003,920000000000000004,920000000000000005',
+    '-e', 'BENCHMARK_USER_IDS=910000000000000002,910000000000000003,910000000000000004,910000000000000005,910000000000000006',
     '-e', "K6_VUS=$Concurrency",
-    '-e', "K6_DURATION=$duration"
+    '-e', "K6_DURATION=${warmupSeconds}s"
 )
 if (-not [string]::IsNullOrWhiteSpace($env:BENCHMARK_TOKEN)) {
     $dockerArguments += @('-e', 'BENCHMARK_TOKEN')
 }
-$dockerArguments += @(
+$warmupArguments = $dockerArguments + @(
     'grafana/k6:0.54.0',
-    'run', '--summary-export', '/results/k6.json', '/scripts/backend-scenarios.js'
+    'run', '/scripts/backend-scenarios.js'
 )
 
+$warmupLogPath = Join-Path $rawDirectory 'warmup-k6.log'
+& docker @warmupArguments 2>&1 | Tee-Object -FilePath $warmupLogPath
+$warmupExitCode = $LASTEXITCODE
+if ($warmupExitCode -ne 0) {
+    $manifest.endedAt = [DateTimeOffset]::UtcNow.ToString('o')
+    $manifest.artifacts.k6 = 'FAILED'
+    $manifest.status = 'FAILED'
+    Write-JsonFile -Value $manifest -Path (Join-Path $runDirectory 'manifest.json')
+    & (Join-Path $PSScriptRoot 'summarize.ps1') -RunDirectory $runDirectory
+    exit $warmupExitCode
+}
+
+$measurementArguments = [System.Collections.Generic.List[string]]::new()
+$measurementArguments.AddRange([string[]]$dockerArguments)
+$durationIndex = $measurementArguments.IndexOf("K6_DURATION=${warmupSeconds}s")
+$measurementArguments[$durationIndex] = "K6_DURATION=$duration"
+$measurementArguments.AddRange([string[]]@(
+    'grafana/k6:0.54.0',
+    'run', '--summary-export', '/results/k6.json', '/scripts/backend-scenarios.js'
+))
+
 $logPath = Join-Path $rawDirectory 'k6.log'
-& docker @dockerArguments 2>&1 | Tee-Object -FilePath $logPath
+& docker @measurementArguments 2>&1 | Tee-Object -FilePath $logPath
 $k6ExitCode = $LASTEXITCODE
 $manifest.endedAt = [DateTimeOffset]::UtcNow.ToString('o')
 $manifest.artifacts.k6 = if ($k6ExitCode -eq 0) { 'COLLECTED_UNREVIEWED' } else { 'FAILED' }

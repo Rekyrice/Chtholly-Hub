@@ -13,6 +13,9 @@
     "subjectCommit",
     "harnessCommit",
     "datasetCommit",
+    "environmentId",
+    "repetition",
+    "experiment",
     "numberKind",
     "status",
     "startedAt"
@@ -26,6 +29,19 @@
     "subjectCommit": { "type": "string", "minLength": 7 },
     "harnessCommit": { "type": "string", "minLength": 7 },
     "datasetCommit": { "type": "string", "minLength": 7 },
+    "environmentId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "repetition": { "type": "integer", "minimum": 1 },
+    "experiment": {
+      "type": "object",
+      "required": ["hypothesis", "primaryMetric", "direction", "confidenceMethod", "hardFail"],
+      "properties": {
+        "hypothesis": { "type": "string", "minLength": 1 },
+        "primaryMetric": { "type": "string", "minLength": 1 },
+        "direction": { "enum": ["LOWER", "HIGHER"] },
+        "confidenceMethod": { "type": "string", "minLength": 1 },
+        "hardFail": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
     "numberKind": { "enum": ["CONFIG", "OBSERVED", "TARGET", "THRESHOLD"] },
     "status": {
       "enum": ["PLANNED", "VALIDATED", "RUNNING", "COMPLETED", "FAILED", "BLOCKED_EXTERNAL"]

@@ -15,14 +15,17 @@
 ## 入口
 
 ```powershell
+# 先写入确定性 MySQL 权威数据与 Redis Bitmap 成员状态；不直接伪造 SDS 等派生结果
+./scripts/benchmark/seed.ps1 -Profile smoke -MysqlContainer mysql -RedisContainer redis
+
 # 只验证参数、manifest 和环境快照，不启动服务或产生性能结论
-./scripts/benchmark/run.ps1 -Profile smoke -Scenario all -RunId validate-local -ValidateOnly
+./scripts/benchmark/run.ps1 -Profile smoke -Scenario all -RunId validate-local -Repetition 1 -ValidateOnly
 
 # Dockerized k6 smoke
 ./scripts/benchmark/run.ps1 -Profile smoke -Scenario all -RunId smoke-local
 
 # 标准场景需要在看到结果前固定并发档位；默认取 profile 的第一档
-./scripts/benchmark/run.ps1 -Profile standard -Scenario cache -Variant full -RunId cache-full-01 -Concurrency 16
+./scripts/benchmark/run.ps1 -Profile standard -Scenario cache -Variant full -RunId cache-full-01 -Concurrency 16 -Repetition 1
 
 # 确定性汇总；可选导出只读证据包到仓库外目录
 ./scripts/benchmark/summarize.ps1 -RunDirectory ./.benchmark-results/cache-full-01
