@@ -1,5 +1,7 @@
 package com.chtholly.post.service.impl;
 
+import com.chtholly.cache.config.CacheProperties;
+import com.chtholly.cache.observability.CacheMetrics;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.comment.service.CommentService;
 import com.chtholly.post.api.dto.FeedItemResponse;
@@ -120,6 +122,8 @@ class PostFeedServiceImplEnrichTest {
     }
 
     private PostFeedServiceImpl newService(PostMapper mapper, PersonalPostFeedService personalFeed) {
+        CacheProperties cacheProperties = new CacheProperties();
+        cacheProperties.setReadMode(CacheProperties.ReadMode.FULL);
         return new PostFeedServiceImpl(
                 mapper,
                 null,
@@ -129,7 +133,9 @@ class PostFeedServiceImplEnrichTest {
                 null,
                 null,
                 personalFeed,
-                publicAuthorQueryService
+                publicAuthorQueryService,
+                cacheProperties,
+                mock(CacheMetrics.class)
         );
     }
 

@@ -1,6 +1,8 @@
 package com.chtholly.post.service.impl;
 
 import com.chtholly.cache.hotkey.HotKeyDetector;
+import com.chtholly.cache.config.CacheProperties;
+import com.chtholly.cache.observability.CacheMetrics;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.api.dto.PostDetailResponse;
@@ -24,6 +26,13 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -31,7 +40,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,6 +54,7 @@ class PostDetailQueryServiceTest {
     @Mock private StringRedisTemplate redis;
     @Mock private HotKeyDetector hotKey;
     @Mock private PublicAuthorQueryService publicAuthorQueryService;
+    @Mock private CacheMetrics cacheMetrics;
 
     @Test
     void cacheHitOverlaysLatestAuthorProfileFromMysql() {
@@ -68,15 +81,7 @@ class PostDetailQueryServiceTest {
                 "[\"动画\",\"游戏\"]",
                 Instant.parse("2026-02-14T10:00:00Z")
         )));
-        PostDetailQueryService service = new PostDetailQueryService(
-                mapper,
-                new ObjectMapper(),
-                counterService,
-                redis,
-                cache,
-                hotKey,
-                publicAuthorQueryService
-        );
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
 
         PostDetailResponse response = service.getDetail(42L, null);
 
@@ -97,15 +102,7 @@ class PostDetailQueryServiceTest {
         when(redis.getExpire("feed:item:42")).thenReturn(120L);
         when(hotKey.ttlForPublic(60, "post:42")).thenReturn(60);
         when(publicAuthorQueryService.findById(7L)).thenReturn(Optional.empty());
-        PostDetailQueryService service = new PostDetailQueryService(
-                mapper,
-                new ObjectMapper(),
-                counterService,
-                redis,
-                cache,
-                hotKey,
-                publicAuthorQueryService
-        );
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
 
         PostDetailResponse response = service.getDetail(42L, null);
 
@@ -117,8 +114,7 @@ class PostDetailQueryServiceTest {
     void cachedPrivateDetailIsRejectedForNonOwner() {
         Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
         cache.put(PostDetailQueryService.cacheKey(42L), detailWithVisibility("private"));
-        PostDetailQueryService service = new PostDetailQueryService(
-                mapper, new ObjectMapper(), counterService, redis, cache, hotKey, publicAuthorQueryService);
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
 
         assertThatThrownBy(() -> service.getDetail(42L, 9L))
                 .isInstanceOf(BusinessException.class);
@@ -134,14 +130,122 @@ class PostDetailQueryServiceTest {
         when(mapper.findDetailById(42L)).thenReturn(draftRow());
         when(counterService.getCounts("post", "42", List.of("like", "fav"))).thenReturn(Map.of());
         when(publicAuthorQueryService.findById(7L)).thenReturn(Optional.empty());
-        PostDetailQueryService service = new PostDetailQueryService(
-                mapper, new ObjectMapper(), counterService, redis, cache, hotKey, publicAuthorQueryService);
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
 
         PostDetailResponse response = service.getDetail(42L, 7L);
 
         assertThat(response.id()).isEqualTo("42");
         assertThat(cache.getIfPresent(PostDetailQueryService.cacheKey(42L))).isNull();
         verify(values, never()).set(anyString(), anyString(), any(Duration.class));
+    }
+
+    @Test
+    void dbOnlyBypassesSharedCachesAndLoadsMysql() {
+        Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
+        cache.put(PostDetailQueryService.cacheKey(42L), detail(
+                "stale", "/stale.webp", "Stale", "Stale", "[]"));
+        PostDetailRow row = publicRow();
+        row.setTitle("Fresh from MySQL");
+        when(mapper.findDetailById(42L)).thenReturn(row);
+        when(counterService.getCounts("post", "42", List.of("like", "fav"))).thenReturn(Map.of());
+        when(publicAuthorQueryService.findById(7L)).thenReturn(Optional.empty());
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.DB_ONLY);
+
+        PostDetailResponse response = service.getDetail(42L, null);
+
+        assertThat(response.title()).isEqualTo("Fresh from MySQL");
+        verifyNoInteractions(redis, hotKey);
+        verify(cacheMetrics).recordMysqlQuery();
+        verify(cacheMetrics).recordSameKeyLoad();
+    }
+
+    @Test
+    void fullNoSingleFlightAllowsConcurrentOriginLoads() throws Exception {
+        Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> values = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        when(values.get(PostDetailQueryService.cacheKey(42L))).thenReturn(null);
+        when(counterService.getCounts("post", "42", List.of("like", "fav"))).thenReturn(Map.of());
+        when(publicAuthorQueryService.findById(7L)).thenReturn(Optional.empty());
+        CountDownLatch loadsEntered = new CountDownLatch(2);
+        CountDownLatch releaseLoads = new CountDownLatch(1);
+        when(mapper.findDetailById(42L)).thenAnswer(ignored -> {
+            loadsEntered.countDown();
+            if (!releaseLoads.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("concurrent origin loads did not arrive");
+            }
+            return publicRow();
+        });
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL_NO_SINGLEFLIGHT);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<PostDetailResponse> first = executor.submit(() -> service.getDetail(42L, null));
+            Future<PostDetailResponse> second = executor.submit(() -> service.getDetail(42L, null));
+
+            assertThat(loadsEntered.await(3, TimeUnit.SECONDS)).isTrue();
+            releaseLoads.countDown();
+            assertThat(first.get(5, TimeUnit.SECONDS).id()).isEqualTo("42");
+            assertThat(second.get(5, TimeUnit.SECONDS).id()).isEqualTo("42");
+            verify(mapper, times(2)).findDetailById(42L);
+            verify(cacheMetrics, times(2)).recordSameKeyLoad();
+        } finally {
+            releaseLoads.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void fullModeCoalescesConcurrentOriginLoads() throws Exception {
+        Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> values = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        AtomicInteger redisReads = new AtomicInteger();
+        AtomicReference<String> redisValue = new AtomicReference<>();
+        CountDownLatch secondInitialRead = new CountDownLatch(1);
+        when(values.get(PostDetailQueryService.cacheKey(42L))).thenAnswer(ignored -> {
+            if (redisReads.incrementAndGet() == 3) {
+                secondInitialRead.countDown();
+            }
+            return redisValue.get();
+        });
+        doAnswer(invocation -> {
+            redisValue.set(invocation.getArgument(1));
+            return null;
+        }).when(values).set(anyString(), anyString(), any(Duration.class));
+        when(counterService.getCounts("post", "42", List.of("like", "fav"))).thenReturn(Map.of());
+        when(publicAuthorQueryService.findById(7L)).thenReturn(Optional.empty());
+        CountDownLatch loadEntered = new CountDownLatch(1);
+        CountDownLatch releaseLoad = new CountDownLatch(1);
+        when(mapper.findDetailById(42L)).thenAnswer(ignored -> {
+            loadEntered.countDown();
+            if (!releaseLoad.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("origin load was not released");
+            }
+            return publicRow();
+        });
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<PostDetailResponse> first = executor.submit(() -> service.getDetail(42L, null));
+            assertThat(loadEntered.await(3, TimeUnit.SECONDS)).isTrue();
+            Future<PostDetailResponse> second = executor.submit(() -> service.getDetail(42L, null));
+            assertThat(secondInitialRead.await(3, TimeUnit.SECONDS)).isTrue();
+            releaseLoad.countDown();
+
+            assertThat(first.get(5, TimeUnit.SECONDS).id()).isEqualTo("42");
+            assertThat(second.get(5, TimeUnit.SECONDS).id()).isEqualTo("42");
+            verify(mapper).findDetailById(42L);
+            verify(cacheMetrics).recordSameKeyLoad();
+        } finally {
+            releaseLoad.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
     }
 
     @Test
@@ -155,14 +259,24 @@ class PostDetailQueryServiceTest {
         after.setUpdateTime(before.getUpdateTime());
         after.setAuthorUpdateTime(Instant.parse("2026-07-03T00:00:00Z"));
         when(mapper.findDetailEtagById(42L)).thenReturn(before, after);
-        PostDetailQueryService service = new PostDetailQueryService(
-                mapper, new ObjectMapper(), counterService, redis, Caffeine.newBuilder().build(), hotKey,
-                publicAuthorQueryService);
+        PostDetailQueryService service = newService(Caffeine.newBuilder().build(), CacheProperties.ReadMode.FULL);
 
         String oldEtag = service.computeEtag(42L);
         String newEtag = service.computeEtag(42L);
 
         assertThat(newEtag).isNotEqualTo(oldEtag);
+        verify(cacheMetrics, times(2)).recordMysqlQuery();
+    }
+
+    private PostDetailQueryService newService(
+            Cache<String, PostDetailResponse> cache,
+            CacheProperties.ReadMode readMode
+    ) {
+        CacheProperties properties = new CacheProperties();
+        properties.setReadMode(readMode);
+        return new PostDetailQueryService(
+                mapper, new ObjectMapper(), counterService, redis, cache, hotKey, publicAuthorQueryService,
+                properties, cacheMetrics);
     }
 
     private PostDetailResponse detail(
@@ -187,6 +301,15 @@ class PostDetailQueryServiceTest {
                 base.authorId(), base.authorHandle(), base.authorAvatar(), base.authorNickname(), base.authorBio(),
                 base.authorTagJson(), base.likeCount(), base.favoriteCount(), base.liked(), base.faved(), base.isTop(),
                 visibility, base.type(), base.publishTime());
+    }
+
+    private PostDetailRow publicRow() {
+        PostDetailRow row = draftRow();
+        row.setSlug("published-post");
+        row.setTitle("Published");
+        row.setVisible("public");
+        row.setStatus("published");
+        return row;
     }
 
     private PostDetailRow draftRow() {

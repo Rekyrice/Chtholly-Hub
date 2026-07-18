@@ -13,6 +13,36 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "cache")
 @Data
 public class CacheProperties {
+    private ReadMode readMode = ReadMode.FULL;
+
+    public enum ReadMode {
+        DB_ONLY("db-only", false, false),
+        FULL_NO_SINGLEFLIGHT("full-no-singleflight", true, false),
+        FULL("full", true, true);
+
+        private final String externalName;
+        private final boolean usesCache;
+        private final boolean usesSingleFlight;
+
+        ReadMode(String externalName, boolean usesCache, boolean usesSingleFlight) {
+            this.externalName = externalName;
+            this.usesCache = usesCache;
+            this.usesSingleFlight = usesSingleFlight;
+        }
+
+        public String externalName() {
+            return externalName;
+        }
+
+        public boolean usesCache() {
+            return usesCache;
+        }
+
+        public boolean usesSingleFlight() {
+            return usesSingleFlight;
+        }
+    }
+
     // 进程内缓存（本地二级缓存）配置。
     private L2 l2 = new L2();
 

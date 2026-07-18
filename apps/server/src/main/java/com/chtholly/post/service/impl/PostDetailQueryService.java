@@ -1,6 +1,8 @@
 package com.chtholly.post.service.impl;
 
 import com.chtholly.cache.hotkey.HotKeyDetector;
+import com.chtholly.cache.config.CacheProperties;
+import com.chtholly.cache.observability.CacheMetrics;
 import com.chtholly.cache.singleflight.SingleFlightLockRegistry;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
@@ -29,6 +31,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 
 /**
  * Read model for post details, including access checks and multi-level caching.
@@ -48,6 +51,8 @@ public class PostDetailQueryService {
     private final Cache<String, PostDetailResponse> localCache;
     private final HotKeyDetector hotKey;
     private final PublicAuthorQueryService publicAuthorQueryService;
+    private final CacheProperties.ReadMode readMode;
+    private final CacheMetrics cacheMetrics;
     private final SingleFlightLockRegistry singleFlight = new SingleFlightLockRegistry();
 
     public PostDetailQueryService(
@@ -57,7 +62,9 @@ public class PostDetailQueryService {
             StringRedisTemplate redis,
             @Qualifier("postDetailCache") Cache<String, PostDetailResponse> localCache,
             HotKeyDetector hotKey,
-            PublicAuthorQueryService publicAuthorQueryService
+            PublicAuthorQueryService publicAuthorQueryService,
+            CacheProperties cacheProperties,
+            CacheMetrics cacheMetrics
     ) {
         this.mapper = mapper;
         this.objectMapper = objectMapper;
@@ -66,6 +73,8 @@ public class PostDetailQueryService {
         this.localCache = localCache;
         this.hotKey = hotKey;
         this.publicAuthorQueryService = publicAuthorQueryService;
+        this.readMode = cacheProperties.getReadMode();
+        this.cacheMetrics = cacheMetrics;
     }
 
     static String cacheKey(long id) {
@@ -76,6 +85,10 @@ public class PostDetailQueryService {
     @Transactional(readOnly = true)
     public PostDetailResponse getDetail(long id, Long currentUserId) {
         String pageKey = cacheKey(id);
+        if (!readMode.usesCache()) {
+            return loadFromDatabase(id, currentUserId, pageKey, false);
+        }
+
         PostDetailResponse local = localCache.getIfPresent(pageKey);
         if (local != null) {
             assertCachedReadable(local, currentUserId);
@@ -86,31 +99,48 @@ public class PostDetailQueryService {
         PostDetailResponse cached = processCacheHit(redis.opsForValue().get(pageKey), id, pageKey, currentUserId);
         if (cached != null) return cached;
 
-        return singleFlight.runExclusive(pageKey, () -> {
+        Supplier<PostDetailResponse> loader = () -> {
             PostDetailResponse afterFlight = processCacheHit(
                     redis.opsForValue().get(pageKey), id, pageKey, currentUserId);
             if (afterFlight != null) return afterFlight;
+            return loadFromDatabase(id, currentUserId, pageKey, true);
+        };
+        return readMode.usesSingleFlight()
+                ? singleFlight.runExclusive(pageKey, loader)
+                : loader.get();
+    }
 
-            PostDetailRow row = mapper.findDetailById(id);
-            if (row == null || "deleted".equals(row.getStatus())) {
-                redis.opsForValue().set(pageKey, "NULL", Duration.ofSeconds(30 + ThreadLocalRandom.current().nextInt(31)));
-                throw new ResourceNotFoundException("内容不存在");
+    private PostDetailResponse loadFromDatabase(
+            long id,
+            Long currentUserId,
+            String pageKey,
+            boolean populateCache
+    ) {
+        cacheMetrics.recordSameKeyLoad();
+        cacheMetrics.recordMysqlQuery();
+        PostDetailRow row = mapper.findDetailById(id);
+        if (row == null || "deleted".equals(row.getStatus())) {
+            if (populateCache) {
+                redis.opsForValue().set(pageKey, "NULL",
+                        Duration.ofSeconds(30 + ThreadLocalRandom.current().nextInt(31)));
             }
-            assertReadable(row, currentUserId);
+            throw new ResourceNotFoundException("内容不存在");
+        }
+        assertReadable(row, currentUserId);
 
-            Map<String, Long> counts = counterService.getCounts(
-                    "post", String.valueOf(row.getId()), List.of("like", "fav"));
-            PostDetailResponse response = mapRow(row, counts);
-            if (isSharedCacheable(row)) {
-                cache(pageKey, response);
-            }
-            return enrich(response, currentUserId, false);
-        });
+        Map<String, Long> counts = counterService.getCounts(
+                "post", String.valueOf(row.getId()), List.of("like", "fav"));
+        PostDetailResponse response = mapRow(row, counts);
+        if (populateCache && isSharedCacheable(row)) {
+            cache(pageKey, response);
+        }
+        return enrich(response, currentUserId, false);
     }
 
     /** Resolves a post slug before using the same detail query path. */
     @Transactional(readOnly = true)
     public PostDetailResponse getDetailBySlug(String slug, Long currentUserId) {
+        cacheMetrics.recordMysqlQuery();
         Long id = mapper.findIdBySlug(slug);
         if (id == null) throw new ResourceNotFoundException("内容不存在");
         return getDetail(id, currentUserId);
@@ -118,11 +148,13 @@ public class PostDetailQueryService {
 
     @Transactional(readOnly = true)
     public String computeEtag(long id) {
+        cacheMetrics.recordMysqlQuery();
         return computeEtag(mapper.findDetailEtagById(id));
     }
 
     @Transactional(readOnly = true)
     public String computeEtagBySlug(String slug) {
+        cacheMetrics.recordMysqlQuery();
         return computeEtag(mapper.findDetailEtagBySlug(slug));
     }
 

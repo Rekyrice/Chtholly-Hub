@@ -247,6 +247,7 @@ storage:
     public-url-prefix: /uploads
 
 cache:
+  read-mode: ${CACHE_READ_MODE:full}
   l2:
     public-cfg:
       ttl-seconds: 15
