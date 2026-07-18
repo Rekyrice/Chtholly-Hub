@@ -23,6 +23,7 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 
@@ -169,6 +170,36 @@ class CounterServiceImplBatchTest {
                 .containsEntry("like", 0L);
 
         verify(redisson).getLock("lock:counter-fact-maintenance:post:99");
+        verify(lock).unlock();
+    }
+
+    @Test
+    void missingPostSdsRebuildRereadsStructureAfterLockAndPreservesMaintenanceResult() throws Exception {
+        RBucket<Long> bucket = mock(RBucket.class);
+        RRateLimiter limiter = mock(RRateLimiter.class);
+        RLock lock = mock(RLock.class);
+        byte[] maintainedSds = ByteBuffer.allocate(20)
+                .putInt(19)
+                .putInt(7)
+                .putInt(3)
+                .putInt(0)
+                .putInt(0)
+                .array();
+        when(redisson.getBucket(anyString())).thenReturn((RBucket) bucket);
+        when(bucket.get()).thenReturn(null);
+        when(redisson.getRateLimiter("rl:sds-rebuild:post:99")).thenReturn(limiter);
+        when(limiter.tryAcquire(1)).thenReturn(true);
+        when(redisson.getLock("lock:counter-fact-maintenance:post:99")).thenReturn(lock);
+        when(lock.tryLock(0L, java.util.concurrent.TimeUnit.MILLISECONDS)).thenReturn(true);
+        doReturn(null, maintainedSds).when(redis).execute(any(RedisCallback.class));
+
+        assertThat(counterService.getCounts("post", "99", List.of("like", "fav")))
+                .containsEntry("like", 7L)
+                .containsEntry("fav", 3L);
+
+        verify(redis, times(2)).execute(any(RedisCallback.class));
+        verify(redis, never()).scan(any(ScanOptions.class));
+        verify(redis, never()).opsForHash();
         verify(lock).unlock();
     }
 }

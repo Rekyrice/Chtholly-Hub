@@ -394,6 +394,7 @@ class ContentPackDatabaseWriterTest {
         verify(mapper).upsertFollowing(new SeedFollowRow(801L, 42L, 1L, follow.createdAt()));
         verify(mapper).upsertFollower(new SeedFollowRow(802L, 42L, 1L, follow.createdAt()));
         assertThat(result.affectedFollowUserIds()).containsExactlyInAnyOrder(1L, 42L, 43L, 44L);
+        assertThat(result.removedFollowPairs()).containsExactly(new FollowPair(43L, 44L));
     }
 
     @Test

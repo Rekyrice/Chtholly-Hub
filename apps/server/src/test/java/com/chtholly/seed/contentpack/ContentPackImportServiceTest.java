@@ -1,10 +1,12 @@
 package com.chtholly.seed.contentpack;
 
 import com.chtholly.counter.service.UserCounterService;
+import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.service.impl.PostCacheInvalidator;
 import com.chtholly.relation.service.impl.RelationCacheInvalidator;
 import com.chtholly.search.index.SearchIndexService;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.ResolvedIdentities;
+import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.FollowPair;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.WriteResult;
 import com.chtholly.seed.contentpack.ContentPackMediaPublisher.PublishedContent;
 import com.chtholly.seed.contentpack.ContentPackReactionApplier.ReactionApplyResult;
@@ -48,6 +50,7 @@ class ContentPackImportServiceTest {
     private final ContentPackReactionApplier reactionApplier = mock(ContentPackReactionApplier.class);
     private final UserCounterService userCounterService = mock(UserCounterService.class);
     private final RelationCacheInvalidator relationCacheInvalidator = mock(RelationCacheInvalidator.class);
+    private final FeedTimelineService feedTimelineService = mock(FeedTimelineService.class);
     private final PostCacheInvalidator cacheInvalidator = mock(PostCacheInvalidator.class);
     private final SearchIndexService searchIndexService = mock(SearchIndexService.class);
     private final RedissonClient redisson = mock(RedissonClient.class);
@@ -60,7 +63,7 @@ class ContentPackImportServiceTest {
     void setUp() throws Exception {
         service = new ContentPackImportService(loader, validator, qualityGate, snapshotWriter,
                 mediaPublisher, databaseWriter, reactionApplier, userCounterService,
-                relationCacheInvalidator, cacheInvalidator, searchIndexService, redisson);
+                relationCacheInvalidator, feedTimelineService, cacheInvalidator, searchIndexService, redisson);
         pack = pack("complete");
         published = new PublishedContent(Map.of(), Map.of(), List.of(), "seed-content-v2", "lease-1");
         when(loader.load(root)).thenReturn(pack);
@@ -251,6 +254,38 @@ class ContentPackImportServiceTest {
     }
 
     @Test
+    void givenRemovedManagedFollow_whenDatabaseCommitted_thenRemovesStaleTimelineEntries() {
+        FollowPair removed = new FollowPair(101L, 202L);
+        WriteResult write = writeResult(
+                List.of(), Map.of(), List.of(), List.of(), List.of(),
+                Map.of(), List.of(101L, 202L), List.of(101L), List.of(removed));
+        when(databaseWriter.write(pack, published)).thenReturn(write);
+
+        ContentPackImportReport report = service.run(root, false);
+
+        assertThat(report.status()).isEqualTo("completed");
+        verify(feedTimelineService).removeAuthorFromTimeline(101L, 202L);
+    }
+
+    @Test
+    void givenRemovedFollowTimelineCleanupFailure_whenDatabaseCommitted_thenReportsPartialAndContinues() {
+        FollowPair removed = new FollowPair(101L, 202L);
+        WriteResult write = writeResult(
+                List.of(), Map.of(), List.of(), List.of(), List.of(),
+                Map.of(), List.of(101L, 202L), List.of(101L), List.of(removed));
+        when(databaseWriter.write(pack, published)).thenReturn(write);
+        doThrow(new IllegalStateException("Redis unavailable"))
+                .when(feedTimelineService).removeAuthorFromTimeline(101L, 202L);
+
+        ContentPackImportReport report = service.run(root, false);
+
+        assertThat(report.status()).isEqualTo("partial");
+        assertThat(report.failedStage()).isEqualTo("runtime-state");
+        verify(cacheInvalidator).invalidate(11L);
+        verify(searchIndexService).tryUpsertPost(11L);
+    }
+
+    @Test
     void given_indexFailure_when_databaseCommitted_then_reportsEveryFailedIdWithoutStoppingOthers() {
         when(searchIndexService.tryUpsertPost(11L)).thenReturn(false);
         when(searchIndexService.tryUpsertPost(12L)).thenReturn(true);
@@ -399,12 +434,27 @@ class ContentPackImportServiceTest {
             Map<String, Long> externalPostIds,
             List<Long> affectedFollowUserIds,
             List<Long> affectedReactionPostAuthorIds) {
+        return writeResult(changed, created, retiredPostIds, retiredAuthorIds,
+                unmatchedRetirementSlugs, externalPostIds, affectedFollowUserIds,
+                affectedReactionPostAuthorIds, List.of());
+    }
+
+    private WriteResult writeResult(
+            List<Long> changed,
+            Map<Long, Integer> created,
+            List<Long> retiredPostIds,
+            List<Long> retiredAuthorIds,
+            List<String> unmatchedRetirementSlugs,
+            Map<String, Long> externalPostIds,
+            List<Long> affectedFollowUserIds,
+            List<Long> affectedReactionPostAuthorIds,
+            List<FollowPair> removedFollowPairs) {
         Map<String, Long> postIds = new java.util.LinkedHashMap<>();
         postIds.put("post-a", 11L);
         postIds.put("post-b", 12L);
         return new WriteResult(new ResolvedIdentities(
                 "seed-content-v2", Map.of("author", 101L), postIds, externalPostIds), changed, created,
                 retiredPostIds, retiredAuthorIds, unmatchedRetirementSlugs,
-                affectedFollowUserIds, affectedReactionPostAuthorIds);
+                affectedFollowUserIds, affectedReactionPostAuthorIds, removedFollowPairs);
     }
 }

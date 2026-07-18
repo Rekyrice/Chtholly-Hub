@@ -243,6 +243,19 @@ public class CounterServiceImpl implements CounterService {
                     }
                     return result;
                 }
+                // 结构可能在等待同一实体锁期间被事实维护或另一重建线程修复。
+                // 持锁后必须重读，避免用锁前的缺失快照覆盖刚完成的精确 SDS。
+                byte[] currentRaw = getRaw(sdsKey);
+                if (currentRaw != null && currentRaw.length == expectedLen) {
+                    for (String m : bitmapMetrics) {
+                        Integer idx = CounterSchema.NAME_TO_IDX.get(m);
+                        if (idx != null) {
+                            result.put(m, readInt32BE(currentRaw, idx * CounterSchema.FIELD_SIZE));
+                        }
+                    }
+                    resetBackoff(entityType, entityId);
+                    return result;
+                }
                 // 依据位图分片统计真实计数（仅由持锁者执行重建）
                 byte[] newSds = new byte[expectedLen];
                 List<String> rebuildFields = new ArrayList<>();

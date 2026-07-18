@@ -103,4 +103,13 @@ class CounterRebuildConsumerTest {
 
         verifyNoInteractions(redis);
     }
+
+    @Test
+    void nonPostReactionMembershipEventsAreAlsoSkippedWithoutMutatingRedis() {
+        CounterEvent event = CounterEvent.of("comment", "7", "fav", 2, 9L, 1, "fav-comment-7-9");
+
+        assertThat(consumer.applyRebuildEvent(event)).isFalse();
+
+        verifyNoInteractions(redis);
+    }
 }

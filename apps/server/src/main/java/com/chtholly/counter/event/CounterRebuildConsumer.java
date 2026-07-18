@@ -71,9 +71,9 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
     }
 
     boolean applyRebuildEvent(CounterEvent evt) {
-        if (isPostReaction(evt)) {
+        if (isReaction(evt)) {
             if (reactionSkipWarningLogged.compareAndSet(false, true)) {
-                log.warn("Kafka counter rebuild skips post like/fav events; restore Redis bitmap backup "
+                log.warn("Kafka counter rebuild skips like/fav membership events; restore Redis bitmap backup "
                         + "and derive reaction SDS from bitmap facts");
             }
             return false;
@@ -99,10 +99,7 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
         return Long.valueOf(1L).equals(applied);
     }
 
-    private static boolean isPostReaction(CounterEvent evt) {
-        if (!"post".equals(evt.getEntityType())) {
-            return false;
-        }
+    private static boolean isReaction(CounterEvent evt) {
         if (evt.getIdx() == CounterSchema.IDX_LIKE && "like".equals(evt.getMetric())) {
             return true;
         }

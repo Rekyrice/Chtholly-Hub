@@ -107,7 +107,7 @@ public class ContentPackDatabaseWriter {
         PostWriteState posts = writePosts(pack, published, accountIds, namespace, version, resolver);
         RetirementWriteState retirements = retirePosts(pack, Set.copyOf(posts.postIds().values()));
         writeComments(pack, accountIds, posts.postIds(), externalPostIdsBySlug, namespace, version);
-        List<Long> affectedFollowUserIds = writeFollows(
+        FollowWriteState follows = writeFollows(
                 pack, accountIds, externalFollowTargetId, namespace, version);
         List<Long> affectedReactionPostAuthorIds = resolveAffectedReactionPostAuthorIds(
                 pack, accountIds, externalPostIdsBySlug);
@@ -118,8 +118,9 @@ public class ContentPackDatabaseWriter {
                 retirements.retiredPostIds(),
                 retirements.retiredAuthorIds(),
                 retirements.unmatchedSlugs(),
-                affectedFollowUserIds,
-                affectedReactionPostAuthorIds);
+                follows.affectedUserIds(),
+                affectedReactionPostAuthorIds,
+                follows.removedPairs());
     }
 
     /**
@@ -373,7 +374,7 @@ public class ContentPackDatabaseWriter {
         mapper.deactivateSeedCommentsExcept(namespace, Set.copyOf(declaredKeys));
     }
 
-    private List<Long> writeFollows(
+    private FollowWriteState writeFollows(
             ContentPack pack,
             Map<String, Long> accountIds,
             Long externalFollowTargetId,
@@ -449,7 +450,11 @@ public class ContentPackDatabaseWriter {
         }
         mapper.deactivateSeedFollowingExcept(namespace, List.copyOf(declaredPairs));
         mapper.deactivateSeedFollowerExcept(namespace, List.copyOf(declaredPairs));
-        return List.copyOf(affectedUserIds);
+        LinkedHashSet<FollowPair> declaredPairSet = new LinkedHashSet<>(declaredPairs);
+        List<FollowPair> removedPairs = existingManagedPairs.stream()
+                .filter(pair -> !declaredPairSet.contains(pair))
+                .toList();
+        return new FollowWriteState(List.copyOf(affectedUserIds), removedPairs);
     }
 
     private static long requireExternalFollowTargetId(Long targetId, String seedKey) {
@@ -671,6 +676,14 @@ public class ContentPackDatabaseWriter {
     public record FollowPair(long fromUserId, long toUserId) {
     }
 
+    /** Runtime reconciliation inputs produced by the transactional relation writer. */
+    private record FollowWriteState(List<Long> affectedUserIds, List<FollowPair> removedPairs) {
+        private FollowWriteState {
+            affectedUserIds = List.copyOf(affectedUserIds);
+            removedPairs = List.copyOf(removedPairs);
+        }
+    }
+
     /** Stable account and post IDs consumed by post-commit runtime-state reconciliation. */
     public record ResolvedIdentities(
             String namespace,
@@ -699,7 +712,8 @@ public class ContentPackDatabaseWriter {
             List<Long> retiredAuthorIds,
             List<String> unmatchedRetirementSlugs,
             List<Long> affectedFollowUserIds,
-            List<Long> affectedReactionPostAuthorIds) {
+            List<Long> affectedReactionPostAuthorIds,
+            List<FollowPair> removedFollowPairs) {
         public WriteResult {
             changedPostIds = List.copyOf(changedPostIds);
             createdPostCountsByAuthor = Collections.unmodifiableMap(
@@ -709,6 +723,21 @@ public class ContentPackDatabaseWriter {
             unmatchedRetirementSlugs = List.copyOf(unmatchedRetirementSlugs);
             affectedFollowUserIds = List.copyOf(affectedFollowUserIds);
             affectedReactionPostAuthorIds = List.copyOf(affectedReactionPostAuthorIds);
+            removedFollowPairs = List.copyOf(removedFollowPairs);
+        }
+
+        /** Creates a result produced before removed-follow timeline reconciliation was introduced. */
+        public WriteResult(
+                ResolvedIdentities identities,
+                List<Long> changedPostIds,
+                Map<Long, Integer> createdPostCountsByAuthor,
+                List<Long> retiredPostIds,
+                List<Long> retiredAuthorIds,
+                List<String> unmatchedRetirementSlugs,
+                List<Long> affectedFollowUserIds,
+                List<Long> affectedReactionPostAuthorIds) {
+            this(identities, changedPostIds, createdPostCountsByAuthor, retiredPostIds, retiredAuthorIds,
+                    unmatchedRetirementSlugs, affectedFollowUserIds, affectedReactionPostAuthorIds, List.of());
         }
 
         /** Creates a result produced before explicit reaction-author reporting was introduced. */
@@ -721,7 +750,7 @@ public class ContentPackDatabaseWriter {
                 List<String> unmatchedRetirementSlugs,
                 List<Long> affectedFollowUserIds) {
             this(identities, changedPostIds, createdPostCountsByAuthor, retiredPostIds, retiredAuthorIds,
-                    unmatchedRetirementSlugs, affectedFollowUserIds, List.of());
+                    unmatchedRetirementSlugs, affectedFollowUserIds, List.of(), List.of());
         }
 
         /** Creates the pre-external-follow result shape. */
@@ -733,7 +762,7 @@ public class ContentPackDatabaseWriter {
                 List<Long> retiredAuthorIds,
                 List<String> unmatchedRetirementSlugs) {
             this(identities, changedPostIds, createdPostCountsByAuthor, retiredPostIds, retiredAuthorIds,
-                    unmatchedRetirementSlugs, List.of(), List.of());
+                    unmatchedRetirementSlugs, List.of(), List.of(), List.of());
         }
 
         /** Creates a legacy write result without retirement outcomes. */
@@ -742,7 +771,7 @@ public class ContentPackDatabaseWriter {
                 List<Long> changedPostIds,
                 Map<Long, Integer> createdPostCountsByAuthor) {
             this(identities, changedPostIds, createdPostCountsByAuthor,
-                    List.of(), List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         }
 
         /**

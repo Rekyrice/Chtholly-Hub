@@ -1,6 +1,7 @@
 package com.chtholly.seed.contentpack;
 
 import com.chtholly.counter.service.UserCounterService;
+import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.service.impl.PostCacheInvalidator;
 import com.chtholly.relation.service.impl.RelationCacheInvalidator;
 import com.chtholly.search.index.SearchIndexService;
@@ -50,6 +51,7 @@ public final class ContentPackImportService {
     private final ContentPackReactionApplier reactionApplier;
     private final UserCounterService userCounterService;
     private final RelationCacheInvalidator relationCacheInvalidator;
+    private final FeedTimelineService feedTimelineService;
     private final PostCacheInvalidator cacheInvalidator;
     private final SearchIndexService searchIndexService;
     private final RedissonClient redisson;
@@ -67,12 +69,13 @@ public final class ContentPackImportService {
             ContentPackReactionApplier reactionApplier,
             UserCounterService userCounterService,
             RelationCacheInvalidator relationCacheInvalidator,
+            FeedTimelineService feedTimelineService,
             PostCacheInvalidator cacheInvalidator,
             SearchIndexService searchIndexService,
             RedissonClient redisson) {
         this(loader, validator, qualityGate, snapshotWriter, mediaPublisher, databaseWriter,
                 reactionApplier, userCounterService, relationCacheInvalidator,
-                cacheInvalidator, searchIndexService, redisson, Clock.systemUTC());
+                feedTimelineService, cacheInvalidator, searchIndexService, redisson, Clock.systemUTC());
     }
 
     ContentPackImportService(
@@ -85,6 +88,7 @@ public final class ContentPackImportService {
             ContentPackReactionApplier reactionApplier,
             UserCounterService userCounterService,
             RelationCacheInvalidator relationCacheInvalidator,
+            FeedTimelineService feedTimelineService,
             PostCacheInvalidator cacheInvalidator,
             SearchIndexService searchIndexService,
             RedissonClient redisson,
@@ -99,6 +103,7 @@ public final class ContentPackImportService {
         this.userCounterService = Objects.requireNonNull(userCounterService, "userCounterService");
         this.relationCacheInvalidator = Objects.requireNonNull(
                 relationCacheInvalidator, "relationCacheInvalidator");
+        this.feedTimelineService = Objects.requireNonNull(feedTimelineService, "feedTimelineService");
         this.cacheInvalidator = Objects.requireNonNull(cacheInvalidator, "cacheInvalidator");
         this.searchIndexService = Objects.requireNonNull(searchIndexService, "searchIndexService");
         this.redisson = Objects.requireNonNull(redisson, "redisson");
@@ -260,6 +265,15 @@ public final class ContentPackImportService {
         } catch (RuntimeException exception) {
             runtimeFailure = true;
             log.error("Seed relation cache invalidation failed", exception);
+        }
+        for (var removed : write.removedFollowPairs()) {
+            try {
+                feedTimelineService.removeAuthorFromTimeline(removed.fromUserId(), removed.toUserId());
+            } catch (RuntimeException exception) {
+                runtimeFailure = true;
+                log.error("Seed removed-follow timeline cleanup failed from={} to={}",
+                        removed.fromUserId(), removed.toUserId(), exception);
+            }
         }
 
         for (var created : write.createdPostCountsByAuthor().entrySet()) {
