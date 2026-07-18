@@ -6,6 +6,7 @@ import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.api.dto.HubFeedResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 import com.chtholly.search.service.SearchService;
+import com.chtholly.search.service.SearchSort;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
@@ -43,6 +44,8 @@ public class SearchController {
      * @param size maximum hits to return
      * @param tagsCsv optional comma-separated tag slugs
      * @param after optional cursor for next page
+     * @param cursor preferred cursor alias when both cursor parameters are supplied
+     * @param sort optional result ordering, defaults to relevance
      * @param jwt optional JWT for personalized fields (may be null)
      * @return search result page
      */
@@ -53,10 +56,11 @@ public class SearchController {
                                  @RequestParam(value = "tags", required = false) String tagsCsv,
                                  @RequestParam(value = "after", required = false) String after,
                                  @RequestParam(value = "cursor", required = false) String cursor,
+                                 @RequestParam(value = "sort", required = false, defaultValue = "relevance") String sort,
                                  @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
         String pageCursor = cursor != null && !cursor.isBlank() ? cursor : after;
-        return searchService.search(q, size, tagsCsv, pageCursor, userId);
+        return searchService.search(q, size, tagsCsv, pageCursor, SearchSort.from(sort), userId);
     }
 
     /**

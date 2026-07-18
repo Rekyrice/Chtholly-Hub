@@ -76,6 +76,7 @@ function detailToRecommendedFeed(
     authorId: detail.authorId,
     authorAvatar: detail.authorAvatar,
     authorNickname: detail.authorNickname || "仓库居民",
+    publishTime: detail.publishTime,
     likeCount: detail.likeCount,
     favoriteCount: detail.favoriteCount,
     liked: detail.liked,

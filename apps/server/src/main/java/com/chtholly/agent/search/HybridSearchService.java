@@ -5,6 +5,7 @@ import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.llm.rag.RagQueryService;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.service.SearchService;
+import com.chtholly.search.service.SearchSort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -112,7 +113,8 @@ public class HybridSearchService {
     }
 
     private List<SearchResult> keywordSearch(String query, int fetchK) {
-        PageResponse<FeedItemResponse> response = searchService.search(query, fetchK, null, null, null);
+        PageResponse<FeedItemResponse> response = searchService.search(
+                query, fetchK, null, null, SearchSort.RELEVANCE, null);
         if (response == null || response.items() == null || response.items().isEmpty()) {
             return List.of();
         }

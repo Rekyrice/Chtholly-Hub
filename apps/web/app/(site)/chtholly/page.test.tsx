@@ -6,9 +6,11 @@ import ChthollyRoom from "@/app/(site)/chtholly/page";
 const serviceMocks = vi.hoisted(() => ({
   experienceTimeline: vi.fn(),
   feed: vi.fn(),
-  topics: vi.fn(),
+  overview: vi.fn(),
+  signals: vi.fn(),
 }));
 const illustrationProps = vi.hoisted(() => vi.fn());
+const topicWindowProps = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/services/agentService", () => ({
   agentService: { experienceTimeline: serviceMocks.experienceTimeline },
@@ -19,7 +21,25 @@ vi.mock("@/lib/services/postService", () => ({
 }));
 
 vi.mock("@/lib/services/topicService", () => ({
-  topicService: { list: serviceMocks.topics },
+  topicService: { overview: serviceMocks.overview },
+}));
+
+vi.mock("@/lib/services/tagService", () => ({
+  tagService: { list: serviceMocks.signals },
+}));
+
+vi.mock("@/components/site/ChthollyTopicWindow", () => ({
+  default: (props: {
+    initialOverview?: { state: string; items: Array<{ topicName: string }> };
+  }) => {
+    topicWindowProps(props);
+    return (
+      <div data-testid="topic-window" data-state={props.initialOverview?.state ?? "LEGACY"}>
+        {props.initialOverview?.items[0]?.topicName}
+        {props.initialOverview?.state === "FAILED" && "话题整理暂时没有完成"}
+      </div>
+    );
+  },
 }));
 
 vi.mock("@/components/site/ChthollyIllustration", () => ({
@@ -37,7 +57,9 @@ describe("ChthollyRoom", () => {
   afterEach(cleanup);
 
   beforeEach(() => {
+    Object.values(serviceMocks).forEach((mock) => mock.mockReset());
     illustrationProps.mockClear();
+    topicWindowProps.mockClear();
     serviceMocks.experienceTimeline.mockResolvedValue({
       recent: [
         {
@@ -61,47 +83,138 @@ describe("ChthollyRoom", () => {
         },
       ],
     });
-    serviceMocks.topics.mockResolvedValue([
-      {
-        topicName: "冬季追番",
-        summary: "大家最近在整理追番计划。",
-        size: 8,
-        keyEntities: [],
-        clusteredAt: "2026-07-13T00:00:00Z",
-      },
+    serviceMocks.overview.mockResolvedValue({
+      items: [
+        {
+          topicName: "冬季追番",
+          summary: "大家最近在整理追番计划。",
+          size: 8,
+          keyEntities: [],
+          clusteredAt: "2026-07-13T00:00:00Z",
+        },
+      ],
+      state: "READY",
+      windowDays: 7,
+    });
+    serviceMocks.signals.mockResolvedValue([
+      { id: "tag-1", name: "动画", slug: "anime", usageCount: 12 },
     ]);
   });
 
-  it("shows experiences, topics and recommendations as separate content regions", async () => {
+  it("shows the room content as three editorial sections in narrative order", async () => {
     render(await ChthollyRoom());
 
-    expect(screen.getByText("她最近在想什么")).toBeInTheDocument();
-    expect(screen.getByText("她注意到的主题")).toBeInTheDocument();
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    expect(headings.map((heading) => heading.textContent)).toEqual([
+      "今夜书桌",
+      "窗边便笺",
+      "她的书架",
+    ]);
     expect(screen.getByText("冬季追番")).toBeInTheDocument();
-    expect(screen.getByText("她留下的推荐")).toBeInTheDocument();
-    expect(screen.queryByText("她看到的社区")).not.toBeInTheDocument();
+    expect(screen.getByText("MEMORY")).toBeInTheDocument();
+    expect(screen.getByText("WINDOW NOTES")).toBeInTheDocument();
+    expect(screen.getByText("BOOKSHELF")).toBeInTheDocument();
   });
 
-  it("keeps other regions when topics are unavailable", async () => {
-    serviceMocks.topics.mockRejectedValue(new Error("topic extension disabled"));
+  it("passes a failed overview to the retry island without failing the room", async () => {
+    serviceMocks.overview.mockRejectedValue(new Error("topic extension disabled"));
 
     render(await ChthollyRoom());
 
-    expect(screen.getByText("她最近在想什么")).toBeInTheDocument();
-    expect(screen.getByText("她注意到的主题")).toBeInTheDocument();
-    expect(screen.getByText("她留下的推荐")).toBeInTheDocument();
-    expect(screen.getByText("窗边暂时没有新的话题。")).toBeInTheDocument();
+    expect(screen.getByText("今夜书桌")).toBeInTheDocument();
+    expect(screen.getByText("窗边便笺")).toBeInTheDocument();
+    expect(screen.getByText("她的书架")).toBeInTheDocument();
+    expect(screen.getByText("话题整理暂时没有完成")).toBeInTheDocument();
+    expect(screen.getByTestId("topic-window")).toHaveAttribute("data-state", "FAILED");
+    expect(topicWindowProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialOverview: {
+          items: [],
+          state: "FAILED",
+          windowDays: 7,
+          reason: "REQUEST_FAILED",
+        },
+      }),
+    );
   });
 
-  it("uses one hero and a strict desktop content grid", async () => {
+  it("uses one hero and replaces the equal-card grid with narrative sections", async () => {
     const { container } = render(await ChthollyRoom());
 
     expect(container.querySelectorAll(".chtholly-room-hero")).toHaveLength(1);
-    const grid = container.querySelector(".chtholly-room-content-grid");
-    expect(grid).not.toBeNull();
-    expect(grid?.querySelector(".chtholly-room-experience")).not.toBeNull();
-    expect(grid?.querySelector(".chtholly-room-topic")).not.toBeNull();
-    expect(grid?.querySelector(".chtholly-room-recommendation")).not.toBeNull();
+    const sections = container.querySelector(".chtholly-room-sections");
+    expect(sections).not.toBeNull();
+    expect(container.querySelector(".chtholly-room-content-grid")).toBeNull();
+    expect(sections?.querySelector(".chtholly-room-experience")).not.toBeNull();
+    expect(sections?.querySelector(".chtholly-room-topic")).not.toBeNull();
+    expect(sections?.querySelector(".chtholly-room-recommendation")).not.toBeNull();
+  });
+
+  it("renders recommendations as semantic compact books with cover metadata and fallback", async () => {
+    serviceMocks.feed.mockResolvedValue({
+      items: [
+        {
+          id: "post-cover",
+          slug: "covered-post",
+          title: "有封面的文章",
+          description: "两行以内的摘要",
+          coverImage: "/images/covers/example.jpg",
+          tags: ["阅读"],
+          authorNickname: "风铃",
+          publishTime: "2026-07-13T08:00:00Z",
+        },
+        {
+          id: "post-fallback",
+          slug: "fallback-post",
+          title: "没有封面的文章",
+          description: "",
+          tags: ["随笔"],
+          authorNickname: "珂朵莉",
+        },
+      ],
+    });
+
+    const { container } = render(await ChthollyRoom());
+
+    expect(screen.getByRole("link", { name: /风铃.*有封面的文章/ })).toHaveAttribute(
+      "href",
+      "/post/covered-post",
+    );
+    expect(container.querySelector('.room-book__cover img[alt=""]')).toHaveAttribute(
+      "src",
+      expect.stringContaining("example.jpg"),
+    );
+    expect(screen.getByText("风铃")).toBeInTheDocument();
+    expect(screen.getByText("随笔")).toBeInTheDocument();
+    expect(screen.getByText("她把这篇轻轻放在了书架上。")).toBeInTheDocument();
+  });
+
+  it("starts all four room data requests before awaiting any one of them", async () => {
+    const timeline = deferred<{
+      recent: never[];
+      weeklySummaries: never[];
+      archived: never[];
+    }>();
+    const feed = deferred<{ items: never[] }>();
+    const overview = deferred<{ items: never[]; state: "PENDING"; windowDays: number }>();
+    const signals = deferred<never[]>();
+    serviceMocks.experienceTimeline.mockReturnValue(timeline.promise);
+    serviceMocks.feed.mockReturnValue(feed.promise);
+    serviceMocks.overview.mockReturnValue(overview.promise);
+    serviceMocks.signals.mockReturnValue(signals.promise);
+
+    const roomPromise = ChthollyRoom();
+
+    expect(serviceMocks.experienceTimeline).toHaveBeenCalledTimes(1);
+    expect(serviceMocks.feed).toHaveBeenCalledTimes(1);
+    expect(serviceMocks.overview).toHaveBeenCalledTimes(1);
+    expect(serviceMocks.signals).toHaveBeenCalledWith(6);
+
+    timeline.resolve({ recent: [], weeklySummaries: [], archived: [] });
+    feed.resolve({ items: [] });
+    overview.resolve({ items: [], state: "PENDING", windowDays: 7 });
+    signals.resolve([]);
+    await roomPromise;
   });
 
   it("fills the room hero with the approved Chtholly18 image", async () => {
@@ -116,11 +229,13 @@ describe("ChthollyRoom", () => {
     );
   });
 
-  it("keeps the experience panel aligned across both right-hand rows", () => {
+  it("uses a single narrative stack with an asymmetric desk and compact grids", () => {
     const css = readFileSync("app/styles/community.css", "utf8");
 
-    expect(css).toContain("grid-template-rows: repeat(2, minmax(0, 1fr))");
-    expect(css).toContain("grid-row: 1 / span 2");
+    expect(css).toContain(".chtholly-room-sections");
+    expect(css).toContain("grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr)");
+    expect(css).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
+    expect(css).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
   });
 
   it("keeps the expanded room wide and the character vertically centered", () => {
@@ -131,4 +246,22 @@ describe("ChthollyRoom", () => {
     expect(css).toContain(".chtholly-room-hero__character .chtholly-illustration--hero");
     expect(css).toContain("width: min(100%, 560px)");
   });
+
+  it("keeps topic focus visible and lets long editorial text wrap", () => {
+    const css = readFileSync("app/styles/community.css", "utf8");
+
+    expect(css).toContain(".room-topic-result:focus-visible");
+    expect(css).toContain(
+      ".room-book h3,\n  .room-topic-note__heading strong,\n  .room-topic-note > p,\n  .room-topic-note__entities li,\n  .room-experience-featured__text,\n  .room-memory-timeline p,\n  .room-weekly-letters p",
+    );
+    expect(css).not.toContain(".room-empty-note");
+  });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}

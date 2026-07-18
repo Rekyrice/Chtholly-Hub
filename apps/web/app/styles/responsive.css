@@ -1,4 +1,36 @@
 @layer utilities {
+  @media (max-width: 1023px) {
+    .article-detail-layout {
+      grid-template-columns: minmax(0, 920px);
+      gap: 18px;
+    }
+
+    .article-reading-sidebar:not(.article-reading-sidebar--compact) {
+      position: static;
+      max-height: none;
+      overflow: visible;
+    }
+
+    .article-detail-card .entry-header {
+      padding: 40px 48px 28px;
+    }
+
+    .article-detail-card .article-reading-sidebar--compact {
+      margin: 0 48px 32px;
+    }
+
+    .article-detail-card .prose-anime {
+      width: auto;
+      max-width: none;
+      margin: 0;
+      padding: 44px 48px 56px;
+    }
+
+    .article-detail-tags {
+      padding: 20px 48px 24px;
+    }
+  }
+
   @media (max-width: 991px) {
     .reading-progress {
       display: none;
@@ -34,20 +66,13 @@
       padding: 0 24px;
     }
 
-    .article-detail-card .article-reading-sidebar--compact {
-      margin: 0 24px 28px;
-    }
-
-    .article-detail-card .prose-anime {
-      padding: 28px 24px 40px;
-    }
-
-    .article-detail-tags {
-      padding: 20px 24px 24px;
-    }
   }
 
   @media (max-width: 640px) {
+    .article-reading-sidebar:not(.article-reading-sidebar--compact) {
+      gap: 14px;
+    }
+
     .article-ask-chtholly {
       align-items: flex-start;
       margin-top: 32px;
@@ -85,6 +110,14 @@
 
     .entry-header {
       padding: 18px 16px;
+    }
+
+    .article-detail-layout {
+      gap: 14px;
+    }
+
+    .article-detail-card .entry-header {
+      padding: 32px 16px 24px;
     }
 
     .entry-title {
@@ -160,7 +193,7 @@
     }
 
     .article-detail-card .prose-anime {
-      padding: 24px 16px 36px;
+      padding: 40px 16px 44px;
     }
 
     .article-detail-tags {

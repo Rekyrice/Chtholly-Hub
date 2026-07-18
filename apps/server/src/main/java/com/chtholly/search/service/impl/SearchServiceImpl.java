@@ -26,10 +26,12 @@ import com.chtholly.search.api.dto.HubFeedResponse;
 import com.chtholly.search.api.dto.SuggestResponse;
 import com.chtholly.search.api.dto.TagCountResponse;
 import com.chtholly.search.service.SearchService;
+import com.chtholly.search.service.SearchSort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -69,22 +71,20 @@ public class SearchServiceImpl implements SearchService {
      * @param size                  Page size.
      * @param tagsCsv               Optional comma-separated tag filter.
      * @param after                 Opaque cursor from previous page (Base64-encoded sort values).
+     * @param sort                  Requested result ordering; null defaults to relevance.
      * @param currentUserIdNullable Current user for liked/faved enrichment.
      * @return Search results; empty with {@code degraded=true} on ES failure.
      */
     @SuppressWarnings("unchecked")
-    public PageResponse<FeedItemResponse> search(String q, int size, String tagsCsv, String after, Long currentUserIdNullable) {
+    @Override
+    public PageResponse<FeedItemResponse> search(
+            String q, int size, String tagsCsv, String after,
+            SearchSort sort, Long currentUserIdNullable) {
         int safeSize = Pagination.clampSize(size);
         List<String> tags = parseCsv(tagsCsv);
-        List<FieldValue> afterValues = parseAfter(after);
-
-        // 复合排序：优先相关性，其次发布时间与互动数据，最后按 content_id 稳定排序
-        List<SortOptions> sorts = new ArrayList<>();
-        sorts.add(SortOptions.of(s -> s.score(o -> o.order(SortOrder.Desc))));
-        sorts.add(SortOptions.of(s -> s.field(f -> f.field("publish_time").order(SortOrder.Desc))));
-        sorts.add(SortOptions.of(s -> s.field(f -> f.field("like_count").order(SortOrder.Desc))));
-        sorts.add(SortOptions.of(s -> s.field(f -> f.field("view_count").order(SortOrder.Desc))));
-        sorts.add(SortOptions.of(s -> s.field(f -> f.field("content_id").order(SortOrder.Desc))));
+        SearchSort resolvedSort = sort == null ? SearchSort.RELEVANCE : sort;
+        List<FieldValue> afterValues = parseAfter(after, resolvedSort);
+        List<SortOptions> sorts = sortsFor(resolvedSort);
 
         // 完整包名，不然和自定义的 SearchResponse 冲突
         co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> resp;
@@ -156,7 +156,8 @@ public class SearchServiceImpl implements SearchService {
             List<FieldValue> sv = hits.getLast().sort();
             if (sv != null && !sv.isEmpty()) {
                 List<String> parts = sv.stream().map(this::fieldValueToString).collect(Collectors.toList());
-                nextCursor = Base64.getUrlEncoder().withoutPadding().encodeToString(String.join(",", parts).getBytes());
+                nextCursor = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                        String.join(",", parts).getBytes(StandardCharsets.UTF_8));
             }
         }
 
@@ -260,32 +261,56 @@ public class SearchServiceImpl implements SearchService {
     /**
      * 解析 Base64URL 游标为 sort 值数组，按顺序还原各 FieldValue。
      */
-    private List<FieldValue> parseAfter(String after) {
+    private List<FieldValue> parseAfter(String after, SearchSort sort) {
         if (after == null || after.isBlank()) {
             return null;
         }
 
         try {
-            String decoded = new String(Base64.getUrlDecoder().decode(after));
-            String[] parts = decoded.split(",");
+            String decoded = new String(Base64.getUrlDecoder().decode(after), StandardCharsets.UTF_8);
+            String[] parts = decoded.split(",", -1);
+            int expectedParts = sort == SearchSort.NEWEST ? 2 : 5;
+            if (parts.length != expectedParts) {
+                throw new IllegalArgumentException("cursor sort value count does not match ordering");
+            }
             List<FieldValue> out = new ArrayList<>(parts.length);
 
             for (int i = 0; i < parts.length; i++) {
                 String p = parts[i];
-                if (i == 0) {
-                    out.add(FieldValue.of(Double.parseDouble(p)));
-                } else if (i == 1) {
-                    out.add(FieldValue.of(Long.parseLong(p)));
+                if (sort == SearchSort.RELEVANCE && i == 0) {
+                    double score = Double.parseDouble(p);
+                    if (!Double.isFinite(score) || score < 0) {
+                        throw new IllegalArgumentException("cursor score must be finite and non-negative");
+                    }
+                    out.add(FieldValue.of(score));
                 } else {
-                    out.add(FieldValue.of(Long.parseLong(p)));
+                    long value = Long.parseLong(p);
+                    if (value < 0) {
+                        throw new IllegalArgumentException("cursor long values must be non-negative");
+                    }
+                    out.add(FieldValue.of(value));
                 }
             }
 
             return out;
         } catch (Exception e) {
-            log.warn("Search cursor parse failed, after={}: {}", after, e.getMessage());
+            log.debug("Search cursor ignored because it is invalid for sort={}", sort);
             return null;
         }
+    }
+
+    private List<SortOptions> sortsFor(SearchSort sort) {
+        if (sort == SearchSort.NEWEST) {
+            return List.of(
+                    SortOptions.of(s -> s.field(f -> f.field("publish_time").order(SortOrder.Desc))),
+                    SortOptions.of(s -> s.field(f -> f.field("content_id").order(SortOrder.Desc))));
+        }
+        return List.of(
+                SortOptions.of(s -> s.score(o -> o.order(SortOrder.Desc))),
+                SortOptions.of(s -> s.field(f -> f.field("publish_time").order(SortOrder.Desc))),
+                SortOptions.of(s -> s.field(f -> f.field("like_count").order(SortOrder.Desc))),
+                SortOptions.of(s -> s.field(f -> f.field("view_count").order(SortOrder.Desc))),
+                SortOptions.of(s -> s.field(f -> f.field("content_id").order(SortOrder.Desc))));
     }
 
     private boolean containsCjk(String q) {

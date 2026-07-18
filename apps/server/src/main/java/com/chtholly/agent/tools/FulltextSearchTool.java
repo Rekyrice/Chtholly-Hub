@@ -5,6 +5,7 @@ import com.chtholly.agent.ParamDef;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.search.service.SearchService;
+import com.chtholly.search.service.SearchSort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -43,7 +44,8 @@ public class FulltextSearchTool implements AgentTool {
         if (q == null || q.isBlank()) {
             return "错误：缺少参数 q（搜索关键词）";
         }
-        PageResponse<FeedItemResponse> res = searchService.search(q.trim(), 5, null, null, userId);
+        PageResponse<FeedItemResponse> res = searchService.search(
+                q.trim(), 5, null, null, SearchSort.RELEVANCE, userId);
         if (res.items().isEmpty()) {
             return "未找到与「" + q + "」相关的帖子。";
         }

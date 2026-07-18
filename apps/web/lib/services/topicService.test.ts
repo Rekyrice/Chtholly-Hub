@@ -28,6 +28,29 @@ describe("topicService", () => {
     expect(apiFetch).toHaveBeenCalledWith("/api/v1/topics");
   });
 
+  it("loads the topic overview without rewriting its four-state payload", async () => {
+    const overview = {
+      items: [
+        {
+          topicName: "冬季追番",
+          summary: "本周主题",
+          size: 8,
+          keyEntities: ["动画"],
+          clusteredAt: "2026-07-13T00:00:00Z",
+        },
+      ],
+      state: "READY" as const,
+      lastAttemptAt: "2026-07-13T00:01:00Z",
+      lastSuccessAt: "2026-07-13T00:01:00Z",
+      windowDays: 7,
+      reason: null,
+    };
+    vi.mocked(apiFetch).mockResolvedValue(overview);
+
+    await expect(topicService.overview()).resolves.toBe(overview);
+    expect(apiFetch).toHaveBeenCalledWith("/api/v1/topics/overview");
+  });
+
   it("encodes topic names when loading posts", async () => {
     vi.mocked(apiFetch).mockResolvedValue([]);
 

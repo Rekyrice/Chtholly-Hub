@@ -1,6 +1,16 @@
 import type { FeedItem } from "@/lib/types/post";
 import type { TagItem } from "@/lib/types/tag";
 
+export type SearchSort = "relevance" | "newest";
+
+export type SearchRequest = {
+  q: string;
+  size?: number;
+  tags?: string[];
+  sort?: SearchSort;
+  after?: string;
+};
+
 /** 搜索响应（与后端 SearchResponse 对齐） */
 export type SearchResponse = {
   items: FeedItem[];

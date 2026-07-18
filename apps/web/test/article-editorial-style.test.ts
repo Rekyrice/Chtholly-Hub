@@ -2,36 +2,121 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const page = readFileSync("app/(site)/post/[slug]/page.tsx", "utf8");
+const siteChrome = readFileSync("components/site/SiteChrome.tsx", "utf8");
 const article = readFileSync("app/styles/article.css", "utf8");
 const visuals = readFileSync("app/styles/route-visuals.css", "utf8");
 const responsive = readFileSync("app/styles/responsive.css", "utf8");
 
 describe("article editorial reading style", () => {
-  it("uses one continuous article surface with a shared content baseline", () => {
+  it("uses a 920/28/312 desktop grid and one continuous translucent reading surface", () => {
     expect(page).toContain('className="post-card article-detail-card"');
     expect(article).toMatch(
-      /\.article-detail-card \.article-reading-sidebar--compact\s*\{[^}]*margin:\s*0 72px 32px;/,
+      /\.article-detail-layout\s*\{[^}]*width:\s*min\(1260px, calc\(100vw - 32px\)\);[^}]*max-width:\s*1260px;[^}]*margin:\s*0 auto;[^}]*left:\s*50%;[^}]*transform:\s*translateX\(-50%\);[^}]*grid-template-columns:\s*minmax\(0, 920px\);/,
+    );
+    expect(article).toMatch(/\.article-main\s*\{[^}]*max-width:\s*920px;/);
+    expect(article).toMatch(
+      /@media \(min-width:\s*1024px\)[\s\S]*?\.article-detail-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 920px\) 312px;[^}]*column-gap:\s*28px;[^}]*row-gap:\s*0;/,
     );
     expect(article).toMatch(
-      /\.article-detail-card \.prose-anime\s*\{[^}]*padding:\s*32px 72px 48px;[^}]*background:\s*transparent;/,
+      /\.article-detail-card\s*\{[^}]*background:\s*color-mix\([^}]*transparent[^}]*backdrop-filter:\s*blur/,
     );
     expect(visuals).toMatch(
       /\.site-shell--route-visual \.article-detail-card\s*\{[^}]*--surface-reading-alpha/,
     );
   });
 
-  it("renders an image caption smaller and centered", () => {
+  it("preserves a readable main column throughout the 1024 to 1279 two-column range", () => {
     expect(article).toMatch(
-      /\.prose-anime p:has\(> img:only-child\) \+ p:has\(> em:only-child\)\s*\{[^}]*font-size:\s*0\.78em;[^}]*text-align:\s*center;/,
+      /@media \(min-width:\s*1024px\) and \(max-width:\s*1279px\)[\s\S]*?\.article-detail-card \.entry-header\s*\{[^}]*padding:\s*52px 24px 28px;[\s\S]*?\.article-detail-card \.article-reading-sidebar--compact\s*\{[^}]*margin:\s*0 24px 36px;[\s\S]*?\.article-detail-card \.prose-anime\s*\{[^}]*width:\s*calc\(100% - 48px\);[^}]*max-width:\s*760px;[\s\S]*?\.article-detail-tags\s*\{[^}]*padding:\s*20px 24px 24px;/,
+    );
+
+    const mainWidthAt1024 = 1024 - 32 - 312 - 28;
+    const readableWidthAt1024 = mainWidthAt1024 - 48;
+    expect(readableWidthAt1024).toBeGreaterThanOrEqual(600);
+  });
+
+  it("keeps the 1279 to 1280 boundary at the full 760px reading width", () => {
+    expect(article).toMatch(
+      /@media \(min-width:\s*1280px\)[\s\S]*?\.article-detail-layout\s*\{[^}]*width:\s*min\(1260px, calc\(100vw - 16px\)\);/,
+    );
+
+    const shellAt1279 = Math.min(1260, 1279 - 32);
+    const mainAt1279 = shellAt1279 - 312 - 28;
+    const readableAt1279 = Math.min(760, mainAt1279 - 48);
+    const shellAt1280 = Math.min(1260, 1280 - 16);
+    const mainAt1280 = shellAt1280 - 312 - 28;
+    const readableAt1280 = Math.min(760, mainAt1280 - 160);
+
+    expect(shellAt1280).toBe(1260);
+    expect(mainAt1280).toBe(920);
+    expect(readableAt1280).toBe(760);
+    expect(readableAt1280).toBeGreaterThanOrEqual(readableAt1279);
+  });
+
+  it("places one full sidebar between the article and follow-up content", () => {
+    const sidebars = [...page.matchAll(/<ArticleReadingSidebar[\s\S]*?\/>/g)];
+    const fullSidebar = sidebars.find((match) => !/\scompact\s/.test(match[0]));
+    const primaryIndex = page.indexOf('className="article-primary article-main"');
+    const followupIndex = page.indexOf('className="article-followup article-main"');
+
+    expect(siteChrome).toMatch(/<main[\s\S]*?\{children\}[\s\S]*?<\/main>/);
+    expect(page).toContain('<div className="article-detail-layout">');
+    expect(page).not.toMatch(/<main\b/);
+    expect(sidebars).toHaveLength(2);
+    expect(sidebars.filter((match) => /\scompact\s/.test(match[0]))).toHaveLength(1);
+    expect(primaryIndex).toBeGreaterThan(-1);
+    expect(fullSidebar?.index).toBeGreaterThan(primaryIndex);
+    expect(fullSidebar?.index).toBeLessThan(followupIndex);
+    expect(page.indexOf("<AuthorCard", followupIndex)).toBeGreaterThan(followupIndex);
+
+    expect(article).toMatch(
+      /@media \(min-width:\s*1024px\)[\s\S]*?\.article-primary\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*1;[\s\S]*?\.article-followup\s*\{[^}]*grid-column:\s*1;[^}]*grid-row:\s*2;[\s\S]*?\.article-detail-layout > \.article-reading-sidebar:not\(\.article-reading-sidebar--compact\)\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1 \/ span 2;/,
     );
   });
 
-  it("preserves the aligned reading inset on tablet and mobile", () => {
-    expect(responsive).toMatch(
-      /\.article-detail-card \.prose-anime\s*\{[^}]*padding:\s*28px 24px 40px;/,
+  it("aligns the header with a centered 760px body and keeps the first paragraph away from the divider", () => {
+    expect(article).toMatch(
+      /\.article-detail-card \.entry-header\s*\{[^}]*padding:\s*52px 80px 28px;/,
+    );
+    expect(article).toMatch(
+      /\.article-detail-card \.prose-anime\s*\{[^}]*width:\s*calc\(100% - 160px\);[^}]*max-width:\s*760px;[^}]*margin:\s*0 auto;[^}]*padding:\s*44px 0 56px;[^}]*border-top:/,
+    );
+  });
+
+  it("renders four adjacent sidebar surfaces with sticky desktop overflow protection", () => {
+    expect(article).toMatch(
+      /\.article-reading-sidebar\s*\{[^}]*display:\s*grid;[^}]*gap:\s*18px;/,
+    );
+    expect(article).toMatch(
+      /\.article-reading-sidebar--compact\s*\{[^}]*gap:\s*12px;/,
+    );
+    expect(article).toMatch(
+      /\.article-reading-navigator__progress-block,[\s\S]*?\.article-reading-sidebar__section\s*\{[^}]*border-radius:\s*14px;[^}]*backdrop-filter:\s*blur/,
+    );
+    expect(article).toMatch(
+      /\.article-reading-sidebar:not\(\.article-reading-sidebar--compact\)\s*\{[^}]*position:\s*sticky;[^}]*top:\s*76px;[^}]*max-height:\s*calc\(100vh - 92px\);[^}]*overflow-y:\s*auto;/,
     );
     expect(responsive).toMatch(
-      /\.article-detail-card \.prose-anime\s*\{[^}]*padding:\s*24px 16px 36px;/,
+      /@media \(max-width:\s*640px\)[\s\S]*?\.article-reading-sidebar:not\(\.article-reading-sidebar--compact\)\s*\{[^}]*gap:\s*14px;/,
+    );
+  });
+
+  it("renders only image-adjacent captions smaller, narrower, and centered", () => {
+    expect(article).toMatch(
+      /\.prose-anime \.article-image-caption\s*\{[^}]*max-width:\s*88%;[^}]*font-size:\s*0\.8rem;[^}]*line-height:\s*1\.55;[^}]*text-align:\s*center;/,
+    );
+    expect(article).not.toContain(":has(> img:only-child)");
+  });
+
+  it("switches to 48px tablet insets and 16px mobile insets", () => {
+    expect(responsive).toMatch(
+      /@media \(max-width:\s*1023px\)[\s\S]*?\.article-detail-card \.entry-header\s*\{[^}]*padding:\s*40px 48px 28px;/,
+    );
+    expect(responsive).toMatch(
+      /@media \(max-width:\s*1023px\)[\s\S]*?\.article-detail-card \.prose-anime\s*\{[^}]*padding:\s*44px 48px 56px;/,
+    );
+    expect(responsive).toMatch(
+      /@media \(max-width:\s*640px\)[\s\S]*?\.article-detail-card \.prose-anime\s*\{[^}]*padding:\s*40px 16px 44px;/,
     );
   });
 });

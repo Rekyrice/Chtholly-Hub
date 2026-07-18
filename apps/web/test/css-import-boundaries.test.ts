@@ -10,7 +10,7 @@ describe("route CSS import boundaries", () => {
   it("keeps route-specific styles out of globals.css", () => {
     const globals = source("app/globals.css");
 
-    for (const stylesheet of ["agent.css", "landing.css", "write.css", "admin.css"]) {
+    for (const stylesheet of ["agent.css", "landing.css", "write.css", "admin.css", "search.css"]) {
       expect(globals).not.toContain(stylesheet);
     }
   });
@@ -21,6 +21,7 @@ describe("route CSS import boundaries", () => {
     ["admin", "app/(site)/admin/layout.tsx", 'import "../../styles/admin.css";'],
     ["agent", "app/(site)/agent/layout.tsx", 'import "../../styles/agent.css";'],
     ["chtholly", "app/(site)/chtholly/page.tsx", 'import "../../styles/agent.css";'],
+    ["search", "app/(site)/search/page.tsx", 'import "../../styles/search.css";'],
   ])("loads %s styles from its route entry", (_route, entry, cssImport) => {
     expect(source(entry)).toContain(cssImport);
   });

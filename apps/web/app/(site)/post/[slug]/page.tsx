@@ -19,6 +19,7 @@ import { postService } from "@/lib/services/postService";
 import type { PostDetailResponse } from "@/lib/types/post";
 import { formatDate } from "@/lib/utils";
 import { extractMarkdownHeadings } from "@/lib/markdownHeadings";
+import { loadRelatedPostCards } from "@/lib/relatedPosts";
 import { countWritingStats } from "@/lib/utils/markdownInsert";
 
 interface Props {
@@ -52,16 +53,10 @@ export default async function PostPage({ params }: Props) {
     notFound();
   }
 
-  let markdown = "";
-  try {
-    const res = await fetch(post.contentUrl, { next: { revalidate: 300 } });
-    if (!res.ok) {
-      throw new Error(`无法加载正文：${res.status}`);
-    }
-    markdown = await res.text();
-  } catch {
-    markdown = "*正文暂时无法加载，请稍后再试。*";
-  }
+  const [markdown, relatedPosts] = await Promise.all([
+    loadMarkdown(post.contentUrl),
+    loadRelatedPostCards(post.id),
+  ]);
 
   const cover = post.images?.[0];
   const readingState = getArticleReadingState(post);
@@ -69,12 +64,13 @@ export default async function PostPage({ params }: Props) {
   const timeOfDay = getCurrentTimeOfDay();
   const askHref = `/agent?context=${encodeURIComponent(`post:${post.slug}`)}`;
   const headings = extractMarkdownHeadings(markdown);
-  const { readingMinutes } = countWritingStats(markdown);
+  const { readingMinutes, charCount } = countWritingStats(markdown);
+  const clues = buildReadingClues(post.description, markdown);
 
   return (
     <div className="article-detail-layout">
       <ReadingProgress />
-      <main className="article-main">
+      <div className="article-primary article-main">
         <article className="post-card article-detail-card">
           {cover && (
             <div className="post-card-image">
@@ -123,10 +119,14 @@ export default async function PostPage({ params }: Props) {
             compact
             headings={headings}
             readingMinutes={readingMinutes}
+            charCount={charCount}
+            publishTime={post.publishTime}
+            clues={clues}
             authorId={post.authorId}
             authorHandle={post.authorHandle}
             authorNickname={post.authorNickname}
             tags={post.tags}
+            relatedPosts={relatedPosts}
             askHref={askHref}
             readingComment={readingComment}
             readingState={readingState}
@@ -153,8 +153,27 @@ export default async function PostPage({ params }: Props) {
               </div>
             </div>
           )}
-
         </article>
+      </div>
+
+      <ArticleReadingSidebar
+        headings={headings}
+        readingMinutes={readingMinutes}
+        charCount={charCount}
+        publishTime={post.publishTime}
+        clues={clues}
+        authorId={post.authorId}
+        authorHandle={post.authorHandle}
+        authorNickname={post.authorNickname}
+        tags={post.tags}
+        relatedPosts={relatedPosts}
+        askHref={askHref}
+        readingComment={readingComment}
+        readingState={readingState}
+        timeOfDay={timeOfDay}
+      />
+
+      <div className="article-followup article-main">
         <AuthorCard
           authorId={post.authorId}
           authorHandle={post.authorHandle}
@@ -166,25 +185,24 @@ export default async function PostPage({ params }: Props) {
           postTop={post.isTop}
           postVisibility={post.visible}
         />
-        <RelatedPosts postId={post.id} />
+        <RelatedPosts cards={relatedPosts} />
         <PostQnA postId={post.id} />
         <CommentSection postId={post.id} />
-      </main>
-
-      <ArticleReadingSidebar
-        headings={headings}
-        readingMinutes={readingMinutes}
-        authorId={post.authorId}
-        authorHandle={post.authorHandle}
-        authorNickname={post.authorNickname}
-        tags={post.tags}
-        askHref={askHref}
-        readingComment={readingComment}
-        readingState={readingState}
-        timeOfDay={timeOfDay}
-      />
+      </div>
     </div>
   );
+}
+
+async function loadMarkdown(contentUrl: string) {
+  try {
+    const response = await fetch(contentUrl, { next: { revalidate: 300 } });
+    if (!response.ok) {
+      throw new Error(`无法加载正文：${response.status}`);
+    }
+    return await response.text();
+  } catch {
+    return "*正文暂时无法加载，请稍后再试。*";
+  }
 }
 
 function getArticleReadingState(post: PostDetailResponse): IllustrationState {
@@ -196,7 +214,7 @@ function getArticleReadingState(post: PostDetailResponse): IllustrationState {
 
 function getReadingComment(post: PostDetailResponse) {
   const kind = getArticleKind(post);
-  if (kind === "technical") return "看起来很认真呢……我 quietly 在旁边陪着。";
+  if (kind === "technical") return "看起来很认真呢……我会安静地在旁边陪着。";
   if (kind === "reflection") return "原来你也在想这些啊。";
   return "慢慢看，不着急。";
 }
@@ -262,4 +280,78 @@ function getCurrentTimeOfDay(): ChthollyIllustrationProps["timeOfDay"] {
   if (hour >= 18 && hour < 21) return "evening";
   if (hour >= 21 || hour < 1) return "night";
   return "late-night";
+}
+
+export function buildReadingClues(description: string, markdown: string) {
+  const markdownLines = markdown
+    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, " ")
+    .split(/\r?\n/);
+  const hasBodyLine = markdownLines.some(
+    (line) =>
+      line.trim() &&
+      !isAtxHeading(line) &&
+      !/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(line),
+  );
+  const prose = markdownLines
+    .filter((line) => !hasBodyLine || !isAtxHeading(line))
+    .filter((line) => !/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(line))
+    .join("\n");
+  const candidates = [
+    ...buildReadingClueCandidates(description),
+    ...buildReadingClueCandidates(prose),
+  ];
+  const clues: string[] = [];
+
+  for (const plain of candidates) {
+    const clipped = plain.length > 72 ? `${plain.slice(0, 71)}…` : plain;
+    if (!clipped || clues.includes(clipped)) continue;
+    clues.push(clipped);
+    if (clues.length === 3) break;
+  }
+
+  return clues;
+}
+
+function isAtxHeading(line: string) {
+  return /^\s{0,3}#{1,6}(?:[ \t]+|$)/.test(line);
+}
+
+function stripMarkdownBlockMarkers(line: string) {
+  let stripped = line;
+
+  while (true) {
+    const next = stripped
+      .replace(/^\s{0,3}#{1,6}(?:[ \t]+|$)/, "")
+      .replace(/^\s{0,3}>[ \t]?/, "")
+      .replace(/^\s{0,3}(?:[-+*]|\d+[.)])[ \t]+/, "");
+
+    if (next === stripped) return stripped;
+    stripped = next;
+  }
+}
+
+function buildReadingClueCandidates(value: string) {
+  return value
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const normalized = normalizeReadingClueLine(line);
+      return normalized
+        ? normalized
+            .split(/(?<=[。！？!?])|(?<=\.)\s+/u)
+            .map((candidate) => candidate.trim())
+            .filter(Boolean)
+        : [];
+    });
+}
+
+function normalizeReadingClueLine(value: string) {
+  return stripMarkdownBlockMarkers(value)
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[*_~]/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/([\p{Script=Han}])\s+(?=[\p{Script=Han}])/gu, "$1")
+    .trim();
 }

@@ -14,14 +14,19 @@ import java.util.Map;
  */
 public interface SearchService {
     /**
-     * 关键词检索。
-     * @param q 关键词
-     * @param size 返回条数
-     * @param tagsCsv 标签过滤（CSV）
-     * @param after 游标（Base64URL）
-     * @param currentUserIdNullable 当前用户ID（可空）
+     * Searches published posts with optional tag filtering and cursor pagination.
+     *
+     * @param q query text
+     * @param size maximum result count
+     * @param tagsCsv optional comma-separated tag filter
+     * @param after optional Base64URL cursor
+     * @param sort requested result ordering
+     * @param currentUserIdNullable optional current user ID
+     * @return matching post page
      */
-    PageResponse<FeedItemResponse> search(String q, int size, String tagsCsv, String after, Long currentUserIdNullable);
+    PageResponse<FeedItemResponse> search(
+            String q, int size, String tagsCsv, String after,
+            SearchSort sort, Long currentUserIdNullable);
 
     /**
      * Aggregates Hub page search-backed regions with one msearch request.

@@ -5,6 +5,7 @@ import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.llm.rag.RagQueryService;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.service.SearchService;
+import com.chtholly.search.service.SearchSort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +39,7 @@ class HybridSearchServiceTest {
         SearchResult entityOnly = result("bangumi:99", "Entity only", "from bangumi", "entity");
 
         when(ragService.search("frieren time", 6)).thenReturn(List.of(semanticOnly, sharedFromSemantic));
-        when(searchService.search("frieren time", 6, null, null, null)).thenReturn(PageResponse.cursor(List.of(
+        when(searchService.search("frieren time", 6, null, null, SearchSort.RELEVANCE, null)).thenReturn(PageResponse.cursor(List.of(
                 feed("post:3", "keyword-only", "Keyword only", "from bm25"),
                 feed("post:2", "shared", "Shared", "keyword snippet")
         ), 6, false, null));
@@ -53,7 +54,7 @@ class HybridSearchServiceTest {
                 .isEqualTo(1.0 / 62 + 1.0 / 62);
         assertThat(results.getFirst().getSnippet()).isEqualTo("semantic snippet");
         verify(ragService).search("frieren time", 6);
-        verify(searchService).search("frieren time", 6, null, null, null);
+        verify(searchService).search("frieren time", 6, null, null, SearchSort.RELEVANCE, null);
         verify(knowledgeService).searchEntities("frieren time", 3);
     }
 

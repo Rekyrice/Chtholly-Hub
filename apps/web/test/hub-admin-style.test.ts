@@ -7,13 +7,13 @@ const admin = readFileSync("app/styles/admin.css", "utf8");
 describe("hub recommendation and admin heading style", () => {
   it("keeps every recommendation slide at a stable desktop height", () => {
     expect(feed).toMatch(
-      /\.hub-recommendation__slide\s*\{[^}]*block-size:\s*310px;[^}]*overflow:\s*hidden;/,
+      /\.hub-recommendation__slide\s*\{[^}]*block-size:\s*390px;[^}]*overflow:\s*hidden;/,
     );
     expect(feed).toMatch(
       /\.hub-recommendation__content\s*\{[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/,
     );
     expect(feed).toMatch(
-      /\.hub-recommendation__content h3\s*\{[^}]*-webkit-line-clamp:\s*2;/,
+      /\.hub-recommendation__title\s*\{[^}]*-webkit-line-clamp:\s*3;/,
     );
     expect(feed).toMatch(
       /\.hub-recommendation__quote\s*\{[^}]*-webkit-line-clamp:\s*3;/,
