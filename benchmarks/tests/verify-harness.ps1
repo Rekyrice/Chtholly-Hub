@@ -105,6 +105,7 @@ try {
         Assert-True -Condition ($environmentSource.Contains($token)) -Message "Environment manifest must record image identity token $token"
     }
     Assert-True -Condition ($runSource.Contains('new-benchmark-token.ps1')) -Message 'Runner must authenticate its Actuator metric reads without persisting the token'
+    Assert-True -Condition ($runSource.Contains("if (`$summary.status -ne 'COMPLETED')")) -Message 'Runner must fail when the final summary is incomplete'
     foreach ($token in @("'all'", "'counter'", "'relation'", "'fault'")) {
         Assert-True -Condition (-not $runSource.Contains($token)) -Message "Runner must not retain scenario $token"
     }
@@ -142,8 +143,8 @@ try {
             Assert-True -Condition ($null -eq $manifest.experiment -and $null -eq $manifest.numberKind) -Message 'Manifest must stay minimal'
 
             $fixtureK6 = [ordered]@{ metrics = [ordered]@{
-                http_req_duration = [ordered]@{ values = [ordered]@{ 'p(95)' = 42.5 } }
-                http_req_failed = [ordered]@{ values = [ordered]@{ rate = 0.01 } }
+                http_req_duration = [ordered]@{ 'p(95)' = 42.5 }
+                http_req_failed = [ordered]@{ value = 0.01 }
             } }
             $fixtureApplication = [ordered]@{ mysqlQueryCount = 7; sameKeyLoadCount = 2 }
             $fixtureK6 | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runDirectory 'raw/k6.json') -Encoding UTF8

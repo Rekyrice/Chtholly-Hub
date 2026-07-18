@@ -34,7 +34,10 @@ if (Test-Path -LiteralPath $k6Path -PathType Leaf) {
     $duration = Get-MetricValues -Metric $k6.metrics.http_req_duration
     $failures = Get-MetricValues -Metric $k6.metrics.http_req_failed
     if ($null -ne $duration) { $p95Ms = $duration.'p(95)' }
-    if ($null -ne $failures) { $errorRate = $failures.rate }
+    if ($null -ne $failures) {
+        if ($null -ne $failures.PSObject.Properties['rate']) { $errorRate = $failures.rate }
+        elseif ($null -ne $failures.PSObject.Properties['value']) { $errorRate = $failures.value }
+    }
 }
 
 if (Test-Path -LiteralPath $applicationMetricsPath -PathType Leaf) {

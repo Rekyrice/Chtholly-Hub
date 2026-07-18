@@ -334,4 +334,12 @@ $manifest.status = if ($k6ExitCode -eq 0) { 'COMPLETED' } else { 'FAILED' }
 $manifest.endedAt = [DateTimeOffset]::UtcNow.ToString('o')
 Write-JsonFile -Value $manifest -Path (Join-Path $runDirectory 'manifest.json')
 & (Join-Path $PSScriptRoot 'summarize.ps1') -RunDirectory $runDirectory
-exit $k6ExitCode
+if ($k6ExitCode -ne 0) { exit 1 }
+$summary = Get-Content -Raw -LiteralPath (Join-Path $runDirectory 'summary.json') -Encoding UTF8 | ConvertFrom-Json
+if ($summary.status -ne 'COMPLETED') {
+    $manifest.status = 'INCOMPLETE'
+    Write-JsonFile -Value $manifest -Path (Join-Path $runDirectory 'manifest.json')
+    & (Join-Path $PSScriptRoot 'summarize.ps1') -RunDirectory $runDirectory
+    exit 1
+}
+exit 0
