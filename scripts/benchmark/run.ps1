@@ -209,6 +209,7 @@ $environment = [ordered]@{
     hostBaseUrl = $hostBaseUrl
     benchmarkEnvironmentRunId = $EnvironmentRunId
     benchmarkNetwork = $benchmarkNetwork
+    searchMode = if ($null -eq $runtimeMetadata) { 'caller-managed' } else { [string]$runtimeMetadata.searchMode }
 }
 $runtimeFingerprint = if ($null -eq $runtimeMetadata) { 'none' } else {
     '{0}|{1}|{2}|{3}' -f $runtimeMetadata.projectName, $runtimeMetadata.executionCommit,
@@ -259,6 +260,7 @@ $manifest = [ordered]@{
         actuator = 'PLANNED'
         redis = 'BLOCKED_EXTERNAL'
         mysql = 'BLOCKED_EXTERNAL'
+        search = if ($null -eq $runtimeMetadata) { 'BLOCKED_EXTERNAL' } else { 'NOT_APPLICABLE' }
         agentEvaluation = 'NOT_APPLICABLE'
     }
 }

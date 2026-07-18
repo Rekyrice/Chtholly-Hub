@@ -81,7 +81,7 @@ try {
     $summarizeScript = Join-Path $repoRoot 'scripts/benchmark/summarize.ps1'
     if (Test-Path -LiteralPath $environmentScript -PathType Leaf) {
         $environmentSource = Get-Content -Raw -LiteralPath $environmentScript -Encoding UTF8
-        foreach ($token in @('executionCommit', 'executionDirty', 'clean package', "applicationLogLevel = 'WARN'", '/actuator/health/liveness', 'new-benchmark-token.ps1')) {
+        foreach ($token in @('executionCommit', 'executionDirty', 'clean package', "applicationLogLevel = 'WARN'", "'ES_URIS=http://127.0.0.1:1'", '/actuator/health/liveness', 'new-benchmark-token.ps1')) {
             Assert-True -Condition $environmentSource.Contains($token) -Message "Benchmark environment must contain $token"
         }
         foreach ($obsoleteToken in @(
@@ -105,6 +105,7 @@ try {
         Assert-True -Condition ($environmentPlan.services -contains 'server') -Message 'Benchmark environment must include the application server'
         Assert-True -Condition ($environmentPlan.serverRuntime -eq 'compose-container') -Message 'Benchmark server must run in the isolated Compose network'
         Assert-True -Condition ($environmentPlan.k6BaseUrl -eq 'http://server:8888') -Message 'k6 must address the server through the isolated network'
+        Assert-True -Condition ($environmentPlan.searchMode -eq 'degraded-no-backfill') -Message 'Non-search baseline must preregister degraded search without startup backfill'
         Assert-True -Condition (-not ($environmentPlan.PSObject.Properties.Name -contains 'password')) -Message 'Validation output must not expose generated credentials'
         $collisionPlan = & $environmentScript `
             -Action Validate `

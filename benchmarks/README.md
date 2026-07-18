@@ -42,6 +42,8 @@
 
 `counter` 与 `relation` 写场景需要由调用者在进程环境中提供 `BENCHMARK_TOKEN`。可用 `new-benchmark-token.ps1` 为确定性种子用户签发本地短期 token；脚本只记录 token 是否存在，不把内容写入 manifest。隔离环境内 k6 通过 `http://server:8888` 访问服务。
 
+当前后端 cache/counter/relation 基准不测搜索质量，隔离环境将 `searchMode` 固定为 `degraded-no-backfill`，避免应用启动回灌把 1,000/10,000 条内容读取等待计入服务启动。搜索与 Agent 检索实验使用独立场景和明确的索引快照，不能与本模式的结果混用。
+
 runId 是不可变证据身份，目录已存在时 runner 会失败关闭，不能覆盖旧结果。正式 standard 运行还会验证干净 worktree、`subjectCommit..executionCommit` 之间没有业务改动、harness/dataset 文件树、隔离环境源码提交及 JAR SHA-256。
 
 ## 数据状态

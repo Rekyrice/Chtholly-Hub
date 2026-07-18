@@ -72,6 +72,7 @@ $plan = [ordered]@{
     services = $services
     sourceCompose = 'docker-compose.prod.yml'
     serverRuntime = 'compose-container'
+    searchMode = 'degraded-no-backfill'
     dependencyPorts = [ordered]@{
         mysql = $MysqlPort
         redis = $RedisPort
@@ -319,8 +320,7 @@ try {
         'REDIS_PORT=6379',
         'KAFKA_ENABLED=true',
         'KAFKA_BOOTSTRAP_SERVERS=kafka:9092',
-        'ES_URIS=http://elasticsearch:9200',
-        'ES_BACKFILL_ENABLED=false',
+        'ES_URIS=http://127.0.0.1:1',
         'CANAL_ENABLED=false',
         'LLM_ENABLED=false',
         'STORAGE_LOCAL_PATH=/tmp/chtholly-uploads',
@@ -393,6 +393,7 @@ try {
         containerNames = $containerNames
         serverRuntime = 'compose-container'
         applicationLogLevel = 'WARN'
+        searchMode = 'degraded-no-backfill'
         serverContainerId = $serverContainerId
         serverImage = $serverRuntimeImage
         serverImageId = ((& docker image inspect --format '{{.Id}}' $serverRuntimeImage | Out-String).Trim())
