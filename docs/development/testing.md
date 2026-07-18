@@ -23,3 +23,9 @@ CI 也保持相同隔离：`backend-test` 运行 `mvn test -Dspring.profiles.act
 - 后端单领域：先定向测试，再跑全量快速测试；触及外部系统边界时加集成测试。
 - 前端行为：Vitest 与生产构建都运行；只有单测不能证明 Next.js 生产边界可构建。
 - 数据库或部署：除静态检查外，在隔离环境验证 schema/增量顺序和健康检查，避免对生产数据试跑。
+
+## 基准合同验证
+
+根目录执行 `powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harness.ps1`，验证 manifest schema、隔离环境计划、本地 benchmark token、runId 不可变、提交身份、确定性 seed、k6 语法和汇总归档入口。该命令只验证合同，不产生可用于性能主张的数字。
+
+正式 standard 运行使用 `scripts/benchmark/environment.ps1` 创建带 runId 所有权的隔离 Compose 网络和卷，并要求 runner 的业务 subject、实际 execution、harness、dataset、JAR 哈希与环境快照一致。`smoke`、`ValidateOnly`、dirty worktree 或缺少原始指标的运行只能作为诊断资产。

@@ -21,6 +21,9 @@ param(
     [ValidateRange(1, 100)]
     [int]$Repetition = 1,
 
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$')]
+    [string]$EnvironmentRunId,
+
     [string]$SubjectCommit,
     [string]$HarnessCommit,
     [string]$DatasetCommit,
@@ -34,6 +37,10 @@ $resultsRoot = Join-Path $repoRoot '.benchmark-results'
 $runDirectory = Join-Path $resultsRoot $RunId
 $rawDirectory = Join-Path $runDirectory 'raw'
 $configPath = Join-Path $repoRoot 'benchmarks/config/standard.yml'
+
+if (Test-Path -LiteralPath $runDirectory) {
+    throw "Benchmark runId already exists: $RunId"
+}
 
 function Resolve-Commit {
     param([string]$Value)
@@ -72,20 +79,55 @@ function Write-JsonFile {
     $Value | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding utf8
 }
 
-if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
-    throw "Missing workload config: $configPath"
+function Assert-SubjectExecutionCompatibility {
+    param(
+        [Parameter(Mandatory = $true)][string]$Subject,
+        [Parameter(Mandatory = $true)][string]$Execution
+    )
+
+    & git -C $repoRoot merge-base --is-ancestor $Subject $Execution
+    if ($LASTEXITCODE -ne 0) {
+        throw 'SubjectCommit must be an ancestor of executionCommit'
+    }
+    $allowedPatterns = @(
+        '^\.gitignore$',
+        '^benchmarks/',
+        '^scripts/benchmark/',
+        '^docs/benchmarks/',
+        '^docs/development/testing\.md$',
+        '^apps/server/src/test/'
+    )
+    $businessChanges = @(git -C $repoRoot diff --name-only "$Subject..$Execution" | Where-Object {
+        $path = $_
+        -not ($allowedPatterns | Where-Object { $path -match $_ })
+    })
+    if ($businessChanges.Count -gt 0) {
+        throw "executionCommit contains business changes after SubjectCommit: $($businessChanges -join ', ')"
+    }
 }
 
-New-Item -ItemType Directory -Path $rawDirectory -Force | Out-Null
-$resolvedResultsRoot = (Resolve-Path -LiteralPath $resultsRoot).Path + [System.IO.Path]::DirectorySeparatorChar
-$resolvedRunDirectory = (Resolve-Path -LiteralPath $runDirectory).Path
-if (-not $resolvedRunDirectory.StartsWith($resolvedResultsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Unsafe run directory: $resolvedRunDirectory"
+function Assert-CommitTreeMatches {
+    param(
+        [Parameter(Mandatory = $true)][string]$Commit,
+        [Parameter(Mandatory = $true)][string[]]$Paths,
+        [Parameter(Mandatory = $true)][string]$Message
+    )
+
+    & git -C $repoRoot diff --quiet $Commit -- @Paths
+    if ($LASTEXITCODE -ne 0) {
+        throw $Message
+    }
+}
+
+if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    throw "Missing workload config: $configPath"
 }
 
 $subject = Resolve-Commit -Value $SubjectCommit
 $harness = Resolve-Commit -Value $HarnessCommit
 $dataset = Resolve-Commit -Value $DatasetCommit
+$execution = (git -C $repoRoot rev-parse HEAD).Trim()
+Assert-SubjectExecutionCompatibility -Subject $subject -Execution $execution
 $warmupSeconds = [int](Read-ProfileValue -Name $Profile -Key 'warmupSeconds')
 $durationSeconds = [int](Read-ProfileValue -Name $Profile -Key 'durationSeconds')
 $configuredConcurrency = (Read-ProfileValue -Name $Profile -Key 'concurrency').Trim('[', ']') -split ',' | ForEach-Object { [int]$_.Trim() }
@@ -97,6 +139,62 @@ if ($configuredConcurrency -notcontains $Concurrency) {
 }
 
 $dirty = -not [string]::IsNullOrWhiteSpace((git -C $repoRoot status --porcelain | Out-String))
+$runtimeMetadata = $null
+$benchmarkNetwork = $null
+$baseUrl = if ($env:BASE_URL) { $env:BASE_URL } else { 'http://host.docker.internal:8888' }
+$hostBaseUrl = if ($env:BENCHMARK_HOST_BASE_URL) { $env:BENCHMARK_HOST_BASE_URL } else { 'http://127.0.0.1:8888' }
+if (-not [string]::IsNullOrWhiteSpace($EnvironmentRunId)) {
+    $runtimeManifestPath = Join-Path $resultsRoot "$EnvironmentRunId/environment-runtime.json"
+    if (-not (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf)) {
+        throw "Missing isolated benchmark environment artifact: $runtimeManifestPath"
+    }
+    $runtimeMetadata = Get-Content -Raw -LiteralPath $runtimeManifestPath -Encoding UTF8 | ConvertFrom-Json
+    if (-not [bool]$runtimeMetadata.isolated -or
+            [string]::IsNullOrWhiteSpace([string]$runtimeMetadata.benchmarkNetwork)) {
+        throw 'Benchmark environment is not an isolated runtime'
+    }
+    $benchmarkNetwork = [string]$runtimeMetadata.benchmarkNetwork
+    $baseUrl = [string]$runtimeMetadata.k6BaseUrl
+    $hostBaseUrl = [string]$runtimeMetadata.hostBaseUrl
+}
+
+if ($Profile -eq 'standard' -and -not $ValidateOnly) {
+    if ($dirty) {
+        throw 'Formal standard benchmark requires a clean worktree'
+    }
+    if ([string]::IsNullOrWhiteSpace($EnvironmentRunId)) {
+        throw 'Formal standard benchmark requires an isolated environment'
+    }
+    Assert-CommitTreeMatches -Commit $harness -Paths @(
+        'scripts/benchmark/run.ps1',
+        'scripts/benchmark/environment.ps1',
+        'scripts/benchmark/new-benchmark-token.ps1',
+        'scripts/benchmark/summarize.ps1',
+        'benchmarks/k6/backend-scenarios.js',
+        'benchmarks/schema/manifest.schema.json'
+    ) -Message 'Harness-controlled files must match HarnessCommit'
+    Assert-CommitTreeMatches -Commit $dataset -Paths @(
+        'benchmarks/config/standard.yml',
+        'benchmarks/seed/standard.sql'
+    ) -Message 'Dataset-controlled files must match DatasetCommit'
+    if ([string]$runtimeMetadata.executionCommit -ne $execution) {
+        throw 'Benchmark environment execution commit does not match the built execution'
+    }
+    if ([bool]$runtimeMetadata.executionDirty) {
+        throw 'Benchmark environment was built from a dirty worktree'
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$runtimeMetadata.serverJarSha256)) {
+        throw 'Benchmark environment JAR binding is missing'
+    }
+}
+
+New-Item -ItemType Directory -Path $rawDirectory -Force | Out-Null
+$resolvedResultsRoot = (Resolve-Path -LiteralPath $resultsRoot).Path + [System.IO.Path]::DirectorySeparatorChar
+$resolvedRunDirectory = (Resolve-Path -LiteralPath $runDirectory).Path
+if (-not $resolvedRunDirectory.StartsWith($resolvedResultsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Unsafe run directory: $resolvedRunDirectory"
+}
+
 $startedAt = [DateTimeOffset]::UtcNow.ToString('o')
 $environment = [ordered]@{
     capturedAt = $startedAt
@@ -107,9 +205,16 @@ $environment = [ordered]@{
     java = (Get-Item -LiteralPath (Get-Command java).Source).VersionInfo.ProductVersion
     maven = ((& mvn -version | Select-Object -First 1) | Out-String).Trim()
     docker = ((& docker version --format '{{.Client.Version}}|{{.Server.Version}}' 2>&1) | Out-String).Trim()
-    baseUrl = if ($env:BASE_URL) { $env:BASE_URL } else { 'http://host.docker.internal:8888' }
+    baseUrl = $baseUrl
+    hostBaseUrl = $hostBaseUrl
+    benchmarkEnvironmentRunId = $EnvironmentRunId
+    benchmarkNetwork = $benchmarkNetwork
 }
-$environmentFingerprint = '{0}|{1}|{2}|{3}|{4}|{5}|{6}' -f $environment.os, $environment.architecture, $environment.processorCount, $environment.memoryBytes, $environment.java, $environment.maven, $environment.docker
+$runtimeFingerprint = if ($null -eq $runtimeMetadata) { 'none' } else {
+    '{0}|{1}|{2}|{3}' -f $runtimeMetadata.projectName, $runtimeMetadata.executionCommit,
+        $runtimeMetadata.serverJarSha256, $runtimeMetadata.serverImageId
+}
+$environmentFingerprint = '{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}' -f $environment.os, $environment.architecture, $environment.processorCount, $environment.memoryBytes, $environment.java, $environment.maven, $environment.docker, $runtimeFingerprint
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
 try {
     $environmentHash = [BitConverter]::ToString($sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes($environmentFingerprint))).Replace('-', '').ToLowerInvariant()
@@ -124,6 +229,7 @@ $manifest = [ordered]@{
     scenario = $Scenario
     variant = $Variant
     subjectCommit = $subject
+    executionCommit = $execution
     harnessCommit = $harness
     datasetCommit = $dataset
     environmentId = "sha256:$environmentHash"
@@ -198,6 +304,9 @@ $dockerArguments = @(
     '-e', "K6_VUS=$Concurrency",
     '-e', "K6_DURATION=${warmupSeconds}s"
 )
+if (-not [string]::IsNullOrWhiteSpace($benchmarkNetwork)) {
+    $dockerArguments += @('--network', $benchmarkNetwork)
+}
 if (-not [string]::IsNullOrWhiteSpace($env:BENCHMARK_TOKEN)) {
     $dockerArguments += @('-e', 'BENCHMARK_TOKEN')
 }
