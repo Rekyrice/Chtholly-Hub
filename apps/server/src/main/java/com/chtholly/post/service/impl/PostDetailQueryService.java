@@ -38,7 +38,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class PostDetailQueryService {
 
-    static final int LAYOUT_VERSION = 3;
+    static final int LAYOUT_VERSION = 4;
     private static final Logger log = LoggerFactory.getLogger(PostDetailQueryService.class);
 
     private final PostMapper mapper;
@@ -78,6 +78,7 @@ public class PostDetailQueryService {
         String pageKey = cacheKey(id);
         PostDetailResponse local = localCache.getIfPresent(pageKey);
         if (local != null) {
+            assertCachedReadable(local, currentUserId);
             recordHotKeyAndExtendTtl(id, pageKey);
             return enrich(local, currentUserId, true);
         }
@@ -100,7 +101,9 @@ public class PostDetailQueryService {
             Map<String, Long> counts = counterService.getCounts(
                     "post", String.valueOf(row.getId()), List.of("like", "fav"));
             PostDetailResponse response = mapRow(row, counts);
-            cache(pageKey, response);
+            if (isSharedCacheable(row)) {
+                cache(pageKey, response);
+            }
             return enrich(response, currentUserId, false);
         });
     }
@@ -124,8 +127,20 @@ public class PostDetailQueryService {
     }
 
     private void assertReadable(PostDetailRow row, Long currentUserId) {
-        boolean isPublic = "published".equals(row.getStatus()) && "public".equals(row.getVisible());
+        boolean isPublic = isSharedCacheable(row);
         boolean isOwner = currentUserId != null && currentUserId.equals(row.getCreatorId());
+        if (!isPublic && !isOwner) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "无权限查看");
+        }
+    }
+
+    private boolean isSharedCacheable(PostDetailRow row) {
+        return "published".equals(row.getStatus()) && "public".equals(row.getVisible());
+    }
+
+    private void assertCachedReadable(PostDetailResponse response, Long currentUserId) {
+        boolean isPublic = "public".equals(response.visible());
+        boolean isOwner = currentUserId != null && String.valueOf(currentUserId).equals(response.authorId());
         if (!isPublic && !isOwner) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "无权限查看");
         }
@@ -144,15 +159,17 @@ public class PostDetailQueryService {
     private PostDetailResponse processCacheHit(String cached, long id, String pageKey, Long userId) {
         if (cached == null) return null;
         if ("NULL".equals(cached)) throw new ResourceNotFoundException("内容不存在");
+        PostDetailResponse base;
         try {
-            PostDetailResponse base = objectMapper.readValue(cached, PostDetailResponse.class);
-            localCache.put(pageKey, base);
-            recordHotKeyAndExtendTtl(id, pageKey);
-            return enrich(base, userId, true);
+            base = objectMapper.readValue(cached, PostDetailResponse.class);
         } catch (Exception e) {
             log.warn("Post detail cache deserialize failed, key={}", pageKey, e);
             return null;
         }
+        assertCachedReadable(base, userId);
+        localCache.put(pageKey, base);
+        recordHotKeyAndExtendTtl(id, pageKey);
+        return enrich(base, userId, true);
     }
 
     private PostDetailResponse enrich(PostDetailResponse base, Long userId, boolean refreshCounts) {
