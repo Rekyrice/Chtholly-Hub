@@ -19,7 +19,12 @@
     "workload",
     "status",
     "startedAt",
-    "endedAt"
+    "endedAt",
+    "effectiveReadMode",
+    "singleFlightEnabled",
+    "cacheMetricsAvailable",
+    "cacheInvalidatedAt",
+    "coldStartVerified"
   ],
   "properties": {
     "schemaVersion": { "const": 1 },
@@ -46,6 +51,11 @@
     },
     "status": { "enum": ["VALIDATED", "RUNNING", "COMPLETED", "FAILED", "INCOMPLETE"] },
     "startedAt": { "type": "string", "format": "date-time" },
-    "endedAt": { "type": ["string", "null"], "format": "date-time" }
+    "endedAt": { "type": ["string", "null"], "format": "date-time" },
+    "effectiveReadMode": { "enum": [null, "db-only", "full-no-singleflight", "full"] },
+    "singleFlightEnabled": { "type": ["boolean", "null"] },
+    "cacheMetricsAvailable": { "type": ["boolean", "null"] },
+    "cacheInvalidatedAt": { "type": ["string", "null"], "format": "date-time" },
+    "coldStartVerified": { "type": ["boolean", "null"] }
   }
 }

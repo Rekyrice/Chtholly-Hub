@@ -37,6 +37,7 @@ $resultsRoot = Join-Path $repoRoot '.benchmark-results'
 $runDirectory = Join-Path $resultsRoot $RunId
 $rawDirectory = Join-Path $runDirectory 'raw'
 $configPath = Join-Path $repoRoot 'benchmarks/config/standard.yml'
+$hotPostId = '920000000000000001'
 
 if (Test-Path -LiteralPath $runDirectory) { throw "Benchmark runId already exists: $RunId" }
 if (($Scenario -eq 'stable-hot' -and $Variant -notin @('db-only', 'full')) -or
@@ -74,13 +75,81 @@ function Write-JsonFile {
 
 function Get-ActuatorCount {
     param([string]$BaseUrl, [hashtable]$Headers, [string]$MetricName)
-    try {
-        $response = Invoke-RestMethod -UseBasicParsing -Uri "$BaseUrl/actuator/metrics/$MetricName" -Headers $Headers -TimeoutSec 10
-        $measurement = @($response.measurements | Where-Object statistic -eq 'COUNT' | Select-Object -First 1)
-        if ($measurement.Count -eq 1) { return [double]$measurement[0].value }
+    $response = Invoke-RestMethod -UseBasicParsing -Uri "$BaseUrl/actuator/metrics/$MetricName" -Headers $Headers -TimeoutSec 10
+    $measurement = @($response.measurements | Where-Object statistic -eq 'COUNT')
+    if ($measurement.Count -ne 1) { throw "Metric $MetricName does not expose exactly one COUNT measurement" }
+    return [double]$measurement[0].value
+}
+
+function Get-RequiredMetricTag {
+    param([object]$Metric, [string]$TagName)
+    $tag = @($Metric.availableTags | Where-Object tag -eq $TagName)
+    if ($tag.Count -ne 1 -or @($tag[0].values).Count -ne 1) {
+        throw "Cache runtime metric does not expose one value for tag $TagName"
     }
-    catch { return $null }
-    return $null
+    return [string]$tag[0].values[0]
+}
+
+function Get-CacheRuntimeContract {
+    param([string]$BaseUrl, [hashtable]$Headers)
+    $metric = Invoke-RestMethod -UseBasicParsing -Uri "$BaseUrl/actuator/metrics/chtholly.cache.runtime" -Headers $Headers -TimeoutSec 10
+    return [ordered]@{
+        effectiveReadMode = Get-RequiredMetricTag -Metric $metric -TagName 'read_mode'
+        singleFlightEnabled = [bool]::Parse((Get-RequiredMetricTag -Metric $metric -TagName 'single_flight_enabled'))
+        cacheMetricsAvailable = [bool]::Parse((Get-RequiredMetricTag -Metric $metric -TagName 'cache_metrics_available'))
+    }
+}
+
+function Assert-CacheRuntimeContract {
+    param([string]$BaseUrl, [hashtable]$Headers, [string]$RequestedMode)
+    $contract = Get-CacheRuntimeContract -BaseUrl $BaseUrl -Headers $Headers
+    $expectedSingleFlight = $RequestedMode -eq 'full'
+    if ($contract.effectiveReadMode -ne $RequestedMode) {
+        throw "Requested cache mode $RequestedMode but application reported $($contract.effectiveReadMode)"
+    }
+    if ($contract.singleFlightEnabled -ne $expectedSingleFlight) {
+        throw "Application SingleFlight state does not match cache mode $RequestedMode"
+    }
+    if (-not $contract.cacheMetricsAvailable) {
+        throw 'Application cache metrics are unavailable'
+    }
+    return $contract
+}
+
+function Wait-BenchmarkServer {
+    param([string]$BaseUrl)
+    $deadline = [DateTimeOffset]::UtcNow.AddMinutes(3)
+    while ([DateTimeOffset]::UtcNow -lt $deadline) {
+        try {
+            $health = Invoke-RestMethod -UseBasicParsing -Uri "$BaseUrl/actuator/health" -TimeoutSec 5
+            if ($health.status -eq 'UP') { return }
+        }
+        catch { }
+        Start-Sleep -Seconds 1
+    }
+    throw "Benchmark server did not recover at $BaseUrl"
+}
+
+function Reset-ExpirySpikeBoundary {
+    param([object]$RuntimeMetadata, [string]$BaseUrl)
+    $redisContainer = [string]$RuntimeMetadata.containerIds.redis
+    $serverContainer = [string]$RuntimeMetadata.containerIds.server
+    if ([string]::IsNullOrWhiteSpace($redisContainer) -or [string]::IsNullOrWhiteSpace($serverContainer)) {
+        throw 'Benchmark runtime does not identify the owned Redis and server containers'
+    }
+    $detailPattern = "post:detail:${hotPostId}:v*"
+    $keys = @(& docker exec $redisContainer redis-cli --raw --scan --pattern $detailPattern)
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot scan the isolated Redis detail cache' }
+    foreach ($key in $keys) {
+        if (-not [string]::IsNullOrWhiteSpace($key)) {
+            & docker exec $redisContainer redis-cli DEL $key | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Cannot delete isolated cache key: $key" }
+        }
+    }
+    & docker restart $serverContainer | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot restart the owned benchmark server' }
+    Wait-BenchmarkServer -BaseUrl $BaseUrl
+    return [DateTimeOffset]::UtcNow.ToString('o')
 }
 
 $execution = Resolve-Commit -Value 'HEAD'
@@ -137,6 +206,11 @@ $manifest = [ordered]@{
     status = if ($ValidateOnly) { 'VALIDATED' } else { 'RUNNING' }
     startedAt = $startedAt
     endedAt = if ($ValidateOnly) { [DateTimeOffset]::UtcNow.ToString('o') } else { $null }
+    effectiveReadMode = $null
+    singleFlightEnabled = $null
+    cacheMetricsAvailable = $null
+    cacheInvalidatedAt = $null
+    coldStartVerified = $null
 }
 $environment = [ordered]@{
     capturedAt = [DateTimeOffset]::UtcNow.ToString('o')
@@ -148,6 +222,16 @@ $environment = [ordered]@{
     k6BaseUrl = $baseUrl
     benchmarkNetwork = $benchmarkNetwork
     dirty = $dirty
+}
+
+function Fail-IncompleteRun {
+    param([string]$Message)
+    $script:manifest.status = 'INCOMPLETE'
+    $script:manifest.endedAt = [DateTimeOffset]::UtcNow.ToString('o')
+    Write-JsonFile -Value $script:manifest -Path (Join-Path $script:runDirectory 'manifest.json')
+    $Message | Set-Content -LiteralPath (Join-Path $script:rawDirectory 'harness-error.txt') -Encoding UTF8
+    & (Join-Path $script:PSScriptRoot 'summarize.ps1') -RunDirectory $script:runDirectory
+    throw $Message
 }
 
 New-Item -ItemType Directory -Path $rawDirectory -Force | Out-Null
@@ -165,10 +249,25 @@ $dockerArguments = @(
     '-e', "BENCHMARK_PROFILE=$Profile",
     '-e', "BENCHMARK_SCENARIO=$Scenario",
     '-e', "BENCHMARK_VARIANT=$Variant",
-    '-e', 'BENCHMARK_HOT_POST_ID=920000000000000001',
+    '-e', "BENCHMARK_HOT_POST_ID=$hotPostId",
     '-e', "K6_VUS=$Concurrency"
 )
 if (-not [string]::IsNullOrWhiteSpace($benchmarkNetwork)) { $dockerArguments += @('--network', $benchmarkNetwork) }
+
+$token = (& (Join-Path $PSScriptRoot 'new-benchmark-token.ps1') -UserId 910000000000000001 -TtlSeconds 900 | Out-String).Trim()
+$headers = @{ Authorization = "Bearer $token" }
+try {
+    $runtimeContract = Assert-CacheRuntimeContract -BaseUrl $hostBaseUrl -Headers $headers -RequestedMode $Variant
+    $manifest.effectiveReadMode = $runtimeContract.effectiveReadMode
+    $manifest.singleFlightEnabled = $runtimeContract.singleFlightEnabled
+    $manifest.cacheMetricsAvailable = $runtimeContract.cacheMetricsAvailable
+    Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.mysql.query' | Out-Null
+    Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.same.key.load' | Out-Null
+    Write-JsonFile -Value $manifest -Path (Join-Path $runDirectory 'manifest.json')
+}
+catch {
+    Fail-IncompleteRun -Message $_.Exception.Message
+}
 
 $warmupArguments = $dockerArguments + @('-e', "K6_DURATION=${warmupSeconds}s", 'grafana/k6:0.54.0', 'run', '/scripts/cache-scenarios.js')
 & docker @warmupArguments 2>&1 | Tee-Object -FilePath (Join-Path $rawDirectory 'warmup-k6.log')
@@ -180,11 +279,33 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-$token = (& (Join-Path $PSScriptRoot 'new-benchmark-token.ps1') -UserId 910000000000000001 -TtlSeconds 900 | Out-String).Trim()
-$headers = @{ Authorization = "Bearer $token" }
-$mysqlBefore = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.mysql.query'
-$loadsBefore = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.same.key.load'
-if ($Scenario -eq 'expiry-spike') { Start-Sleep -Seconds 2 }
+if ($Scenario -eq 'expiry-spike') {
+    try {
+        $manifest.cacheInvalidatedAt = Reset-ExpirySpikeBoundary -RuntimeMetadata $runtimeMetadata -BaseUrl $hostBaseUrl
+        Assert-CacheRuntimeContract -BaseUrl $hostBaseUrl -Headers $headers -RequestedMode $Variant | Out-Null
+        $probeBefore = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.same.key.load'
+        $probe = Invoke-WebRequest -UseBasicParsing -Uri "$hostBaseUrl/api/v1/posts/detail/$hotPostId" -Headers $headers -TimeoutSec 15
+        $probeAfter = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.same.key.load'
+        if ($probe.StatusCode -ne 200 -or $probeAfter -le $probeBefore) {
+            throw 'Expiry-spike cold-start probe did not reach the origin loader'
+        }
+        $manifest.coldStartVerified = $true
+        $manifest.cacheInvalidatedAt = Reset-ExpirySpikeBoundary -RuntimeMetadata $runtimeMetadata -BaseUrl $hostBaseUrl
+        Assert-CacheRuntimeContract -BaseUrl $hostBaseUrl -Headers $headers -RequestedMode $Variant | Out-Null
+        Write-JsonFile -Value $manifest -Path (Join-Path $runDirectory 'manifest.json')
+    }
+    catch {
+        Fail-IncompleteRun -Message $_.Exception.Message
+    }
+}
+
+try {
+    $mysqlBefore = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.mysql.query'
+    $loadsBefore = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.same.key.load'
+}
+catch {
+    Fail-IncompleteRun -Message $_.Exception.Message
+}
 
 $measurementArguments = $dockerArguments + @(
     '-e', "K6_DURATION=${durationSeconds}s",
@@ -194,13 +315,18 @@ $measurementArguments = $dockerArguments + @(
 & docker @measurementArguments 2>&1 | Tee-Object -FilePath (Join-Path $rawDirectory 'k6.log')
 $k6ExitCode = $LASTEXITCODE
 
-$mysqlAfter = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.mysql.query'
-$loadsAfter = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.same.key.load'
+try {
+    $mysqlAfter = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.mysql.query'
+    $loadsAfter = Get-ActuatorCount -BaseUrl $hostBaseUrl -Headers $headers -MetricName 'chtholly.cache.same.key.load'
+}
+catch {
+    Fail-IncompleteRun -Message $_.Exception.Message
+}
 $token = $null
 $headers = $null
 $applicationMetrics = [ordered]@{
-    mysqlQueryCount = if ($null -ne $mysqlBefore -and $null -ne $mysqlAfter) { $mysqlAfter - $mysqlBefore } else { $null }
-    sameKeyLoadCount = if ($null -ne $loadsBefore -and $null -ne $loadsAfter) { $loadsAfter - $loadsBefore } else { $null }
+    mysqlQueryCount = $mysqlAfter - $mysqlBefore
+    sameKeyLoadCount = $loadsAfter - $loadsBefore
 }
 Write-JsonFile -Value $applicationMetrics -Path (Join-Path $rawDirectory 'application-metrics.json')
 

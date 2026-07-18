@@ -97,6 +97,15 @@ function Get-OwnedServerContainer {
     return $containerId
 }
 
+function Get-ContainerImageId {
+    param([Parameter(Mandatory = $true)][string]$ContainerId)
+    $imageId = ((& docker inspect --format '{{.Image}}' $ContainerId | Out-String).Trim())
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($imageId)) {
+        throw "Cannot resolve image ID for container: $ContainerId"
+    }
+    return $imageId
+}
+
 function Preserve-ServerLog {
     $containerId = Get-OwnedServerContainer
     if ($null -eq $containerId) { return }
@@ -194,6 +203,10 @@ try {
     $runtimeImage = 'apache/kafka:latest'
     & docker image inspect $runtimeImage *> $null
     if ($LASTEXITCODE -ne 0) { throw "Required local Java runtime image is unavailable: $runtimeImage" }
+    $runtimeImageId = ((& docker image inspect --format '{{.Id}}' $runtimeImage | Out-String).Trim())
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($runtimeImageId)) {
+        throw "Cannot resolve Java runtime image ID: $runtimeImage"
+    }
 
     $serverEnvironmentFile = Join-Path $runtimeRoot 'server.env'
     @(
@@ -250,6 +263,11 @@ try {
         benchmarkNetwork = $network
         services = $services
         containerIds = [ordered]@{ mysql = $containerIds.mysql; redis = $containerIds.redis; server = $serverContainerId }
+        imageIds = [ordered]@{
+            mysql = Get-ContainerImageId -ContainerId $containerIds.mysql
+            redis = Get-ContainerImageId -ContainerId $containerIds.redis
+            server = $runtimeImageId
+        }
         executionCommit = $executionCommit
         executionDirty = $executionDirty
         serverJarSha256 = (Get-FileHash -LiteralPath $serverJar.FullName -Algorithm SHA256).Hash.ToLowerInvariant()

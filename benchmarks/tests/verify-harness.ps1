@@ -57,7 +57,7 @@ try {
     $schemaPath = Join-Path $repoRoot 'benchmarks/schema/manifest.schema.json'
     if (Test-Path -LiteralPath $schemaPath -PathType Leaf) {
         $schema = Get-Content -Raw -LiteralPath $schemaPath -Encoding UTF8 | ConvertFrom-Json
-        foreach ($property in @('runId', 'profile', 'scenario', 'variant', 'repetition', 'subjectCommit', 'executionCommit', 'harnessCommit', 'datasetCommit', 'environmentId', 'workload', 'status', 'startedAt')) {
+        foreach ($property in @('runId', 'profile', 'scenario', 'variant', 'repetition', 'subjectCommit', 'executionCommit', 'harnessCommit', 'datasetCommit', 'environmentId', 'workload', 'status', 'startedAt', 'effectiveReadMode', 'singleFlightEnabled', 'cacheMetricsAvailable', 'cacheInvalidatedAt', 'coldStartVerified')) {
             Assert-True -Condition ($schema.required -contains $property) -Message "Manifest schema must require $property"
         }
         foreach ($property in @('experiment', 'numberKind', 'artifacts')) {
@@ -92,6 +92,14 @@ try {
 
     foreach ($token in @('stable-hot', 'expiry-spike', 'db-only', 'full-no-singleflight', 'full', 'cache-scenarios.js')) {
         Assert-True -Condition ($runSource.Contains($token)) -Message "Runner must contain $token"
+    }
+    foreach ($token in @('chtholly.cache.runtime', 'effectiveReadMode', 'singleFlightEnabled', 'cacheMetricsAvailable', 'coldStartVerified', 'cacheInvalidatedAt')) {
+        Assert-True -Condition ($runSource.Contains($token)) -Message "Runner must verify runtime contract token $token"
+    }
+    Assert-True -Condition (-not $runSource.Contains('Start-Sleep -Seconds 2')) -Message 'Expiry spike must use explicit cache invalidation instead of a fixed sleep'
+    Assert-True -Condition ($runSource.Contains('redis-cli') -and $runSource.Contains('docker restart')) -Message 'Expiry spike must clear Redis detail data and restart the owned server'
+    foreach ($token in @('imageIds', 'mysql', 'redis', 'server')) {
+        Assert-True -Condition ($environmentSource.Contains($token)) -Message "Environment manifest must record image identity token $token"
     }
     Assert-True -Condition ($runSource.Contains('new-benchmark-token.ps1')) -Message 'Runner must authenticate its Actuator metric reads without persisting the token'
     foreach ($token in @("'all'", "'counter'", "'relation'", "'fault'")) {
