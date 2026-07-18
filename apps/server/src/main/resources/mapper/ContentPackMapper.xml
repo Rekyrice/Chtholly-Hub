@@ -56,6 +56,13 @@
         </constructor>
     </resultMap>
 
+    <resultMap id="FollowPairMap" type="com.chtholly.seed.contentpack.ContentPackDatabaseWriter$FollowPair">
+        <constructor>
+            <arg column="from_user_id" javaType="_long"/>
+            <arg column="to_user_id" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
     <select id="findIdentity" resultMap="SeedContentIdentityMap">
         SELECT namespace, entity_type, seed_key, entity_id, pack_version, content_hash, metadata
         FROM seed_content_identity
@@ -86,6 +93,13 @@
           AND creator_id = #{ownerUserId}
           AND status = 'published'
           AND visible = 'public'
+        LIMIT 1
+    </select>
+
+    <select id="findUserHandleById" resultType="java.lang.String">
+        SELECT handle
+        FROM users
+        WHERE id = #{id}
         LIMIT 1
     </select>
 
@@ -272,6 +286,15 @@
           ON r.from_user_id = #{fromUserId}
          AND r.to_user_id = #{toUserId}
         LIMIT 1
+    </select>
+
+    <select id="findManagedFollowPairs" resultMap="FollowPairMap">
+        SELECT f.from_user_id, f.to_user_id
+        FROM seed_content_identity i
+        JOIN following f ON f.id = i.entity_id
+        WHERE i.namespace = #{namespace}
+          AND i.entity_type = 'FOLLOW'
+        ORDER BY f.from_user_id, f.to_user_id
     </select>
 
     <select id="findFollowingById" resultMap="FollowingStateMap">

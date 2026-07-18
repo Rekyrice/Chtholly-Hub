@@ -59,6 +59,9 @@ public interface ContentPackMapper {
             @Param("slug") String slug,
             @Param("ownerUserId") long ownerUserId);
 
+    /** @param id configured site-owner ID @return persisted handle, or {@code null} */
+    String findUserHandleById(@Param("id") long id);
+
     /**
      * Inserts an identity or refreshes metadata only when the immutable mapping agrees.
      *
@@ -150,6 +153,9 @@ public interface ContentPackMapper {
     FollowState findFollowState(
             @Param("fromUserId") long fromUserId,
             @Param("toUserId") long toUserId);
+
+    /** Returns every directed endpoint pair owned by the namespace, including inactive rows. */
+    List<FollowPair> findManagedFollowPairs(@Param("namespace") String namespace);
 
     /** @param id following row ID @return row state or {@code null} */
     FollowingState findFollowingById(@Param("id") long id);

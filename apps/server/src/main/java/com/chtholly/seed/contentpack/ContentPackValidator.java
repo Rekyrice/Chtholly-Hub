@@ -1,5 +1,6 @@
 package com.chtholly.seed.contentpack;
 
+import com.chtholly.config.SiteProperties;
 import com.chtholly.seed.contentpack.model.ContentPack;
 import com.chtholly.seed.contentpack.model.ContentPackManifest;
 import com.chtholly.seed.contentpack.model.SeedAccountDefinition;
@@ -27,6 +28,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -41,6 +43,27 @@ public final class ContentPackValidator {
     private static final Set<String> REACTION_TYPES = Set.of("like", "fav");
     private static final int MAX_COMMENTS_PER_TARGET = 5;
     private static final Pattern URI_SCHEME_PATTERN = Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):");
+    private static final String DEFAULT_SITE_OWNER_HANDLE = "Rekyrice";
+
+    private final String siteOwnerHandle;
+
+    /** Creates the application validator with the configured site-owner identity. */
+    @Autowired
+    public ContentPackValidator(SiteProperties siteProperties) {
+        this(siteProperties.ownerHandle());
+    }
+
+    /** Creates a validator with the project default owner handle for isolated tests. */
+    public ContentPackValidator() {
+        this(DEFAULT_SITE_OWNER_HANDLE);
+    }
+
+    ContentPackValidator(String siteOwnerHandle) {
+        if (siteOwnerHandle == null || siteOwnerHandle.isBlank()) {
+            throw new IllegalArgumentException("site owner handle must not be blank");
+        }
+        this.siteOwnerHandle = siteOwnerHandle;
+    }
 
     /**
      * Collects every structural error and rejects the pack once with deterministic diagnostics.
@@ -472,19 +495,41 @@ public final class ContentPackValidator {
     private void validateFollows(ContentPack pack, List<String> errors) {
         addDuplicates(pack.follows(), SeedFollowDefinition::seedKey, "duplicate follow seedKey: ", errors);
         addStructuredDuplicates(pack.follows(),
-                follow -> new FollowEdgeKey(follow.fromAccountSeedKey(), follow.toAccountSeedKey()),
-                key -> key.fromAccountSeedKey() + "|" + key.toAccountSeedKey(),
+                follow -> new FollowEdgeKey(
+                        follow.fromAccountSeedKey(),
+                        isBlank(follow.toAccountSeedKey()) ? null : follow.toAccountSeedKey(),
+                        isBlank(follow.toHandle()) ? null : follow.toHandle().toLowerCase(Locale.ROOT)),
+                key -> key.fromAccountSeedKey() + "|" + (key.toAccountSeedKey() != null
+                        ? key.toAccountSeedKey() : "handle:" + key.toHandle()),
                 "duplicate follow edge: ", errors);
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
+        Map<String, SeedAccountDefinition> accountsByKey = new LinkedHashMap<>();
+        for (SeedAccountDefinition account : pack.accounts()) {
+            accountsByKey.put(account.seedKey(), account);
+        }
         for (SeedFollowDefinition follow : pack.follows()) {
-            if (follow.fromAccountSeedKey() != null && follow.fromAccountSeedKey().equals(follow.toAccountSeedKey())) {
+            boolean hasAccountTarget = !isBlank(follow.toAccountSeedKey());
+            boolean hasHandleTarget = !isBlank(follow.toHandle());
+            if (hasAccountTarget == hasHandleTarget) {
+                errors.add("follow target must set exactly one of account seedKey or handle: " + follow.seedKey());
+            }
+            if (follow.fromAccountSeedKey() != null && hasAccountTarget
+                    && follow.fromAccountSeedKey().equals(follow.toAccountSeedKey())) {
                 errors.add("self-follow: " + follow.seedKey());
             }
             if (!accounts.contains(follow.fromAccountSeedKey())) {
                 errors.add("missing follow source: " + follow.seedKey() + " -> " + follow.fromAccountSeedKey());
             }
-            if (!accounts.contains(follow.toAccountSeedKey())) {
+            SeedAccountDefinition source = accountsByKey.get(follow.fromAccountSeedKey());
+            if (source != null && source.handle() != null
+                    && source.handle().equalsIgnoreCase(siteOwnerHandle)) {
+                errors.add("site owner cannot be follow source: " + follow.seedKey());
+            }
+            if (hasAccountTarget && !accounts.contains(follow.toAccountSeedKey())) {
                 errors.add("missing follow target: " + follow.seedKey() + " -> " + follow.toAccountSeedKey());
+            }
+            if (hasHandleTarget && !follow.toHandle().equalsIgnoreCase(siteOwnerHandle)) {
+                errors.add("follow handle is not the configured site owner: " + follow.seedKey());
             }
             requireTimestamp(follow.createdAt(), "follow " + follow.seedKey(), errors);
         }
@@ -632,7 +677,7 @@ public final class ContentPackValidator {
     private record ReactionKey(String accountSeedKey, String target, String type) {
     }
 
-    private record FollowEdgeKey(String fromAccountSeedKey, String toAccountSeedKey) {
+    private record FollowEdgeKey(String fromAccountSeedKey, String toAccountSeedKey, String toHandle) {
     }
 
     /**

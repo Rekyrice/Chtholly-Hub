@@ -346,6 +346,43 @@ class ContentPackValidatorTest {
     }
 
     @Test
+    void allowsSeedAccountToFollowConfiguredSiteOwnerByHandle() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        String source = loaded.accounts().getFirst().seedKey();
+        SeedFollowDefinition follow = new SeedFollowDefinition(
+                "follow-owner", source, null, "rEkYrIcE", Instant.parse("2026-07-01T00:00:00Z"));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), loaded.comments(), List.of(follow), loaded.reactions(), loaded.views());
+
+        validator.validate(pack);
+    }
+
+    @Test
+    void rejectsAmbiguousMissingAndNonOwnerFollowTargets() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        String source = loaded.accounts().getFirst().seedKey();
+        String internalTarget = loaded.accounts().get(1).seedKey();
+        List<SeedFollowDefinition> follows = List.of(
+                new SeedFollowDefinition("follow-both", source, internalTarget, "Rekyrice",
+                        Instant.parse("2026-07-01T00:00:00Z")),
+                new SeedFollowDefinition("follow-neither", source, null, null,
+                        Instant.parse("2026-07-02T00:00:00Z")),
+                new SeedFollowDefinition("follow-stranger", source, null, "someone_else",
+                        Instant.parse("2026-07-03T00:00:00Z")));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), loaded.comments(), follows, loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("follow target must set exactly one of account seedKey or handle: follow-both"));
+        assertTrue(exception.getMessage().contains("follow target must set exactly one of account seedKey or handle: follow-neither"));
+        assertTrue(exception.getMessage().contains("follow handle is not the configured site owner: follow-stranger"));
+    }
+
+    @Test
     void distinctStructuredInteractionKeysDoNotCollideOnPipeCharacters() throws Exception {
         ContentPack loaded = normalizedValidPack();
         List<SeedReactionDefinition> reactions = List.of(

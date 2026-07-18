@@ -2,6 +2,7 @@ package com.chtholly.seed.contentpack;
 
 import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.post.service.impl.PostCacheInvalidator;
+import com.chtholly.relation.service.impl.RelationCacheInvalidator;
 import com.chtholly.search.index.SearchIndexService;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.ResolvedIdentities;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.WriteResult;
@@ -46,6 +47,7 @@ class ContentPackImportServiceTest {
     private final ContentPackDatabaseWriter databaseWriter = mock(ContentPackDatabaseWriter.class);
     private final ContentPackReactionApplier reactionApplier = mock(ContentPackReactionApplier.class);
     private final UserCounterService userCounterService = mock(UserCounterService.class);
+    private final RelationCacheInvalidator relationCacheInvalidator = mock(RelationCacheInvalidator.class);
     private final PostCacheInvalidator cacheInvalidator = mock(PostCacheInvalidator.class);
     private final SearchIndexService searchIndexService = mock(SearchIndexService.class);
     private final RedissonClient redisson = mock(RedissonClient.class);
@@ -58,7 +60,7 @@ class ContentPackImportServiceTest {
     void setUp() throws Exception {
         service = new ContentPackImportService(loader, validator, qualityGate, snapshotWriter,
                 mediaPublisher, databaseWriter, reactionApplier, userCounterService,
-                cacheInvalidator, searchIndexService, redisson);
+                relationCacheInvalidator, cacheInvalidator, searchIndexService, redisson);
         pack = pack("complete");
         published = new PublishedContent(Map.of(), Map.of(), List.of(), "seed-content-v2", "lease-1");
         when(loader.load(root)).thenReturn(pack);
@@ -229,6 +231,26 @@ class ContentPackImportServiceTest {
     }
 
     @Test
+    void givenRelationCacheInvalidationFailure_whenDatabaseCommitted_thenReportsPartialAndContinues() {
+        WriteResult write = writeResult(
+                List.of(), Map.of(), List.of(), List.of(), List.of(),
+                Map.of(), List.of(101L, 202L), List.of(101L));
+        when(databaseWriter.write(pack, published)).thenReturn(write);
+        doThrow(new IllegalStateException("Redis unavailable"))
+                .when(relationCacheInvalidator).invalidateUsers(List.of(101L, 202L));
+
+        ContentPackImportReport report = service.run(root, false);
+
+        assertThat(report.status()).isEqualTo("partial");
+        assertThat(report.failedStage()).isEqualTo("runtime-state");
+        verify(relationCacheInvalidator).invalidateUsers(List.of(101L, 202L));
+        verify(userCounterService).rebuildAllCounters(101L);
+        verify(userCounterService).rebuildAllCounters(202L);
+        verify(cacheInvalidator).invalidate(11L);
+        verify(searchIndexService).tryUpsertPost(11L);
+    }
+
+    @Test
     void given_indexFailure_when_databaseCommitted_then_reportsEveryFailedIdWithoutStoppingOthers() {
         when(searchIndexService.tryUpsertPost(11L)).thenReturn(false);
         when(searchIndexService.tryUpsertPost(12L)).thenReturn(true);
@@ -312,6 +334,30 @@ class ContentPackImportServiceTest {
         verify(searchIndexService, never()).tryUpsertPost(92L);
     }
 
+    @Test
+    void givenExternalReactionWithoutExternalFollow_whenImport_thenStillRebuildsSiteOwner() {
+        WriteResult write = writeResult(
+                List.of(), Map.of(), List.of(), List.of(), List.of(),
+                Map.of("owner-post", 99L), List.of(), List.of(101L, 202L));
+        when(databaseWriter.write(pack, published)).thenReturn(write);
+
+        ContentPackImportReport report = service.run(root, false);
+
+        assertThat(report.status()).isEqualTo("completed");
+        var order = inOrder(reactionApplier, relationCacheInvalidator,
+                userCounterService, cacheInvalidator, searchIndexService);
+        order.verify(reactionApplier).apply(pack.reactions(), pack.views(), write.identities());
+        order.verify(relationCacheInvalidator).invalidateUsers(List.of());
+        order.verify(userCounterService).rebuildAllCounters(101L);
+        order.verify(userCounterService).rebuildAllCounters(202L);
+        order.verify(cacheInvalidator).invalidate(11L);
+        order.verify(cacheInvalidator).invalidate(12L);
+        order.verify(cacheInvalidator).invalidate(99L);
+        order.verify(searchIndexService).tryUpsertPost(11L);
+        order.verify(searchIndexService).tryUpsertPost(12L);
+        order.verify(searchIndexService).tryUpsertPost(99L);
+    }
+
     private ContentPack pack(String stage) {
         return new ContentPack(root, new ContentPackManifest(
                 "2.0.0", "seed-content-v2", stage, 0, 0, Map.of()),
@@ -328,11 +374,37 @@ class ContentPackImportServiceTest {
             List<Long> retiredPostIds,
             List<Long> retiredAuthorIds,
             List<String> unmatchedRetirementSlugs) {
+        return writeResult(changed, created, retiredPostIds, retiredAuthorIds,
+                unmatchedRetirementSlugs, Map.of(), List.of(), List.of(101L));
+    }
+
+    private WriteResult writeResult(
+            List<Long> changed,
+            Map<Long, Integer> created,
+            List<Long> retiredPostIds,
+            List<Long> retiredAuthorIds,
+            List<String> unmatchedRetirementSlugs,
+            Map<String, Long> externalPostIds,
+            List<Long> affectedFollowUserIds) {
+        return writeResult(changed, created, retiredPostIds, retiredAuthorIds,
+                unmatchedRetirementSlugs, externalPostIds, affectedFollowUserIds, List.of(101L));
+    }
+
+    private WriteResult writeResult(
+            List<Long> changed,
+            Map<Long, Integer> created,
+            List<Long> retiredPostIds,
+            List<Long> retiredAuthorIds,
+            List<String> unmatchedRetirementSlugs,
+            Map<String, Long> externalPostIds,
+            List<Long> affectedFollowUserIds,
+            List<Long> affectedReactionPostAuthorIds) {
         Map<String, Long> postIds = new java.util.LinkedHashMap<>();
         postIds.put("post-a", 11L);
         postIds.put("post-b", 12L);
         return new WriteResult(new ResolvedIdentities(
-                "seed-content-v2", Map.of("author", 101L), postIds), changed, created,
-                retiredPostIds, retiredAuthorIds, unmatchedRetirementSlugs);
+                "seed-content-v2", Map.of("author", 101L), postIds, externalPostIds), changed, created,
+                retiredPostIds, retiredAuthorIds, unmatchedRetirementSlugs,
+                affectedFollowUserIds, affectedReactionPostAuthorIds);
     }
 }
