@@ -37,6 +37,6 @@ class InfrastructureSmokeIT extends AbstractGoldenPathIT {
         assertThat(redisTemplate.opsForValue().get("it:smoke")).isEqualTo("ok");
 
         kafkaTemplate.send("it-smoke", "ok").get(10, TimeUnit.SECONDS);
-        assertThat(elasticsearchClient.info().version().number()).startsWith("8.11");
+        assertThat(elasticsearchClient.info().version().number()).startsWith("8.18");
     }
 }

@@ -54,7 +54,7 @@ public abstract class AbstractGoldenPathIT {
             .withNetwork(NETWORK);
 
     protected static final ElasticsearchContainer ELASTICSEARCH = new ElasticsearchContainer(
-            DockerImageName.parse("docker.elastic.co/elasticsearch/elasticsearch:8.11.0"))
+            DockerImageName.parse("docker.elastic.co/elasticsearch/elasticsearch:8.18.1"))
             .withEnv("xpack.security.enabled", "false")
             .withEnv("discovery.type", "single-node")
             .withNetwork(NETWORK)
