@@ -4,6 +4,7 @@ import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.comment.api.dto.CommentResponse;
 import com.chtholly.comment.api.dto.CreateCommentRequest;
 import com.chtholly.comment.mapper.CommentMapper;
+import com.chtholly.comment.model.CommentCountRow;
 import com.chtholly.comment.model.CommentRow;
 import com.chtholly.comment.service.CommentContentSanitizer;
 import com.chtholly.common.exception.BusinessException;
@@ -18,13 +19,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -204,6 +208,29 @@ class CommentServiceImplTest {
 
         assertThat(response.items().get(0).authorNickname()).isEqualTo("珂朵莉");
         assertThat(response.items().get(0).chtholly()).isTrue();
+    }
+
+    @Test
+    void countActiveByPostIdsBatchesDistinctIdsAndFillsMissingPostsWithZero() {
+        when(commentMapper.countActiveByPostIds(List.of(1L, 2L, 3L))).thenReturn(List.of(
+                new CommentCountRow(1L, 2L),
+                new CommentCountRow(2L, 1L)));
+
+        Map<Long, Long> counts = service.countActiveByPostIds(
+                Arrays.asList(1L, 2L, 1L, null, 3L));
+
+        assertThat(counts).containsExactly(
+                Map.entry(1L, 2L),
+                Map.entry(2L, 1L),
+                Map.entry(3L, 0L));
+        verify(commentMapper).countActiveByPostIds(List.of(1L, 2L, 3L));
+    }
+
+    @Test
+    void countActiveByPostIdsSkipsMapperForEmptyInput() {
+        assertThat(service.countActiveByPostIds(List.of())).isEmpty();
+
+        verify(commentMapper, never()).countActiveByPostIds(anyList());
     }
 
     private void stubPublishedPost(long postId, long creatorId) {

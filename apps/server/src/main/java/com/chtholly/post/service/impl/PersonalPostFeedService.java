@@ -3,6 +3,7 @@ package com.chtholly.post.service.impl;
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.comment.service.CommentService;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.feed.FeedTimelineProperties;
 import com.chtholly.post.feed.FeedTimelineService;
@@ -44,6 +45,7 @@ public class PersonalPostFeedService {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final CounterService counterService;
+    private final CommentService commentService;
     private final Cache<String, PageResponse<FeedItemResponse>> feedMineCache;
     private final HotKeyDetector hotKey;
     private final FeedTimelineService feedTimelineService;
@@ -55,6 +57,7 @@ public class PersonalPostFeedService {
             StringRedisTemplate redis,
             ObjectMapper objectMapper,
             CounterService counterService,
+            CommentService commentService,
             @Qualifier("feedMineCache") Cache<String, PageResponse<FeedItemResponse>> feedMineCache,
             HotKeyDetector hotKey,
             FeedTimelineService feedTimelineService,
@@ -65,6 +68,7 @@ public class PersonalPostFeedService {
         this.redis = redis;
         this.objectMapper = objectMapper;
         this.counterService = counterService;
+        this.commentService = commentService;
         this.feedMineCache = feedMineCache;
         this.hotKey = hotKey;
         this.feedTimelineService = feedTimelineService;
@@ -89,13 +93,15 @@ public class PersonalPostFeedService {
             return Collections.emptyList();
         }
 
+        List<Long> postIds = new ArrayList<>(base.size());
+        for (FeedItemResponse it : base) {
+            postIds.add(Long.parseLong(it.id()));
+        }
+        Map<Long, Long> commentCounts = commentService.countActiveByPostIds(postIds);
+
         Map<Long, Boolean> likedBatch = Map.of();
         Map<Long, Boolean> favBatch = Map.of();
         if (uid != null) {
-            List<Long> postIds = new ArrayList<>(base.size());
-            for (FeedItemResponse it : base) {
-                postIds.add(Long.parseLong(it.id()));
-            }
             likedBatch = counterService.batchIsLiked(uid, postIds);
             favBatch = counterService.batchIsFaved(uid, postIds);
         }
@@ -105,7 +111,8 @@ public class PersonalPostFeedService {
             long postId = Long.parseLong(it.id());
             boolean liked = uid != null && Boolean.TRUE.equals(likedBatch.get(postId));
             boolean faved = uid != null && Boolean.TRUE.equals(favBatch.get(postId));
-            out.add(it.withUserFlags(liked, faved));
+            out.add(it.withUserFlags(liked, faved)
+                    .withCommentCount(commentCounts.getOrDefault(postId, 0L)));
         }
         return refreshAuthors(out);
     }
@@ -337,7 +344,7 @@ public class PersonalPostFeedService {
                     liked,
                     faved).withTop(isTop));
         }
-        return refreshAuthors(items);
+        return withCommentCounts(refreshAuthors(items));
     }
 
     private List<FeedItemResponse> ensureMineAuthorId(List<FeedItemResponse> items, long userId) {
@@ -387,6 +394,24 @@ public class PersonalPostFeedService {
         }).toList();
     }
 
+    private List<FeedItemResponse> withCommentCounts(List<FeedItemResponse> items) {
+        if (items == null || items.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> postIds = items.stream()
+                .map(FeedItemResponse::id)
+                .map(PersonalPostFeedService::parseLongOrNull)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        Map<Long, Long> counts = commentService.countActiveByPostIds(postIds);
+        return items.stream()
+                .map(item -> {
+                    Long postId = parseLongOrNull(item.id());
+                    return item.withCommentCount(postId == null ? 0L : counts.getOrDefault(postId, 0L));
+                })
+                .toList();
+    }
+
     private static Long parseLongOrNull(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -426,7 +451,7 @@ public class PersonalPostFeedService {
                     liked,
                     faved).withTop(null));
         }
-        return refreshAuthors(items);
+        return withCommentCounts(refreshAuthors(items));
     }
 
 

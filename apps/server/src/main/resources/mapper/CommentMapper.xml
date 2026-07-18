@@ -105,6 +105,19 @@
           AND deleted_at IS NULL
     </select>
 
+    <select id="countActiveByPostIds" resultType="com.chtholly.comment.model.CommentCountRow">
+        SELECT
+            post_id AS postId,
+            COUNT(1) AS commentCount
+        FROM comments
+        WHERE deleted_at IS NULL
+          AND post_id IN
+        <foreach collection="postIds" item="postId" open="(" separator="," close=")">
+            #{postId}
+        </foreach>
+        GROUP BY post_id
+    </select>
+
     <update id="softDelete">
         UPDATE comments
         SET deleted_at = NOW()

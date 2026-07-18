@@ -29,6 +29,7 @@ public record FeedItemResponse(
         String tagJson,
         Long likeCount,
         Long favoriteCount,
+        Long commentCount,
         Boolean liked,
         Boolean faved,
         Boolean isTop,
@@ -52,7 +53,7 @@ public record FeedItemResponse(
             Boolean faved,
             Boolean isTop) {
         this(id, slug, title, description, coverImage, tags, null, null, authorAvatar, authorNickname,
-                tagJson, likeCount, favoriteCount, liked, faved, isTop, null);
+                tagJson, likeCount, favoriteCount, null, liked, faved, isTop, null);
     }
 
     public FeedItemResponse(
@@ -72,7 +73,30 @@ public record FeedItemResponse(
             Boolean isTop,
             Instant publishTime) {
         this(id, slug, title, description, coverImage, tags, null, null, authorAvatar, authorNickname,
-                tagJson, likeCount, favoriteCount, liked, faved, isTop, publishTime);
+                tagJson, likeCount, favoriteCount, null, liked, faved, isTop, publishTime);
+    }
+
+    /** Backward-compatible constructor for callers and cached payload layouts without comment counts. */
+    public FeedItemResponse(
+            String id,
+            String slug,
+            String title,
+            String description,
+            String coverImage,
+            List<String> tags,
+            String authorId,
+            String authorHandle,
+            String authorAvatar,
+            String authorNickname,
+            String tagJson,
+            Long likeCount,
+            Long favoriteCount,
+            Boolean liked,
+            Boolean faved,
+            Boolean isTop,
+            Instant publishTime) {
+        this(id, slug, title, description, coverImage, tags, authorId, authorHandle, authorAvatar, authorNickname,
+                tagJson, likeCount, favoriteCount, null, liked, faved, isTop, publishTime);
     }
 
     /**
@@ -95,7 +119,7 @@ public record FeedItemResponse(
                 images.isEmpty() ? null : images.getFirst(), parseJsonList(row.getTags()),
                 row.getAuthorId() == null ? null : String.valueOf(row.getAuthorId()), row.getAuthorHandle(),
                 row.getAuthorAvatar(), row.getAuthorNickname(), row.getAuthorTagJson(),
-                counts.likes(), counts.favorites(), liked, faved, row.getIsTop(), row.getPublishTime());
+                counts.likes(), counts.favorites(), null, liked, faved, row.getIsTop(), row.getPublishTime());
     }
 
     /**
@@ -115,7 +139,7 @@ public record FeedItemResponse(
                 asString(source.get("author_id")), asString(source.get("author_handle")),
                 asString(source.get("author_avatar")), asString(source.get("author_nickname")),
                 asString(source.get("author_tag_json")), asLong(source.get("like_count")),
-                asLong(source.get("favorite_count")), liked, faved, asBoolean(source.get("is_top")),
+                asLong(source.get("favorite_count")), null, liked, faved, asBoolean(source.get("is_top")),
                 asInstant(source.get("publish_time")));
     }
 
@@ -125,6 +149,13 @@ public record FeedItemResponse(
 
     public FeedItemResponse withCounts(long likes, long favorites) {
         return copy(description, likes, favorites, liked, faved, isTop);
+    }
+
+    /** Returns a copy carrying the authoritative active-comment count. */
+    public FeedItemResponse withCommentCount(long comments) {
+        return create(id, slug, title, description, coverImage, tags, authorId, authorHandle,
+                authorAvatar, authorNickname, tagJson, likeCount, favoriteCount, comments,
+                liked, faved, isTop, publishTime);
     }
 
     public FeedItemResponse withUserFlags(Boolean nextLiked, Boolean nextFaved) {
@@ -147,7 +178,7 @@ public record FeedItemResponse(
             String nextTagJson) {
         return create(id, slug, title, description, coverImage, tags, nextAuthorId, nextAuthorHandle,
                 nextAuthorAvatar, nextAuthorNickname, nextTagJson, likeCount, favoriteCount,
-                liked, faved, isTop, publishTime);
+                commentCount, liked, faved, isTop, publishTime);
     }
 
     private FeedItemResponse copy(
@@ -159,7 +190,7 @@ public record FeedItemResponse(
             Boolean nextIsTop) {
         return create(id, slug, title, nextDescription, coverImage, tags, authorId, authorHandle,
                 authorAvatar, authorNickname,
-                tagJson, nextLikeCount, nextFavoriteCount, nextLiked, nextFaved, nextIsTop, publishTime);
+                tagJson, nextLikeCount, nextFavoriteCount, commentCount, nextLiked, nextFaved, nextIsTop, publishTime);
     }
 
     private static FeedItemResponse create(
@@ -176,12 +207,13 @@ public record FeedItemResponse(
             String tagJson,
             Long likeCount,
             Long favoriteCount,
+            Long commentCount,
             Boolean liked,
             Boolean faved,
             Boolean isTop,
             Instant publishTime) {
         return new FeedItemResponse(id, slug, title, description, coverImage, tags, authorId, authorHandle, authorAvatar,
-                authorNickname, tagJson, likeCount, favoriteCount, liked, faved, isTop, publishTime);
+                authorNickname, tagJson, likeCount, favoriteCount, commentCount, liked, faved, isTop, publishTime);
     }
 
     private static List<String> parseJsonList(String value) {

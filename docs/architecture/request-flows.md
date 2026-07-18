@@ -32,7 +32,7 @@
 ## 3. Feed 与个性化推荐
 
 - **触发入口**：公开/关注 Feed 从 [PostController](../../apps/server/src/main/java/com/chtholly/post/api/PostController.java) 的 `/feed`、`/feed/following` 进入 [PostFeedServiceImpl](../../apps/server/src/main/java/com/chtholly/post/service/impl/PostFeedServiceImpl.java)；个性推荐从 [RecommendationController](../../apps/server/src/main/java/com/chtholly/recommendation/api/RecommendationController.java) 进入 [RecommendationService](../../apps/server/src/main/java/com/chtholly/recommendation/RecommendationService.java)。
-- **同步主链**：公开 Feed 读取分页/游标列表并批量补齐作者、计数和当前用户点赞收藏；关注 Feed 从 [FeedTimelineService](../../apps/server/src/main/java/com/chtholly/post/feed/FeedTimelineService.java) 获取 timeline。推荐先构建 [UserInterestProfile](../../apps/server/src/main/java/com/chtholly/recommendation/UserInterestProfile.java)，融合兴趣标签、内容相似和可选协同过滤候选。
+- **同步主链**：公开 Feed 读取分页/游标列表并批量补齐作者、计数和当前用户点赞收藏；评论总数由 [CommentServiceImpl](../../apps/server/src/main/java/com/chtholly/comment/service/impl/CommentServiceImpl.java) 按本次结果集一次聚合查询 MySQL，包含回复并排除软删除行，缓存命中后也会用当前事实覆盖旧值。关注 Feed 从 [FeedTimelineService](../../apps/server/src/main/java/com/chtholly/post/feed/FeedTimelineService.java) 获取 timeline。推荐先构建 [UserInterestProfile](../../apps/server/src/main/java/com/chtholly/recommendation/UserInterestProfile.java)，融合兴趣标签、内容相似和可选协同过滤候选。
 - **异步/缓存**：公开 Feed 使用 Caffeine L1、Redis L2、SingleFlight 与热 key 检测；发布/关注事件维护 Redis timeline 与画像。
 - **状态**：文章事实在 MySQL；列表片段、用户交互、timeline 和画像在 Redis/进程缓存；推荐候选依赖 ES 与内容分析读模型。
 - **失败/降级**：无用户或画像无信号时推荐热门；内容理解异常被跳过。ES 推荐查询失败会限制候选能力；公开 Feed 缓存未命中回源 MySQL。
@@ -70,7 +70,7 @@
 - **触发入口**：[CommentController](../../apps/server/src/main/java/com/chtholly/comment/api/CommentController.java) 的文章评论 POST → [CommentServiceImpl](../../apps/server/src/main/java/com/chtholly/comment/service/impl/CommentServiceImpl.java)。
 - **同步主链**：校验文章可评论、正文清洗、父评论存在且是顶级评论，使用 Snowflake ID 写 MySQL，读取展示行后发布 `CommentCreatedEvent`。
 - **异步/缓存**：[NotificationEventListener](../../apps/server/src/main/java/com/chtholly/notification/listener/NotificationEventListener.java) 在 `notificationExecutor` 异步识别回复接收者或文章作者，调用 [NotificationServiceImpl](../../apps/server/src/main/java/com/chtholly/notification/service/impl/NotificationServiceImpl.java) 写通知。
-- **状态**：评论和通知均在 MySQL；异步 executor 只承载进程内事件，不是持久消息队列。
+- **状态**：评论和通知均在 MySQL；Feed、搜索与个人文章列表展示的评论总数直接从未软删除评论聚合，不以 Redis 计数或 ES 文档作为权威。异步 executor 只承载进程内事件，不是持久消息队列。
 - **失败/降级**：非法层级、已删父评论、权限或限流失败时拒绝评论；通知监听异常记录错误但不回滚已提交评论，进程退出时未消费事件没有持久重放保证。
 - **代表性测试**：[CommentServiceImplTest](../../apps/server/src/test/java/com/chtholly/comment/service/impl/CommentServiceImplTest.java)、[NotificationEventListenerTest](../../apps/server/src/test/java/com/chtholly/notification/listener/NotificationEventListenerTest.java)、[NotificationServiceImplTest](../../apps/server/src/test/java/com/chtholly/notification/service/impl/NotificationServiceImplTest.java)。
 

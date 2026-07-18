@@ -5,6 +5,7 @@ import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.comment.api.dto.CommentResponse;
 import com.chtholly.comment.api.dto.CreateCommentRequest;
 import com.chtholly.comment.mapper.CommentMapper;
+import com.chtholly.comment.model.CommentCountRow;
 import com.chtholly.comment.model.CommentRow;
 import com.chtholly.comment.service.CommentContentSanitizer;
 import com.chtholly.comment.service.CommentService;
@@ -124,6 +125,37 @@ public class CommentServiceImpl implements CommentService {
         }
 
         return PageResponse.offset(items, pageRequest.page(), pageRequest.size(), total);
+    }
+
+    /**
+     * Counts all non-deleted comments for the requested posts in one database query.
+     *
+     * @param postIds post IDs to count
+     * @return count map containing zero for requested posts without active comments
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, Long> countActiveByPostIds(List<Long> postIds) {
+        List<Long> ids = postIds == null
+                ? List.of()
+                : postIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, Long> counts = new LinkedHashMap<>();
+        ids.forEach(id -> counts.put(id, 0L));
+        List<CommentCountRow> rows = commentMapper.countActiveByPostIds(ids);
+        if (rows != null) {
+            for (CommentCountRow row : rows) {
+                if (row == null || row.postId() == null || !counts.containsKey(row.postId())) {
+                    continue;
+                }
+                long count = row.commentCount() == null ? 0L : Math.max(0L, row.commentCount());
+                counts.put(row.postId(), count);
+            }
+        }
+        return Collections.unmodifiableMap(counts);
     }
 
     /**

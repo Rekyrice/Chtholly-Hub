@@ -1,5 +1,6 @@
 package com.chtholly.comment.mapper;
 
+import com.chtholly.comment.model.CommentCountRow;
 import com.chtholly.comment.model.CommentRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -39,6 +40,9 @@ public interface CommentMapper {
 
     /** 顶层评论总数（未软删除，用于分页）。 */
     long countRootByPostId(@Param("postId") long postId);
+
+    /** Counts all active comment rows, including replies, grouped by post. */
+    List<CommentCountRow> countActiveByPostIds(@Param("postIds") List<Long> postIds);
 
     /** 评论作者软删除。 */
     int softDelete(@Param("id") long id, @Param("userId") long userId);

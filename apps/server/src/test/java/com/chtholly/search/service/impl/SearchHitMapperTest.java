@@ -2,6 +2,7 @@ package com.chtholly.search.service.impl;
 
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.comment.service.CommentService;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.user.model.PublicAuthorSnapshot;
 import com.chtholly.user.service.PublicAuthorQueryService;
@@ -22,6 +23,7 @@ import static org.mockito.Mockito.when;
 class SearchHitMapperTest {
 
     @Mock private CounterService counterService;
+    @Mock private CommentService commentService;
     @Mock private PublicAuthorQueryService publicAuthorQueryService;
 
     @Test
@@ -41,7 +43,8 @@ class SearchHitMapperTest {
                 7L, author(7L, "rekyrice", "Rekyrice"),
                 8L, author(8L, "quiet-user", "Quiet User")
         ));
-        SearchHitMapper mapper = new SearchHitMapper(counterService, publicAuthorQueryService);
+        when(commentService.countActiveByPostIds(List.of(1L, 2L))).thenReturn(Map.of(1L, 3L, 2L, 1L));
+        SearchHitMapper mapper = new SearchHitMapper(counterService, publicAuthorQueryService, commentService);
 
         List<FeedItemResponse> items = mapper.mapPostHits(List.of(first, second), null);
 
@@ -49,7 +52,10 @@ class SearchHitMapperTest {
                 .containsExactly("rekyrice", "quiet-user");
         assertThat(items).extracting(FeedItemResponse::authorNickname)
                 .containsExactly("Rekyrice", "Quiet User");
+        assertThat(items).extracting(FeedItemResponse::commentCount)
+                .containsExactly(3L, 1L);
         verify(publicAuthorQueryService).findByIds(List.of(7L, 8L));
+        verify(commentService).countActiveByPostIds(List.of(1L, 2L));
     }
 
     @SuppressWarnings("unchecked")
