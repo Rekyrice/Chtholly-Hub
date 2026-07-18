@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -64,6 +65,20 @@ class KafkaCounterPublisherTest {
 
         verify(kafka, times(3)).send(anyString(), anyString(), anyString());
         verify(localEvents, never()).publishEvent(event);
+    }
+
+    @Test
+    void localEventFailureDoesNotRepublishABrokerConfirmedEvent() {
+        when(kafka.send(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        CounterEvent event = CounterEvent.of("event-local", "post", "99", "like", 1, 42L, 1);
+        doThrow(new IllegalStateException("local listener failed"))
+                .when(localEvents).publishEvent(event);
+
+        publisher(new ObjectMapper(), 3).publish(event);
+
+        verify(kafka).send(anyString(), anyString(), anyString());
+        verify(localEvents).publishEvent(event);
     }
 
     @Test

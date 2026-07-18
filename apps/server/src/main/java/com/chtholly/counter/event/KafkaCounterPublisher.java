@@ -61,8 +61,6 @@ public class KafkaCounterPublisher implements CounterEventPublisher {
             try {
                 kafka.send(CounterTopics.EVENTS, key, payload)
                         .get(acknowledgmentTimeout.toMillis(), TimeUnit.MILLISECONDS);
-                applicationEventPublisher.publishEvent(event);
-                return;
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("Interrupted while publishing counter event", exception);
@@ -70,7 +68,15 @@ public class KafkaCounterPublisher implements CounterEventPublisher {
                 lastFailure = exception;
                 log.warn("Counter event publish attempt {}/{} failed eventId={} cause={}",
                         attempt, maxAttempts, event.getEventId(), exception.toString());
+                continue;
             }
+            try {
+                applicationEventPublisher.publishEvent(event);
+            } catch (RuntimeException exception) {
+                log.error("Counter event local publication failed after broker acknowledgment eventId={}",
+                        event.getEventId(), exception);
+            }
+            return;
         }
         throw new IllegalStateException(
                 "Counter event delivery failed after " + maxAttempts + " attempts", lastFailure);
