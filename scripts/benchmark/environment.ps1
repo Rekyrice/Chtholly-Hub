@@ -226,7 +226,6 @@ try {
         "CACHE_READ_MODE=$Variant",
         "CACHE_BENCHMARK_SCENARIO=$Scenario",
         'LOGGING_LEVEL_COM_CHTHOLLY=WARN',
-        'MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED=false',
         'MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus'
     ) | Set-Content -LiteralPath $serverEnvironmentFile -Encoding ascii
 
@@ -238,17 +237,17 @@ try {
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($serverContainerId)) { throw 'Starting the server container failed' }
     Set-Content -LiteralPath (Join-Path $runtimeRoot 'server.container-id') -Value $serverContainerId -Encoding ascii
 
-    $healthy = $false
+    $ready = $false
     $deadline = [DateTimeOffset]::UtcNow.AddMinutes(3)
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
         try {
-            $health = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:$Port/actuator/health" -TimeoutSec 5
-            if ($health.status -eq 'UP') { $healthy = $true; break }
+            $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/actuator/info" -TimeoutSec 5
+            if ($response.StatusCode -eq 200) { $ready = $true; break }
         }
         catch { }
         Start-Sleep -Seconds 2
     }
-    if (-not $healthy) { throw "Benchmark server failed to become healthy on port $Port" }
+    if (-not $ready) { throw "Benchmark server failed to become ready on port $Port" }
 
     $runtimeManifest = [ordered]@{
         schemaVersion = 1

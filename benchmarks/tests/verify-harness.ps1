@@ -90,7 +90,7 @@ try {
     foreach ($token in @('db-only', 'full-no-singleflight', 'full', 'CACHE_READ_MODE', 'KAFKA_ENABLED=false', 'CANAL_ENABLED=false')) {
         Assert-True -Condition ($environmentSource.Contains($token)) -Message "Benchmark environment must contain $token"
     }
-    Assert-True -Condition ($environmentSource.Contains('MANAGEMENT_HEALTH_ELASTICSEARCH_ENABLED=false')) -Message 'Cache environment must disable the unavailable Elasticsearch health contributor'
+    Assert-True -Condition ($environmentSource.Contains('/actuator/info')) -Message 'Cache environment must use the server readiness endpoint instead of aggregate dependency health'
     Assert-True -Condition (-not $environmentSource.Contains('new-benchmark-token.ps1')) -Message 'Cache environment health check must not issue an auth token'
 
     foreach ($token in @('stable-hot', 'expiry-spike', 'db-only', 'full-no-singleflight', 'full', 'cache-scenarios.js')) {
