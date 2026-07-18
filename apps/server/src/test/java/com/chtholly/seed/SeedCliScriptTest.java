@@ -61,12 +61,14 @@ class SeedCliScriptTest {
         String source = Files.readString(script);
 
         assertThat(source)
-                .contains("$hadServerPort = Test-Path Env:SERVER_PORT")
-                .contains("$hadLlmEnabled = Test-Path Env:LLM_ENABLED")
-                .contains("$hadSpringProfiles = Test-Path Env:SPRING_PROFILES_ACTIVE")
-                .contains("Remove-Item Env:SERVER_PORT -ErrorAction SilentlyContinue")
-                .contains("Remove-Item Env:LLM_ENABLED -ErrorAction SilentlyContinue")
-                .contains("Remove-Item Env:SPRING_PROFILES_ACTIVE -ErrorAction SilentlyContinue")
+                .contains("$originalEnvironment = @{}")
+                .contains("Get-ChildItem Env:")
+                .contains("$originalEnvironment[$_.Name] = $_.Value")
+                .contains("Remove-Item -LiteralPath \"Env:$name\"")
+                .contains("Set-Item -LiteralPath \"Env:$($entry.Key)\" -Value $entry.Value")
+                .contains("try {\n    . (Join-Path $PSScriptRoot \"load-env.ps1\")")
                 .contains("finally {\n    Restore-SeedRunnerEnvironment\n}");
+        assertThat(source.indexOf("$originalEnvironment = @{}"))
+                .isLessThan(source.indexOf(". (Join-Path $PSScriptRoot \"load-env.ps1\")"));
     }
 }

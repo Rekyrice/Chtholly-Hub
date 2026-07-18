@@ -7,7 +7,27 @@ param(
 )
 
 # Run one seed job on a spare port. Formal full-state content-pack imports require downtime.
-. (Join-Path $PSScriptRoot "load-env.ps1")
+# Environment variables are process-wide even when this script runs in a child scope, so preserve
+# the complete caller environment before load-env or command-line overrides can mutate it.
+$originalEnvironment = @{}
+Get-ChildItem Env: | ForEach-Object {
+    $originalEnvironment[$_.Name] = $_.Value
+}
+
+function Restore-SeedRunnerEnvironment {
+    $currentNames = @(Get-ChildItem Env: | ForEach-Object { $_.Name })
+    foreach ($name in $currentNames) {
+        if (-not $originalEnvironment.ContainsKey($name)) {
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+    }
+    foreach ($entry in $originalEnvironment.GetEnumerator()) {
+        Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value
+    }
+}
+
+try {
+    . (Join-Path $PSScriptRoot "load-env.ps1")
 
 function Test-SafeDatabaseName {
     param([string]$Name)
@@ -75,32 +95,6 @@ if ($ResetMarker) {
 }
 
 # Template/content-pack jobs are deterministic and must not start unrelated LLM background work.
-$hadServerPort = Test-Path Env:SERVER_PORT
-$savedServerPort = $env:SERVER_PORT
-$hadLlmEnabled = Test-Path Env:LLM_ENABLED
-$savedLlmEnabled = $env:LLM_ENABLED
-$hadSpringProfiles = Test-Path Env:SPRING_PROFILES_ACTIVE
-$savedSpringProfiles = $env:SPRING_PROFILES_ACTIVE
-
-function Restore-SeedRunnerEnvironment {
-    if ($hadServerPort) {
-        $env:SERVER_PORT = $savedServerPort
-    } else {
-        Remove-Item Env:SERVER_PORT -ErrorAction SilentlyContinue
-    }
-    if ($hadLlmEnabled) {
-        $env:LLM_ENABLED = $savedLlmEnabled
-    } else {
-        Remove-Item Env:LLM_ENABLED -ErrorAction SilentlyContinue
-    }
-    if ($hadSpringProfiles) {
-        $env:SPRING_PROFILES_ACTIVE = $savedSpringProfiles
-    } else {
-        Remove-Item Env:SPRING_PROFILES_ACTIVE -ErrorAction SilentlyContinue
-    }
-}
-
-try {
 if ($Mode -eq "content_only" -or $Mode -eq "content-only" -or $isContentPack) {
     $env:LLM_ENABLED = "false"
     $profiles = $env:SPRING_PROFILES_ACTIVE.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne "llm" }
