@@ -242,7 +242,7 @@ function SearchOverview({ tags, recentPosts }: { tags: TagItem[]; recentPosts: F
       <section className="search-overview__recent" aria-labelledby="search-recent-title">
         <div className="search-section-heading">
           <h2 id="search-recent-title">最近发布</h2>
-          <span>RECENT 04</span>
+          <span>RECENT {String(recentPosts.slice(0, 4).length).padStart(2, "0")}</span>
         </div>
         {recentPosts.length > 0 ? (
           <ol>

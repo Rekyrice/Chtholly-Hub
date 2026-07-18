@@ -232,6 +232,20 @@ describe("SearchPage", () => {
     expect(screen.getAllByTestId("search-recent-item")).toHaveLength(4);
   });
 
+  it("reports the actual recent post count when fewer than four are available", async () => {
+    serviceMocks.feed.mockResolvedValue({
+      items: [item("1"), item("2")],
+      page: 1,
+      size: 4,
+      hasMore: false,
+    });
+
+    render(await SearchPage({ searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByText("RECENT 02")).toBeVisible();
+    expect(screen.getAllByTestId("search-recent-item")).toHaveLength(2);
+  });
+
   it("keeps search CSS route-private with compact card geometry", () => {
     const css = readFileSync("app/styles/search.css", "utf8");
     const article = readFileSync("app/styles/article.css", "utf8");

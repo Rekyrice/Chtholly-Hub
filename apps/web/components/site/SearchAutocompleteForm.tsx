@@ -48,7 +48,7 @@ export default function SearchAutocompleteForm({
     const prefix = query.trim();
     const sequence = ++requestSequence.current;
 
-    if (isComposing || prefix.length < 1) {
+    if (!focused || isComposing || prefix.length < 1) {
       return;
     }
 
@@ -157,7 +157,9 @@ export default function SearchAutocompleteForm({
             }
           }}
           onBlur={() => {
+            requestSequence.current += 1;
             setFocused(false);
+            setLoading(false);
             setOpen(false);
           }}
           onKeyDown={handleKeyDown}
@@ -190,8 +192,8 @@ export default function SearchAutocompleteForm({
                 className="search-autocomplete__option"
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  selectSuggestion(suggestion);
                 }}
+                onClick={() => selectSuggestion(suggestion)}
               >
                 {suggestion}
               </button>

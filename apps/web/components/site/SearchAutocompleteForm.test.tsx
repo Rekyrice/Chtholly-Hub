@@ -59,6 +59,7 @@ describe("SearchAutocompleteForm", () => {
     render(<SearchAutocompleteForm initialQuery="" tags={[]} sort="relevance" />);
     const input = screen.getByRole("combobox", { name: "搜索文章" });
 
+    fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "珂朵莉" } });
     await advance(249);
     expect(searchService.suggest).not.toHaveBeenCalled();
@@ -71,10 +72,45 @@ describe("SearchAutocompleteForm", () => {
     expect(input).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("waits for focus before requesting suggestions for an initial query", async () => {
+    render(<SearchAutocompleteForm initialQuery="初始关键词" tags={[]} sort="relevance" />);
+    const input = screen.getByRole("combobox", { name: "搜索文章" });
+
+    await advance();
+    expect(searchService.suggest).not.toHaveBeenCalled();
+
+    fireEvent.focus(input);
+    await advance();
+    expect(searchService.suggest).toHaveBeenCalledTimes(1);
+    expect(searchService.suggest).toHaveBeenCalledWith("初始关键词", 8);
+  });
+
+  it("invalidates pending suggestions and ignores input changes after blur", async () => {
+    const pending = deferred<{ items: string[] }>();
+    vi.mocked(searchService.suggest).mockReturnValue(pending.promise);
+    render(<SearchAutocompleteForm initialQuery="" tags={[]} sort="relevance" />);
+    const input = screen.getByRole("combobox", { name: "搜索文章" });
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "失焦前" } });
+    await advance();
+    expect(searchService.suggest).toHaveBeenCalledTimes(1);
+
+    fireEvent.blur(input);
+    fireEvent.change(input, { target: { value: "失焦后" } });
+    await advance();
+    expect(searchService.suggest).toHaveBeenCalledTimes(1);
+
+    await act(async () => pending.resolve({ items: ["迟到建议"] }));
+    fireEvent.focus(input);
+    expect(screen.queryByRole("option", { name: "迟到建议" })).not.toBeInTheDocument();
+  });
+
   it("does not request during IME composition and requests once after composition ends", async () => {
     render(<SearchAutocompleteForm initialQuery="" tags={[]} sort="relevance" />);
     const input = screen.getByRole("combobox", { name: "搜索文章" });
 
+    fireEvent.focus(input);
     fireEvent.compositionStart(input);
     fireEvent.change(input, { target: { value: "珂" } });
     await advance(400);
@@ -164,6 +200,7 @@ describe("SearchAutocompleteForm", () => {
     const submit = vi.fn((event: Event) => event.preventDefault());
     form.addEventListener("submit", submit);
 
+    fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "号" } });
     await advance();
     fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -184,7 +221,7 @@ describe("SearchAutocompleteForm", () => {
     expect(submit).toHaveBeenCalledTimes(1);
   });
 
-  it("selects with mouse down without losing input focus", async () => {
+  it("keeps input focus on mouse down without selecting prematurely", async () => {
     vi.mocked(searchService.suggest).mockResolvedValue({ items: ["星空札记"] });
     render(<SearchAutocompleteForm initialQuery="" tags={[]} sort="relevance" />);
     const input = screen.getByRole("combobox", { name: "搜索文章" });
@@ -192,9 +229,25 @@ describe("SearchAutocompleteForm", () => {
     fireEvent.change(input, { target: { value: "星" } });
     await advance();
 
-    fireEvent.mouseDown(screen.getByRole("option", { name: "星空札记" }));
+    expect(fireEvent.mouseDown(screen.getByRole("option", { name: "星空札记" }))).toBe(
+      false,
+    );
 
     expect(input).toHaveFocus();
+    expect(input).toHaveValue("星");
+    expect(input).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("selects a suggestion through the option button click activation", async () => {
+    vi.mocked(searchService.suggest).mockResolvedValue({ items: ["星空札记"] });
+    render(<SearchAutocompleteForm initialQuery="" tags={[]} sort="relevance" />);
+    const input = screen.getByRole("combobox", { name: "搜索文章" });
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "星" } });
+    await advance();
+
+    fireEvent.click(screen.getByRole("option", { name: "星空札记" }));
+
     expect(input).toHaveValue("星空札记");
     expect(input).toHaveAttribute("aria-expanded", "false");
   });
