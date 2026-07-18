@@ -164,6 +164,10 @@ bangumi:
     cron: "0 0 4 * * *"
 
 counter:
+  kafka:
+    publish:
+      max-attempts: ${COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS:3}
+      ack-timeout: ${COUNTER_KAFKA_PUBLISH_ACK_TIMEOUT:PT3S}
   rebuild:
     enabled: false
     lock:
