@@ -92,6 +92,9 @@ $forbiddenCandidateTokens = @(
     'stale_worker',
     'secondReviewer',
     'signoff',
+    [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5pyq6L+H5pyf5a6h5om5')),
+    [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5a+56LGh6ZSu')),
+    [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5Y+q6KaB5Lu75Yqh55Sx55m75b2V55So5oi35Yib5bu6')),
     [string][char]0x7487,
     [string][char]0x9366,
     [string][char]0xfffd
