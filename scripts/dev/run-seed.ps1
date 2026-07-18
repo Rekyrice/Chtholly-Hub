@@ -6,7 +6,7 @@ param(
     [switch]$ResetMarker
 )
 
-# Run one seed job on a spare port while the main backend may remain online.
+# Run one seed job on a spare port. Formal full-state content-pack imports require downtime.
 . (Join-Path $PSScriptRoot "load-env.ps1")
 
 function Test-SafeDatabaseName {
@@ -29,13 +29,23 @@ if (-not $RepoRoot) {
 $isContentPack = $Mode -eq "content_pack" -or $Mode -eq "content-pack"
 $seedPort = if ($env:SEED_SERVER_PORT) { [int]$env:SEED_SERVER_PORT } else { 8899 }
 $serverPort = if ($env:SERVER_PORT) { [int]$env:SERVER_PORT } else { 8888 }
+$backendPolicy = if ($isContentPack -and -not $DryRun) { "must be stopped" } else { "may remain online" }
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " Chtholly Hub seed runner  :$seedPort  mode=$Mode" -ForegroundColor Cyan
-Write-Host " (main backend :$serverPort may remain online)" -ForegroundColor DarkGray
+Write-Host " (main backend :$serverPort $backendPolicy)" -ForegroundColor DarkGray
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
+
+if ($isContentPack -and -not $DryRun) {
+    $mainBackend = Get-NetTCPConnection -LocalPort $serverPort -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($mainBackend) {
+        Write-Host "Stop the main backend before a formal content-pack import (port $serverPort, PID $($mainBackend.OwningProcess))." -ForegroundColor Red
+        exit 1
+    }
+}
 
 # A content-pack dry-run only reads and validates the package. Applying migrations here would
 # violate its no-mutation guarantee before the importer even starts.
@@ -64,9 +74,34 @@ if ($ResetMarker) {
     docker exec -e "MYSQL_PWD=$env:MYSQL_PASSWORD" mysql mysql -uroot --default-character-set=utf8mb4 $env:MYSQL_DATABASE -e "DELETE FROM seed_data WHERE seed_key='$marker';" 2>$null | Out-Null
 }
 
-# content_only uses template bodies; disabling the LLM avoids unnecessary generation latency.
+# Template/content-pack jobs are deterministic and must not start unrelated LLM background work.
+$hadServerPort = Test-Path Env:SERVER_PORT
+$savedServerPort = $env:SERVER_PORT
+$hadLlmEnabled = Test-Path Env:LLM_ENABLED
 $savedLlmEnabled = $env:LLM_ENABLED
-if ($Mode -eq "content_only" -or $Mode -eq "content-only") {
+$hadSpringProfiles = Test-Path Env:SPRING_PROFILES_ACTIVE
+$savedSpringProfiles = $env:SPRING_PROFILES_ACTIVE
+
+function Restore-SeedRunnerEnvironment {
+    if ($hadServerPort) {
+        $env:SERVER_PORT = $savedServerPort
+    } else {
+        Remove-Item Env:SERVER_PORT -ErrorAction SilentlyContinue
+    }
+    if ($hadLlmEnabled) {
+        $env:LLM_ENABLED = $savedLlmEnabled
+    } else {
+        Remove-Item Env:LLM_ENABLED -ErrorAction SilentlyContinue
+    }
+    if ($hadSpringProfiles) {
+        $env:SPRING_PROFILES_ACTIVE = $savedSpringProfiles
+    } else {
+        Remove-Item Env:SPRING_PROFILES_ACTIVE -ErrorAction SilentlyContinue
+    }
+}
+
+try {
+if ($Mode -eq "content_only" -or $Mode -eq "content-only" -or $isContentPack) {
     $env:LLM_ENABLED = "false"
     $profiles = $env:SPRING_PROFILES_ACTIVE.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne "llm" }
     if ($profiles -notcontains "dev") { $profiles = @("dev") + $profiles }
@@ -82,11 +117,14 @@ if (-not $isContentPack) {
     }
 }
 
-Set-Location (Join-Path $RepoRoot "apps/server")
-
-Write-Host "Compiling..." -ForegroundColor DarkGray
-& mvn -q compile "-Dmaven.test.skip=true"
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Push-Location (Join-Path $RepoRoot "apps/server")
+try {
+    Write-Host "Compiling..." -ForegroundColor DarkGray
+    & mvn -q compile "-Dmaven.test.skip=true"
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} finally {
+    Pop-Location
+}
 
 $env:SERVER_PORT = "$seedPort"
 Write-Host "Running seed (profile=$env:SPRING_PROFILES_ACTIVE)..." -ForegroundColor DarkGray
@@ -98,9 +136,14 @@ $applicationArguments = "--seed.mode=$Mode --spring.main.web-application-type=no
 if ($DryRun) {
     $applicationArguments += " --seed.dry-run=true"
 }
+if ($isContentPack) {
+    # Lazy CLI startup does not instantiate Kafka listeners. Use the synchronous in-process
+    # counter path so a completed report means view baselines are already visible.
+    $applicationArguments += " --kafka.enabled=false --canal.enabled=false"
+    $applicationArguments += " --bangumi.enabled=false --llm.enabled=false"
+}
 if ($isContentPack -and $DryRun) {
-    $applicationArguments += " --seed.cli-read-only=true --kafka.enabled=false --canal.enabled=false"
-    $applicationArguments += " --bangumi.enabled=false"
+    $applicationArguments += " --seed.cli-read-only=true"
 }
 $bootRunProperty = "-Dspring-boot.run.arguments=`"$applicationArguments`""
 
@@ -180,7 +223,6 @@ $postCount = docker exec -e "MYSQL_PWD=$env:MYSQL_PASSWORD" mysql mysql -uroot -
 Write-Host ""
 Write-Host "MySQL published posts: $postCount" -ForegroundColor Green
 Write-Host "Restart the main backend (http://localhost:$serverPort), then refresh /hub" -ForegroundColor Yellow
-
-if ($null -ne $savedLlmEnabled) {
-    $env:LLM_ENABLED = $savedLlmEnabled
+} finally {
+    Restore-SeedRunnerEnvironment
 }
