@@ -26,6 +26,8 @@ public class CounterEvent {
     private int idx;
     private long userId;
     private int delta; // +1 / -1
+    /** Reaction fact generation; zero keeps pre-fence events backward compatible. */
+    private long factEpoch;
 
     /** 帖子作者 ID（post 实体事件，事件源填充） */
     private Long postCreatorId;
@@ -36,7 +38,7 @@ public class CounterEvent {
     private String actorAvatar;
 
     public CounterEvent(String entityType, String entityId, String metric, int idx, long userId, int delta) {
-        this(UUID.randomUUID().toString(), entityType, entityId, metric, idx, userId, delta,
+        this(UUID.randomUUID().toString(), entityType, entityId, metric, idx, userId, delta, 0L,
                 null, null, null, null, null);
     }
 
@@ -47,14 +49,14 @@ public class CounterEvent {
     /** Creates a seed event with a stable ID while retaining the content-pack call shape. */
     public static CounterEvent of(
             String entityType, String entityId, String metric, int idx, long userId, int delta, String eventId) {
-        return new CounterEvent(eventId, entityType, entityId, metric, idx, userId, delta,
+        return new CounterEvent(eventId, entityType, entityId, metric, idx, userId, delta, 0L,
                 null, null, null, null, null);
     }
 
     /** Creates an event with a stable ID for broker retry and replay. */
     public static CounterEvent of(String eventId, String entityType, String entityId,
                                   String metric, int idx, long userId, int delta) {
-        return new CounterEvent(eventId, entityType, entityId, metric, idx, userId, delta,
+        return new CounterEvent(eventId, entityType, entityId, metric, idx, userId, delta, 0L,
                 null, null, null, null, null);
     }
 }

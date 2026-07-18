@@ -4,6 +4,8 @@ import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.event.CounterEventPublisher;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.counter.service.CounterFactMaintenanceService;
+import com.chtholly.counter.service.CounterFactMaintenanceService.ManagedPostReactionState;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.ResolvedIdentities;
 import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
 import com.chtholly.seed.contentpack.model.SeedViewDefinition;
@@ -19,6 +21,7 @@ import org.redisson.api.RedissonClient;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -41,6 +44,8 @@ class ContentPackReactionApplierTest {
     @Mock
     private CounterService counterService;
     @Mock
+    private CounterFactMaintenanceService factMaintenanceService;
+    @Mock
     private CounterEventPublisher eventPublisher;
     @Mock
     private RedissonClient redisson;
@@ -55,21 +60,27 @@ class ContentPackReactionApplierTest {
         lenient().when(redisson.getLock("lock:seed-content:view-baseline:post:99")).thenReturn(viewLock);
         lenient().when(viewLock.tryLock(5L, 5L, TimeUnit.SECONDS)).thenReturn(true);
         lenient().when(viewLock.isHeldByCurrentThread()).thenReturn(true);
-        applier = new ContentPackReactionApplier(counterService, eventPublisher, redisson, 3, Duration.ZERO);
+        applier = new ContentPackReactionApplier(
+                counterService, factMaintenanceService, eventPublisher, redisson, 3, Duration.ZERO);
         identities = new ResolvedIdentities(
                 "launch-community", Map.of("author", 42L, "reader", 43L), Map.of("post-one", 99L));
     }
 
     @Test
-    void givenDeclaredLikesAndFavorites_whenApply_thenUsesPublicIdempotentMethods() {
+    void givenDeclaredLikesAndFavorites_whenApply_thenSilentlyReconcilesCompleteManagedFacts() {
         List<SeedReactionDefinition> reactions = List.of(
                 new SeedReactionDefinition("like-one", "post-one", "reader", "like"),
                 new SeedReactionDefinition("fav-one", "post-one", "reader", "fav"));
 
         applier.apply(reactions, List.of(), identities);
 
-        verify(counterService).like("post", "99", 43L);
-        verify(counterService).fav("post", "99", 43L);
+        verify(factMaintenanceService).reconcileManagedPostReactions(
+                Set.of(42L, 43L), Set.of(99L),
+                Map.of(99L, new ManagedPostReactionState(Set.of(43L), Set.of(43L))));
+        verify(counterService, never()).like(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong());
+        verify(counterService, never()).fav(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test
@@ -81,21 +92,17 @@ class ContentPackReactionApplierTest {
 
         applier.apply(List.of(reaction), List.of(), withOwnerPost);
 
-        verify(counterService).like("post", "808", 43L);
+        verify(factMaintenanceService).reconcileManagedPostReactions(
+                Set.of(42L, 43L), Set.of(99L, 808L),
+                Map.of(808L, new ManagedPostReactionState(Set.of(43L), Set.of())));
     }
 
     @Test
     void givenUndeclaredExistingReaction_whenApply_thenPreservesUserOwnedFacts() {
         applier.apply(List.of(), List.of(), identities);
 
-        verify(counterService, never()).isLiked(
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyLong());
-        verify(counterService, never()).isFaved(
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyLong());
+        verify(factMaintenanceService).reconcileManagedPostReactions(
+                Set.of(42L, 43L), Set.of(99L), Map.of());
         verify(counterService, never()).unlike(
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString(),
@@ -151,7 +158,8 @@ class ContentPackReactionApplierTest {
         SeedViewDefinition view = new SeedViewDefinition("views-one", "post-one", 10L);
 
         applier.apply(List.of(), List.of(view), identities);
-        new ContentPackReactionApplier(counterService, eventPublisher, redisson, 1, Duration.ZERO)
+        new ContentPackReactionApplier(
+                counterService, factMaintenanceService, eventPublisher, redisson, 1, Duration.ZERO)
                 .apply(List.of(), List.of(view), identities);
 
         verify(eventPublisher, times(1)).publish(org.mockito.ArgumentMatchers.any());
@@ -195,7 +203,8 @@ class ContentPackReactionApplierTest {
         SeedViewDefinition view = new SeedViewDefinition("views-one", "post-one", 10L);
 
         applier.apply(List.of(), List.of(view), identities);
-        new ContentPackReactionApplier(counterService, eventPublisher, redisson, 1, Duration.ZERO)
+        new ContentPackReactionApplier(
+                counterService, factMaintenanceService, eventPublisher, redisson, 1, Duration.ZERO)
                 .apply(List.of(), List.of(view), identities);
 
         ArgumentCaptor<CounterEvent> retried = ArgumentCaptor.forClass(CounterEvent.class);
@@ -219,9 +228,9 @@ class ContentPackReactionApplierTest {
             return null;
         }).when(eventPublisher).publish(org.mockito.ArgumentMatchers.any());
         ContentPackReactionApplier firstApplier = new ContentPackReactionApplier(
-                counterService, eventPublisher, redisson, 10, Duration.ofMillis(5));
+                counterService, factMaintenanceService, eventPublisher, redisson, 10, Duration.ofMillis(5));
         ContentPackReactionApplier second = new ContentPackReactionApplier(
-                counterService, eventPublisher, redisson, 10, Duration.ofMillis(5));
+                counterService, factMaintenanceService, eventPublisher, redisson, 10, Duration.ofMillis(5));
         SeedViewDefinition view = new SeedViewDefinition("views-one", "post-one", 100L);
 
         try (aggregation; var executor = Executors.newFixedThreadPool(2)) {
@@ -257,5 +266,8 @@ class ContentPackReactionApplierTest {
 
         verify(counterService, never()).like(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong());
+        verify(factMaintenanceService, never()).reconcileManagedPostReactions(
+                org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.anySet(),
+                org.mockito.ArgumentMatchers.anyMap());
     }
 }

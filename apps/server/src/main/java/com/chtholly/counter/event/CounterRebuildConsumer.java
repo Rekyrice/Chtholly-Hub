@@ -6,19 +6,22 @@ import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 灾难场景下的计数重建消费者：基于 earliest 回放历史事件，直接折叠到 SDS。
+ * 灾难场景下的非成员计数重建消费者：基于 earliest 回放历史事件，直接折叠到 SDS。
+ * 帖子点赞/收藏的成员事实只存在于 Redis bitmap，不能从增量事件可靠恢复，因此会被明确跳过。
  * 默认关闭，仅当 counter.rebuild.enabled=true 时启用。
  */
 @Service
@@ -26,10 +29,12 @@ import java.util.List;
 public class CounterRebuildConsumer extends AbstractKafkaConsumer {
 
     private static final String CONSUMER_GROUP = "counter-rebuild";
+    private static final Logger log = LoggerFactory.getLogger(CounterRebuildConsumer.class);
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> incrScript;
     private final DefaultRedisScript<Long> dedupeIncrScript;
+    private final AtomicBoolean reactionSkipWarningLogged = new AtomicBoolean();
 
     public CounterRebuildConsumer(ObjectMapper objectMapper,
                                   StringRedisTemplate redis,
@@ -66,7 +71,17 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
     }
 
     boolean applyRebuildEvent(CounterEvent evt) {
+        if (isReaction(evt)) {
+            if (reactionSkipWarningLogged.compareAndSet(false, true)) {
+                log.warn("Kafka counter rebuild skips like/fav membership events; restore Redis bitmap backup "
+                        + "and derive reaction SDS from bitmap facts");
+            }
+            return false;
+        }
         String cntKey = CounterKeys.sdsKey(evt.getEntityType(), evt.getEntityId());
+        if (evt.getFactEpoch() < 0L) {
+            throw new IllegalArgumentException("Counter event fact epoch must not be negative");
+        }
         List<String> keys;
         DefaultRedisScript<Long> script;
         if (evt.getEventId() == null || evt.getEventId().isBlank()) {
@@ -82,6 +97,20 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
             String.valueOf(evt.getIdx()),
             String.valueOf(evt.getDelta()));
         return Long.valueOf(1L).equals(applied);
+    }
+
+    private static boolean isReaction(CounterEvent evt) {
+        if (evt.getIdx() == CounterSchema.IDX_LIKE && "like".equals(evt.getMetric())) {
+            return true;
+        }
+        if (evt.getIdx() == CounterSchema.IDX_FAV && "fav".equals(evt.getMetric())) {
+            return true;
+        }
+        if (evt.getIdx() == CounterSchema.IDX_LIKE || evt.getIdx() == CounterSchema.IDX_FAV
+                || "like".equals(evt.getMetric()) || "fav".equals(evt.getMetric())) {
+            throw new IllegalArgumentException("Reaction counter event metric and index do not match");
+        }
+        return false;
     }
 
     @Override
@@ -128,7 +157,6 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
             local fieldSize = tonumber(ARGV[2])
             local idx = tonumber(ARGV[3])
             local delta = tonumber(ARGV[4])
-
             if redis.call('SETNX', dedupeKey, '1') == 0 then return 0 end
 
             local function read32be(s, off)

@@ -4,6 +4,8 @@ import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.event.CounterEventPublisher;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.counter.service.CounterFactMaintenanceService;
+import com.chtholly.counter.service.CounterFactMaintenanceService.ManagedPostReactionState;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.ResolvedIdentities;
 import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
 import com.chtholly.seed.contentpack.model.SeedViewDefinition;
@@ -15,17 +17,20 @@ import org.redisson.api.RedissonClient;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Applies declared runtime reactions through the public counter boundary after MySQL commit.
+ * Reconciles declared historical reactions without emitting user-facing interaction events.
  *
- * <p>Reaction declarations are additive because the counter subsystem does not persist content-pack
- * ownership. Existing likes and favorites are therefore never removed by an import; visitor views
- * remain monotonic as well.
+ * <p>Likes and favorites are a complete managed-user fact set on every authoritative target. The
+ * maintenance boundary sets and clears only Seed-owned bits, preserves valid natural users, and
+ * rebuilds the post counters exactly. Visitor views remain monotonic minimum baselines.
  */
 @Component
 public final class ContentPackReactionApplier {
@@ -34,6 +39,7 @@ public final class ContentPackReactionApplier {
     private static final String VIEW = "view";
 
     private final CounterService counterService;
+    private final CounterFactMaintenanceService factMaintenanceService;
     private final CounterEventPublisher eventPublisher;
     private final RedissonClient redisson;
     private final int maxPollAttempts;
@@ -49,19 +55,22 @@ public final class ContentPackReactionApplier {
     @Autowired
     public ContentPackReactionApplier(
             CounterService counterService,
+            CounterFactMaintenanceService factMaintenanceService,
             CounterEventPublisher eventPublisher,
             RedissonClient redisson) {
-        this(counterService, eventPublisher, redisson, 25, Duration.ofMillis(50));
+        this(counterService, factMaintenanceService, eventPublisher, redisson, 25, Duration.ofMillis(50));
     }
 
     /** Creates an applier with explicit poll settings for deterministic package tests. */
     ContentPackReactionApplier(
             CounterService counterService,
+            CounterFactMaintenanceService factMaintenanceService,
             CounterEventPublisher eventPublisher,
             RedissonClient redisson,
             int maxPollAttempts,
             Duration pollInterval) {
         this.counterService = Objects.requireNonNull(counterService, "counterService");
+        this.factMaintenanceService = Objects.requireNonNull(factMaintenanceService, "factMaintenanceService");
         this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher");
         this.redisson = Objects.requireNonNull(redisson, "redisson");
         if (maxPollAttempts < 1) {
@@ -75,7 +84,7 @@ public final class ContentPackReactionApplier {
     }
 
     /**
-     * Applies declared likes/favorites and raises view minima without removing user-owned facts.
+     * Reconciles declared managed likes/favorites and raises view minima.
      *
      * @param reactions declared Seed likes and favorites
      * @param views minimum non-decreasing view baselines
@@ -91,23 +100,42 @@ public final class ContentPackReactionApplier {
         Objects.requireNonNull(identities, "identities");
         validate(reactions, views, identities);
 
+        reconcileManagedReactions(reactions, identities);
+
+        List<Long> pendingViews = applyViews(views, identities);
+        return new ReactionApplyResult(!pendingViews.isEmpty(), pendingViews);
+    }
+
+    private void reconcileManagedReactions(
+            List<SeedReactionDefinition> reactions, ResolvedIdentities identities) {
+        Set<Long> managedUserIds = new LinkedHashSet<>(identities.accountIds().values());
+        Set<Long> authoritativePostIds = new LinkedHashSet<>(identities.postIds().values());
+        authoritativePostIds.addAll(identities.externalPostIdsBySlug().values());
+        if (managedUserIds.isEmpty() || authoritativePostIds.isEmpty()) {
+            return;
+        }
+
+        Map<Long, MutableReactionState> mutableByPost = new LinkedHashMap<>();
         for (SeedReactionDefinition reaction : reactions) {
             long postId = resolvePostId(
                     identities, reaction.postSeedKey(), reaction.postSlug(), "reaction post");
-            long accountId = identities.accountIds().get(reaction.accountSeedKey());
+            long accountId = requireId(
+                    identities.accountIds(), reaction.accountSeedKey(), "reaction account");
+            MutableReactionState state = mutableByPost.computeIfAbsent(postId, ignored -> new MutableReactionState());
             switch (reaction.type()) {
-                case "like" -> {
-                    counterService.like(ENTITY_TYPE, String.valueOf(postId), accountId);
-                }
-                case "fav" -> {
-                    counterService.fav(ENTITY_TYPE, String.valueOf(postId), accountId);
-                }
+                case "like" -> state.likes.add(accountId);
+                case "fav" -> state.favorites.add(accountId);
                 default -> throw new IllegalStateException("validated reaction type changed");
             }
         }
 
-        List<Long> pendingViews = applyViews(views, identities);
-        return new ReactionApplyResult(!pendingViews.isEmpty(), pendingViews);
+        Map<Long, ManagedPostReactionState> desiredByPost = new LinkedHashMap<>();
+        for (Map.Entry<Long, MutableReactionState> entry : mutableByPost.entrySet()) {
+            desiredByPost.put(entry.getKey(), new ManagedPostReactionState(
+                    entry.getValue().likes, entry.getValue().favorites));
+        }
+        factMaintenanceService.reconcileManagedPostReactions(
+                Set.copyOf(managedUserIds), Set.copyOf(authoritativePostIds), Map.copyOf(desiredByPost));
     }
 
     private void validate(
@@ -241,5 +269,10 @@ public final class ContentPackReactionApplier {
     }
 
     private record ViewTarget(String entityId, long postId, long minimum) {
+    }
+
+    private static final class MutableReactionState {
+        private final Set<Long> likes = new LinkedHashSet<>();
+        private final Set<Long> favorites = new LinkedHashSet<>();
     }
 }

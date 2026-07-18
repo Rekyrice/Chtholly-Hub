@@ -213,6 +213,267 @@ class ContentPackValidatorTest {
     }
 
     @Test
+    void contentV3RequiresEveryCommunityInteractionDeclaration() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        ContentPackManifest manifest = new ContentPackManifest(
+                "content-v3",
+                loaded.manifest().namespace(),
+                loaded.manifest().stage(),
+                loaded.manifest().expectedAccounts(),
+                loaded.manifest().expectedPosts(),
+                loaded.manifest().expectedRetirements(),
+                loaded.manifest().expectedCategories());
+        ContentPack pack = new ContentPack(
+                loaded.root(), manifest, loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), loaded.comments(), loaded.follows(), loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertContainsInOrder(exception.getMessage(),
+                "missing expected comment count",
+                "missing expected root comment count",
+                "missing expected reply count",
+                "missing expected like count",
+                "missing expected favorite count",
+                "missing expected follow count",
+                "missing expected view count",
+                "missing expected commented target count");
+    }
+
+    @Test
+    void rejectsEveryDeclaredCommunityInteractionCountMismatch() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        long rootComments = loaded.comments().stream()
+                .filter(comment -> comment.parentSeedKey() == null || comment.parentSeedKey().isBlank())
+                .count();
+        long replies = loaded.comments().size() - rootComments;
+        long likes = loaded.reactions().stream().filter(reaction -> "like".equals(reaction.type())).count();
+        long favorites = loaded.reactions().stream().filter(reaction -> "fav".equals(reaction.type())).count();
+        long commentedTargets = loaded.comments().stream()
+                .map(comment -> comment.postSeedKey() == null
+                        ? "slug:" + comment.postSlug() : "seed:" + comment.postSeedKey())
+                .distinct()
+                .count();
+        ContentPackManifest manifest = new ContentPackManifest(
+                loaded.manifest().version(),
+                loaded.manifest().namespace(),
+                loaded.manifest().stage(),
+                loaded.manifest().expectedAccounts(),
+                loaded.manifest().expectedPosts(),
+                loaded.manifest().expectedRetirements(),
+                loaded.comments().size() + 1,
+                Math.toIntExact(rootComments + 1),
+                Math.toIntExact(replies + 1),
+                Math.toIntExact(likes + 1),
+                Math.toIntExact(favorites + 1),
+                loaded.follows().size() + 1,
+                loaded.views().size() + 1,
+                Math.toIntExact(commentedTargets + 1),
+                loaded.manifest().expectedCategories());
+        ContentPack pack = new ContentPack(
+                loaded.root(), manifest, loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), loaded.comments(), loaded.follows(), loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertContainsInOrder(exception.getMessage(),
+                "expected comment count: " + (loaded.comments().size() + 1) + ", actual: " + loaded.comments().size(),
+                "expected root comment count: " + (rootComments + 1) + ", actual: " + rootComments,
+                "expected reply count: " + (replies + 1) + ", actual: " + replies,
+                "expected like count: " + (likes + 1) + ", actual: " + likes,
+                "expected favorite count: " + (favorites + 1) + ", actual: " + favorites,
+                "expected follow count: " + (loaded.follows().size() + 1) + ", actual: " + loaded.follows().size(),
+                "expected view count: " + (loaded.views().size() + 1) + ", actual: " + loaded.views().size(),
+                "expected commented target count: " + (commentedTargets + 1) + ", actual: " + commentedTargets);
+    }
+
+    @Test
+    void rejectsNestedRepliesAndMoreThanFiveCommentsOnOneTarget() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedPostDefinition post = loaded.posts().getFirst();
+        String author = loaded.accounts().getFirst().seedKey();
+        Instant firstCommentAt = post.publishTime().plusSeconds(1);
+        SeedCommentDefinition root = new SeedCommentDefinition(
+                "root", null, post.seedKey(), author, null, "root", firstCommentAt);
+        SeedCommentDefinition reply = new SeedCommentDefinition(
+                "reply", null, post.seedKey(), author, root.seedKey(), "reply", firstCommentAt);
+        SeedCommentDefinition nestedReply = new SeedCommentDefinition(
+                "nested", null, post.seedKey(), author, reply.seedKey(), "nested", firstCommentAt.plusSeconds(1));
+        List<SeedCommentDefinition> comments = List.of(
+                root,
+                reply,
+                nestedReply,
+                new SeedCommentDefinition("root-2", null, post.seedKey(), author, null, "root", firstCommentAt),
+                new SeedCommentDefinition("root-3", null, post.seedKey(), author, null, "root", firstCommentAt),
+                new SeedCommentDefinition("root-4", null, post.seedKey(), author, null, "root", firstCommentAt));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), comments, loaded.follows(), loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains(
+                "comment target exceeds maximum of 5: seed:" + post.seedKey() + " -> 6"));
+        assertTrue(exception.getMessage().contains("nested reply: nested -> reply"));
+    }
+
+    @Test
+    void rejectsDuplicateReactionTriplesAndFollowEdgesWithDifferentSeedKeys() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedPostDefinition post = loaded.posts().getFirst();
+        String firstAccount = loaded.accounts().getFirst().seedKey();
+        String secondAccount = loaded.accounts().get(1).seedKey();
+        List<SeedReactionDefinition> reactions = List.of(
+                new SeedReactionDefinition("reaction-a", post.seedKey(), firstAccount, "like"),
+                new SeedReactionDefinition("reaction-b", post.seedKey(), firstAccount, "like"));
+        List<SeedFollowDefinition> follows = List.of(
+                new SeedFollowDefinition("follow-a", firstAccount, secondAccount, Instant.parse("2026-07-01T00:00:00Z")),
+                new SeedFollowDefinition("follow-b", firstAccount, secondAccount, Instant.parse("2026-07-02T00:00:00Z")));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), loaded.comments(), follows, reactions, loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains(
+                "duplicate reaction triple: " + firstAccount + "|seed:" + post.seedKey() + "|like"));
+        assertTrue(exception.getMessage().contains(
+                "duplicate follow edge: " + firstAccount + "|" + secondAccount));
+    }
+
+    @Test
+    void allowsSeedAccountToFollowConfiguredSiteOwnerByHandle() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        String source = loaded.accounts().getFirst().seedKey();
+        SeedFollowDefinition follow = new SeedFollowDefinition(
+                "follow-owner", source, null, "rEkYrIcE", Instant.parse("2026-07-01T00:00:00Z"));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), loaded.comments(), List.of(follow), loaded.reactions(), loaded.views());
+
+        validator.validate(pack);
+    }
+
+    @Test
+    void rejectsAmbiguousMissingAndNonOwnerFollowTargets() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        String source = loaded.accounts().getFirst().seedKey();
+        String internalTarget = loaded.accounts().get(1).seedKey();
+        List<SeedFollowDefinition> follows = List.of(
+                new SeedFollowDefinition("follow-both", source, internalTarget, "Rekyrice",
+                        Instant.parse("2026-07-01T00:00:00Z")),
+                new SeedFollowDefinition("follow-neither", source, null, null,
+                        Instant.parse("2026-07-02T00:00:00Z")),
+                new SeedFollowDefinition("follow-stranger", source, null, "someone_else",
+                        Instant.parse("2026-07-03T00:00:00Z")));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), loaded.comments(), follows, loaded.reactions(), loaded.views());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        assertTrue(exception.getMessage().contains("follow target must set exactly one of account seedKey or handle: follow-both"));
+        assertTrue(exception.getMessage().contains("follow target must set exactly one of account seedKey or handle: follow-neither"));
+        assertTrue(exception.getMessage().contains("follow handle is not the configured site owner: follow-stranger"));
+    }
+
+    @Test
+    void distinctStructuredInteractionKeysDoNotCollideOnPipeCharacters() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        List<SeedReactionDefinition> reactions = List.of(
+                new SeedReactionDefinition("reaction-pipe-a", "c", "a|seed:b", "like"),
+                new SeedReactionDefinition("reaction-pipe-b", "b|seed:c", "a", "like"));
+        List<SeedFollowDefinition> follows = List.of(
+                new SeedFollowDefinition("follow-pipe-a", "a|b", "c", Instant.parse("2026-07-01T00:00:00Z")),
+                new SeedFollowDefinition("follow-pipe-b", "a", "b|c", Instant.parse("2026-07-02T00:00:00Z")));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), List.of(), follows, reactions, List.of());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        String message = exception.getMessage();
+        assertTrue(message.contains("missing reaction post: reaction-pipe-a -> c"));
+        assertTrue(message.contains("missing follow source: follow-pipe-a -> a|b"));
+        assertTrue(!message.contains("duplicate reaction triple:"));
+        assertTrue(!message.contains("duplicate follow edge:"));
+    }
+
+    @Test
+    void invalidCommentReferencesDoNotContributeCoverageOrPerTargetLimits() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedPostDefinition post = loaded.posts().getFirst();
+        String author = loaded.accounts().getFirst().seedKey();
+        Instant createdAt = post.publishTime().plusSeconds(1);
+        List<SeedCommentDefinition> comments = new java.util.ArrayList<>();
+        for (int index = 1; index <= 5; index++) {
+            comments.add(new SeedCommentDefinition(
+                    "valid-" + index, null, post.seedKey(), author, null, "valid", createdAt));
+        }
+        comments.add(new SeedCommentDefinition(
+                "both-present", null, post.seedKey(), "external-both", author, null, "invalid", createdAt));
+        comments.add(new SeedCommentDefinition(
+                "both-blank", null, null, null, author, null, "invalid", createdAt));
+        comments.add(new SeedCommentDefinition(
+                "missing-seed", null, "absent-post", null, author, null, "invalid", createdAt));
+        comments.add(new SeedCommentDefinition(
+                "external-slug", null, null, "external-only", author, null, "valid", createdAt));
+        ContentPackManifest manifest = new ContentPackManifest(
+                loaded.manifest().version(),
+                loaded.manifest().namespace(),
+                loaded.manifest().stage(),
+                loaded.manifest().expectedAccounts(),
+                loaded.manifest().expectedPosts(),
+                loaded.manifest().expectedRetirements(),
+                comments.size(),
+                comments.size(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                2,
+                loaded.manifest().expectedCategories());
+        ContentPack pack = new ContentPack(
+                loaded.root(), manifest, loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), comments, List.of(), List.of(), List.of());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        String message = exception.getMessage();
+        assertTrue(message.contains(
+                "interaction post reference must use exactly one of postSeedKey or postSlug: both-present"));
+        assertTrue(message.contains(
+                "interaction post reference must use exactly one of postSeedKey or postSlug: both-blank"));
+        assertTrue(message.contains("missing comment post: missing-seed -> absent-post"));
+        assertTrue(!message.contains("expected commented target count:"));
+        assertTrue(!message.contains("comment target exceeds maximum"));
+    }
+
+    @Test
+    void treatsAnEmptyParentSeedKeyAsARootComment() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedPostDefinition post = loaded.posts().getFirst();
+        SeedCommentDefinition root = new SeedCommentDefinition(
+                "empty-parent", null, post.seedKey(), loaded.accounts().getFirst().seedKey(), "", "root",
+                post.publishTime().plusSeconds(1));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), List.of(root), List.of(), List.of(), List.of());
+
+        ContentPackValidator.ValidationResult result = validator.validate(pack);
+
+        assertEquals(List.of(), result.warnings());
+    }
+
+    @Test
     void acceptsSiteOwnerAsPostAuthorWithoutDeclaredSeedAccount() throws Exception {
         ContentPack loaded = normalizedValidPack();
         SeedPostDefinition post = withAuthor(loaded.posts().getFirst(), "site-owner");

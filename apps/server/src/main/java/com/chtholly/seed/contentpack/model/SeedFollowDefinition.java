@@ -9,5 +9,15 @@ public record SeedFollowDefinition(
         String seedKey,
         String fromAccountSeedKey,
         String toAccountSeedKey,
+        String toHandle,
         Instant createdAt) {
+
+    /** Creates the original Seed-to-Seed follow shape. */
+    public SeedFollowDefinition(
+            String seedKey,
+            String fromAccountSeedKey,
+            String toAccountSeedKey,
+            Instant createdAt) {
+        this(seedKey, fromAccountSeedKey, toAccountSeedKey, null, createdAt);
+    }
 }

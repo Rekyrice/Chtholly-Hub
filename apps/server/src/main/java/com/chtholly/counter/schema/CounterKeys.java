@@ -30,6 +30,21 @@ public final class CounterKeys {
         return String.format("agg:%s:__keys", CounterSchema.SCHEMA_ID);
     }
 
+    /** Per-entity write fence used while authoritative bitmap facts are reconciled. */
+    public static String factMaintenanceFenceKey(String entityType, String entityId) {
+        return String.format("counter:fact-maintenance:%s:%s", entityType, entityId);
+    }
+
+    /** Shared entity lock for exact fact maintenance and bitmap-derived SDS rebuilds. */
+    public static String factMaintenanceLockKey(String entityType, String entityId) {
+        return String.format("lock:counter-fact-maintenance:%s:%s", entityType, entityId);
+    }
+
+    /** Monotonic generation carried by reaction events across fact maintenance boundaries. */
+    public static String factEpochKey(String entityType, String entityId) {
+        return String.format("counter:fact-epoch:%s:%s", entityType, entityId);
+    }
+
     /** Persistent dedupe fact for events that explicitly opt into idempotent aggregation. */
     public static String eventDedupeKey(String eventId) {
         try {

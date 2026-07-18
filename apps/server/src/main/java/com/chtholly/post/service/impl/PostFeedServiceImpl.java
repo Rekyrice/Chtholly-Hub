@@ -11,6 +11,7 @@ import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.comment.service.CommentService;
 import com.chtholly.post.util.FeedCursor;
 import com.chtholly.user.model.PublicAuthorSnapshot;
 import com.chtholly.user.service.PublicAuthorQueryService;
@@ -58,6 +59,7 @@ public class PostFeedServiceImpl implements PostFeedService {
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final CounterService counterService;
+    private final CommentService commentService;
     private final Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     private final HotKeyDetector hotKey;
     private final PersonalPostFeedService personalFeedService;
@@ -83,6 +85,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             StringRedisTemplate redis,
             ObjectMapper objectMapper,
             CounterService counterService,
+            CommentService commentService,
             @Qualifier("feedPublicCache") Cache<String, PageResponse<FeedItemResponse>> feedPublicCache,
             HotKeyDetector hotKey,
             PersonalPostFeedService personalFeedService,
@@ -92,6 +95,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         this.redis = redis;
         this.objectMapper = objectMapper;
         this.counterService = counterService;
+        this.commentService = commentService;
         this.feedPublicCache = feedPublicCache;
         this.hotKey = hotKey;
         this.personalFeedService = personalFeedService;
@@ -343,7 +347,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         }
 
         // 个人主页公开列表需要 isTop，访客才能看到置顶排序与标记
-        List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, true);
+        List<FeedItemResponse> items = enrich(mapRowsToItems(rows, null, true), currentUserIdNullable);
         String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
         log.info("feed.public source=db ownerId={} page={} size={} hasMore={}", ownerId, safePage, safeSize, hasMore);
         return PageResponse.offset(items, safePage, safeSize, 0L, hasMore, nextCursor);
@@ -361,7 +365,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             rows = rows.subList(0, safeSize);
         }
 
-        List<FeedItemResponse> items = mapRowsToItems(rows, currentUserIdNullable, false);
+        List<FeedItemResponse> items = enrich(mapRowsToItems(rows, null, false), currentUserIdNullable);
         String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
         log.info("feed.public source=db tag={} ownerId={} page={} size={} hasMore={}", tagName, ownerId, safePage, safeSize, hasMore);
         return PageResponse.offset(items, safePage, safeSize, 0L, hasMore, nextCursor);
@@ -395,13 +399,15 @@ public class PostFeedServiceImpl implements PostFeedService {
             return Collections.emptyList();
         }
 
+        List<Long> postIds = new ArrayList<>(base.size());
+        for (FeedItemResponse it : base) {
+            postIds.add(Long.parseLong(it.id()));
+        }
+        Map<Long, Long> commentCounts = commentService.countActiveByPostIds(postIds);
+
         Map<Long, Boolean> likedBatch = Map.of();
         Map<Long, Boolean> favBatch = Map.of();
         if (uid != null) {
-            List<Long> postIds = new ArrayList<>(base.size());
-            for (FeedItemResponse it : base) {
-                postIds.add(Long.parseLong(it.id()));
-            }
             likedBatch = counterService.batchIsLiked(uid, postIds);
             favBatch = counterService.batchIsFaved(uid, postIds);
         }
@@ -427,7 +433,8 @@ public class PostFeedServiceImpl implements PostFeedService {
             long postId = Long.parseLong(it.id());
             boolean liked = uid != null && Boolean.TRUE.equals(likedBatch.get(postId));
             boolean faved = uid != null && Boolean.TRUE.equals(favBatch.get(postId));
-            FeedItemResponse enriched = it.withUserFlags(liked, faved);
+            FeedItemResponse enriched = it.withUserFlags(liked, faved)
+                    .withCommentCount(commentCounts.getOrDefault(postId, 0L));
             Long authorId = parseLongOrNull(it.authorId());
             PublicAuthorSnapshot author = authorId == null ? null : authors.get(authorId);
             if (author != null) {

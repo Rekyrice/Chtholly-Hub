@@ -16,6 +16,7 @@ import co.elastic.clients.elasticsearch.core.search.TotalHits;
 import co.elastic.clients.elasticsearch.core.search.TotalHitsRelation;
 import co.elastic.clients.util.ObjectBuilder;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.comment.service.CommentService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.search.api.dto.HubFeedResponse;
@@ -58,6 +59,8 @@ class SearchServiceImplTest {
     @Mock
     private CounterService counterService;
     @Mock
+    private CommentService commentService;
+    @Mock
     private PublicAuthorQueryService publicAuthorQueryService;
 
     private SearchServiceImpl service;
@@ -65,7 +68,8 @@ class SearchServiceImplTest {
     @BeforeEach
     void setUp() {
         lenient().when(publicAuthorQueryService.findByIds(any())).thenReturn(Map.of());
-        SearchHitMapper hitMapper = new SearchHitMapper(counterService, publicAuthorQueryService);
+        lenient().when(commentService.countActiveByPostIds(any())).thenReturn(Map.of());
+        SearchHitMapper hitMapper = new SearchHitMapper(counterService, publicAuthorQueryService, commentService);
         service = new SearchServiceImpl(
                 es,
                 hitMapper,

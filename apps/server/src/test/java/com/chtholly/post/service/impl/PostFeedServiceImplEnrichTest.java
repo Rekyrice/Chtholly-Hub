@@ -1,7 +1,10 @@
 package com.chtholly.post.service.impl;
 
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.comment.service.CommentService;
 import com.chtholly.post.api.dto.FeedItemResponse;
+import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.user.model.PublicAuthorSnapshot;
 import com.chtholly.user.service.PublicAuthorQueryService;
@@ -27,6 +30,8 @@ class PostFeedServiceImplEnrichTest {
 
     @Mock
     private CounterService counterService;
+    @Mock
+    private CommentService commentService;
     @Mock
     private PersonalPostFeedService personalFeedService;
     @Mock
@@ -54,6 +59,8 @@ class PostFeedServiceImplEnrichTest {
                 7L, author(7L, "rekyrice", "Rekyrice"),
                 8L, author(8L, "quiet-user", "Quiet User")
         ));
+        when(commentService.countActiveByPostIds(List.of(1L, 2L, 3L)))
+                .thenReturn(Map.of(1L, 4L, 2L, 2L, 3L, 0L));
 
         @SuppressWarnings("unchecked")
         List<FeedItemResponse> out = (List<FeedItemResponse>) enrichMethod.invoke(service, base, 9L);
@@ -63,9 +70,12 @@ class PostFeedServiceImplEnrichTest {
         assertThat(out.get(1).faved()).isTrue();
         assertThat(out.get(0).authorHandle()).isEqualTo("rekyrice");
         assertThat(out.get(2).authorNickname()).isEqualTo("Rekyrice");
+        assertThat(out).extracting(FeedItemResponse::commentCount)
+                .containsExactly(4L, 2L, 0L);
         verify(counterService, times(1)).batchIsLiked(9L, List.of(1L, 2L, 3L));
         verify(counterService, times(1)).batchIsFaved(9L, List.of(1L, 2L, 3L));
         verify(publicAuthorQueryService, times(1)).findByIds(List.of(7L, 8L));
+        verify(commentService, times(1)).countActiveByPostIds(List.of(1L, 2L, 3L));
     }
 
     @Test
@@ -78,16 +88,44 @@ class PostFeedServiceImplEnrichTest {
         verify(personalFeedService).getFollowingFeed(9L, 2, 8);
     }
 
+    @Test
+    void ownerFilteredFeedAddsCommentCountsInOneBatch() {
+        PostMapper mapper = mock(PostMapper.class);
+        PostFeedRow row = new PostFeedRow();
+        row.setId(11L);
+        row.setSlug("post-11");
+        row.setTitle("title");
+        row.setTags("[]");
+        row.setImgUrls("[]");
+        row.setAuthorId(7L);
+        row.setAuthorNickname("Author");
+        when(mapper.listFeedPublicByCreator(7L, 11, 0)).thenReturn(List.of(row));
+        when(counterService.getCounts("post", "11", List.of("like", "fav"))).thenReturn(Map.of());
+        when(commentService.countActiveByPostIds(List.of(11L))).thenReturn(Map.of(11L, 5L));
+        PostFeedServiceImpl service = newService(mapper, null);
+
+        FeedItemResponse result = service.getPublicFeed(1, null, 10, 7L, null, null)
+                .items().getFirst();
+
+        assertThat(result.commentCount()).isEqualTo(5L);
+        verify(commentService).countActiveByPostIds(List.of(11L));
+    }
+
     private PostFeedServiceImpl newMinimalService() {
         return newService(null);
     }
 
     private PostFeedServiceImpl newService(PersonalPostFeedService personalFeed) {
+        return newService(null, personalFeed);
+    }
+
+    private PostFeedServiceImpl newService(PostMapper mapper, PersonalPostFeedService personalFeed) {
         return new PostFeedServiceImpl(
-                null,
+                mapper,
                 null,
                 null,
                 counterService,
+                commentService,
                 null,
                 null,
                 personalFeed,

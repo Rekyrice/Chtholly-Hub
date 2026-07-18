@@ -1,23 +1,21 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$DestinationRoot,
-    [string]$Database = $env:MYSQL_DATABASE,
-    [string]$Container = "mysql",
+    [string]$Container = "redis",
     [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "../dev/load-env.ps1")
-Import-Module (Join-Path $PSScriptRoot "backup-mysql-core.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "backup-redis-core.psm1") -Force
 
-if (-not $Database) {
-    $Database = $env:MYSQL_DATABASE
-}
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 
-function Test-SafeIdentifier {
+function Test-SafeContainerName {
     param([string]$Name)
-    return -not [string]::IsNullOrWhiteSpace($Name) -and $Name -match '^[A-Za-z0-9_]+$'
+    return -not [string]::IsNullOrWhiteSpace($Name) -and
+        $Name.Length -le 128 -and
+        $Name -match '^[A-Za-z0-9][A-Za-z0-9_.-]*$'
 }
 
 function Assert-NoReparsePointInPath {
@@ -106,10 +104,7 @@ function Resolve-SafeDestinationRoot {
 }
 
 try {
-    if (-not (Test-SafeIdentifier $Database)) {
-        throw "Database name contains unsupported characters."
-    }
-    if (-not (Test-SafeIdentifier $Container)) {
+    if (-not (Test-SafeContainerName $Container)) {
         throw "Container name contains unsupported characters."
     }
     $safeDestinationRoot = Resolve-SafeDestinationRoot $DestinationRoot
@@ -117,7 +112,7 @@ try {
     if ($ValidateOnly) {
         [ordered]@{
             status = "validated"
-            database = $Database
+            dataStore = "redis"
             destinationRoot = $safeDestinationRoot
             container = $Container
         } | ConvertTo-Json -Compress
@@ -125,22 +120,13 @@ try {
     }
 
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-        throw "Docker CLI is required for the MySQL backup."
-    }
-    if ([string]::IsNullOrEmpty($env:MYSQL_PASSWORD)) {
-        throw "MYSQL_PASSWORD is required."
-    }
-    $mysqlUser = if ($env:MYSQL_USER) { $env:MYSQL_USER } else { "root" }
-    if (-not (Test-SafeIdentifier $mysqlUser)) {
-        throw "MYSQL_USER contains unsupported characters."
+        throw "Docker CLI is required for the Redis backup."
     }
 
-    $result = Invoke-MySqlBackup `
+    $result = Invoke-RedisRdbBackup `
         -SafeDestinationRoot $safeDestinationRoot `
         -Container $Container `
-        -Database $Database `
-        -MySqlUser $mysqlUser `
-        -MySqlPassword $env:MYSQL_PASSWORD
+        -RedisPassword $env:REDIS_PASSWORD
     $result.Metadata | ConvertTo-Json -Compress
 } catch {
     Write-Error $_.Exception.Message

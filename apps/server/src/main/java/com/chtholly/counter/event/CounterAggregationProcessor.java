@@ -51,13 +51,37 @@ public class CounterAggregationProcessor {
         String indexKey = CounterKeys.aggIndexKey();
         String eventKey = EVENT_KEY_PREFIX + evt.getEventId();
         String field = String.valueOf(evt.getIdx());
+        boolean epochFenced = isPostReaction(evt);
+        if (evt.getFactEpoch() < 0L) {
+            throw new IllegalArgumentException("Counter event fact epoch must not be negative");
+        }
         Long applied = redis.execute(
                 aggIncrScript,
-                List.of(aggKey, indexKey, eventKey),
+                List.of(aggKey, indexKey, eventKey,
+                        CounterKeys.factEpochKey(evt.getEntityType(), evt.getEntityId())),
                 field,
                 String.valueOf(evt.getDelta()),
-                EVENT_DEDUP_TTL_SECONDS);
+                EVENT_DEDUP_TTL_SECONDS,
+                epochFenced ? "1" : "0",
+                String.valueOf(evt.getFactEpoch()));
         return applied != null && applied == 1L;
+    }
+
+    private static boolean isPostReaction(CounterEvent evt) {
+        if (!"post".equals(evt.getEntityType())) {
+            return false;
+        }
+        if (evt.getIdx() == CounterSchema.IDX_LIKE && "like".equals(evt.getMetric())) {
+            return true;
+        }
+        if (evt.getIdx() == CounterSchema.IDX_FAV && "fav".equals(evt.getMetric())) {
+            return true;
+        }
+        if (evt.getIdx() == CounterSchema.IDX_LIKE || evt.getIdx() == CounterSchema.IDX_FAV
+                || "like".equals(evt.getMetric()) || "fav".equals(evt.getMetric())) {
+            throw new IllegalArgumentException("Reaction counter event metric and index do not match");
+        }
+        return false;
     }
 
     /** 将聚合增量刷写到 SDS 固定结构计数，固定延迟 1s。 */
@@ -116,9 +140,26 @@ public class CounterAggregationProcessor {
             local aggKey = KEYS[1]
             local indexKey = KEYS[2]
             local eventKey = KEYS[3]
+            local epochKey = KEYS[4]
             local field = ARGV[1]
             local delta = tonumber(ARGV[2])
             local dedupTtl = tonumber(ARGV[3])
+            local epochFenced = ARGV[4] == '1'
+            local expectedEpoch = tonumber(ARGV[5])
+            if epochFenced then
+              local epochTypeReply = redis.call('TYPE', epochKey)
+              local epochType = type(epochTypeReply) == 'table' and epochTypeReply['ok'] or epochTypeReply
+              if epochType ~= 'none' and epochType ~= 'string' then
+                return redis.error_reply('counter fact epoch has an invalid Redis type')
+              end
+              local currentEpoch = tonumber(redis.call('GET', epochKey) or '0')
+              if not currentEpoch or currentEpoch < 0 or currentEpoch ~= math.floor(currentEpoch)
+                    or not expectedEpoch or expectedEpoch < 0
+                    or expectedEpoch ~= math.floor(expectedEpoch) then
+                return redis.error_reply('counter fact epoch is invalid')
+              end
+              if currentEpoch ~= expectedEpoch then return -1 end
+            end
             if not redis.call('SET', eventKey, '1', 'NX', 'EX', dedupTtl) then
                 return 0
             end

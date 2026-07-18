@@ -2,6 +2,7 @@ package com.chtholly.search.service.impl;
 
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.comment.service.CommentService;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.user.model.PublicAuthorSnapshot;
 import com.chtholly.user.service.PublicAuthorQueryService;
@@ -26,10 +27,15 @@ public class SearchHitMapper {
 
     private final CounterService counterService;
     private final PublicAuthorQueryService publicAuthorQueryService;
+    private final CommentService commentService;
 
-    public SearchHitMapper(CounterService counterService, PublicAuthorQueryService publicAuthorQueryService) {
+    public SearchHitMapper(
+            CounterService counterService,
+            PublicAuthorQueryService publicAuthorQueryService,
+            CommentService commentService) {
         this.counterService = counterService;
         this.publicAuthorQueryService = publicAuthorQueryService;
+        this.commentService = commentService;
     }
 
     /** Maps post hits and enriches liked/faved state in two batch calls. */
@@ -51,6 +57,7 @@ public class SearchHitMapper {
         Map<Long, Boolean> faved = currentUserId == null
                 ? Collections.emptyMap()
                 : counterService.batchIsFaved(currentUserId, postIds);
+        Map<Long, Long> commentCounts = commentService.countActiveByPostIds(postIds);
 
         List<FeedItemResponse> items = new ArrayList<>(hits.size());
         for (Hit<Map<String, Object>> hit : hits) {
@@ -61,7 +68,8 @@ public class SearchHitMapper {
             FeedItemResponse item = FeedItemResponse.fromEsHit(
                     source,
                     postId != null && Boolean.TRUE.equals(liked.get(postId)),
-                    postId != null && Boolean.TRUE.equals(faved.get(postId)));
+                    postId != null && Boolean.TRUE.equals(faved.get(postId)))
+                    .withCommentCount(postId == null ? 0L : commentCounts.getOrDefault(postId, 0L));
             if (snippet != null && !snippet.isBlank()) item = item.withDescription(snippet);
             items.add(item.withTop(null));
         }

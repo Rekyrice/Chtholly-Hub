@@ -1,7 +1,9 @@
 package com.chtholly.seed.contentpack;
 
 import com.chtholly.counter.service.UserCounterService;
+import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.service.impl.PostCacheInvalidator;
+import com.chtholly.relation.service.impl.RelationCacheInvalidator;
 import com.chtholly.search.index.SearchIndexService;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.WriteResult;
 import com.chtholly.seed.contentpack.ContentPackMediaPublisher.PublishedContent;
@@ -48,6 +50,8 @@ public final class ContentPackImportService {
     private final ContentPackDatabaseWriter databaseWriter;
     private final ContentPackReactionApplier reactionApplier;
     private final UserCounterService userCounterService;
+    private final RelationCacheInvalidator relationCacheInvalidator;
+    private final FeedTimelineService feedTimelineService;
     private final PostCacheInvalidator cacheInvalidator;
     private final SearchIndexService searchIndexService;
     private final RedissonClient redisson;
@@ -64,11 +68,14 @@ public final class ContentPackImportService {
             ContentPackDatabaseWriter databaseWriter,
             ContentPackReactionApplier reactionApplier,
             UserCounterService userCounterService,
+            RelationCacheInvalidator relationCacheInvalidator,
+            FeedTimelineService feedTimelineService,
             PostCacheInvalidator cacheInvalidator,
             SearchIndexService searchIndexService,
             RedissonClient redisson) {
         this(loader, validator, qualityGate, snapshotWriter, mediaPublisher, databaseWriter,
-                reactionApplier, userCounterService, cacheInvalidator, searchIndexService, redisson, Clock.systemUTC());
+                reactionApplier, userCounterService, relationCacheInvalidator,
+                feedTimelineService, cacheInvalidator, searchIndexService, redisson, Clock.systemUTC());
     }
 
     ContentPackImportService(
@@ -80,6 +87,8 @@ public final class ContentPackImportService {
             ContentPackDatabaseWriter databaseWriter,
             ContentPackReactionApplier reactionApplier,
             UserCounterService userCounterService,
+            RelationCacheInvalidator relationCacheInvalidator,
+            FeedTimelineService feedTimelineService,
             PostCacheInvalidator cacheInvalidator,
             SearchIndexService searchIndexService,
             RedissonClient redisson,
@@ -92,6 +101,9 @@ public final class ContentPackImportService {
         this.databaseWriter = Objects.requireNonNull(databaseWriter, "databaseWriter");
         this.reactionApplier = Objects.requireNonNull(reactionApplier, "reactionApplier");
         this.userCounterService = Objects.requireNonNull(userCounterService, "userCounterService");
+        this.relationCacheInvalidator = Objects.requireNonNull(
+                relationCacheInvalidator, "relationCacheInvalidator");
+        this.feedTimelineService = Objects.requireNonNull(feedTimelineService, "feedTimelineService");
         this.cacheInvalidator = Objects.requireNonNull(cacheInvalidator, "cacheInvalidator");
         this.searchIndexService = Objects.requireNonNull(searchIndexService, "searchIndexService");
         this.redisson = Objects.requireNonNull(redisson, "redisson");
@@ -248,6 +260,22 @@ public final class ContentPackImportService {
             log.error("Content-pack reaction reconciliation failed", exception);
         }
 
+        try {
+            relationCacheInvalidator.invalidateUsers(write.affectedFollowUserIds());
+        } catch (RuntimeException exception) {
+            runtimeFailure = true;
+            log.error("Seed relation cache invalidation failed", exception);
+        }
+        for (var removed : write.removedFollowPairs()) {
+            try {
+                feedTimelineService.removeAuthorFromTimeline(removed.fromUserId(), removed.toUserId());
+            } catch (RuntimeException exception) {
+                runtimeFailure = true;
+                log.error("Seed removed-follow timeline cleanup failed from={} to={}",
+                        removed.fromUserId(), removed.toUserId(), exception);
+            }
+        }
+
         for (var created : write.createdPostCountsByAuthor().entrySet()) {
             try {
                 userCounterService.incrementPosts(created.getKey(), created.getValue());
@@ -258,6 +286,8 @@ public final class ContentPackImportService {
         }
         LinkedHashSet<Long> authorIdsToRebuild = new LinkedHashSet<>(write.identities().accountIds().values());
         authorIdsToRebuild.addAll(write.retiredAuthorIds());
+        authorIdsToRebuild.addAll(write.affectedFollowUserIds());
+        authorIdsToRebuild.addAll(write.affectedReactionPostAuthorIds());
         for (long authorId : authorIdsToRebuild) {
             try {
                 // increment 只记录首次创建；随后按 DB 事实重建，使 partial 重跑不会重复累加。
@@ -268,7 +298,9 @@ public final class ContentPackImportService {
             }
         }
 
-        List<Long> attemptedPostIds = write.postIds();
+        LinkedHashSet<Long> activePostIds = new LinkedHashSet<>(write.postIds());
+        activePostIds.addAll(write.identities().externalPostIdsBySlug().values());
+        List<Long> attemptedPostIds = List.copyOf(activePostIds);
         LinkedHashSet<Long> postIdsToInvalidate = new LinkedHashSet<>(attemptedPostIds);
         postIdsToInvalidate.addAll(write.retiredPostIds());
         for (long postId : postIdsToInvalidate) {

@@ -1,5 +1,6 @@
 package com.chtholly.seed.contentpack;
 
+import com.chtholly.config.SiteProperties;
 import com.chtholly.seed.contentpack.model.ContentPack;
 import com.chtholly.seed.contentpack.model.ContentPackManifest;
 import com.chtholly.seed.contentpack.model.SeedAccountDefinition;
@@ -27,6 +28,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -39,7 +41,29 @@ public final class ContentPackValidator {
     private static final Pattern HANDLE_PATTERN = Pattern.compile("[A-Za-z0-9_]{3,64}");
     private static final Set<String> STAGES = Set.of("review", "complete");
     private static final Set<String> REACTION_TYPES = Set.of("like", "fav");
+    private static final int MAX_COMMENTS_PER_TARGET = 5;
     private static final Pattern URI_SCHEME_PATTERN = Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):");
+    private static final String DEFAULT_SITE_OWNER_HANDLE = "Rekyrice";
+
+    private final String siteOwnerHandle;
+
+    /** Creates the application validator with the configured site-owner identity. */
+    @Autowired
+    public ContentPackValidator(SiteProperties siteProperties) {
+        this(siteProperties.ownerHandle());
+    }
+
+    /** Creates a validator with the project default owner handle for isolated tests. */
+    public ContentPackValidator() {
+        this(DEFAULT_SITE_OWNER_HANDLE);
+    }
+
+    ContentPackValidator(String siteOwnerHandle) {
+        if (siteOwnerHandle == null || siteOwnerHandle.isBlank()) {
+            throw new IllegalArgumentException("site owner handle must not be blank");
+        }
+        this.siteOwnerHandle = siteOwnerHandle;
+    }
 
     /**
      * Collects every structural error and rejects the pack once with deterministic diagnostics.
@@ -94,6 +118,36 @@ public final class ContentPackValidator {
         if (!pack.retirements().isEmpty() && !"complete".equals(manifest.stage())) {
             errors.add("retirements require complete stage");
         }
+
+        boolean declarationsRequired = isContentV3(pack);
+        long rootComments = pack.comments().stream()
+                .filter(comment -> isBlank(comment.parentSeedKey()))
+                .count();
+        long replies = pack.comments().size() - rootComments;
+        long likes = pack.reactions().stream()
+                .filter(reaction -> "like".equals(reaction.type()))
+                .count();
+        long favorites = pack.reactions().stream()
+                .filter(reaction -> "fav".equals(reaction.type()))
+                .count();
+        Set<String> postSeedKeys = keys(pack.posts(), SeedPostDefinition::seedKey);
+        long commentedTargets = pack.comments().stream()
+                .map(comment -> validCommentTarget(comment, postSeedKeys))
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .count();
+        validateExpectedCount(manifest.expectedComments(), pack.comments().size(), "comment",
+                declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedRootComments(), rootComments, "root comment",
+                declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedReplies(), replies, "reply", declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedLikes(), likes, "like", declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedFavorites(), favorites, "favorite", declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedFollows(), pack.follows().size(), "follow",
+                declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedViews(), pack.views().size(), "view", declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedCommentedTargets(), commentedTargets, "commented target",
+                declarationsRequired, errors);
 
         Map<String, Integer> actualCategories = new LinkedHashMap<>();
         for (SeedPostDefinition post : pack.posts()) {
@@ -329,7 +383,12 @@ public final class ContentPackValidator {
         Map<String, SeedPostDefinition> posts = index(pack.posts(), SeedPostDefinition::seedKey);
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
         Set<String> comments = keys(pack.comments(), SeedCommentDefinition::seedKey);
+        Map<String, Integer> commentsByTarget = new LinkedHashMap<>();
         for (SeedCommentDefinition comment : pack.comments()) {
+            String target = validCommentTarget(comment, posts.keySet());
+            if (target != null) {
+                commentsByTarget.merge(target, 1, Integer::sum);
+            }
             boolean validReference = hasExactlyOnePostReference(comment.postSeedKey(), comment.postSlug());
             if (!validReference) {
                 errors.add("interaction post reference must use exactly one of postSeedKey or postSlug: "
@@ -342,12 +401,18 @@ public final class ContentPackValidator {
             if (!accounts.contains(comment.authorSeedKey())) {
                 errors.add("missing comment author: " + comment.seedKey() + " -> " + comment.authorSeedKey());
             }
-            if (comment.parentSeedKey() != null && !comments.contains(comment.parentSeedKey())) {
+            if (!isBlank(comment.parentSeedKey()) && !comments.contains(comment.parentSeedKey())) {
                 errors.add("missing parent comment: " + comment.seedKey() + " -> " + comment.parentSeedKey());
             }
             requireTimestamp(comment.createdAt(), "comment " + comment.seedKey(), errors);
             if (post != null && doesNotFollow(comment.createdAt(), post.publishTime())) {
                 errors.add("interaction does not follow publication: " + comment.seedKey());
+            }
+        }
+        for (Map.Entry<String, Integer> entry : commentsByTarget.entrySet()) {
+            if (entry.getValue() > MAX_COMMENTS_PER_TARGET) {
+                errors.add("comment target exceeds maximum of " + MAX_COMMENTS_PER_TARGET + ": "
+                        + entry.getKey() + " -> " + entry.getValue());
             }
         }
         validateCommentTopology(pack.comments(), errors);
@@ -378,6 +443,9 @@ public final class ContentPackValidator {
                     postReference(parent.postSeedKey(), parent.postSlug()))) {
                 errors.add("comment parent post mismatch: " + comment.seedKey() + " -> " + parent.seedKey());
             }
+            if (!isBlank(parent.parentSeedKey())) {
+                errors.add("nested reply: " + comment.seedKey() + " -> " + parent.seedKey());
+            }
             if (comment.createdAt() != null && parent.createdAt() != null
                     && comment.createdAt().isBefore(parent.createdAt())) {
                 errors.add("comment precedes parent: " + comment.seedKey() + " -> " + parent.seedKey());
@@ -386,7 +454,7 @@ public final class ContentPackValidator {
         for (SeedCommentDefinition start : comments) {
             Set<String> path = new HashSet<>();
             SeedCommentDefinition current = start;
-            while (current != null && current.parentSeedKey() != null) {
+            while (current != null && !isBlank(current.parentSeedKey())) {
                 if (!path.add(current.seedKey())) {
                     errors.add("comment parent cycle: " + start.seedKey());
                     break;
@@ -398,6 +466,13 @@ public final class ContentPackValidator {
 
     private void validateReactions(ContentPack pack, List<String> errors) {
         addDuplicates(pack.reactions(), SeedReactionDefinition::seedKey, "duplicate reaction seedKey: ", errors);
+        addStructuredDuplicates(pack.reactions(),
+                reaction -> new ReactionKey(
+                        reaction.accountSeedKey(),
+                        postReference(reaction.postSeedKey(), reaction.postSlug()),
+                        reaction.type()),
+                key -> key.accountSeedKey() + "|" + key.target() + "|" + key.type(),
+                "duplicate reaction triple: ", errors);
         Set<String> posts = keys(pack.posts(), SeedPostDefinition::seedKey);
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
         for (SeedReactionDefinition reaction : pack.reactions()) {
@@ -419,16 +494,42 @@ public final class ContentPackValidator {
 
     private void validateFollows(ContentPack pack, List<String> errors) {
         addDuplicates(pack.follows(), SeedFollowDefinition::seedKey, "duplicate follow seedKey: ", errors);
+        addStructuredDuplicates(pack.follows(),
+                follow -> new FollowEdgeKey(
+                        follow.fromAccountSeedKey(),
+                        isBlank(follow.toAccountSeedKey()) ? null : follow.toAccountSeedKey(),
+                        isBlank(follow.toHandle()) ? null : follow.toHandle().toLowerCase(Locale.ROOT)),
+                key -> key.fromAccountSeedKey() + "|" + (key.toAccountSeedKey() != null
+                        ? key.toAccountSeedKey() : "handle:" + key.toHandle()),
+                "duplicate follow edge: ", errors);
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
+        Map<String, SeedAccountDefinition> accountsByKey = new LinkedHashMap<>();
+        for (SeedAccountDefinition account : pack.accounts()) {
+            accountsByKey.put(account.seedKey(), account);
+        }
         for (SeedFollowDefinition follow : pack.follows()) {
-            if (follow.fromAccountSeedKey() != null && follow.fromAccountSeedKey().equals(follow.toAccountSeedKey())) {
+            boolean hasAccountTarget = !isBlank(follow.toAccountSeedKey());
+            boolean hasHandleTarget = !isBlank(follow.toHandle());
+            if (hasAccountTarget == hasHandleTarget) {
+                errors.add("follow target must set exactly one of account seedKey or handle: " + follow.seedKey());
+            }
+            if (follow.fromAccountSeedKey() != null && hasAccountTarget
+                    && follow.fromAccountSeedKey().equals(follow.toAccountSeedKey())) {
                 errors.add("self-follow: " + follow.seedKey());
             }
             if (!accounts.contains(follow.fromAccountSeedKey())) {
                 errors.add("missing follow source: " + follow.seedKey() + " -> " + follow.fromAccountSeedKey());
             }
-            if (!accounts.contains(follow.toAccountSeedKey())) {
+            SeedAccountDefinition source = accountsByKey.get(follow.fromAccountSeedKey());
+            if (source != null && source.handle() != null
+                    && source.handle().equalsIgnoreCase(siteOwnerHandle)) {
+                errors.add("site owner cannot be follow source: " + follow.seedKey());
+            }
+            if (hasAccountTarget && !accounts.contains(follow.toAccountSeedKey())) {
                 errors.add("missing follow target: " + follow.seedKey() + " -> " + follow.toAccountSeedKey());
+            }
+            if (hasHandleTarget && !follow.toHandle().equalsIgnoreCase(siteOwnerHandle)) {
+                errors.add("follow handle is not the configured site owner: " + follow.seedKey());
             }
             requireTimestamp(follow.createdAt(), "follow " + follow.seedKey(), errors);
         }
@@ -486,6 +587,22 @@ public final class ContentPackValidator {
         }
     }
 
+    private <T, K> void addStructuredDuplicates(
+            List<T> values,
+            Function<T, K> keyExtractor,
+            Function<K, String> diagnosticFormatter,
+            String prefix,
+            List<String> errors) {
+        Set<K> seen = new HashSet<>();
+        Set<K> reported = new HashSet<>();
+        for (T value : values) {
+            K key = keyExtractor.apply(value);
+            if (!seen.add(key) && reported.add(key)) {
+                errors.add(prefix + diagnosticFormatter.apply(key));
+            }
+        }
+    }
+
     private String foldDatabaseIdentifier(String value) {
         return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
@@ -514,6 +631,19 @@ public final class ContentPackValidator {
         }
     }
 
+    private void validateExpectedCount(
+            Integer expected, long actual, String label, boolean required, List<String> errors) {
+        if (expected == null) {
+            if (required) {
+                errors.add("missing expected " + label + " count");
+            }
+            return;
+        }
+        if (expected.longValue() != actual) {
+            errors.add("expected " + label + " count: " + expected + ", actual: " + actual);
+        }
+    }
+
     private boolean doesNotFollow(Instant interaction, Instant publication) {
         return interaction != null && publication != null && !interaction.isAfter(publication);
     }
@@ -529,8 +659,25 @@ public final class ContentPackValidator {
         return isBlank(postSlug) ? null : "slug:" + postSlug;
     }
 
+    private static String validCommentTarget(
+            SeedCommentDefinition comment, Set<String> declaredPostSeedKeys) {
+        if (!hasExactlyOnePostReference(comment.postSeedKey(), comment.postSlug())) {
+            return null;
+        }
+        if (!isBlank(comment.postSeedKey()) && !declaredPostSeedKeys.contains(comment.postSeedKey())) {
+            return null;
+        }
+        return postReference(comment.postSeedKey(), comment.postSlug());
+    }
+
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private record ReactionKey(String accountSeedKey, String target, String type) {
+    }
+
+    private record FollowEdgeKey(String fromAccountSeedKey, String toAccountSeedKey, String toHandle) {
     }
 
     /**

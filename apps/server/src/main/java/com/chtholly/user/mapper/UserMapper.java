@@ -34,6 +34,8 @@ public interface UserMapper {
 
     List<User> listByIds(@Param("ids") List<Long> ids);
 
+    List<Long> listExistingIds(@Param("ids") List<Long> ids);
+
     List<User> listPublicByIds(@Param("ids") List<Long> ids);
 
     int updateRole(@Param("id") Long id, @Param("role") String role);

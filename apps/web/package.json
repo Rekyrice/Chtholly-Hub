@@ -9,7 +9,7 @@
     "lint": "eslint",
     "seed:fetch-source": "node scripts/seed/fetch-source-asset.mjs",
     "test": "vitest",
-    "test:run": "vitest run && node --test scripts/seed/fetch-source-asset.test.mjs scripts/seed/prepare-content-media.test.mjs"
+    "test:run": "vitest run && node --test scripts/seed/fetch-source-asset.test.mjs scripts/seed/prepare-content-media.test.mjs ../../scripts/seed-content/render-community-interaction-review.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

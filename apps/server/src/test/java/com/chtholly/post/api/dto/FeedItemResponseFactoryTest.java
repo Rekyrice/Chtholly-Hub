@@ -1,6 +1,7 @@
 package com.chtholly.post.api.dto;
 
 import com.chtholly.post.model.PostFeedRow;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -10,6 +11,25 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class FeedItemResponseFactoryTest {
+
+    @Test
+    void oldCachedJsonWithoutCommentCountStillDeserializes() throws Exception {
+        String json = """
+                {
+                  "id": "7",
+                  "slug": "old-cache",
+                  "title": "Old cache",
+                  "tags": [],
+                  "likeCount": 2,
+                  "favoriteCount": 1
+                }
+                """;
+
+        FeedItemResponse item = new ObjectMapper().readValue(json, FeedItemResponse.class);
+
+        assertThat(item.commentCount()).isNull();
+        assertThat(item.withCommentCount(3L).commentCount()).isEqualTo(3L);
+    }
 
     @Test
     void fromRowMapsDatabaseJsonAndInteractionState() {
@@ -32,15 +52,19 @@ class FeedItemResponseFactoryTest {
                 row,
                 new FeedItemResponse.CounterSnapshot(7L, 3L),
                 true,
-                false);
+                false)
+                .withCommentCount(4L)
+                .withAuthor("7", "sakura-reader", "/avatar.jpg", "Sakura", "[\"reader\"]")
+                .withCounts(8L, 5L);
 
         assertThat(item.id()).isEqualTo("42");
         assertThat(item.tags()).containsExactly("anime", "daily");
         assertThat(item.coverImage()).isEqualTo("/cover.jpg");
         assertThat(item.authorId()).isEqualTo("7");
         assertThat(item.authorHandle()).isEqualTo("sakura-reader");
-        assertThat(item.likeCount()).isEqualTo(7L);
-        assertThat(item.favoriteCount()).isEqualTo(3L);
+        assertThat(item.likeCount()).isEqualTo(8L);
+        assertThat(item.favoriteCount()).isEqualTo(5L);
+        assertThat(item.commentCount()).isEqualTo(4L);
         assertThat(item.liked()).isTrue();
         assertThat(item.faved()).isFalse();
         assertThat(item.isTop()).isTrue();
@@ -66,8 +90,10 @@ class FeedItemResponseFactoryTest {
                 Map.entry("favorite_count", 5L));
 
         FeedItemResponse item = FeedItemResponse.fromEsHit(source, true, true)
+                .withCommentCount(6L)
                 .withDescription("Highlighted description")
-                .withoutUserFlags();
+                .withoutUserFlags()
+                .withTop(false);
 
         assertThat(item.id()).isEqualTo("99");
         assertThat(item.coverImage()).isEqualTo("/es-cover.jpg");
@@ -76,6 +102,7 @@ class FeedItemResponseFactoryTest {
         assertThat(item.description()).isEqualTo("Highlighted description");
         assertThat(item.likeCount()).isEqualTo(11L);
         assertThat(item.favoriteCount()).isEqualTo(5L);
+        assertThat(item.commentCount()).isEqualTo(6L);
         assertThat(item.liked()).isNull();
         assertThat(item.faved()).isNull();
         assertThat(item.publishTime()).isEqualTo(Instant.parse("2026-07-12T08:30:00Z"));

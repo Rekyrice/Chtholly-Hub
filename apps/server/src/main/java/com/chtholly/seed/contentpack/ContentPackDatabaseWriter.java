@@ -100,20 +100,27 @@ public class ContentPackDatabaseWriter {
         }
 
         Map<String, Long> externalPostIdsBySlug = resolveExternalPostIds(pack);
+        Long externalFollowTargetId = resolveExternalFollowTargetId(pack);
 
         ContentPackIdentityResolver resolver = new ContentPackIdentityResolver(namespace, mapper, idGenerator);
         Map<String, Long> accountIds = writeAccounts(pack, published, namespace, version, resolver);
         PostWriteState posts = writePosts(pack, published, accountIds, namespace, version, resolver);
         RetirementWriteState retirements = retirePosts(pack, Set.copyOf(posts.postIds().values()));
         writeComments(pack, accountIds, posts.postIds(), externalPostIdsBySlug, namespace, version);
-        writeFollows(pack, accountIds, namespace, version);
+        FollowWriteState follows = writeFollows(
+                pack, accountIds, externalFollowTargetId, namespace, version);
+        List<Long> affectedReactionPostAuthorIds = resolveAffectedReactionPostAuthorIds(
+                pack, accountIds, externalPostIdsBySlug);
         return new WriteResult(
                 new ResolvedIdentities(namespace, accountIds, posts.postIds(), externalPostIdsBySlug),
                 posts.changedPostIds(),
                 posts.createdPostCountsByAuthor(),
                 retirements.retiredPostIds(),
                 retirements.retiredAuthorIds(),
-                retirements.unmatchedSlugs());
+                retirements.unmatchedSlugs(),
+                follows.affectedUserIds(),
+                affectedReactionPostAuthorIds,
+                follows.removedPairs());
     }
 
     /**
@@ -124,6 +131,29 @@ public class ContentPackDatabaseWriter {
     public void validateExternalPostReferences(ContentPack pack) {
         Objects.requireNonNull(pack, "pack");
         resolveExternalPostIds(pack);
+        resolveExternalFollowTargetId(pack);
+    }
+
+    private Long resolveExternalFollowTargetId(ContentPack pack) {
+        List<SeedFollowDefinition> externalFollows = pack.follows().stream()
+                .filter(follow -> follow.toHandle() != null && !follow.toHandle().isBlank())
+                .toList();
+        if (externalFollows.isEmpty()) {
+            return null;
+        }
+        long ownerUserId = requireSiteOwnerUserId();
+        String configuredHandle = requireText(siteProperties.ownerHandle(), "site owner handle");
+        String persistedHandle = mapper.findUserHandleById(ownerUserId);
+        if (persistedHandle == null || !persistedHandle.equalsIgnoreCase(configuredHandle)) {
+            throw new IllegalStateException("configured site owner ID does not match the persisted owner handle");
+        }
+        for (SeedFollowDefinition follow : externalFollows) {
+            if (!follow.toHandle().equalsIgnoreCase(configuredHandle)) {
+                throw new IllegalArgumentException(
+                        "external follow target is not the configured site owner: " + follow.seedKey());
+            }
+        }
+        return ownerUserId;
     }
 
     private void requireValidReservedIdentities(ContentPack pack) {
@@ -344,12 +374,39 @@ public class ContentPackDatabaseWriter {
         mapper.deactivateSeedCommentsExcept(namespace, Set.copyOf(declaredKeys));
     }
 
-    private void writeFollows(
-            ContentPack pack, Map<String, Long> accountIds, String namespace, String version) {
+    private FollowWriteState writeFollows(
+            ContentPack pack,
+            Map<String, Long> accountIds,
+            Long externalFollowTargetId,
+            String namespace,
+            String version) {
+        LinkedHashSet<Long> affectedUserIds = new LinkedHashSet<>();
+        List<FollowPair> existingManagedPairs = mapper.findManagedFollowPairs(namespace);
+        if (existingManagedPairs == null) {
+            throw new IllegalStateException("ContentPackMapper returned null managed follow pairs");
+        }
+        for (FollowPair pair : existingManagedPairs) {
+            if (pair == null || pair.fromUserId() <= 0L || pair.toUserId() <= 0L) {
+                throw new IllegalStateException("ContentPackMapper returned an invalid managed follow pair");
+            }
+            affectedUserIds.add(pair.fromUserId());
+            affectedUserIds.add(pair.toUserId());
+        }
         List<FollowPair> declaredPairs = new ArrayList<>();
         for (SeedFollowDefinition follow : pack.follows()) {
             long fromId = requireIdentity(accountIds, follow.fromAccountSeedKey(), "follow source");
-            long toId = requireIdentity(accountIds, follow.toAccountSeedKey(), "follow target");
+            boolean hasAccountTarget = follow.toAccountSeedKey() != null && !follow.toAccountSeedKey().isBlank();
+            boolean hasHandleTarget = follow.toHandle() != null && !follow.toHandle().isBlank();
+            if (hasAccountTarget == hasHandleTarget) {
+                throw new IllegalArgumentException(
+                        "follow target must set exactly one of account seedKey or handle: " + follow.seedKey());
+            }
+            long toId = hasAccountTarget
+                    ? requireIdentity(accountIds, follow.toAccountSeedKey(), "follow target")
+                    : requireExternalFollowTargetId(externalFollowTargetId, follow.seedKey());
+            if (fromId == toId) {
+                throw new IllegalArgumentException("self-follow: " + follow.seedKey());
+            }
             SeedContentIdentity identity = mapper.findIdentity(namespace, FOLLOW, follow.seedKey());
             if (identity != null) {
                 requireManagedIdentity(identity, namespace, FOLLOW, follow.seedKey());
@@ -388,9 +445,23 @@ public class ContentPackDatabaseWriter {
                     sha256(json(List.of(fromId, toId, follow.createdAt().toString()))),
                     json(Map.of("followerId", followerId)));
             declaredPairs.add(new FollowPair(fromId, toId));
+            affectedUserIds.add(fromId);
+            affectedUserIds.add(toId);
         }
         mapper.deactivateSeedFollowingExcept(namespace, List.copyOf(declaredPairs));
         mapper.deactivateSeedFollowerExcept(namespace, List.copyOf(declaredPairs));
+        LinkedHashSet<FollowPair> declaredPairSet = new LinkedHashSet<>(declaredPairs);
+        List<FollowPair> removedPairs = existingManagedPairs.stream()
+                .filter(pair -> !declaredPairSet.contains(pair))
+                .toList();
+        return new FollowWriteState(List.copyOf(affectedUserIds), removedPairs);
+    }
+
+    private static long requireExternalFollowTargetId(Long targetId, String seedKey) {
+        if (targetId == null || targetId <= 0L) {
+            throw new IllegalStateException("unresolved site-owner follow target: " + seedKey);
+        }
+        return targetId;
     }
 
     static String contentHash(SeedPostDefinition post, long creatorId, PublishedContent published) {
@@ -507,6 +578,21 @@ public class ContentPackDatabaseWriter {
         }
     }
 
+    private List<Long> resolveAffectedReactionPostAuthorIds(
+            ContentPack pack,
+            Map<String, Long> accountIds,
+            Map<String, Long> externalPostIdsBySlug) {
+        Set<Long> authorIds = new LinkedHashSet<>();
+        for (SeedPostDefinition post : pack.posts()) {
+            authorIds.add(resolvePostAuthorId(accountIds, post.authorSeedKey()));
+        }
+        if (!externalPostIdsBySlug.isEmpty()) {
+            // 外部 slug 仅允许解析到站长公开文章，因此其反应事实重建必须同步重建站长获赞/收藏计数。
+            authorIds.add(requireSiteOwnerUserId());
+        }
+        return List.copyOf(authorIds);
+    }
+
     private static long resolveInteractionPostId(
             String postSeedKey,
             String postSlug,
@@ -590,6 +676,14 @@ public class ContentPackDatabaseWriter {
     public record FollowPair(long fromUserId, long toUserId) {
     }
 
+    /** Runtime reconciliation inputs produced by the transactional relation writer. */
+    private record FollowWriteState(List<Long> affectedUserIds, List<FollowPair> removedPairs) {
+        private FollowWriteState {
+            affectedUserIds = List.copyOf(affectedUserIds);
+            removedPairs = List.copyOf(removedPairs);
+        }
+    }
+
     /** Stable account and post IDs consumed by post-commit runtime-state reconciliation. */
     public record ResolvedIdentities(
             String namespace,
@@ -616,7 +710,10 @@ public class ContentPackDatabaseWriter {
             Map<Long, Integer> createdPostCountsByAuthor,
             List<Long> retiredPostIds,
             List<Long> retiredAuthorIds,
-            List<String> unmatchedRetirementSlugs) {
+            List<String> unmatchedRetirementSlugs,
+            List<Long> affectedFollowUserIds,
+            List<Long> affectedReactionPostAuthorIds,
+            List<FollowPair> removedFollowPairs) {
         public WriteResult {
             changedPostIds = List.copyOf(changedPostIds);
             createdPostCountsByAuthor = Collections.unmodifiableMap(
@@ -624,6 +721,48 @@ public class ContentPackDatabaseWriter {
             retiredPostIds = List.copyOf(retiredPostIds);
             retiredAuthorIds = List.copyOf(retiredAuthorIds);
             unmatchedRetirementSlugs = List.copyOf(unmatchedRetirementSlugs);
+            affectedFollowUserIds = List.copyOf(affectedFollowUserIds);
+            affectedReactionPostAuthorIds = List.copyOf(affectedReactionPostAuthorIds);
+            removedFollowPairs = List.copyOf(removedFollowPairs);
+        }
+
+        /** Creates a result produced before removed-follow timeline reconciliation was introduced. */
+        public WriteResult(
+                ResolvedIdentities identities,
+                List<Long> changedPostIds,
+                Map<Long, Integer> createdPostCountsByAuthor,
+                List<Long> retiredPostIds,
+                List<Long> retiredAuthorIds,
+                List<String> unmatchedRetirementSlugs,
+                List<Long> affectedFollowUserIds,
+                List<Long> affectedReactionPostAuthorIds) {
+            this(identities, changedPostIds, createdPostCountsByAuthor, retiredPostIds, retiredAuthorIds,
+                    unmatchedRetirementSlugs, affectedFollowUserIds, affectedReactionPostAuthorIds, List.of());
+        }
+
+        /** Creates a result produced before explicit reaction-author reporting was introduced. */
+        public WriteResult(
+                ResolvedIdentities identities,
+                List<Long> changedPostIds,
+                Map<Long, Integer> createdPostCountsByAuthor,
+                List<Long> retiredPostIds,
+                List<Long> retiredAuthorIds,
+                List<String> unmatchedRetirementSlugs,
+                List<Long> affectedFollowUserIds) {
+            this(identities, changedPostIds, createdPostCountsByAuthor, retiredPostIds, retiredAuthorIds,
+                    unmatchedRetirementSlugs, affectedFollowUserIds, List.of(), List.of());
+        }
+
+        /** Creates the pre-external-follow result shape. */
+        public WriteResult(
+                ResolvedIdentities identities,
+                List<Long> changedPostIds,
+                Map<Long, Integer> createdPostCountsByAuthor,
+                List<Long> retiredPostIds,
+                List<Long> retiredAuthorIds,
+                List<String> unmatchedRetirementSlugs) {
+            this(identities, changedPostIds, createdPostCountsByAuthor, retiredPostIds, retiredAuthorIds,
+                    unmatchedRetirementSlugs, List.of(), List.of(), List.of());
         }
 
         /** Creates a legacy write result without retirement outcomes. */
@@ -631,7 +770,8 @@ public class ContentPackDatabaseWriter {
                 ResolvedIdentities identities,
                 List<Long> changedPostIds,
                 Map<Long, Integer> createdPostCountsByAuthor) {
-            this(identities, changedPostIds, createdPostCountsByAuthor, List.of(), List.of(), List.of());
+            this(identities, changedPostIds, createdPostCountsByAuthor,
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         }
 
         /**

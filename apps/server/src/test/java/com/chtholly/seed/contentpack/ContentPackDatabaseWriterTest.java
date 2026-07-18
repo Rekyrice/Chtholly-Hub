@@ -4,6 +4,7 @@ import com.chtholly.config.SiteProperties;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.SeedCommentRow;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.SeedFollowRow;
+import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.FollowPair;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.SeedPostRow;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.SeedUserRow;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.WriteResult;
@@ -22,6 +23,7 @@ import com.chtholly.seed.contentpack.model.SeedContentIdentity;
 import com.chtholly.seed.contentpack.model.SeedFollowDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostDefinition;
 import com.chtholly.seed.contentpack.model.SeedPostRetirementDefinition;
+import com.chtholly.seed.contentpack.model.SeedReactionDefinition;
 import com.chtholly.tag.service.TagService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -163,6 +165,25 @@ class ContentPackDatabaseWriterTest {
         assertThat(result.identities().accountIds()).isEmpty();
         verify(mapper, never()).insertSeedUser(any());
         verify(mapper, never()).updateSeedUserById(any());
+    }
+
+    @Test
+    void givenPackPostAndExternalReactionWithoutFollow_whenWrite_thenReportsEveryAffectedPostAuthor() {
+        stubAccount("author", 42L);
+        when(mapper.findIdentity(NAMESPACE, "POST", "post-one")).thenReturn(null);
+        when(mapper.findLegacyPostId("legacy-post-one")).thenReturn(null);
+        when(idGenerator.nextId()).thenReturn(101L);
+        when(mapper.findPostStateById(101L)).thenReturn(null);
+        when(mapper.findSiteOwnerPublicPostIdBySlug("owner-note", 1L)).thenReturn(808L);
+        SeedReactionDefinition externalReaction = new SeedReactionDefinition(
+                "owner-like", null, "owner-note", "author", "like");
+        ContentPack pack = packWithReactions(
+                List.of(account("author")), List.of(post("post-one", "author")), List.of(externalReaction));
+
+        WriteResult result = writer.write(pack, published("post-one"));
+
+        assertThat(result.affectedFollowUserIds()).isEmpty();
+        assertThat(result.affectedReactionPostAuthorIds()).containsExactly(42L, 1L);
     }
 
     @Test
@@ -354,6 +375,38 @@ class ContentPackDatabaseWriterTest {
         verify(mapper).upsertFollower(new SeedFollowRow(802L, 42L, 43L, follow.createdAt()));
         verify(mapper).deactivateSeedFollowingExcept(eq(NAMESPACE), anyList());
         verify(mapper).deactivateSeedFollowerExcept(eq(NAMESPACE), anyList());
+    }
+
+    @Test
+    void givenSiteOwnerFollow_whenWrite_thenResolvesConfiguredUserAndReturnsAllAffectedEndpoints() {
+        stubAccount("author", 42L);
+        when(mapper.findUserHandleById(1L)).thenReturn("Rekyrice");
+        when(mapper.findManagedFollowPairs(NAMESPACE)).thenReturn(List.of(new FollowPair(43L, 44L)));
+        when(mapper.findIdentity(NAMESPACE, "FOLLOW", "author-owner")).thenReturn(null);
+        when(mapper.findFollowState(42L, 1L)).thenReturn(new FollowState(null, null));
+        when(idGenerator.nextId()).thenReturn(801L, 802L);
+        SeedFollowDefinition follow = new SeedFollowDefinition(
+                "author-owner", "author", null, "rekyrice", Instant.parse("2026-06-03T00:00:00Z"));
+
+        WriteResult result = writer.write(
+                pack(List.of(account("author")), List.of(), List.of(), List.of(follow)), emptyPublished());
+
+        verify(mapper).upsertFollowing(new SeedFollowRow(801L, 42L, 1L, follow.createdAt()));
+        verify(mapper).upsertFollower(new SeedFollowRow(802L, 42L, 1L, follow.createdAt()));
+        assertThat(result.affectedFollowUserIds()).containsExactlyInAnyOrder(1L, 42L, 43L, 44L);
+        assertThat(result.removedFollowPairs()).containsExactly(new FollowPair(43L, 44L));
+    }
+
+    @Test
+    void givenConfiguredOwnerIdAndDatabaseHandleDisagree_whenValidatingThenFailsClosed() {
+        when(mapper.findUserHandleById(1L)).thenReturn("another-user");
+        SeedFollowDefinition follow = new SeedFollowDefinition(
+                "author-owner", "author", null, "Rekyrice", Instant.parse("2026-06-03T00:00:00Z"));
+        ContentPack pack = pack(List.of(account("author")), List.of(), List.of(), List.of(follow));
+
+        assertThatThrownBy(() -> writer.validateExternalPostReferences(pack))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("owner handle");
     }
 
     @Test
@@ -637,6 +690,16 @@ class ContentPackDatabaseWriterTest {
                 new ContentPackManifest(
                         VERSION, NAMESPACE, "complete", accounts.size(), posts.size(), retirements.size(), Map.of()),
                 accounts, Map.of(), Map.of(), posts, retirements, comments, follows, List.of(), List.of());
+    }
+
+    private ContentPack packWithReactions(
+            List<SeedAccountDefinition> accounts,
+            List<SeedPostDefinition> posts,
+            List<SeedReactionDefinition> reactions) {
+        return new ContentPack(Path.of("."),
+                new ContentPackManifest(
+                        VERSION, NAMESPACE, "complete", accounts.size(), posts.size(), 0, Map.of()),
+                accounts, Map.of(), Map.of(), posts, List.of(), List.of(), List.of(), reactions, List.of());
     }
 
     private List<SeedPostRetirementDefinition> retirements(String... slugs) {

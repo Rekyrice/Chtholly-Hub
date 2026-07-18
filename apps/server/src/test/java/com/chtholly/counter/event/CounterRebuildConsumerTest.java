@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class CounterRebuildConsumerTest {
@@ -37,7 +38,8 @@ class CounterRebuildConsumerTest {
 
     @Test
     void sameEventIdDuringReplayRebuildsOnlyOnce() {
-        when(redis.execute(any(DefaultRedisScript.class), any(List.class), any(), any(), any(), any()))
+        when(redis.execute(any(DefaultRedisScript.class), any(List.class),
+                any(), any(), any(), any()))
                 .thenReturn(1L, 0L);
         CounterEvent event = CounterEvent.of("post", "7", "view", 0, 0L, 10, "seed-view:ns:7:10");
 
@@ -54,17 +56,15 @@ class CounterRebuildConsumerTest {
     }
 
     @Test
-    void differentEventIdsCanBothRebuildAndLegacyEventUsesOldPath() {
-        when(redis.execute(any(DefaultRedisScript.class), any(List.class), any(), any(), any(), any()))
+    void differentViewEventIdsCanBothRebuild() {
+        when(redis.execute(any(DefaultRedisScript.class), any(List.class),
+                any(), any(), any(), any()))
                 .thenReturn(1L);
         CounterEvent first = CounterEvent.of("post", "7", "view", 0, 0L, 10, "baseline-10");
         CounterEvent second = CounterEvent.of("post", "7", "view", 0, 0L, 5, "baseline-15");
-        CounterEvent legacy = CounterEvent.of("post", "7", "like", 1, 9L, 1);
-        legacy.setEventId(null);
 
         assertThat(consumer.applyRebuildEvent(first)).isTrue();
         assertThat(consumer.applyRebuildEvent(second)).isTrue();
-        assertThat(consumer.applyRebuildEvent(legacy)).isTrue();
 
         verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
                 CounterKeys.sdsKey("post", "7"), CounterKeys.eventDedupeKey("baseline-10"))),
@@ -72,21 +72,44 @@ class CounterRebuildConsumerTest {
         verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
                 CounterKeys.sdsKey("post", "7"), CounterKeys.eventDedupeKey("baseline-15"))),
                 eq("5"), eq("4"), eq("0"), eq("5"));
-        verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(CounterKeys.sdsKey("post", "7"))),
-                eq("5"), eq("4"), eq("1"), eq("1"));
     }
 
     @Test
-    void legacyJsonWithoutEventIdUsesBackwardCompatibleReplay() throws Exception {
-        when(redis.execute(any(DefaultRedisScript.class), any(List.class), any(), any(), any(), any()))
-                .thenReturn(1L);
+    void legacyReactionJsonIsSkippedWithoutRedisMutation() throws Exception {
         CounterEvent legacy = new ObjectMapper().readValue(
                 "{\"entityType\":\"post\",\"entityId\":\"7\",\"metric\":\"like\","
                         + "\"idx\":1,\"userId\":9,\"delta\":1}", CounterEvent.class);
 
-        assertThat(consumer.applyRebuildEvent(legacy)).isTrue();
+        assertThat(consumer.applyRebuildEvent(legacy)).isFalse();
 
-        verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(CounterKeys.sdsKey("post", "7"))),
-                eq("5"), eq("4"), eq("1"), eq("1"));
+        verifyNoInteractions(redis);
+    }
+
+    @Test
+    void epochZeroReactionIsSkippedBeforeRebuildDedupe() {
+        CounterEvent event = CounterEvent.of("post", "7", "like", 1, 9L, 1, "old-like");
+
+        assertThat(consumer.applyRebuildEvent(event)).isFalse();
+
+        verifyNoInteractions(redis);
+    }
+
+    @Test
+    void reactionMembershipEventsAreSkippedWithoutMutatingRedis() {
+        CounterEvent event = CounterEvent.of("post", "7", "like", 1, 9L, 1, "like-7-9");
+        event.setFactEpoch(3L);
+
+        assertThat(consumer.applyRebuildEvent(event)).isFalse();
+
+        verifyNoInteractions(redis);
+    }
+
+    @Test
+    void nonPostReactionMembershipEventsAreAlsoSkippedWithoutMutatingRedis() {
+        CounterEvent event = CounterEvent.of("comment", "7", "fav", 2, 9L, 1, "fav-comment-7-9");
+
+        assertThat(consumer.applyRebuildEvent(event)).isFalse();
+
+        verifyNoInteractions(redis);
     }
 }
