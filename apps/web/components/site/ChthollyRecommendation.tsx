@@ -32,6 +32,19 @@ function getServerReducedMotionSnapshot() {
   return false;
 }
 
+function subscribeToPageVisibility(onStoreChange: () => void) {
+  document.addEventListener("visibilitychange", onStoreChange);
+  return () => document.removeEventListener("visibilitychange", onStoreChange);
+}
+
+function getPageHiddenSnapshot() {
+  return document.visibilityState === "hidden";
+}
+
+function getServerPageHiddenSnapshot() {
+  return false;
+}
+
 export default function ChthollyRecommendation({
   posts,
   ...props
@@ -54,16 +67,22 @@ function ChthollyRecommendationSlides({
     getReducedMotionSnapshot,
     getServerReducedMotionSnapshot,
   );
+  const isPageHidden = useSyncExternalStore(
+    subscribeToPageVisibility,
+    getPageHiddenSnapshot,
+    getServerPageHiddenSnapshot,
+  );
 
   useEffect(() => {
     if (slides.length <= 1) return;
     if (isPointerInside || isFocusWithin) return;
     if (prefersReducedMotion) return;
+    if (isPageHidden) return;
     const timer = window.setInterval(() => {
       setIndex((current) => (current + 1) % slides.length);
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [isFocusWithin, isPointerInside, prefersReducedMotion, slides.length]);
+  }, [isFocusWithin, isPageHidden, isPointerInside, prefersReducedMotion, slides.length]);
 
   const headingEyebrow = personalized ? "For You" : "Chtholly Picks";
   const headingTitle = personalized ? "为你推荐" : "热门推荐";

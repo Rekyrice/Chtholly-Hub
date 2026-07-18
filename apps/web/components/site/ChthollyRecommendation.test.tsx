@@ -24,6 +24,13 @@ const secondPost: FeedItem = {
   title: "第二条推荐",
 };
 
+const thirdPost: FeedItem = {
+  ...post,
+  id: "recommendation-3",
+  slug: "third-recommendation",
+  title: "第三条推荐",
+};
+
 function mockReducedMotion(matches: boolean) {
   let current = matches;
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -74,6 +81,7 @@ describe("ChthollyRecommendation", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("shows the article summary without presenting it as Chtholly's words", () => {
@@ -215,6 +223,57 @@ describe("ChthollyRecommendation", () => {
     expect(screen.getByText(title, { selector: "h3" })).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(1));
     expect(screen.getByText(secondPost.title, { selector: "h3" })).toBeInTheDocument();
+  });
+
+  it("pauses autoplay while the page is hidden and restarts a full interval when visible", () => {
+    vi.useFakeTimers();
+    mockReducedMotion(false);
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    render(<ChthollyRecommendation posts={[post, secondPost, thirdPost]} />);
+
+    act(() => vi.advanceTimersByTime(5000));
+    expect(screen.getByText(secondPost.title, { selector: "h3" })).toBeInTheDocument();
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    act(() => vi.advanceTimersByTime(10000));
+    expect(screen.getByText(secondPost.title, { selector: "h3" })).toBeInTheDocument();
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    act(() => vi.advanceTimersByTime(4999));
+    expect(screen.getByText(secondPost.title, { selector: "h3" })).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByText(thirdPost.title, { selector: "h3" })).toBeInTheDocument();
+  });
+
+  it("removes the page-visibility listener on unmount", () => {
+    mockReducedMotion(false);
+    const addEventListener = vi.spyOn(document, "addEventListener");
+    const removeEventListener = vi.spyOn(document, "removeEventListener");
+    const { unmount } = render(
+      <ChthollyRecommendation posts={[post, secondPost]} />,
+    );
+    const visibilityListener = addEventListener.mock.calls.find(
+      ([type]) => type === "visibilitychange",
+    )?.[1];
+
+    expect(visibilityListener).toEqual(expect.any(Function));
+    unmount();
+
+    expect(removeEventListener).toHaveBeenCalledWith(
+      "visibilitychange",
+      visibilityListener,
+    );
   });
 
   it("removes the reduced-motion listener on unmount", () => {
