@@ -4,7 +4,6 @@ import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterFactMaintenanceService;
-import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -26,15 +25,16 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Redis-backed maintenance service for exact historical post reaction reconciliation.
  *
- * <p>The implementation snapshots every authoritative post before querying MySQL, so a failed
- * existence query cannot be mistaken for proof that users are absent. Each post is then reconciled
- * under a maintenance lock by one Lua script; completed posts remain committed if a later post
- * fails.
+ * <p>Each authoritative post is fenced against interactive bitmap writes before its bitmap snapshot
+ * and ID-only MySQL existence query. One final Lua script validates fence ownership, advances the
+ * fact epoch, reconciles bits and exact counts, and discards stale reaction deltas atomically.
+ * Completed posts remain committed if a later post fails.
  */
 @Service
 public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenanceService {
@@ -46,12 +46,15 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
     private static final String MUTATION_MANAGED = "managed";
     private static final String MUTATION_ORPHAN = "orphan";
     private static final int LUA_RESULT_SIZE = 5;
-    private static final int LUA_CORE_KEY_COUNT = 3;
+    private static final int LUA_CORE_KEY_COUNT = 5;
+    private static final long FENCE_LEASE_MILLIS = 60_000L;
 
     private final StringRedisTemplate redis;
     private final RedissonClient redisson;
     private final UserMapper userMapper;
     private final DefaultRedisScript<List> reconciliationScript;
+    private final DefaultRedisScript<Long> acquireFenceScript;
+    private final DefaultRedisScript<Long> releaseFenceScript;
 
     /**
      * Creates the maintenance service.
@@ -70,6 +73,12 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
         this.reconciliationScript = new DefaultRedisScript<>();
         this.reconciliationScript.setResultType(List.class);
         this.reconciliationScript.setScriptText(RECONCILE_POST_REACTIONS_LUA);
+        this.acquireFenceScript = new DefaultRedisScript<>();
+        this.acquireFenceScript.setResultType(Long.class);
+        this.acquireFenceScript.setScriptText(ACQUIRE_FENCE_LUA);
+        this.releaseFenceScript = new DefaultRedisScript<>();
+        this.releaseFenceScript.setResultType(Long.class);
+        this.releaseFenceScript.setScriptText(RELEASE_FENCE_LUA);
     }
 
     /** {@inheritDoc} */
@@ -81,14 +90,6 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
         ValidatedRequest request = validateAndCopyInput(
                 managedUserIds, authoritativePostIds, desiredByPost);
 
-        Map<Long, PostBitmapSnapshot> snapshots = new LinkedHashMap<>();
-        for (Long postId : request.authoritativePostIds()) {
-            snapshots.put(postId, snapshotPost(postId));
-        }
-
-        Set<Long> existingNaturalUsers = findExistingNaturalUsers(
-                snapshots.values(), request.managedUserIds());
-
         Map<Long, PostReactionReconciliationResult> results = new LinkedHashMap<>();
         for (Long postId : request.authoritativePostIds()) {
             ManagedPostReactionState desired = request.desiredByPost().getOrDefault(
@@ -96,9 +97,7 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             PostReactionReconciliationResult result = reconcilePost(
                     postId,
                     request.managedUserIds(),
-                    desired,
-                    snapshots.get(postId),
-                    existingNaturalUsers);
+                    desired);
             results.put(postId, result);
         }
         return new ReactionReconciliationResult(results);
@@ -211,16 +210,16 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
         for (int start = 0; start < orderedCandidates.size(); start += USER_QUERY_BATCH_SIZE) {
             int end = Math.min(start + USER_QUERY_BATCH_SIZE, orderedCandidates.size());
             List<Long> batch = List.copyOf(orderedCandidates.subList(start, end));
-            List<User> users = userMapper.listByIds(batch);
-            if (users == null) {
+            List<Long> userIds = userMapper.listExistingIds(batch);
+            if (userIds == null) {
                 throw new IllegalStateException("UserMapper returned null for an existence query");
             }
             Set<Long> requested = Set.copyOf(batch);
-            for (User user : users) {
-                if (user == null || user.getId() == null || !requested.contains(user.getId())) {
+            for (Long userId : userIds) {
+                if (userId == null || !requested.contains(userId)) {
                     throw new IllegalStateException("UserMapper returned an invalid existence result");
                 }
-                existing.add(user.getId());
+                existing.add(userId);
             }
         }
         return Set.copyOf(existing);
@@ -229,30 +228,91 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
     private PostReactionReconciliationResult reconcilePost(
             long postId,
             Set<Long> managedUserIds,
-            ManagedPostReactionState desired,
-            PostBitmapSnapshot snapshot,
-            Set<Long> existingNaturalUsers) {
-        LuaPlan plan = buildLuaPlan(
-                postId, managedUserIds, desired, snapshot, existingNaturalUsers);
-        RLock lock = redisson.getLock("lock:counter-fact-maintenance:post:" + postId);
+            ManagedPostReactionState desired) {
+        RLock lock = redisson.getLock(CounterKeys.factMaintenanceLockKey(
+                ENTITY_TYPE_POST, String.valueOf(postId)));
         boolean locked = false;
+        boolean fenced = false;
+        String fenceToken = UUID.randomUUID().toString();
+        Throwable primaryFailure = null;
         try {
             locked = lock.tryLock(0L, TimeUnit.MILLISECONDS);
             if (!locked) {
                 throw new IllegalStateException(
                         "Could not acquire counter fact maintenance lock for post " + postId);
             }
+            fenced = acquireFence(postId, fenceToken);
+            if (!fenced) {
+                throw new IllegalStateException(
+                        "Could not acquire counter fact maintenance fence for post " + postId);
+            }
+            PostBitmapSnapshot snapshot = snapshotPost(postId);
+            Set<Long> existingNaturalUsers = findExistingNaturalUsers(
+                    List.of(snapshot), managedUserIds);
+            LuaPlan plan = buildLuaPlan(
+                    postId, managedUserIds, desired, snapshot, existingNaturalUsers, fenceToken);
             List<?> rawResult = redis.execute(
                     reconciliationScript, plan.keys(), plan.arguments().toArray());
             return mapLuaResult(postId, rawResult);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException(
+            IllegalStateException wrapped = new IllegalStateException(
                     "Interrupted while acquiring counter fact maintenance lock for post " + postId,
                     exception);
+            primaryFailure = wrapped;
+            throw wrapped;
+        } catch (RuntimeException | Error failure) {
+            primaryFailure = failure;
+            throw failure;
         } finally {
-            if (locked && lock.isHeldByCurrentThread()) {
+            cleanupMaintenanceOwnership(postId, lock, locked, fenceToken, fenced, primaryFailure);
+        }
+    }
+
+    private boolean acquireFence(long postId, String token) {
+        Long acquired = redis.execute(
+                acquireFenceScript,
+                List.of(CounterKeys.factMaintenanceFenceKey(ENTITY_TYPE_POST, String.valueOf(postId))),
+                token,
+                String.valueOf(FENCE_LEASE_MILLIS));
+        return Long.valueOf(1L).equals(acquired);
+    }
+
+    private void cleanupMaintenanceOwnership(
+            long postId,
+            RLock lock,
+            boolean locked,
+            String fenceToken,
+            boolean fenced,
+            Throwable primaryFailure) {
+        RuntimeException cleanupFailure = null;
+        if (fenced) {
+            try {
+                redis.execute(
+                        releaseFenceScript,
+                        List.of(CounterKeys.factMaintenanceFenceKey(
+                                ENTITY_TYPE_POST, String.valueOf(postId))),
+                        fenceToken);
+            } catch (RuntimeException failure) {
+                cleanupFailure = failure;
+            }
+        }
+        if (locked) {
+            try {
                 lock.unlock();
+            } catch (RuntimeException failure) {
+                if (cleanupFailure == null) {
+                    cleanupFailure = failure;
+                } else {
+                    cleanupFailure.addSuppressed(failure);
+                }
+            }
+        }
+        if (cleanupFailure != null) {
+            if (primaryFailure != null) {
+                primaryFailure.addSuppressed(cleanupFailure);
+            } else {
+                throw cleanupFailure;
             }
         }
     }
@@ -262,7 +322,8 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             Set<Long> managedUserIds,
             ManagedPostReactionState desired,
             PostBitmapSnapshot snapshot,
-            Set<Long> existingNaturalUsers) {
+            Set<Long> existingNaturalUsers,
+            String fenceToken) {
         LinkedHashMap<String, String> bitmapMetrics = new LinkedHashMap<>(snapshot.shardMetrics());
         List<Long> orderedManagedUsers = managedUserIds.stream().sorted().toList();
         for (Long userId : orderedManagedUsers) {
@@ -275,6 +336,8 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
         keys.add(CounterKeys.sdsKey(ENTITY_TYPE_POST, String.valueOf(postId)));
         keys.add(aggregateKey);
         keys.add(CounterKeys.aggIndexKey());
+        keys.add(CounterKeys.factMaintenanceFenceKey(ENTITY_TYPE_POST, String.valueOf(postId)));
+        keys.add(CounterKeys.factEpochKey(ENTITY_TYPE_POST, String.valueOf(postId)));
         keys.addAll(bitmapMetrics.keySet());
 
         Map<String, Integer> luaKeyIndexes = new LinkedHashMap<>();
@@ -283,6 +346,7 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
         }
 
         List<String> arguments = new ArrayList<>();
+        arguments.add(fenceToken);
         arguments.add(String.valueOf(CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE));
         arguments.add(String.valueOf(CounterSchema.FIELD_SIZE));
         arguments.add(String.valueOf(CounterSchema.IDX_LIKE));
@@ -453,13 +517,16 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             local cntKey = KEYS[1]
             local aggKey = KEYS[2]
             local aggIndexKey = KEYS[3]
-            local expectedLength = tonumber(ARGV[1])
-            local fieldSize = tonumber(ARGV[2])
-            local likeIndex = tonumber(ARGV[3])
-            local favIndex = tonumber(ARGV[4])
-            local bitmapKeyCount = tonumber(ARGV[5])
-            local argumentIndex = 6
-            local bitmapKeyOffset = 3
+            local fenceKey = KEYS[4]
+            local epochKey = KEYS[5]
+            local expectedToken = ARGV[1]
+            local expectedLength = tonumber(ARGV[2])
+            local fieldSize = tonumber(ARGV[3])
+            local likeIndex = tonumber(ARGV[4])
+            local favIndex = tonumber(ARGV[5])
+            local bitmapKeyCount = tonumber(ARGV[6])
+            local argumentIndex = 7
+            local bitmapKeyOffset = 5
             local uint32Max = 4294967295
             local function keyType(key)
               local reply = redis.call('TYPE', key)
@@ -471,14 +538,30 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             local cntType = keyType(cntKey)
             local aggType = keyType(aggKey)
             local aggIndexType = keyType(aggIndexKey)
+            local fenceType = keyType(fenceKey)
+            local epochType = keyType(epochKey)
             if (cntType ~= 'none' and cntType ~= 'string')
                   or (aggType ~= 'none' and aggType ~= 'hash')
-                  or (aggIndexType ~= 'none' and aggIndexType ~= 'set') then
+                  or (aggIndexType ~= 'none' and aggIndexType ~= 'set')
+                  or fenceType ~= 'string'
+                  or (epochType ~= 'none' and epochType ~= 'string') then
               return redis.error_reply('counter core key has an invalid Redis type')
+            end
+            if redis.call('GET', fenceKey) ~= expectedToken then
+              return redis.error_reply('counter fact maintenance fence ownership lost')
+            end
+            local currentEpoch = tonumber(redis.call('GET', epochKey) or '0')
+            if not currentEpoch or currentEpoch < 0 or currentEpoch ~= math.floor(currentEpoch) then
+              return redis.error_reply('counter fact epoch is invalid')
             end
             if expectedLength ~= 20 or fieldSize ~= 4
                   or likeIndex ~= 1 or favIndex ~= 2 then
               return redis.error_reply('counter schema arguments are invalid')
+            end
+            if not bitmapKeyCount or bitmapKeyCount < 0
+                  or bitmapKeyCount ~= math.floor(bitmapKeyCount)
+                  or bitmapKeyCount ~= (#KEYS - bitmapKeyOffset) then
+              return redis.error_reply('counter bitmap key count is invalid')
             end
             local raw = redis.call('GET', cntKey)
             if not raw or string.len(raw) ~= expectedLength then
@@ -496,6 +579,11 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
 
             local mutationCount = tonumber(ARGV[argumentIndex])
             argumentIndex = argumentIndex + 1
+            if not mutationCount or mutationCount < 0
+                  or mutationCount ~= math.floor(mutationCount)
+                  or #ARGV ~= 7 + bitmapKeyCount + mutationCount * 4 then
+              return redis.error_reply('counter bitmap mutation count is invalid')
+            end
             local changes = {}
             local projectedDeltaByKey = {}
             local managedSet = 0
@@ -507,8 +595,13 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
               local target = tonumber(ARGV[argumentIndex + 2])
               local kind = ARGV[argumentIndex + 3]
               argumentIndex = argumentIndex + 4
-              if (target ~= 0 and target ~= 1)
-                    or (kind ~= 'managed' and kind ~= 'orphan') then
+              if not keyIndex or keyIndex <= bitmapKeyOffset or keyIndex > #KEYS
+                    or keyIndex ~= math.floor(keyIndex)
+                    or not bitOffset or bitOffset < 0 or bitOffset >= 32768
+                    or bitOffset ~= math.floor(bitOffset)
+                    or (target ~= 0 and target ~= 1)
+                    or (kind ~= 'managed' and kind ~= 'orphan')
+                    or (kind == 'orphan' and target ~= 0) then
                 return redis.error_reply('counter bitmap mutation is invalid')
               end
               local previous = redis.call('GETBIT', KEYS[keyIndex], bitOffset)
@@ -544,6 +637,10 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
               return redis.error_reply('counter total exceeds unsigned Int32')
             end
 
+            local nextEpoch = redis.call('INCR', epochKey)
+            if nextEpoch ~= currentEpoch + 1 then
+              return redis.error_reply('counter fact epoch changed unexpectedly')
+            end
             for _, change in ipairs(changes) do
               redis.call('SETBIT', KEYS[change[1]], change[2], change[3])
             end
@@ -577,5 +674,34 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
               redis.call('SREM', aggIndexKey, aggKey)
             end
             return {managedSet, managedClear, orphanClear, likeTotal, favTotal}
+            """;
+
+    private static final String ACQUIRE_FENCE_LUA = """
+            local fenceKey = KEYS[1]
+            local token = ARGV[1]
+            local leaseMillis = tonumber(ARGV[2])
+            local typeReply = redis.call('TYPE', fenceKey)
+            local fenceType = type(typeReply) == 'table' and typeReply['ok'] or typeReply
+            if fenceType ~= 'none' and fenceType ~= 'string' then
+              return redis.error_reply('counter fact maintenance fence has an invalid Redis type')
+            end
+            if not token or token == '' or not leaseMillis or leaseMillis <= 0 then
+              return redis.error_reply('counter fact maintenance fence arguments are invalid')
+            end
+            if not redis.call('SET', fenceKey, token, 'NX', 'PX', leaseMillis) then return 0 end
+            return 1
+            """;
+
+    private static final String RELEASE_FENCE_LUA = """
+            local fenceKey = KEYS[1]
+            local token = ARGV[1]
+            local typeReply = redis.call('TYPE', fenceKey)
+            local fenceType = type(typeReply) == 'table' and typeReply['ok'] or typeReply
+            if fenceType == 'none' then return 0 end
+            if fenceType ~= 'string' then
+              return redis.error_reply('counter fact maintenance fence has an invalid Redis type')
+            end
+            if redis.call('GET', fenceKey) ~= token then return 0 end
+            return redis.call('DEL', fenceKey)
             """;
 }

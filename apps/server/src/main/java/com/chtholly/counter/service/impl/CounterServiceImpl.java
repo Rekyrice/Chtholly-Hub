@@ -1,5 +1,7 @@
 package com.chtholly.counter.service.impl;
 
+import com.chtholly.common.exception.BusinessException;
+import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.schema.BitmapShard;
@@ -17,6 +19,7 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.RLock;
 import org.redisson.api.RRateLimiter;
@@ -40,7 +43,7 @@ import java.util.concurrent.TimeUnit;
 public class CounterServiceImpl implements CounterService {
 
     private final StringRedisTemplate redis;
-    private final DefaultRedisScript<Long> toggleScript;
+    private final DefaultRedisScript<List> toggleScript;
     private final DefaultRedisScript<Long> effectiveCountScript;
     private final CounterEventPublisher counterEventPublisher;
     private final RedissonClient redisson;
@@ -66,7 +69,7 @@ public class CounterServiceImpl implements CounterService {
         this.postMapper = postMapper;
         this.userMapper = userMapper;
         this.toggleScript = new DefaultRedisScript<>();
-        this.toggleScript.setResultType(Long.class);
+        this.toggleScript.setResultType(List.class);
         // 位图状态原子切换，仅在状态变化时返回 1
         this.toggleScript.setScriptText(TOGGLE_LUA);
         this.effectiveCountScript = new DefaultRedisScript<>();
@@ -117,16 +120,41 @@ public class CounterServiceImpl implements CounterService {
         // 分片内位偏移
         long bit = BitmapShard.bitOf(uid);
         String bmKey = CounterKeys.bitmapKey(metric, etype, eid, chunk);
-        List<String> keys = List.of(bmKey);
+        List<String> keys = List.of(
+                bmKey,
+                CounterKeys.factMaintenanceFenceKey(etype, eid),
+                CounterKeys.factEpochKey(etype, eid));
         List<String> args = List.of(String.valueOf(bit), add ? "add" : "remove");
-        Long changed = redis.execute(toggleScript, keys, args.toArray());
-        boolean ok = changed == 1L;
+        List<?> rawResult = redis.execute(toggleScript, keys, args.toArray());
+        ToggleResult result = mapToggleResult(rawResult);
+        if (result.status() == -1L) {
+            throw new BusinessException(
+                    ErrorCode.CONFLICT,
+                    "互动计数正在维护，请稍后重试",
+                    HttpStatus.SERVICE_UNAVAILABLE.value());
+        }
+        boolean ok = result.status() == 1L;
         if (ok) {
             int delta = add ? 1 : -1;
             CounterEvent event = enrichEvent(etype, eid, metric, idx, uid, delta);
+            event.setFactEpoch(result.factEpoch());
             counterEventPublisher.publish(event);
         }
         return ok;
+    }
+
+    private static ToggleResult mapToggleResult(List<?> values) {
+        if (values == null || values.size() != 2
+                || !(values.get(0) instanceof Number status)
+                || !(values.get(1) instanceof Number epoch)) {
+            throw new IllegalStateException("Counter toggle Lua returned an invalid result");
+        }
+        long statusValue = status.longValue();
+        long epochValue = epoch.longValue();
+        if ((statusValue != -1L && statusValue != 0L && statusValue != 1L) || epochValue < 0L) {
+            throw new IllegalStateException("Counter toggle Lua returned an invalid result");
+        }
+        return new ToggleResult(statusValue, epochValue);
     }
 
     /** 在事件源填充帖子/用户展示信息，避免下游监听器 N+1 查库。 */
@@ -198,7 +226,9 @@ public class CounterServiceImpl implements CounterService {
                 return result;
             }
 
-            String lockKey = String.format("lock:sds-rebuild:%s:%s", entityType, entityId);
+            String lockKey = "post".equals(entityType)
+                    ? CounterKeys.factMaintenanceLockKey(entityType, entityId)
+                    : String.format("lock:sds-rebuild:%s:%s", entityType, entityId);
 
             RLock lock = redisson.getLock(lockKey);
             boolean locked = false;
@@ -541,22 +571,47 @@ public class CounterServiceImpl implements CounterService {
         return sum;
     }
 
+    private record ToggleResult(long status, long factEpoch) {}
+
     // Redis 内嵌 Lua（Redis 5/6 的 Lua 5.1），位图原子切换（分片内偏移）
     private static final String TOGGLE_LUA = """
             local bmKey = KEYS[1]
+            local fenceKey = KEYS[2]
+            local epochKey = KEYS[3]
             local offset = tonumber(ARGV[1])
             local op = ARGV[2] -- 'add' or 'remove'
+            local function keyType(key)
+              local reply = redis.call('TYPE', key)
+              if type(reply) == 'table' then return reply['ok'] end
+              return reply
+            end
+            local bitmapType = keyType(bmKey)
+            local fenceType = keyType(fenceKey)
+            local epochType = keyType(epochKey)
+            if (bitmapType ~= 'none' and bitmapType ~= 'string')
+                  or (fenceType ~= 'none' and fenceType ~= 'string')
+                  or (epochType ~= 'none' and epochType ~= 'string') then
+              return redis.error_reply('counter fact key has an invalid Redis type')
+            end
+            local epochText = redis.call('GET', epochKey) or '0'
+            local epoch = tonumber(epochText)
+            if not epoch or epoch < 0 or epoch ~= math.floor(epoch) then
+              return redis.error_reply('counter fact epoch is invalid')
+            end
+            if redis.call('EXISTS', fenceKey) == 1 then
+              return {-1, epoch}
+            end
             local prev = redis.call('GETBIT', bmKey, offset)
             if op == 'add' then
-              if prev == 1 then return 0 end
+              if prev == 1 then return {0, epoch} end
               redis.call('SETBIT', bmKey, offset, 1)
-              return 1
+              return {1, epoch}
             elseif op == 'remove' then
-              if prev == 0 then return 0 end
+              if prev == 0 then return {0, epoch} end
               redis.call('SETBIT', bmKey, offset, 0)
-              return 1
+              return {1, epoch}
             end
-            return -1
+            return redis.error_reply('counter toggle operation is invalid')
             """;
 
     private static final String EFFECTIVE_COUNT_LUA = """

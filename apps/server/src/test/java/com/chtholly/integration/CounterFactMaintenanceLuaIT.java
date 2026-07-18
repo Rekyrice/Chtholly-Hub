@@ -1,5 +1,8 @@
 package com.chtholly.integration;
 
+import com.chtholly.common.exception.BusinessException;
+import com.chtholly.counter.event.CounterAggregationProcessor;
+import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
@@ -7,7 +10,8 @@ import com.chtholly.counter.service.CounterFactMaintenanceService;
 import com.chtholly.counter.service.CounterFactMaintenanceService.ManagedPostReactionState;
 import com.chtholly.counter.service.CounterFactMaintenanceService.PostReactionReconciliationResult;
 import com.chtholly.counter.service.impl.CounterFactMaintenanceServiceImpl;
-import com.chtholly.user.domain.User;
+import com.chtholly.counter.service.impl.CounterServiceImpl;
+import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.user.mapper.UserMapper;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -38,8 +42,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
@@ -158,6 +164,8 @@ class CounterFactMaintenanceLuaIT {
         assertThat(second.likeTotal()).isEqualTo(first.likeTotal());
         assertThat(second.favTotal()).isEqualTo(first.favTotal());
         assertThat(afterSecond).isEqualTo(afterFirst);
+        assertThat(redis.opsForValue().get(CounterKeys.factEpochKey(
+                "post", String.valueOf(scenario.postId())))).isEqualTo("2");
         assertDesiredBits(scenario);
     }
 
@@ -191,6 +199,111 @@ class CounterFactMaintenanceLuaIT {
         assertThat(getBit(scenario.favKey(), scenario.bitOffset())).isTrue();
     }
 
+    @Test
+    void delayedReactionEventAfterMaintenanceCannotDoubleCountExactBitmapFact() {
+        long postId = 90_001L;
+        long userId = 42L;
+        AtomicReference<CounterEvent> delayed = new AtomicReference<>();
+        CounterServiceImpl counterService = new CounterServiceImpl(
+                redis, delayed::set, redisson, mock(PostMapper.class), userMapper);
+        CounterAggregationProcessor processor = new CounterAggregationProcessor(redis);
+
+        assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
+        assertThat(delayed.get().getFactEpoch()).isZero();
+
+        service.reconcileManagedPostReactions(
+                Set.of(userId), Set.of(postId),
+                Map.of(postId, new ManagedPostReactionState(Set.of(userId), Set.of())));
+
+        assertThat(processor.applyEvent(delayed.get())).isFalse();
+        processor.flush();
+        assertThat(bitCount("like", postId)).isEqualTo(1L);
+        assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
+                CounterSchema.IDX_LIKE)).containsExactly(unsignedInt32(1L));
+        assertThat(redis.opsForHash().get(
+                CounterKeys.aggKey("post", String.valueOf(postId)),
+                String.valueOf(CounterSchema.IDX_LIKE))).isNull();
+        assertThat(redis.opsForValue().get(CounterKeys.factEpochKey("post", String.valueOf(postId))))
+                .isEqualTo("1");
+    }
+
+    @Test
+    void pendingOldReactionAggregationIsClearedByMaintenanceBeforeFlush() {
+        long postId = 90_002L;
+        long userId = 43L;
+        CounterAggregationProcessor processor = new CounterAggregationProcessor(redis);
+        CounterServiceImpl counterService = new CounterServiceImpl(
+                redis, processor::applyEvent, redisson, mock(PostMapper.class), userMapper);
+
+        assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
+        assertThat(redis.opsForHash().get(
+                CounterKeys.aggKey("post", String.valueOf(postId)),
+                String.valueOf(CounterSchema.IDX_LIKE))).isEqualTo("1");
+
+        service.reconcileManagedPostReactions(
+                Set.of(userId), Set.of(postId),
+                Map.of(postId, new ManagedPostReactionState(Set.of(userId), Set.of())));
+        processor.flush();
+
+        assertThat(bitCount("like", postId)).isEqualTo(1L);
+        assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
+                CounterSchema.IDX_LIKE)).containsExactly(unsignedInt32(1L));
+        assertThat(redis.opsForHash().get(
+                CounterKeys.aggKey("post", String.valueOf(postId)),
+                String.valueOf(CounterSchema.IDX_LIKE))).isNull();
+    }
+
+    @Test
+    void activeFenceRejectsNormalToggleAndReleasedFenceCarriesCurrentEpoch() {
+        long postId = 90_003L;
+        long userId = 44L;
+        AtomicReference<CounterEvent> published = new AtomicReference<>();
+        CounterServiceImpl counterService = new CounterServiceImpl(
+                redis, published::set, redisson, mock(PostMapper.class), userMapper);
+        String fenceKey = CounterKeys.factMaintenanceFenceKey("post", String.valueOf(postId));
+        String epochKey = CounterKeys.factEpochKey("post", String.valueOf(postId));
+        redis.opsForValue().set(fenceKey, "maintenance-owner");
+
+        assertThatThrownBy(() -> counterService.like("post", String.valueOf(postId), userId))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(error -> assertThat(((BusinessException) error).getHttpStatus()).isEqualTo(503));
+        assertThat(getBit("like", postId, userId)).isFalse();
+        assertThat(published.get()).isNull();
+
+        redis.delete(fenceKey);
+        redis.opsForValue().set(epochKey, "7");
+        assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
+        assertThat(published.get().getFactEpoch()).isEqualTo(7L);
+    }
+
+    @Test
+    void lostFenceOwnershipAbortsBeforeEpochBitmapSdsOrAggregationWrites() {
+        long postId = 90_004L;
+        long managedUser = 1L;
+        long naturalUser = 5L;
+        String fenceKey = CounterKeys.factMaintenanceFenceKey("post", String.valueOf(postId));
+        String countKey = CounterKeys.sdsKey("post", String.valueOf(postId));
+        byte[] originalSds = initialSds();
+        setRawString(countKey, originalSds);
+        setBit("like", postId, naturalUser, true);
+        when(userMapper.listExistingIds(anyList())).thenAnswer(invocation -> {
+            redis.opsForValue().set(fenceKey, "other-owner");
+            return List.of(naturalUser);
+        });
+
+        assertThatThrownBy(() -> service.reconcileManagedPostReactions(
+                Set.of(managedUser), Set.of(postId),
+                Map.of(postId, new ManagedPostReactionState(Set.of(managedUser), Set.of()))))
+                .isInstanceOf(RuntimeException.class)
+                .hasStackTraceContaining("fence ownership lost");
+
+        assertThat(redis.opsForValue().get(fenceKey)).isEqualTo("other-owner");
+        assertThat(redis.hasKey(CounterKeys.factEpochKey("post", String.valueOf(postId)))).isFalse();
+        assertThat(getBit("like", postId, managedUser)).isFalse();
+        assertThat(getBit("like", postId, naturalUser)).isTrue();
+        assertThat(rawString(countKey)).containsExactly(originalSds);
+    }
+
     private ReconciliationScenario seedScenario(long postId, long firstUserChunk) {
         long managedLikeUser = firstUserChunk * BitmapShard.CHUNK_SIZE + 11L;
         long managedFavUser = (firstUserChunk + 1L) * BitmapShard.CHUNK_SIZE + 12L;
@@ -212,11 +325,10 @@ class CounterFactMaintenanceLuaIT {
         redis.opsForHash().putAll(aggregateKey, Map.of("0", "17", "1", "-8", "2", "9"));
         redis.opsForSet().add(CounterKeys.aggIndexKey(), aggregateKey, unrelatedAggregateKey);
 
-        when(userMapper.listByIds(anyList())).thenAnswer(invocation -> {
+        when(userMapper.listExistingIds(anyList())).thenAnswer(invocation -> {
             List<Long> requested = invocation.getArgument(0);
             return requested.stream()
                     .filter(naturalUserId -> naturalUserId == naturalUser)
-                    .map(id -> User.builder().id(id).build())
                     .toList();
         });
 

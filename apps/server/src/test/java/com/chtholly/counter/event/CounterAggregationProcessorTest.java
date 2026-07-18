@@ -102,22 +102,22 @@ class CounterAggregationProcessorTest {
 
     @Test
     void given_duplicateEvent_when_applyEvent_then_aggregatesOnlyOnce() {
-        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any()))
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any(), any(), any()))
                 .thenReturn(1L, 0L);
-        CounterEvent event = CounterEvent.of("evt-1", "post", "7", "like", 0, 100L, 1);
+        CounterEvent event = CounterEvent.of("evt-1", "post", "7", "like", 1, 100L, 1);
 
         assertThat(processor.applyEvent(event)).isTrue();
         assertThat(processor.applyEvent(event)).isFalse();
 
         verify(redis, times(2)).execute(any(DefaultRedisScript.class),
                 eq(List.of(CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
-                        "counter:event:evt-1")),
-                eq("0"), eq("1"), eq("604800"));
+                        "counter:event:evt-1", CounterKeys.factEpochKey("post", "7"))),
+                eq("1"), eq("1"), eq("604800"), eq("1"), eq("0"));
     }
 
     @Test
     void givenSameSeedEventIdTwice_whenApply_thenPersistentDedupeAcceptsOnlyFirst() {
-        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any()))
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any(), any(), any()))
                 .thenReturn(1L, 0L);
         CounterEvent event = CounterEvent.of(
                 "post", "7", "view", 0, 0L, 10, "seed-view:ns:7:10");
@@ -128,8 +128,8 @@ class CounterAggregationProcessorTest {
         ArgumentCaptor<DefaultRedisScript<Long>> script = ArgumentCaptor.forClass(DefaultRedisScript.class);
         verify(redis, times(2)).execute(script.capture(), eq(List.of(
                         CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
-                        "counter:event:seed-view:ns:7:10")),
-                eq("0"), eq("10"), eq("604800"));
+                        "counter:event:seed-view:ns:7:10", CounterKeys.factEpochKey("post", "7"))),
+                eq("0"), eq("10"), eq("604800"), eq("0"), eq("0"));
         assertThat(script.getValue().getScriptAsString()).contains("SET", "NX", "EX", "HINCRBY", "SADD");
         assertThat(script.getValue().getScriptAsString().indexOf("SET', eventKey"))
                 .isLessThan(script.getValue().getScriptAsString().indexOf("HINCRBY"));
@@ -137,7 +137,7 @@ class CounterAggregationProcessorTest {
 
     @Test
     void givenDifferentBaselineEventIds_whenApply_thenBothCanAddTheirDeltas() {
-        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any(), any(), any())).thenReturn(1L);
         CounterEvent first = CounterEvent.of(
                 "post", "7", "view", 0, 0L, 10, "seed-view:ns:7:10");
         CounterEvent second = CounterEvent.of(
@@ -148,17 +148,17 @@ class CounterAggregationProcessorTest {
 
         verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
                         CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
-                        "counter:event:seed-view:ns:7:10")),
-                eq("0"), eq("10"), eq("604800"));
+                        "counter:event:seed-view:ns:7:10", CounterKeys.factEpochKey("post", "7"))),
+                eq("0"), eq("10"), eq("604800"), eq("0"), eq("0"));
         verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
                         CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
-                        "counter:event:seed-view:ns:7:15")),
-                eq("0"), eq("5"), eq("604800"));
+                        "counter:event:seed-view:ns:7:15", CounterKeys.factEpochKey("post", "7"))),
+                eq("0"), eq("5"), eq("604800"), eq("0"), eq("0"));
     }
 
     @Test
     void generatedEventIdUsesPersistentDedupePath() {
-        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any(), any(), any())).thenReturn(1L);
         CounterEvent event = CounterEvent.of("post", "7", "like", 1, 100L, 1);
 
         assertThat(event.getEventId()).isNotBlank();
@@ -166,8 +166,27 @@ class CounterAggregationProcessorTest {
 
         verify(redis).execute(any(DefaultRedisScript.class),
                 eq(List.of(CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
-                        "counter:event:" + event.getEventId())),
-                eq("1"), eq("1"), eq("604800"));
+                        "counter:event:" + event.getEventId(), CounterKeys.factEpochKey("post", "7"))),
+                eq("1"), eq("1"), eq("604800"), eq("1"), eq("0"));
+    }
+
+    @Test
+    void staleReactionEpochIsCheckedBeforePersistentDedupeAndAggregation() {
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any(), any(), any(), any()))
+                .thenReturn(-1L);
+        CounterEvent event = CounterEvent.of("evt-stale", "post", "7", "fav", 2, 100L, 1);
+        event.setFactEpoch(3L);
+
+        assertThat(processor.applyEvent(event)).isFalse();
+
+        ArgumentCaptor<DefaultRedisScript<Long>> script = ArgumentCaptor.forClass(DefaultRedisScript.class);
+        verify(redis).execute(script.capture(), eq(List.of(
+                        CounterKeys.aggKey("post", "7"), CounterKeys.aggIndexKey(),
+                        "counter:event:evt-stale", CounterKeys.factEpochKey("post", "7"))),
+                eq("2"), eq("1"), eq("604800"), eq("1"), eq("3"));
+        String lua = script.getValue().getScriptAsString();
+        assertThat(lua.indexOf("currentEpoch ~= expectedEpoch"))
+                .isLessThan(lua.indexOf("SET', eventKey"));
     }
 
     @Test

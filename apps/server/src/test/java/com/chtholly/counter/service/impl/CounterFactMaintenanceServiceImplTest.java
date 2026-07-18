@@ -4,12 +4,12 @@ import com.chtholly.counter.service.CounterFactMaintenanceService;
 import com.chtholly.counter.service.CounterFactMaintenanceService.ManagedPostReactionState;
 import com.chtholly.counter.service.CounterFactMaintenanceService.PostReactionReconciliationResult;
 import com.chtholly.counter.service.CounterFactMaintenanceService.ReactionReconciliationResult;
-import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.redisson.api.RLock;
@@ -21,6 +21,7 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -32,16 +33,20 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -71,6 +76,9 @@ class CounterFactMaintenanceServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new CounterFactMaintenanceServiceImpl(redis, redisson, userMapper);
+        lenient().doReturn(1L).when(redis).execute(
+                argThat((RedisScript script) -> script != null && Long.class.equals(script.getResultType())),
+                anyList(), any(Object[].class));
     }
 
     @Test
@@ -129,8 +137,7 @@ class CounterFactMaintenanceServiceImplTest {
         String likeKey = "bm:like:post:10:0";
         stubScans(List.of(likeKey), List.of());
         stubRawBitmaps(Map.of(likeKey, bitmapBytes(1L, 5L, 7L)));
-        when(userMapper.listByIds(List.of(5L, 7L)))
-                .thenReturn(List.of(User.builder().id(5L).build()));
+        when(userMapper.listExistingIds(List.of(5L, 7L))).thenReturn(List.of(5L));
         stubSuccessfulLock(10L);
         stubLuaResults(List.of(1L, 1L, 1L, 2L, 0L));
 
@@ -149,18 +156,21 @@ class CounterFactMaintenanceServiceImplTest {
         verify(redis, never()).keys(anyString());
         verify(redis, never()).opsForValue();
         verify(stringCommands).get(likeKey.getBytes(StandardCharsets.UTF_8));
-        verify(userMapper).listByIds(List.of(5L, 7L));
+        verify(userMapper).listExistingIds(List.of(5L, 7L));
 
         CapturedLua invocation = captureOnlyLuaInvocation();
         assertThat(invocation.keys()).contains(
                 "cnt:v1:post:10",
                 "agg:v1:post:10",
                 "agg:v1:__keys",
+                "counter:fact-maintenance:post:10",
+                "counter:fact-epoch:post:10",
                 likeKey,
                 "bm:fav:post:10:0");
-        assertThat(invocation.arguments()).startsWith("20", "4", "1", "2", "2", "like", "fav");
-        assertThat(invocation.arguments()).containsSubsequence("4", "7", "0", "orphan");
-        assertThat(invocation.arguments()).endsWith("4", "7", "0", "orphan");
+        assertThat(invocation.arguments()).startsWith(invocation.arguments().getFirst(),
+                "20", "4", "1", "2", "2", "like", "fav");
+        assertThat(invocation.arguments()).containsSubsequence("6", "7", "0", "orphan");
+        assertThat(invocation.arguments()).endsWith("6", "7", "0", "orphan");
         assertThat(invocation.arguments()).filteredOn("orphan"::equals).hasSize(1);
         verify(lock).unlock();
     }
@@ -170,9 +180,10 @@ class CounterFactMaintenanceServiceImplTest {
         stubScans(List.of(), List.of(), List.of(), List.of());
         when(redisson.getLock("lock:counter-fact-maintenance:post:10")).thenReturn(lock);
         when(lock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(true, true);
-        when(lock.isHeldByCurrentThread()).thenReturn(true);
         doReturn(List.of(2L, 2L, 0L, 1L, 1L), List.of(0L, 0L, 0L, 1L, 1L))
-                .when(redis).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+                .when(redis).execute(
+                        argThat((RedisScript script) -> script != null && List.class.equals(script.getResultType())),
+                        anyList(), any(Object[].class));
 
         ReactionReconciliationResult first = service.reconcileManagedPostReactions(
                 Set.of(1L, 2L), Set.of(10L),
@@ -185,23 +196,26 @@ class CounterFactMaintenanceServiceImplTest {
         assertThat(first.posts().get(10L).managedClearCount()).isEqualTo(2L);
         assertThat(second.posts().get(10L).managedSetCount()).isZero();
         assertThat(second.posts().get(10L).managedClearCount()).isZero();
-        verify(redis, times(2)).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+        verify(redis, times(2)).execute(
+                argThat((RedisScript script) -> script != null && List.class.equals(script.getResultType())),
+                anyList(), any(Object[].class));
     }
 
     @Test
-    void userLookupFailurePreventsEveryLuaWriteAndLockAcquisition() {
+    void userLookupFailureInsideFencePreventsReconciliationWriteAndReleasesOwnership() throws Exception {
         String likeKey = "bm:like:post:10:0";
         stubScans(List.of(likeKey), List.of());
         stubRawBitmaps(Map.of(likeKey, bitmapBytes(5L)));
-        when(userMapper.listByIds(List.of(5L))).thenThrow(new IllegalStateException("mysql unavailable"));
+        when(userMapper.listExistingIds(List.of(5L))).thenThrow(new IllegalStateException("mysql unavailable"));
+        stubSuccessfulLock(10L);
 
         assertThatThrownBy(() -> service.reconcileManagedPostReactions(
                 Set.of(1L), Set.of(10L), Map.of()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("mysql unavailable");
 
-        verify(redis, never()).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
-        verifyNoInteractions(redisson);
+        verifyNoReconciliationWrite();
+        verify(lock).unlock();
     }
 
     @Test
@@ -214,14 +228,14 @@ class CounterFactMaintenanceServiceImplTest {
         stubRawBitmaps(Map.of(
                 lowKey, bitmapBytes(range(2L, 502L)),
                 highKey, bitmapBytesWithinChunk(highUserId)));
-        when(userMapper.listByIds(anyList())).thenReturn(List.of());
+        when(userMapper.listExistingIds(anyList())).thenReturn(List.of());
         stubSuccessfulLock(10L);
         stubLuaResults(List.of(0L, 2L, 501L, 0L, 0L));
 
         service.reconcileManagedPostReactions(Set.of(1L), Set.of(10L), Map.of());
 
         ArgumentCaptor<List<Long>> batches = ArgumentCaptor.forClass(List.class);
-        verify(userMapper, times(2)).listByIds(batches.capture());
+        verify(userMapper, times(2)).listExistingIds(batches.capture());
         assertThat(batches.getAllValues()).allSatisfy(batch -> assertThat(batch).hasSizeLessThanOrEqualTo(500));
         assertThat(batches.getAllValues().stream().flatMap(List::stream))
                 .contains(highUserId)
@@ -231,32 +245,32 @@ class CounterFactMaintenanceServiceImplTest {
     }
 
     @Test
-    void failureInLaterUserLookupBatchStillPreventsEveryPostWrite() {
+    void failureInLaterUserLookupBatchStillPreventsEveryPostWrite() throws Exception {
         String likeKey = "bm:like:post:10:0";
         stubScans(List.of(likeKey), List.of());
         stubRawBitmaps(Map.of(likeKey, bitmapBytes(range(2L, 503L))));
-        when(userMapper.listByIds(anyList()))
+        when(userMapper.listExistingIds(anyList()))
                 .thenReturn(List.of())
                 .thenThrow(new IllegalStateException("second batch failed"));
+        stubSuccessfulLock(10L);
 
         assertThatThrownBy(() -> service.reconcileManagedPostReactions(
                 Set.of(1L), Set.of(10L), Map.of()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("second batch failed");
 
-        verify(userMapper, times(2)).listByIds(anyList());
-        verify(redis, never()).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
-        verifyNoInteractions(redisson);
+        verify(userMapper, times(2)).listExistingIds(anyList());
+        verifyNoReconciliationWrite();
+        verify(lock).unlock();
     }
 
     @Test
     void laterPostLockFailureLeavesEarlierPostCommittedWithoutClaimingBatchAtomicity() throws Exception {
         RLock secondLock = mock(RLock.class);
-        stubScans(List.of(), List.of(), List.of(), List.of());
+        stubScans(List.of(), List.of());
         when(redisson.getLock("lock:counter-fact-maintenance:post:10")).thenReturn(lock);
         when(redisson.getLock("lock:counter-fact-maintenance:post:20")).thenReturn(secondLock);
         when(lock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(true);
-        when(lock.isHeldByCurrentThread()).thenReturn(true);
         when(secondLock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(false);
         stubLuaResults(List.of(0L, 2L, 0L, 0L, 0L));
 
@@ -265,14 +279,15 @@ class CounterFactMaintenanceServiceImplTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("20");
 
-        verify(redis).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+        verify(redis).execute(
+                argThat((RedisScript script) -> script != null && List.class.equals(script.getResultType())),
+                anyList(), any(Object[].class));
         verify(lock).unlock();
         verify(secondLock, never()).unlock();
     }
 
     @Test
     void lockAcquisitionFailureThrowsWithoutLuaWrite() throws Exception {
-        stubScans(List.of(), List.of());
         when(redisson.getLock("lock:counter-fact-maintenance:post:10")).thenReturn(lock);
         when(lock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(false);
 
@@ -287,7 +302,6 @@ class CounterFactMaintenanceServiceImplTest {
 
     @Test
     void interruptedLockAcquisitionRestoresInterruptAndDoesNotWrite() throws Exception {
-        stubScans(List.of(), List.of());
         when(redisson.getLock("lock:counter-fact-maintenance:post:10")).thenReturn(lock);
         when(lock.tryLock(0L, TimeUnit.MILLISECONDS)).thenThrow(new InterruptedException("stop"));
 
@@ -326,13 +340,65 @@ class CounterFactMaintenanceServiceImplTest {
                 "redis.call('HDEL', aggKey, tostring(likeIndex), tostring(favIndex))",
                 "redis.call('HLEN', aggKey) == 0",
                 "redis.call('SREM', aggIndexKey, aggKey)",
-                "redis.call('DEL', bitmapKey)");
+                "redis.call('DEL', bitmapKey)",
+                "redis.call('GET', fenceKey) ~= expectedToken",
+                "redis.call('INCR', epochKey)");
         assertThat(lua.indexOf("redis.call('TYPE', key)")).isLessThan(lua.indexOf("redis.call('SETBIT'"));
         assertThat(lua.indexOf("redis.call('GET', cntKey)")).isLessThan(lua.indexOf("redis.call('SETBIT'"));
+        assertThat(lua.indexOf("redis.call('GET', fenceKey) ~= expectedToken"))
+                .isLessThan(lua.indexOf("redis.call('GETBIT'"));
+        assertThat(lua.indexOf("redis.call('INCR', epochKey)"))
+                .isLessThan(lua.indexOf("redis.call('SETBIT'"));
         assertThat(lua).contains(
                 "return string.sub(value, 1, offset)",
                 ".. string.sub(value, offset + fieldSize + 1)",
                 "4294967295");
+    }
+
+    @Test
+    void maintenanceFenceIsEstablishedBeforeSnapshotAndIdOnlyExistenceLookup() throws Exception {
+        String likeKey = "bm:like:post:10:0";
+        stubScans(List.of(likeKey), List.of());
+        stubRawBitmaps(Map.of(likeKey, bitmapBytes(5L)));
+        when(userMapper.listExistingIds(List.of(5L))).thenReturn(List.of(5L));
+        stubSuccessfulLock(10L);
+        stubLuaResults(List.of(0L, 2L, 0L, 1L, 0L));
+
+        service.reconcileManagedPostReactions(Set.of(1L), Set.of(10L), Map.of());
+
+        InOrder order = inOrder(lock, redis, userMapper);
+        order.verify(lock).tryLock(0L, TimeUnit.MILLISECONDS);
+        order.verify(redis).execute(
+                argThat((RedisScript script) -> script != null && Long.class.equals(script.getResultType())
+                        && script.getScriptAsString().contains("leaseMillis")),
+                anyList(), any(Object[].class));
+        order.verify(redis, times(2)).scan(any(ScanOptions.class));
+        order.verify(userMapper).listExistingIds(List.of(5L));
+        order.verify(redis).execute(
+                argThat((RedisScript script) -> script != null && List.class.equals(script.getResultType())),
+                anyList(), any(Object[].class));
+    }
+
+    @Test
+    void cleanupFailureDoesNotMaskPrimaryLookupFailure() throws Exception {
+        String likeKey = "bm:like:post:10:0";
+        stubScans(List.of(likeKey), List.of());
+        stubRawBitmaps(Map.of(likeKey, bitmapBytes(5L)));
+        when(userMapper.listExistingIds(List.of(5L)))
+                .thenThrow(new IllegalStateException("mysql unavailable"));
+        stubSuccessfulLock(10L);
+        doThrow(new IllegalStateException("fence release failed")).when(redis).execute(
+                argThat((RedisScript script) -> script != null && Long.class.equals(script.getResultType())
+                        && script.getScriptAsString().contains("return redis.call('DEL', fenceKey)")),
+                anyList(), any(Object[].class));
+
+        assertThatThrownBy(() -> service.reconcileManagedPostReactions(
+                Set.of(1L), Set.of(10L), Map.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("mysql unavailable")
+                .satisfies(error -> assertThat(error.getSuppressed())
+                        .extracting(Throwable::getMessage)
+                        .containsExactly("fence release failed"));
     }
 
     private void stubScans(List<String>... scans) {
@@ -361,21 +427,35 @@ class CounterFactMaintenanceServiceImplTest {
     private void stubSuccessfulLock(long postId) throws Exception {
         when(redisson.getLock("lock:counter-fact-maintenance:post:" + postId)).thenReturn(lock);
         when(lock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(true);
-        when(lock.isHeldByCurrentThread()).thenReturn(true);
     }
 
     private void stubLuaResults(List<Long> result) {
         doReturn(result).when(redis)
-                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+                .execute(argThat((RedisScript script) -> script != null && List.class.equals(script.getResultType())),
+                        anyList(), any(Object[].class));
     }
 
     private CapturedLua captureOnlyLuaInvocation() {
-        ArgumentCaptor<DefaultRedisScript<List>> script = ArgumentCaptor.forClass(DefaultRedisScript.class);
         ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
         ArgumentCaptor<Object[]> arguments = ArgumentCaptor.forClass(Object[].class);
-        verify(redis).execute(script.capture(), keys.capture(), arguments.capture());
-        return new CapturedLua(script.getValue(), keys.getValue(),
+        AtomicReference<DefaultRedisScript<List>> script = new AtomicReference<>();
+        verify(redis).execute(
+                argThat((RedisScript candidate) -> {
+                    if (candidate == null || !List.class.equals(candidate.getResultType())) {
+                        return false;
+                    }
+                    script.set((DefaultRedisScript<List>) (Object) candidate);
+                    return true;
+                }),
+                keys.capture(), arguments.capture());
+        return new CapturedLua(script.get(), keys.getValue(),
                 Arrays.stream(arguments.getValue()).map(String::valueOf).toList());
+    }
+
+    private void verifyNoReconciliationWrite() {
+        verify(redis, never()).execute(
+                argThat((RedisScript script) -> script != null && List.class.equals(script.getResultType())),
+                anyList(), any(Object[].class));
     }
 
     private static byte[] bitmapBytes(long... bitOffsets) {

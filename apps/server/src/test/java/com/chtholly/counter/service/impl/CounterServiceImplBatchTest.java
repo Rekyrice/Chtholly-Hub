@@ -1,5 +1,7 @@
 package com.chtholly.counter.service.impl;
 
+import com.chtholly.common.exception.BusinessException;
+import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.event.CounterEventPublisher;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.mapper.PostMapper;
@@ -11,6 +13,12 @@ import org.mockito.Mock;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.redisson.api.RedissonClient;
+import org.redisson.api.RBucket;
+import org.redisson.api.RLock;
+import org.redisson.api.RRateLimiter;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -19,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -27,6 +36,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
 
 @SuppressWarnings("unchecked")
 @ExtendWith(MockitoExtension.class)
@@ -100,5 +111,64 @@ class CounterServiceImplBatchTest {
                 .containsEntry("view", 12L);
 
         verify(redis, never()).opsForHash();
+    }
+
+    @Test
+    void reactionWriteRejectedByMaintenanceFenceReturnsServiceUnavailableWithoutPublishing() {
+        doReturn(List.of(-1L, 0L)).when(redis)
+                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+
+        assertThatThrownBy(() -> counterService.like("post", "99", 42L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(error -> assertThat(((BusinessException) error).getHttpStatus()).isEqualTo(503));
+
+        verify(counterEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    void changedReactionCarriesCurrentFactEpochAndChecksFenceBeforeBitmapMutation() {
+        doReturn(List.of(1L, 7L)).when(redis)
+                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+
+        assertThat(counterService.like("post", "99", 42L)).isTrue();
+
+        ArgumentCaptor<CounterEvent> event = ArgumentCaptor.forClass(CounterEvent.class);
+        verify(counterEventPublisher).publish(event.capture());
+        assertThat(event.getValue().getFactEpoch()).isEqualTo(7L);
+
+        ArgumentCaptor<DefaultRedisScript<List>> script = ArgumentCaptor.forClass(DefaultRedisScript.class);
+        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
+        verify(redis).execute(script.capture(), keys.capture(), any(Object[].class));
+        assertThat(keys.getValue()).containsExactly(
+                "bm:like:post:99:0",
+                "counter:fact-maintenance:post:99",
+                "counter:fact-epoch:post:99");
+        assertThat(script.getValue().getScriptAsString().indexOf("EXISTS', fenceKey"))
+                .isLessThan(script.getValue().getScriptAsString().indexOf("SETBIT', bmKey"));
+    }
+
+    @Test
+    void missingPostSdsRebuildUsesTheSameEntityLockAsFactMaintenance() throws Exception {
+        RBucket<Long> bucket = mock(RBucket.class);
+        RRateLimiter limiter = mock(RRateLimiter.class);
+        RLock lock = mock(RLock.class);
+        HashOperations<String, Object, Object> hash = mock(HashOperations.class);
+        Cursor<String> cursor = mock(Cursor.class);
+        when(redisson.getBucket(anyString())).thenReturn((RBucket) bucket);
+        when(bucket.get()).thenReturn(null);
+        when(redisson.getRateLimiter("rl:sds-rebuild:post:99")).thenReturn(limiter);
+        when(limiter.tryAcquire(1)).thenReturn(true);
+        when(redisson.getLock("lock:counter-fact-maintenance:post:99")).thenReturn(lock);
+        when(lock.tryLock(0L, java.util.concurrent.TimeUnit.MILLISECONDS)).thenReturn(true);
+        doReturn(null).when(redis).execute(any(RedisCallback.class));
+        when(redis.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(false);
+        when(redis.opsForHash()).thenReturn(hash);
+
+        assertThat(counterService.getCounts("post", "99", List.of("like")))
+                .containsEntry("like", 0L);
+
+        verify(redisson).getLock("lock:counter-fact-maintenance:post:99");
+        verify(lock).unlock();
     }
 }
