@@ -54,12 +54,15 @@ class CounterServiceImplBatchTest {
     private PostMapper postMapper;
     @Mock
     private UserMapper userMapper;
+    @Mock
+    private CounterCalibrationService calibrationService;
 
     private CounterService counterService;
 
     @BeforeEach
     void setUp() {
-        counterService = new CounterServiceImpl(redis, counterEventPublisher, redisson, postMapper, userMapper);
+        counterService = new CounterServiceImpl(
+                redis, counterEventPublisher, redisson, postMapper, userMapper, calibrationService);
     }
 
     @Test
@@ -142,10 +145,39 @@ class CounterServiceImplBatchTest {
         verify(redis).execute(script.capture(), keys.capture(), any(Object[].class));
         assertThat(keys.getValue()).containsExactly(
                 "bm:like:post:99:0",
+                "cnt:v1:post:99",
                 "counter:fact-maintenance:post:99",
                 "counter:fact-epoch:post:99");
+        assertThat(script.getValue().getScriptAsString()).contains("string.len(raw)", "SET', cntKey");
         assertThat(script.getValue().getScriptAsString().indexOf("EXISTS', fenceKey"))
                 .isLessThan(script.getValue().getScriptAsString().indexOf("SETBIT', bmKey"));
+    }
+
+    @Test
+    void missingSdsCalibratesAndRetriesOnlyOnceBeforePublishing() {
+        doReturn(List.of(2L, 4L), List.of(1L, 5L)).when(redis)
+                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+
+        assertThat(counterService.like("post", "99", 42L)).isTrue();
+
+        verify(calibrationService).reconcileEntity("post", "99");
+        verify(redis, times(2)).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+        ArgumentCaptor<CounterEvent> event = ArgumentCaptor.forClass(CounterEvent.class);
+        verify(counterEventPublisher).publish(event.capture());
+        assertThat(event.getValue().getFactEpoch()).isEqualTo(5L);
+    }
+
+    @Test
+    void repeatedMissingSdsFailsClosedWithoutPublishing() {
+        doReturn(List.of(2L, 4L), List.of(2L, 5L)).when(redis)
+                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+
+        assertThatThrownBy(() -> counterService.like("post", "99", 42L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("reconciliation");
+
+        verify(calibrationService).reconcileEntity("post", "99");
+        verify(counterEventPublisher, never()).publish(any());
     }
 
     @Test

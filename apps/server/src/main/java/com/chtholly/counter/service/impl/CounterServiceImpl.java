@@ -49,6 +49,7 @@ public class CounterServiceImpl implements CounterService {
     private final RedissonClient redisson;
     private final PostMapper postMapper;
     private final UserMapper userMapper;
+    private final CounterCalibrationService calibrationService;
     @Value("${counter.rebuild.lock.ttl-ms:5000}")
     private long lockTtlMs;
     @Value("${counter.rebuild.rate.permits:3}")
@@ -62,12 +63,14 @@ public class CounterServiceImpl implements CounterService {
 
     public CounterServiceImpl(StringRedisTemplate redis, CounterEventPublisher counterEventPublisher,
                               RedissonClient redisson,
-                              PostMapper postMapper, UserMapper userMapper) {
+                              PostMapper postMapper, UserMapper userMapper,
+                              CounterCalibrationService calibrationService) {
         this.redis = redis;
         this.counterEventPublisher = counterEventPublisher;
         this.redisson = redisson;
         this.postMapper = postMapper;
         this.userMapper = userMapper;
+        this.calibrationService = calibrationService;
         this.toggleScript = new DefaultRedisScript<>();
         this.toggleScript.setResultType(List.class);
         // 位图状态原子切换，仅在状态变化时返回 1
@@ -122,11 +125,24 @@ public class CounterServiceImpl implements CounterService {
         String bmKey = CounterKeys.bitmapKey(metric, etype, eid, chunk);
         List<String> keys = List.of(
                 bmKey,
+                CounterKeys.sdsKey(etype, eid),
                 CounterKeys.factMaintenanceFenceKey(etype, eid),
                 CounterKeys.factEpochKey(etype, eid));
-        List<String> args = List.of(String.valueOf(bit), add ? "add" : "remove");
+        List<String> args = List.of(
+                String.valueOf(bit),
+                add ? "add" : "remove",
+                String.valueOf(idx),
+                String.valueOf(CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE),
+                String.valueOf(CounterSchema.FIELD_SIZE));
         List<?> rawResult = redis.execute(toggleScript, keys, args.toArray());
         ToggleResult result = mapToggleResult(rawResult);
+        if (result.status() == 2L) {
+            calibrationService.reconcileEntity(etype, eid);
+            result = mapToggleResult(redis.execute(toggleScript, keys, args.toArray()));
+            if (result.status() == 2L) {
+                throw new IllegalStateException("Counter reconciliation did not restore the SDS structure");
+            }
+        }
         if (result.status() == -1L) {
             throw new BusinessException(
                     ErrorCode.CONFLICT,
@@ -151,7 +167,8 @@ public class CounterServiceImpl implements CounterService {
         }
         long statusValue = status.longValue();
         long epochValue = epoch.longValue();
-        if ((statusValue != -1L && statusValue != 0L && statusValue != 1L) || epochValue < 0L) {
+        if ((statusValue != -1L && statusValue != 0L && statusValue != 1L && statusValue != 2L)
+                || epochValue < 0L) {
             throw new IllegalStateException("Counter toggle Lua returned an invalid result");
         }
         return new ToggleResult(statusValue, epochValue);
@@ -589,22 +606,35 @@ public class CounterServiceImpl implements CounterService {
     // Redis 内嵌 Lua（Redis 5/6 的 Lua 5.1），位图原子切换（分片内偏移）
     private static final String TOGGLE_LUA = """
             local bmKey = KEYS[1]
-            local fenceKey = KEYS[2]
-            local epochKey = KEYS[3]
+            local cntKey = KEYS[2]
+            local fenceKey = KEYS[3]
+            local epochKey = KEYS[4]
             local offset = tonumber(ARGV[1])
             local op = ARGV[2] -- 'add' or 'remove'
+            local idx = tonumber(ARGV[3])
+            local expectedLength = tonumber(ARGV[4])
+            local fieldSize = tonumber(ARGV[5])
+            local uint32Max = 4294967295
             local function keyType(key)
               local reply = redis.call('TYPE', key)
               if type(reply) == 'table' then return reply['ok'] end
               return reply
             end
             local bitmapType = keyType(bmKey)
+            local counterType = keyType(cntKey)
             local fenceType = keyType(fenceKey)
             local epochType = keyType(epochKey)
             if (bitmapType ~= 'none' and bitmapType ~= 'string')
+                  or (counterType ~= 'none' and counterType ~= 'string')
                   or (fenceType ~= 'none' and fenceType ~= 'string')
                   or (epochType ~= 'none' and epochType ~= 'string') then
               return redis.error_reply('counter fact key has an invalid Redis type')
+            end
+            if not offset or offset < 0 or offset >= 32768 or offset ~= math.floor(offset)
+                  or (op ~= 'add' and op ~= 'remove')
+                  or (idx ~= 1 and idx ~= 2)
+                  or expectedLength ~= 20 or fieldSize ~= 4 then
+              return redis.error_reply('counter toggle arguments are invalid')
             end
             local epochText = redis.call('GET', epochKey) or '0'
             local epoch = tonumber(epochText)
@@ -614,17 +644,34 @@ public class CounterServiceImpl implements CounterService {
             if redis.call('EXISTS', fenceKey) == 1 then
               return {-1, epoch}
             end
-            local prev = redis.call('GETBIT', bmKey, offset)
-            if op == 'add' then
-              if prev == 1 then return {0, epoch} end
-              redis.call('SETBIT', bmKey, offset, 1)
-              return {1, epoch}
-            elseif op == 'remove' then
-              if prev == 0 then return {0, epoch} end
-              redis.call('SETBIT', bmKey, offset, 0)
-              return {1, epoch}
+            local raw = redis.call('GET', cntKey)
+            if not raw or string.len(raw) ~= expectedLength then
+              return {2, epoch}
             end
-            return redis.error_reply('counter toggle operation is invalid')
+            local prev = redis.call('GETBIT', bmKey, offset)
+            local target = op == 'add' and 1 or 0
+            if prev == target then return {0, epoch} end
+            local function read32be(value, byteOffset)
+              local b1, b2, b3, b4 = string.byte(value, byteOffset + 1, byteOffset + 4)
+              return ((b1 * 256 + b2) * 256 + b3) * 256 + b4
+            end
+            local function encoded(value)
+              return string.char(
+                    math.floor(value / 16777216) % 256,
+                    math.floor(value / 65536) % 256,
+                    math.floor(value / 256) % 256,
+                    value % 256)
+            end
+            local byteOffset = idx * fieldSize
+            local nextCount = read32be(raw, byteOffset) + (target - prev)
+            if nextCount < 0 or nextCount > uint32Max then
+              return redis.error_reply('counter toggle would overflow unsigned Int32')
+            end
+            local nextRaw = string.sub(raw, 1, byteOffset) .. encoded(nextCount)
+                  .. string.sub(raw, byteOffset + fieldSize + 1)
+            redis.call('SETBIT', bmKey, offset, target)
+            redis.call('SET', cntKey, nextRaw)
+            return {1, epoch}
             """;
 
     private static final String EFFECTIVE_COUNT_LUA = """

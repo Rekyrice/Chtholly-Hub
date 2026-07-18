@@ -9,6 +9,7 @@ import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterFactMaintenanceService;
 import com.chtholly.counter.service.CounterFactMaintenanceService.ManagedPostReactionState;
 import com.chtholly.counter.service.CounterFactMaintenanceService.PostReactionReconciliationResult;
+import com.chtholly.counter.service.impl.CounterCalibrationService;
 import com.chtholly.counter.service.impl.CounterFactMaintenanceServiceImpl;
 import com.chtholly.counter.service.impl.CounterServiceImpl;
 import com.chtholly.post.mapper.PostMapper;
@@ -205,11 +206,12 @@ class CounterFactMaintenanceLuaIT {
         long userId = 42L;
         AtomicReference<CounterEvent> delayed = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, delayed::set, redisson, mock(PostMapper.class), userMapper);
+                redis, delayed::set, redisson, mock(PostMapper.class), userMapper,
+                new CounterCalibrationService(redis, redisson));
         CounterAggregationProcessor processor = new CounterAggregationProcessor(redis);
 
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
-        assertThat(delayed.get().getFactEpoch()).isZero();
+        assertThat(delayed.get().getFactEpoch()).isEqualTo(1L);
 
         service.reconcileManagedPostReactions(
                 Set.of(userId), Set.of(postId),
@@ -224,7 +226,7 @@ class CounterFactMaintenanceLuaIT {
                 CounterKeys.aggKey("post", String.valueOf(postId)),
                 String.valueOf(CounterSchema.IDX_LIKE))).isNull();
         assertThat(redis.opsForValue().get(CounterKeys.factEpochKey("post", String.valueOf(postId))))
-                .isEqualTo("1");
+                .isEqualTo("2");
     }
 
     @Test
@@ -233,7 +235,8 @@ class CounterFactMaintenanceLuaIT {
         long userId = 43L;
         CounterAggregationProcessor processor = new CounterAggregationProcessor(redis);
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, processor::applyEvent, redisson, mock(PostMapper.class), userMapper);
+                redis, processor::applyEvent, redisson, mock(PostMapper.class), userMapper,
+                new CounterCalibrationService(redis, redisson));
 
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
         assertThat(redis.opsForHash().get(
@@ -259,7 +262,8 @@ class CounterFactMaintenanceLuaIT {
         long userId = 44L;
         AtomicReference<CounterEvent> published = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, published::set, redisson, mock(PostMapper.class), userMapper);
+                redis, published::set, redisson, mock(PostMapper.class), userMapper,
+                new CounterCalibrationService(redis, redisson));
         String fenceKey = CounterKeys.factMaintenanceFenceKey("post", String.valueOf(postId));
         String epochKey = CounterKeys.factEpochKey("post", String.valueOf(postId));
         redis.opsForValue().set(fenceKey, "maintenance-owner");
@@ -273,7 +277,7 @@ class CounterFactMaintenanceLuaIT {
         redis.delete(fenceKey);
         redis.opsForValue().set(epochKey, "7");
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
-        assertThat(published.get().getFactEpoch()).isEqualTo(7L);
+        assertThat(published.get().getFactEpoch()).isEqualTo(8L);
     }
 
     @Test
