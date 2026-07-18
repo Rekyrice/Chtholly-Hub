@@ -68,12 +68,14 @@ public class CanalOutboxConsumer extends AbstractKafkaConsumer {
             }
 
             Long eventId = OutboxMessageUtil.extractEventId(row);
-            if (eventId != null && idempotencyGuard.isAlreadyConsumed(IDEMPOTENCY_SCOPE, eventId)) {
-                continue;
+            if (eventId == null) {
+                throw new IllegalArgumentException("Relation Outbox event ID is required");
             }
-
             JsonNode payloadNode = row.get("payload");
-            if (payloadNode == null) {
+            if (payloadNode == null || !payloadNode.isTextual() || payloadNode.asText().isBlank()) {
+                throw new IllegalArgumentException("Relation Outbox payload is required");
+            }
+            if (idempotencyGuard.isAlreadyConsumed(IDEMPOTENCY_SCOPE, eventId)) {
                 continue;
             }
 
@@ -87,9 +89,7 @@ public class CanalOutboxConsumer extends AbstractKafkaConsumer {
                 log.error("Canal outbox processing failed", e);
                 throw e;
             }
-            if (eventId != null) {
-                idempotencyGuard.markConsumed(IDEMPOTENCY_SCOPE, eventId);
-            }
+            idempotencyGuard.markConsumed(IDEMPOTENCY_SCOPE, eventId);
         }
     }
 

@@ -85,6 +85,30 @@ class CanalOutboxConsumerTest {
         verify(idempotencyGuard, never()).markConsumed("relation", 42L);
     }
 
+    @Test
+    void rejectsSupportedFollowingRowWithoutEventId() throws Exception {
+        String envelope = withoutRowField(
+                envelope(42L, "following", "FollowCreated", relationPayload("FollowCreated")), "id");
+
+        assertThatThrownBy(() -> consumer.process("canal-outbox", null, envelope, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("event ID");
+
+        verifyNoInteractions(processor, idempotencyGuard);
+    }
+
+    @Test
+    void rejectsSupportedFollowingRowWithoutPayload() throws Exception {
+        String envelope = withoutRowField(
+                envelope(42L, "following", "FollowCreated", relationPayload("FollowCreated")), "payload");
+
+        assertThatThrownBy(() -> consumer.process("canal-outbox", null, envelope, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("payload");
+
+        verifyNoInteractions(processor, idempotencyGuard);
+    }
+
     private String relationPayload(String type) throws Exception {
         return objectMapper.writeValueAsString(new RelationEvent(type, 11L, 22L, 101L));
     }
@@ -101,5 +125,11 @@ class CanalOutboxConsumerTest {
         envelope.put("type", "INSERT");
         envelope.set("data", data);
         return objectMapper.writeValueAsString(envelope);
+    }
+
+    private String withoutRowField(String envelope, String field) throws Exception {
+        ObjectNode root = (ObjectNode) objectMapper.readTree(envelope);
+        ((ObjectNode) root.withArray("data").get(0)).remove(field);
+        return objectMapper.writeValueAsString(root);
     }
 }
