@@ -39,6 +39,7 @@ public final class ContentPackValidator {
     private static final Pattern HANDLE_PATTERN = Pattern.compile("[A-Za-z0-9_]{3,64}");
     private static final Set<String> STAGES = Set.of("review", "complete");
     private static final Set<String> REACTION_TYPES = Set.of("like", "fav");
+    private static final int MAX_COMMENTS_PER_TARGET = 5;
     private static final Pattern URI_SCHEME_PATTERN = Pattern.compile("^([A-Za-z][A-Za-z0-9+.-]*):");
 
     /**
@@ -94,6 +95,35 @@ public final class ContentPackValidator {
         if (!pack.retirements().isEmpty() && !"complete".equals(manifest.stage())) {
             errors.add("retirements require complete stage");
         }
+
+        boolean declarationsRequired = isContentV3(pack);
+        long rootComments = pack.comments().stream()
+                .filter(comment -> isBlank(comment.parentSeedKey()))
+                .count();
+        long replies = pack.comments().size() - rootComments;
+        long likes = pack.reactions().stream()
+                .filter(reaction -> "like".equals(reaction.type()))
+                .count();
+        long favorites = pack.reactions().stream()
+                .filter(reaction -> "fav".equals(reaction.type()))
+                .count();
+        long commentedTargets = pack.comments().stream()
+                .map(comment -> postReference(comment.postSeedKey(), comment.postSlug()))
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .count();
+        validateExpectedCount(manifest.expectedComments(), pack.comments().size(), "comment",
+                declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedRootComments(), rootComments, "root comment",
+                declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedReplies(), replies, "reply", declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedLikes(), likes, "like", declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedFavorites(), favorites, "favorite", declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedFollows(), pack.follows().size(), "follow",
+                declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedViews(), pack.views().size(), "view", declarationsRequired, errors);
+        validateExpectedCount(manifest.expectedCommentedTargets(), commentedTargets, "commented target",
+                declarationsRequired, errors);
 
         Map<String, Integer> actualCategories = new LinkedHashMap<>();
         for (SeedPostDefinition post : pack.posts()) {
@@ -329,7 +359,12 @@ public final class ContentPackValidator {
         Map<String, SeedPostDefinition> posts = index(pack.posts(), SeedPostDefinition::seedKey);
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
         Set<String> comments = keys(pack.comments(), SeedCommentDefinition::seedKey);
+        Map<String, Integer> commentsByTarget = new LinkedHashMap<>();
         for (SeedCommentDefinition comment : pack.comments()) {
+            String target = postReference(comment.postSeedKey(), comment.postSlug());
+            if (target != null) {
+                commentsByTarget.merge(target, 1, Integer::sum);
+            }
             boolean validReference = hasExactlyOnePostReference(comment.postSeedKey(), comment.postSlug());
             if (!validReference) {
                 errors.add("interaction post reference must use exactly one of postSeedKey or postSlug: "
@@ -348,6 +383,11 @@ public final class ContentPackValidator {
             requireTimestamp(comment.createdAt(), "comment " + comment.seedKey(), errors);
             if (post != null && doesNotFollow(comment.createdAt(), post.publishTime())) {
                 errors.add("interaction does not follow publication: " + comment.seedKey());
+            }
+        }
+        for (Map.Entry<String, Integer> entry : commentsByTarget.entrySet()) {
+            if (entry.getValue() > MAX_COMMENTS_PER_TARGET) {
+                errors.add("comment target exceeds maximum of 5: " + entry.getKey() + " -> " + entry.getValue());
             }
         }
         validateCommentTopology(pack.comments(), errors);
@@ -378,6 +418,9 @@ public final class ContentPackValidator {
                     postReference(parent.postSeedKey(), parent.postSlug()))) {
                 errors.add("comment parent post mismatch: " + comment.seedKey() + " -> " + parent.seedKey());
             }
+            if (!isBlank(parent.parentSeedKey())) {
+                errors.add("nested reply: " + comment.seedKey() + " -> " + parent.seedKey());
+            }
             if (comment.createdAt() != null && parent.createdAt() != null
                     && comment.createdAt().isBefore(parent.createdAt())) {
                 errors.add("comment precedes parent: " + comment.seedKey() + " -> " + parent.seedKey());
@@ -398,6 +441,10 @@ public final class ContentPackValidator {
 
     private void validateReactions(ContentPack pack, List<String> errors) {
         addDuplicates(pack.reactions(), SeedReactionDefinition::seedKey, "duplicate reaction seedKey: ", errors);
+        addDuplicates(pack.reactions(),
+                reaction -> reaction.accountSeedKey() + "|"
+                        + postReference(reaction.postSeedKey(), reaction.postSlug()) + "|" + reaction.type(),
+                "duplicate reaction triple: ", errors);
         Set<String> posts = keys(pack.posts(), SeedPostDefinition::seedKey);
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
         for (SeedReactionDefinition reaction : pack.reactions()) {
@@ -419,6 +466,9 @@ public final class ContentPackValidator {
 
     private void validateFollows(ContentPack pack, List<String> errors) {
         addDuplicates(pack.follows(), SeedFollowDefinition::seedKey, "duplicate follow seedKey: ", errors);
+        addDuplicates(pack.follows(),
+                follow -> follow.fromAccountSeedKey() + "|" + follow.toAccountSeedKey(),
+                "duplicate follow edge: ", errors);
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
         for (SeedFollowDefinition follow : pack.follows()) {
             if (follow.fromAccountSeedKey() != null && follow.fromAccountSeedKey().equals(follow.toAccountSeedKey())) {
@@ -511,6 +561,19 @@ public final class ContentPackValidator {
     private void requireTimestamp(Instant timestamp, String label, List<String> errors) {
         if (timestamp == null) {
             errors.add("missing timestamp: " + label);
+        }
+    }
+
+    private void validateExpectedCount(
+            Integer expected, long actual, String label, boolean required, List<String> errors) {
+        if (expected == null) {
+            if (required) {
+                errors.add("missing expected " + label + " count");
+            }
+            return;
+        }
+        if (expected.longValue() != actual) {
+            errors.add("expected " + label + " count: " + expected + ", actual: " + actual);
         }
     }
 

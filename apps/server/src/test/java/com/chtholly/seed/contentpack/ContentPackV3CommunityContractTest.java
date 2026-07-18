@@ -21,6 +21,16 @@ class ContentPackV3CommunityContractTest {
 
         validator.validate(pack);
 
+        var manifest = pack.manifest();
+        assertThat(manifest.expectedComments()).isEqualTo(36);
+        assertThat(manifest.expectedRootComments()).isEqualTo(28);
+        assertThat(manifest.expectedReplies()).isEqualTo(8);
+        assertThat(manifest.expectedLikes()).isEqualTo(62);
+        assertThat(manifest.expectedFavorites()).isEqualTo(26);
+        assertThat(manifest.expectedFollows()).isEqualTo(14);
+        assertThat(manifest.expectedViews()).isEqualTo(44);
+        assertThat(manifest.expectedCommentedTargets()).isEqualTo(24);
+
         Set<String> accountKeys = new HashSet<>();
         pack.accounts().forEach(account -> {
             accountKeys.add(account.seedKey());
@@ -33,21 +43,25 @@ class ContentPackV3CommunityContractTest {
         });
         assertThat(accountKeys).hasSize(8);
 
-        assertThat(pack.comments()).hasSize(36);
-        assertThat(pack.comments().stream().filter(comment -> comment.parentSeedKey() == null)).hasSize(28);
-        assertThat(pack.comments().stream().filter(comment -> comment.parentSeedKey() != null)).hasSize(8);
+        assertThat(pack.comments()).hasSize(manifest.expectedComments());
+        assertThat(pack.comments().stream().filter(comment -> comment.parentSeedKey() == null))
+                .hasSize(manifest.expectedRootComments());
+        assertThat(pack.comments().stream().filter(comment -> comment.parentSeedKey() != null))
+                .hasSize(manifest.expectedReplies());
         assertThat(pack.comments().stream()
                 .map(comment -> target(comment.postSeedKey(), comment.postSlug()))
-                .distinct()).hasSizeBetween(24, 26);
+                .distinct()).hasSize(manifest.expectedCommentedTargets());
         assertThat(pack.comments()).allSatisfy(comment -> {
             assertThat(comment.authorSeedKey()).isIn(accountKeys);
             assertThat(hasExactlyOneTarget(comment.postSeedKey(), comment.postSlug())).isTrue();
             assertThat(comment.content().codePointCount(0, comment.content().length())).isBetween(18, 90);
         });
 
-        assertThat(pack.reactions()).hasSize(88);
-        assertThat(pack.reactions().stream().filter(reaction -> "like".equals(reaction.type()))).hasSize(62);
-        assertThat(pack.reactions().stream().filter(reaction -> "fav".equals(reaction.type()))).hasSize(26);
+        assertThat(pack.reactions()).hasSize(manifest.expectedLikes() + manifest.expectedFavorites());
+        assertThat(pack.reactions().stream().filter(reaction -> "like".equals(reaction.type())))
+                .hasSize(manifest.expectedLikes());
+        assertThat(pack.reactions().stream().filter(reaction -> "fav".equals(reaction.type())))
+                .hasSize(manifest.expectedFavorites());
         assertThat(pack.reactions()).allSatisfy(reaction -> {
             assertThat(reaction.accountSeedKey()).isIn(accountKeys);
             assertThat(hasExactlyOneTarget(reaction.postSeedKey(), reaction.postSlug())).isTrue();
@@ -55,24 +69,24 @@ class ContentPackV3CommunityContractTest {
         assertThat(pack.reactions().stream()
                 .map(reaction -> target(reaction.postSeedKey(), reaction.postSlug()) + "|"
                         + reaction.accountSeedKey() + "|" + reaction.type())
-                .distinct()).hasSize(88);
+                .distinct()).hasSize(manifest.expectedLikes() + manifest.expectedFavorites());
         assertThat(pack.reactions().stream()
                 .map(reaction -> target(reaction.postSeedKey(), reaction.postSlug()))
                 .distinct()).hasSizeBetween(30, 34);
 
-        assertThat(pack.follows()).hasSize(14);
+        assertThat(pack.follows()).hasSize(manifest.expectedFollows());
         assertThat(pack.follows()).allSatisfy(follow -> {
             assertThat(follow.fromAccountSeedKey()).isIn(accountKeys);
             assertThat(follow.toAccountSeedKey()).isIn(accountKeys);
         });
 
-        assertThat(pack.views()).hasSize(44);
+        assertThat(pack.views()).hasSize(manifest.expectedViews());
         assertThat(pack.views()).allSatisfy(view -> {
             assertThat(view.minimumCount()).isBetween(18L, 180L);
             assertThat(hasExactlyOneTarget(view.postSeedKey(), view.postSlug())).isTrue();
         });
         assertThat(pack.views().stream().map(view -> target(view.postSeedKey(), view.postSlug())).distinct())
-                .hasSize(44);
+                .hasSize(manifest.expectedViews());
         assertThat(pack.views().stream().filter(view -> view.postSlug() != null).map(view -> view.postSlug()))
                 .containsExactlyInAnyOrder("111", "welcome-chtholly-hub", "2026-winter-anime-list", "why-chtholly");
 

@@ -4,6 +4,14 @@ stage: complete
 expectedAccounts: 8
 expectedPosts: 40
 expectedRetirements: 34
+expectedComments: 36
+expectedRootComments: 28
+expectedReplies: 8
+expectedLikes: 62
+expectedFavorites: 26
+expectedFollows: 14
+expectedViews: 44
+expectedCommentedTargets: 24
 expectedCategories:
   ANIME: 24
   TECH: 8
