@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chtholly.local/benchmark-manifest.schema.json",
+  "title": "Chtholly Hub benchmark manifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "profile",
+    "scenario",
+    "variant",
+    "subjectCommit",
+    "harnessCommit",
+    "datasetCommit",
+    "numberKind",
+    "status",
+    "startedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "profile": { "enum": ["smoke", "standard"] },
+    "scenario": { "enum": ["all", "cache", "counter", "relation", "fault"] },
+    "variant": { "type": "string", "minLength": 1 },
+    "subjectCommit": { "type": "string", "minLength": 7 },
+    "harnessCommit": { "type": "string", "minLength": 7 },
+    "datasetCommit": { "type": "string", "minLength": 7 },
+    "numberKind": { "enum": ["CONFIG", "OBSERVED", "TARGET", "THRESHOLD"] },
+    "status": {
+      "enum": ["PLANNED", "VALIDATED", "RUNNING", "COMPLETED", "FAILED", "BLOCKED_EXTERNAL"]
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": ["string", "null"], "format": "date-time" }
+  }
+}
