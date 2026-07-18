@@ -78,14 +78,16 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
                     SELECT COUNT(*) FROM follower
                     WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
                     """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne();
-            assertThat(redis.opsForZSet().score(
-                    "uf:flws:" + FROM_USER_ID, String.valueOf(TO_USER_ID))).isNotNull();
-            assertThat(redis.opsForZSet().score(
-                    "uf:fans:" + TO_USER_ID, String.valueOf(FROM_USER_ID))).isNotNull();
             assertThat(userCounter(FROM_USER_ID, 0)).isEqualTo(1L);
             assertThat(userCounter(TO_USER_ID, 1)).isEqualTo(1L);
             assertThat(redis.hasKey("consumed:outbox:relation:" + createdEventId)).isTrue();
         });
+        assertThat(relationService.following(FROM_USER_ID, 10, 0)).containsExactly(TO_USER_ID);
+        assertThat(relationService.followers(TO_USER_ID, 10, 0)).containsExactly(FROM_USER_ID);
+        assertThat(redis.opsForZSet().score(
+                "uf:flws:" + FROM_USER_ID, String.valueOf(TO_USER_ID))).isNotNull();
+        assertThat(redis.opsForZSet().score(
+                "uf:fans:" + TO_USER_ID, String.valueOf(FROM_USER_ID))).isNotNull();
 
         assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
         Map<String, Object> canceled = outboxEvent("FollowCanceled");
@@ -105,6 +107,67 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
             assertThat(userCounter(TO_USER_ID, 1)).isZero();
             assertThat(redis.hasKey("consumed:outbox:relation:" + canceledEventId)).isTrue();
         });
+    }
+
+    @Test
+    void staleCreatedEventConvergesToCanceledFollowingAuthority() throws Exception {
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        Map<String, Object> firstCreated = outboxEvent("FollowCreated");
+        assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
+
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        Map<String, Object> secondCreated = outboxEvent("FollowCreated");
+        publishTwice(secondCreated);
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM follower
+                        WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
+                        """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne());
+        assertThat(relationService.following(FROM_USER_ID, 10, 0)).containsExactly(TO_USER_ID);
+        assertThat(relationService.followers(TO_USER_ID, 10, 0)).containsExactly(FROM_USER_ID);
+
+        assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        publishTwice(firstCreated);
+
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM follower
+                    WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
+                    """, Long.class, FROM_USER_ID, TO_USER_ID)).isZero();
+            assertThat(redis.opsForZSet().score(
+                    "uf:flws:" + FROM_USER_ID, String.valueOf(TO_USER_ID))).isNull();
+            assertThat(redis.opsForZSet().score(
+                    "uf:fans:" + TO_USER_ID, String.valueOf(FROM_USER_ID))).isNull();
+            assertThat(userCounter(FROM_USER_ID, 0)).isZero();
+            assertThat(userCounter(TO_USER_ID, 1)).isZero();
+        });
+    }
+
+    @Test
+    void staleCanceledEventConvergesToRecreatedFollowingAuthority() throws Exception {
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        publishTwice(outboxEvent("FollowCreated"));
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM follower
+                        WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
+                        """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne());
+
+        assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        Map<String, Object> staleCanceled = outboxEvent("FollowCanceled");
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        publishTwice(staleCanceled);
+
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM follower
+                    WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
+                    """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne();
+            assertThat(userCounter(FROM_USER_ID, 0)).isEqualTo(1L);
+            assertThat(userCounter(TO_USER_ID, 1)).isEqualTo(1L);
+        });
+        assertThat(relationService.following(FROM_USER_ID, 10, 0)).containsExactly(TO_USER_ID);
+        assertThat(relationService.followers(TO_USER_ID, 10, 0)).containsExactly(FROM_USER_ID);
     }
 
     private Map<String, Object> outboxEvent(String type) {

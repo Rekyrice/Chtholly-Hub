@@ -43,6 +43,9 @@ class RelationServiceImplTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private RelationCacheInvalidator relationCacheInvalidator;
+
     private RelationServiceImpl service;
 
     @BeforeEach
@@ -53,7 +56,8 @@ class RelationServiceImplTest {
                 redis,
                 new ObjectMapper(),
                 userMapper,
-                eventPublisher);
+                eventPublisher,
+                relationCacheInvalidator);
     }
 
     @Test

@@ -13,16 +13,26 @@
 
     <insert id="insertFollower">
         INSERT INTO follower (id, to_user_id, from_user_id, rel_status, created_at, updated_at)
-        VALUES (#{id}, #{toUserId}, #{fromUserId}, #{relStatus}, NOW(3), NOW(3))
-        ON DUPLICATE KEY UPDATE rel_status=VALUES(rel_status), updated_at=VALUES(updated_at)
+        VALUES (#{id}, #{toUserId}, #{fromUserId}, #{relStatus}, #{createdAt}, NOW(3))
+        ON DUPLICATE KEY UPDATE
+            updated_at=IF(rel_status &lt;&gt; VALUES(rel_status) OR created_at &lt;&gt; VALUES(created_at),
+                          VALUES(updated_at), updated_at),
+            created_at=VALUES(created_at),
+            rel_status=VALUES(rel_status)
     </insert>
     <update id="cancelFollower">
         UPDATE follower SET rel_status=0, updated_at=NOW(3)
-        WHERE to_user_id=#{toUserId} AND from_user_id=#{fromUserId}
+        WHERE to_user_id=#{toUserId} AND from_user_id=#{fromUserId} AND rel_status&lt;&gt;0
     </update>
 
     <select id="existsFollowing" resultType="int">
         SELECT COUNT(1) FROM following WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId} AND rel_status=1
+    </select>
+
+    <select id="findActiveFollowingRow" resultType="map">
+        SELECT id, created_at AS createdAt FROM following
+        WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId} AND rel_status=1
+        LIMIT 1
     </select>
 
     <select id="listFollowing" resultType="long">
@@ -57,4 +67,3 @@
         SELECT COUNT(1) FROM follower WHERE to_user_id=#{toUserId} AND rel_status=1
     </select>
 </mapper>
-

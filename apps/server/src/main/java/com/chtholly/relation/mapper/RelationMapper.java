@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.MapKey;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Date;
 
 /**
  * 关系表数据访问层。
@@ -46,7 +47,8 @@ public interface RelationMapper {
     int insertFollower(@Param("id") Long id,
                         @Param("toUserId") Long toUserId,
                         @Param("fromUserId") Long fromUserId,
-                        @Param("relStatus") Integer relStatus);
+                        @Param("relStatus") Integer relStatus,
+                        @Param("createdAt") Date createdAt);
 
     /**
      * 取消粉丝关系（逻辑更新）。
@@ -65,6 +67,12 @@ public interface RelationMapper {
      */
     int existsFollowing(@Param("fromUserId") Long fromUserId,
                         @Param("toUserId") Long toUserId);
+
+    /**
+     * 返回当前有效关注关系的权威主键与创建时间；不存在有效关系时返回 {@code null}。
+     */
+    Map<String, Object> findActiveFollowingRow(@Param("fromUserId") Long fromUserId,
+                                               @Param("toUserId") Long toUserId);
 
     /**
      * 列出关注用户ID（偏移分页）。
@@ -122,4 +130,3 @@ public interface RelationMapper {
      */
     int countFollowerActive(@Param("toUserId") Long toUserId);
 }
-
