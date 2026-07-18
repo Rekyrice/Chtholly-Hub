@@ -100,7 +100,7 @@ foreach ($bucket in $expectedRetrievalCounts.Keys) {
 
 $expectedDraftFlows = @('confirm', 'reject', 'duplicate-confirm', 'expired-preview', 'version-conflict')
 Assert-True -Condition ((@($draftFlows.flow | Sort-Object) -join ',') -eq (@($expectedDraftFlows | Sort-Object) -join ',')) -Message 'Draft flows must cover the five fixed outcomes'
-Assert-True -Condition ((@($traceReplays.failureClass | Sort-Object) -join ',') -eq 'CITATION_INVALID,SKILL_VALIDATION_FAILED') -Message 'Trace replays must cover retrieval and Skill/draft failures'
+Assert-True -Condition ((@($traceReplays.failureClass | Sort-Object) -join ',') -eq 'RETRIEVAL_EMPTY,SKILL_VALIDATION_FAILED') -Message 'Trace replays must cover retrieval and Skill/draft failures'
 
 if (Test-Path -LiteralPath $seedPath -PathType Leaf) {
     $seed = Get-Content -Raw -LiteralPath $seedPath -Encoding UTF8
