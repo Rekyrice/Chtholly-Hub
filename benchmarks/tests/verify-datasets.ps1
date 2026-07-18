@@ -68,6 +68,7 @@ $skills = Read-JsonLines -Path $skillPath
 $retrieval = Read-JsonLines -Path $retrievalPath
 $draftFlows = Read-JsonLines -Path $draftPath
 $traceReplays = Read-JsonLines -Path $tracePath
+$allCandidates = @($skills) + @($retrieval) + @($draftFlows) + @($traceReplays)
 
 Assert-True -Condition ($skills.Count -eq 27) -Message 'Skill dataset must contain exactly 27 candidates'
 Assert-True -Condition ($retrieval.Count -eq 45) -Message 'Retrieval dataset must contain exactly 45 candidates'
@@ -77,6 +78,26 @@ Assert-True -Condition ($traceReplays.Count -eq 2) -Message 'Trace dataset must 
 foreach ($collection in @($skills, $retrieval, $draftFlows, $traceReplays)) {
     Assert-True -Condition (@($collection | Where-Object labelStatus -ne 'CANDIDATE_REQUIRES_OWNER_REVIEW').Count -eq 0) -Message 'Every candidate must remain pending owner review'
     Assert-True -Condition (@($collection | Where-Object { $null -ne $_.humanLabels }).Count -eq 0) -Message 'Candidate data must not fabricate human labels'
+}
+Assert-True -Condition (@($allCandidates.sampleId | Sort-Object -Unique).Count -eq $allCandidates.Count) -Message 'Candidate sample IDs must be unique'
+
+$datasetText = @($skillPath, $retrievalPath, $draftPath, $tracePath) |
+    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+    ForEach-Object { Get-Content -Raw -LiteralPath $_ -Encoding UTF8 }
+$forbiddenCandidateTokens = @(
+    'task-lease',
+    'Worker',
+    'draft-approval',
+    'claimEpoch',
+    'stale_worker',
+    'secondReviewer',
+    'signoff',
+    [string][char]0x7487,
+    [string][char]0x9366,
+    [string][char]0xfffd
+)
+foreach ($token in $forbiddenCandidateTokens) {
+    Assert-True -Condition (@($datasetText | Where-Object { $_.Contains($token) }).Count -eq 0) -Message "Candidate data contains forbidden or corrupted token: $token"
 }
 
 $skillCounts = @($skills | Group-Object { $_.input.taskType })
