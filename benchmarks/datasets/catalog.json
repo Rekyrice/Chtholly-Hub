@@ -31,5 +31,19 @@
     "readonlySkill": 120,
     "statefulDraftTask": 100,
     "retrievalAndGeneration": 150
+  },
+  "generatedCandidates": {
+    "directory": "benchmarks/datasets/agent-reliability-v3",
+    "manifest": "benchmarks/datasets/agent-reliability-v3/manifest.json",
+    "reviewQueue": "benchmarks/datasets/agent-reliability-v3/review-queue.csv",
+    "dedupReport": "benchmarks/datasets/agent-reliability-v3/dedup-report.json",
+    "datasetVersion": "agent-reliability-v3-counter-terminal-v1",
+    "datasetCommit": "015de7197a7b6673b26442b16ae62d2f32519593",
+    "bundleSha256": "25bb362f4e25da5a66d9e9a6676883cb0e44896ecd1d80a519dd93ede7428f4b",
+    "observedCount": 370,
+    "requiredSecondReviews": 182,
+    "completedPrimaryReviews": 0,
+    "completedSecondReviews": 0,
+    "status": "COLLECTED_UNREVIEWED"
   }
 }

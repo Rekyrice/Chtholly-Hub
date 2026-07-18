@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-07-18T18:45:00Z",
+  "updatedAt": "2026-07-18T18:58:13Z",
   "claims": [
     {
       "claimId": "D-CACHE-01",
@@ -152,6 +152,28 @@
       "rawArtifactHash": null,
       "retentionUntil": null,
       "summary": "50 questions and 9 dimensions are candidate inputs pending deduplication, split assignment, and human review.",
+      "status": "COLLECTED_UNREVIEWED",
+      "reviewer": null,
+      "reviewedAt": null
+    },
+    {
+      "claimId": "D-EVAL-V3",
+      "numberKind": "OBSERVED",
+      "subjectCommit": "396f7365c129617cd4c3898e58e9a78ef9447898",
+      "baselineSubjectCommit": "396f7365c129617cd4c3898e58e9a78ef9447898",
+      "candidateSubjectCommit": null,
+      "harnessCommit": "54b630c81fbde980f78aa2ce71ab13e27cb946df",
+      "datasetCommit": "015de7197a7b6673b26442b16ae62d2f32519593",
+      "datasetVersion": "agent-reliability-v3-counter-terminal-v1",
+      "environmentId": null,
+      "runIds": [],
+      "sampleSize": 370,
+      "repetitions": 0,
+      "metricDefinition": "Observed migrated candidate count and review state only; no model quality or human-gold claim is implied.",
+      "artifactUri": "repo://benchmarks/datasets/agent-reliability-v3",
+      "rawArtifactHash": "25bb362f4e25da5a66d9e9a6676883cb0e44896ecd1d80a519dd93ede7428f4b",
+      "retentionUntil": null,
+      "summary": "370 committed candidates were migrated without regeneration; 27 obsolete counter facts were rewritten, while 370 primary reviews and 182 required second reviews remain unsigned.",
       "status": "COLLECTED_UNREVIEWED",
       "reviewer": null,
       "reviewedAt": null
