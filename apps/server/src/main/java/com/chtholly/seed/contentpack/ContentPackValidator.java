@@ -107,8 +107,9 @@ public final class ContentPackValidator {
         long favorites = pack.reactions().stream()
                 .filter(reaction -> "fav".equals(reaction.type()))
                 .count();
+        Set<String> postSeedKeys = keys(pack.posts(), SeedPostDefinition::seedKey);
         long commentedTargets = pack.comments().stream()
-                .map(comment -> postReference(comment.postSeedKey(), comment.postSlug()))
+                .map(comment -> validCommentTarget(comment, postSeedKeys))
                 .filter(java.util.Objects::nonNull)
                 .distinct()
                 .count();
@@ -361,7 +362,7 @@ public final class ContentPackValidator {
         Set<String> comments = keys(pack.comments(), SeedCommentDefinition::seedKey);
         Map<String, Integer> commentsByTarget = new LinkedHashMap<>();
         for (SeedCommentDefinition comment : pack.comments()) {
-            String target = postReference(comment.postSeedKey(), comment.postSlug());
+            String target = validCommentTarget(comment, posts.keySet());
             if (target != null) {
                 commentsByTarget.merge(target, 1, Integer::sum);
             }
@@ -377,7 +378,7 @@ public final class ContentPackValidator {
             if (!accounts.contains(comment.authorSeedKey())) {
                 errors.add("missing comment author: " + comment.seedKey() + " -> " + comment.authorSeedKey());
             }
-            if (comment.parentSeedKey() != null && !comments.contains(comment.parentSeedKey())) {
+            if (!isBlank(comment.parentSeedKey()) && !comments.contains(comment.parentSeedKey())) {
                 errors.add("missing parent comment: " + comment.seedKey() + " -> " + comment.parentSeedKey());
             }
             requireTimestamp(comment.createdAt(), "comment " + comment.seedKey(), errors);
@@ -387,7 +388,8 @@ public final class ContentPackValidator {
         }
         for (Map.Entry<String, Integer> entry : commentsByTarget.entrySet()) {
             if (entry.getValue() > MAX_COMMENTS_PER_TARGET) {
-                errors.add("comment target exceeds maximum of 5: " + entry.getKey() + " -> " + entry.getValue());
+                errors.add("comment target exceeds maximum of " + MAX_COMMENTS_PER_TARGET + ": "
+                        + entry.getKey() + " -> " + entry.getValue());
             }
         }
         validateCommentTopology(pack.comments(), errors);
@@ -429,7 +431,7 @@ public final class ContentPackValidator {
         for (SeedCommentDefinition start : comments) {
             Set<String> path = new HashSet<>();
             SeedCommentDefinition current = start;
-            while (current != null && current.parentSeedKey() != null) {
+            while (current != null && !isBlank(current.parentSeedKey())) {
                 if (!path.add(current.seedKey())) {
                     errors.add("comment parent cycle: " + start.seedKey());
                     break;
@@ -441,9 +443,12 @@ public final class ContentPackValidator {
 
     private void validateReactions(ContentPack pack, List<String> errors) {
         addDuplicates(pack.reactions(), SeedReactionDefinition::seedKey, "duplicate reaction seedKey: ", errors);
-        addDuplicates(pack.reactions(),
-                reaction -> reaction.accountSeedKey() + "|"
-                        + postReference(reaction.postSeedKey(), reaction.postSlug()) + "|" + reaction.type(),
+        addStructuredDuplicates(pack.reactions(),
+                reaction -> new ReactionKey(
+                        reaction.accountSeedKey(),
+                        postReference(reaction.postSeedKey(), reaction.postSlug()),
+                        reaction.type()),
+                key -> key.accountSeedKey() + "|" + key.target() + "|" + key.type(),
                 "duplicate reaction triple: ", errors);
         Set<String> posts = keys(pack.posts(), SeedPostDefinition::seedKey);
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
@@ -466,8 +471,9 @@ public final class ContentPackValidator {
 
     private void validateFollows(ContentPack pack, List<String> errors) {
         addDuplicates(pack.follows(), SeedFollowDefinition::seedKey, "duplicate follow seedKey: ", errors);
-        addDuplicates(pack.follows(),
-                follow -> follow.fromAccountSeedKey() + "|" + follow.toAccountSeedKey(),
+        addStructuredDuplicates(pack.follows(),
+                follow -> new FollowEdgeKey(follow.fromAccountSeedKey(), follow.toAccountSeedKey()),
+                key -> key.fromAccountSeedKey() + "|" + key.toAccountSeedKey(),
                 "duplicate follow edge: ", errors);
         Set<String> accounts = keys(pack.accounts(), SeedAccountDefinition::seedKey);
         for (SeedFollowDefinition follow : pack.follows()) {
@@ -536,6 +542,22 @@ public final class ContentPackValidator {
         }
     }
 
+    private <T, K> void addStructuredDuplicates(
+            List<T> values,
+            Function<T, K> keyExtractor,
+            Function<K, String> diagnosticFormatter,
+            String prefix,
+            List<String> errors) {
+        Set<K> seen = new HashSet<>();
+        Set<K> reported = new HashSet<>();
+        for (T value : values) {
+            K key = keyExtractor.apply(value);
+            if (!seen.add(key) && reported.add(key)) {
+                errors.add(prefix + diagnosticFormatter.apply(key));
+            }
+        }
+    }
+
     private String foldDatabaseIdentifier(String value) {
         return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
@@ -592,8 +614,25 @@ public final class ContentPackValidator {
         return isBlank(postSlug) ? null : "slug:" + postSlug;
     }
 
+    private static String validCommentTarget(
+            SeedCommentDefinition comment, Set<String> declaredPostSeedKeys) {
+        if (!hasExactlyOnePostReference(comment.postSeedKey(), comment.postSlug())) {
+            return null;
+        }
+        if (!isBlank(comment.postSeedKey()) && !declaredPostSeedKeys.contains(comment.postSeedKey())) {
+            return null;
+        }
+        return postReference(comment.postSeedKey(), comment.postSlug());
+    }
+
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private record ReactionKey(String accountSeedKey, String target, String type) {
+    }
+
+    private record FollowEdgeKey(String fromAccountSeedKey, String toAccountSeedKey) {
     }
 
     /**

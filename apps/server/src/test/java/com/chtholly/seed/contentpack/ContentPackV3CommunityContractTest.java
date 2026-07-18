@@ -4,8 +4,10 @@ import com.chtholly.seed.contentpack.model.SeedCommentDefinition;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,9 +46,9 @@ class ContentPackV3CommunityContractTest {
         assertThat(accountKeys).hasSize(8);
 
         assertThat(pack.comments()).hasSize(manifest.expectedComments());
-        assertThat(pack.comments().stream().filter(comment -> comment.parentSeedKey() == null))
+        assertThat(pack.comments().stream().filter(comment -> isBlank(comment.parentSeedKey())))
                 .hasSize(manifest.expectedRootComments());
-        assertThat(pack.comments().stream().filter(comment -> comment.parentSeedKey() != null))
+        assertThat(pack.comments().stream().filter(comment -> !isBlank(comment.parentSeedKey())))
                 .hasSize(manifest.expectedReplies());
         assertThat(pack.comments().stream()
                 .map(comment -> target(comment.postSeedKey(), comment.postSlug()))
@@ -56,6 +58,21 @@ class ContentPackV3CommunityContractTest {
             assertThat(hasExactlyOneTarget(comment.postSeedKey(), comment.postSlug())).isTrue();
             assertThat(comment.content().codePointCount(0, comment.content().length())).isBetween(18, 90);
         });
+        List<String> forbiddenTemplatePhrases = List.of(
+                "总结得很好", "很有启发", "核心观点是", "值得我们思考", "首先，", "其次，", "最后，");
+        assertThat(pack.comments()).allSatisfy(comment ->
+                assertThat(forbiddenTemplatePhrases.stream().noneMatch(comment.content()::contains)).isTrue());
+        Instant earliestComment = pack.comments().stream()
+                .map(SeedCommentDefinition::createdAt)
+                .min(Instant::compareTo)
+                .orElseThrow();
+        Instant latestComment = pack.comments().stream()
+                .map(SeedCommentDefinition::createdAt)
+                .max(Instant::compareTo)
+                .orElseThrow();
+        assertThat(earliestComment).isBeforeOrEqualTo(Instant.parse("2026-07-14T02:12:00Z"));
+        assertThat(latestComment).isAfterOrEqualTo(Instant.parse("2026-07-15T14:22:00Z"));
+        assertThat(Duration.between(earliestComment, latestComment).toHours()).isGreaterThanOrEqualTo(36L);
 
         assertThat(pack.reactions()).hasSize(manifest.expectedLikes() + manifest.expectedFavorites());
         assertThat(pack.reactions().stream().filter(reaction -> "like".equals(reaction.type())))
@@ -67,8 +84,10 @@ class ContentPackV3CommunityContractTest {
             assertThat(hasExactlyOneTarget(reaction.postSeedKey(), reaction.postSlug())).isTrue();
         });
         assertThat(pack.reactions().stream()
-                .map(reaction -> target(reaction.postSeedKey(), reaction.postSlug()) + "|"
-                        + reaction.accountSeedKey() + "|" + reaction.type())
+                .map(reaction -> new ReactionTuple(
+                        reaction.accountSeedKey(),
+                        target(reaction.postSeedKey(), reaction.postSlug()),
+                        reaction.type()))
                 .distinct()).hasSize(manifest.expectedLikes() + manifest.expectedFavorites());
         assertThat(pack.reactions().stream()
                 .map(reaction -> target(reaction.postSeedKey(), reaction.postSlug()))
@@ -79,6 +98,9 @@ class ContentPackV3CommunityContractTest {
             assertThat(follow.fromAccountSeedKey()).isIn(accountKeys);
             assertThat(follow.toAccountSeedKey()).isIn(accountKeys);
         });
+        assertThat(pack.follows().stream()
+                .map(follow -> new FollowEdge(follow.fromAccountSeedKey(), follow.toAccountSeedKey()))
+                .distinct()).hasSize(manifest.expectedFollows());
 
         assertThat(pack.views()).hasSize(manifest.expectedViews());
         assertThat(pack.views()).allSatisfy(view -> {
@@ -100,5 +122,15 @@ class ContentPackV3CommunityContractTest {
 
     private String target(String postSeedKey, String postSlug) {
         return postSeedKey == null ? "slug:" + postSlug : "seed:" + postSeedKey;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private record ReactionTuple(String accountSeedKey, String target, String type) {
+    }
+
+    private record FollowEdge(String fromAccountSeedKey, String toAccountSeedKey) {
     }
 }

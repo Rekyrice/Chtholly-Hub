@@ -244,7 +244,9 @@ class ContentPackValidatorTest {
     @Test
     void rejectsEveryDeclaredCommunityInteractionCountMismatch() throws Exception {
         ContentPack loaded = normalizedValidPack();
-        long rootComments = loaded.comments().stream().filter(comment -> comment.parentSeedKey() == null).count();
+        long rootComments = loaded.comments().stream()
+                .filter(comment -> comment.parentSeedKey() == null || comment.parentSeedKey().isBlank())
+                .count();
         long replies = loaded.comments().size() - rootComments;
         long likes = loaded.reactions().stream().filter(reaction -> "like".equals(reaction.type())).count();
         long favorites = loaded.reactions().stream().filter(reaction -> "fav".equals(reaction.type())).count();
@@ -341,6 +343,97 @@ class ContentPackValidatorTest {
                 "duplicate reaction triple: " + firstAccount + "|seed:" + post.seedKey() + "|like"));
         assertTrue(exception.getMessage().contains(
                 "duplicate follow edge: " + firstAccount + "|" + secondAccount));
+    }
+
+    @Test
+    void distinctStructuredInteractionKeysDoNotCollideOnPipeCharacters() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        List<SeedReactionDefinition> reactions = List.of(
+                new SeedReactionDefinition("reaction-pipe-a", "c", "a|seed:b", "like"),
+                new SeedReactionDefinition("reaction-pipe-b", "b|seed:c", "a", "like"));
+        List<SeedFollowDefinition> follows = List.of(
+                new SeedFollowDefinition("follow-pipe-a", "a|b", "c", Instant.parse("2026-07-01T00:00:00Z")),
+                new SeedFollowDefinition("follow-pipe-b", "a", "b|c", Instant.parse("2026-07-02T00:00:00Z")));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), List.of(), follows, reactions, List.of());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        String message = exception.getMessage();
+        assertTrue(message.contains("missing reaction post: reaction-pipe-a -> c"));
+        assertTrue(message.contains("missing follow source: follow-pipe-a -> a|b"));
+        assertTrue(!message.contains("duplicate reaction triple:"));
+        assertTrue(!message.contains("duplicate follow edge:"));
+    }
+
+    @Test
+    void invalidCommentReferencesDoNotContributeCoverageOrPerTargetLimits() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedPostDefinition post = loaded.posts().getFirst();
+        String author = loaded.accounts().getFirst().seedKey();
+        Instant createdAt = post.publishTime().plusSeconds(1);
+        List<SeedCommentDefinition> comments = new java.util.ArrayList<>();
+        for (int index = 1; index <= 5; index++) {
+            comments.add(new SeedCommentDefinition(
+                    "valid-" + index, null, post.seedKey(), author, null, "valid", createdAt));
+        }
+        comments.add(new SeedCommentDefinition(
+                "both-present", null, post.seedKey(), "external-both", author, null, "invalid", createdAt));
+        comments.add(new SeedCommentDefinition(
+                "both-blank", null, null, null, author, null, "invalid", createdAt));
+        comments.add(new SeedCommentDefinition(
+                "missing-seed", null, "absent-post", null, author, null, "invalid", createdAt));
+        comments.add(new SeedCommentDefinition(
+                "external-slug", null, null, "external-only", author, null, "valid", createdAt));
+        ContentPackManifest manifest = new ContentPackManifest(
+                loaded.manifest().version(),
+                loaded.manifest().namespace(),
+                loaded.manifest().stage(),
+                loaded.manifest().expectedAccounts(),
+                loaded.manifest().expectedPosts(),
+                loaded.manifest().expectedRetirements(),
+                comments.size(),
+                comments.size(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                2,
+                loaded.manifest().expectedCategories());
+        ContentPack pack = new ContentPack(
+                loaded.root(), manifest, loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), comments, List.of(), List.of(), List.of());
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class, () -> validator.validate(pack));
+
+        String message = exception.getMessage();
+        assertTrue(message.contains(
+                "interaction post reference must use exactly one of postSeedKey or postSlug: both-present"));
+        assertTrue(message.contains(
+                "interaction post reference must use exactly one of postSeedKey or postSlug: both-blank"));
+        assertTrue(message.contains("missing comment post: missing-seed -> absent-post"));
+        assertTrue(!message.contains("expected commented target count:"));
+        assertTrue(!message.contains("comment target exceeds maximum"));
+    }
+
+    @Test
+    void treatsAnEmptyParentSeedKeyAsARootComment() throws Exception {
+        ContentPack loaded = normalizedValidPack();
+        SeedPostDefinition post = loaded.posts().getFirst();
+        SeedCommentDefinition root = new SeedCommentDefinition(
+                "empty-parent", null, post.seedKey(), loaded.accounts().getFirst().seedKey(), "", "root",
+                post.publishTime().plusSeconds(1));
+        ContentPack pack = new ContentPack(
+                loaded.root(), loaded.manifest(), loaded.accounts(), loaded.assets(), loaded.sources(), loaded.posts(),
+                loaded.retirements(), List.of(root), List.of(), List.of(), List.of());
+
+        ContentPackValidator.ValidationResult result = validator.validate(pack);
+
+        assertEquals(List.of(), result.warnings());
     }
 
     @Test
