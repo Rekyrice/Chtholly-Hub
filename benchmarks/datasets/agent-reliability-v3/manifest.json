@@ -1,0 +1,67 @@
+﻿{
+    "schemaVersion":  1,
+    "datasetFamily":  "agent-reliability-v3",
+    "reviewStatus":  "COLLECTED_UNREVIEWED",
+    "subjectCommit":  "396f7365c129617cd4c3898e58e9a78ef9447898",
+    "harnessCommit":  "54b630c81fbde980f78aa2ce71ab13e27cb946df",
+    "datasetCommit":  null,
+    "sourceDatasetCommit":  "ccb7efbf6c32947a09e57a740c1ee6f6a986ff1f",
+    "factRevision":  "counter-terminal-v1",
+    "datasetVersions":  {
+                            "readonly_skill":  "readonly-skill-candidates-v3",
+                            "retrieval_generation":  "retrieval-candidates-v3",
+                            "stateful_task":  "stateful-draft-task-candidates-v3"
+                        },
+    "counts":  {
+                   "readonlySkill":  120,
+                   "statefulDraftTask":  100,
+                   "retrievalAndGeneration":  150,
+                   "total":  370
+               },
+    "splitPolicy":  {
+                        "train":  60,
+                        "dev":  20,
+                        "test":  20
+                    },
+    "splitGrouping":  {
+                          "key":  "topicKey",
+                          "trainTopicSlots":  [
+                                                  1,
+                                                  2,
+                                                  3,
+                                                  4,
+                                                  5,
+                                                  6
+                                              ],
+                          "devTopicSlots":  [
+                                                7,
+                                                8
+                                            ],
+                          "testTopicSlots":  [
+                                                 9,
+                                                 10
+                                             ]
+                      },
+    "labelSources":  {
+                         "rule":  true,
+                         "judge":  false,
+                         "human":  false
+                     },
+    "comparisons":  [
+                        {
+                            "candidate":  "document-level-rrf",
+                            "status":  "PLANNED",
+                            "rollbackTarget":  "396f7365c129617cd4c3898e58e9a78ef9447898"
+                        },
+                        {
+                            "candidate":  "complex-selector",
+                            "status":  "PLANNED",
+                            "rollbackTarget":  "396f7365c129617cd4c3898e58e9a78ef9447898"
+                        },
+                        {
+                            "candidate":  "extra-reranker",
+                            "status":  "PLANNED",
+                            "rollbackTarget":  "396f7365c129617cd4c3898e58e9a78ef9447898"
+                        }
+                    ]
+}

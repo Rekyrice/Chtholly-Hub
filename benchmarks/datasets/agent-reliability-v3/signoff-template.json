@@ -1,0 +1,15 @@
+﻿{
+    "schemaVersion":  1,
+    "datasetFamily":  "agent-reliability-v3",
+    "status":  "PENDING_HUMAN_REVIEW",
+    "datasetCommit":  null,
+    "expectedRows":  370,
+    "primaryReviewer":  null,
+    "primaryReviewedAt":  null,
+    "primaryDecision":  null,
+    "secondReviewer":  null,
+    "secondReviewedAt":  null,
+    "secondReviewerDecision":  null,
+    "adjudicationComplete":  false,
+    "notes":  "Do not set HUMAN_APPROVED until all required rows and safety-critical second reviews are complete."
+}
