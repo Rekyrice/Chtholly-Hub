@@ -164,6 +164,11 @@ bangumi:
     cron: "0 0 4 * * *"
 
 counter:
+  calibration:
+    enabled: ${COUNTER_CALIBRATION_ENABLED:true}
+    fixed-delay: ${COUNTER_CALIBRATION_FIXED_DELAY:PT5M}
+    batch-size: ${COUNTER_CALIBRATION_BATCH_SIZE:50}
+    scan-count: ${COUNTER_CALIBRATION_SCAN_COUNT:500}
   kafka:
     publish:
       max-attempts: ${COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS:3}
@@ -175,14 +180,7 @@ counter:
   rebuild:
     enabled: false
     lock:
-      ttl-ms: 5000
       watchdog-ms: 30000
-    rate:
-      permits: 3
-      window-seconds: 10
-    backoff:
-      base-ms: 500
-      max-ms: 30000
 
 mybatis:
   mapper-locations: classpath*:mapper/*.xml

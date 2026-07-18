@@ -22,6 +22,12 @@
 - `KAFKA_ENABLED` 在 `application.yml` 中缺省为 `false`，即使用进程内 fallback；两份 `.env` 示例都显式写成 `true`，按示例启动就必须提供 Kafka。这一差异是有意的：属性缺省保证可降级，推荐完整环境覆盖异步链路。
 - `CANAL_ENABLED` 缺省及示例均为 `false`。未部署 Canal 时不要仅因存在相关配置就开启。
 
+### 互动计数恢复
+
+- `COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS` 与 `COUNTER_KAFKA_PUBLISH_ACK_TIMEOUT` 限制一次真实状态变化等待 Kafka 确认的次数和时长；每次重试复用同一个 event ID、消息 key 与序列化 payload。
+- `COUNTER_KAFKA_CONSUMER_MAX_ATTEMPTS`、`COUNTER_KAFKA_CONSUMER_RETRY_BACKOFF` 和 `COUNTER_KAFKA_CONSUMER_DLT_ACK_TIMEOUT` 控制批量消费者的有限重试与死信确认。业务事务成功前不会确认原批次。
+- `COUNTER_CALIBRATION_ENABLED`、`COUNTER_CALIBRATION_FIXED_DELAY`、`COUNTER_CALIBRATION_BATCH_SIZE` 和 `COUNTER_CALIBRATION_SCAN_COUNT` 控制从点赞/收藏 Bitmap 权威事实恢复 Redis SDS 与 MySQL 快照的周期任务。每轮只推进一个可恢复 SCAN cursor 页面，`SCAN_COUNT` 是 Redis 工作量提示而不是严格 key 数上限；初始完整页面循环结束前不处理实体，之后实际校准实体数受 `BATCH_SIZE` 严格限制。页面候选进入持久 ZSet，两类实体分片索引保留版本哨兵；哨兵缺失时失败关闭并等待后续页面重建非空分片。批次同时为 Redis 候选和 MySQL-only 漂移保留容量；关闭周期任务不会禁用读路径上的单实体校准。
+
 ### 存储、LLM 与外部服务
 
 - `STORAGE_TYPE` 缺省和当前本地/生产示例均为 `local`；路径分别默认 `./uploads` 和 Compose 中的 `/app/uploads`。切换 `oss` 后才需要有效的 `OSS_*`。

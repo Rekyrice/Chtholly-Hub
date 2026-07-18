@@ -34,4 +34,28 @@
                 count_value + VALUES(count_value), count_value),
             updated_at = IF(fact_epoch = VALUES(fact_epoch), VALUES(updated_at), updated_at)
     </insert>
+
+    <insert id="replaceReactionSnapshots">
+        INSERT INTO counter_snapshot
+            (entity_type, entity_id, metric, count_value, fact_epoch, updated_at)
+        VALUES
+            (#{entityType}, #{entityId}, 'like', #{likeCount}, #{factEpoch}, NOW(3)),
+            (#{entityType}, #{entityId}, 'fav', #{favCount}, #{factEpoch}, NOW(3))
+        ON DUPLICATE KEY UPDATE
+            count_value = IF(VALUES(fact_epoch) &gt;= fact_epoch,
+                VALUES(count_value), count_value),
+            updated_at = IF(VALUES(fact_epoch) &gt;= fact_epoch,
+                VALUES(updated_at), updated_at),
+            fact_epoch = GREATEST(fact_epoch, VALUES(fact_epoch))
+    </insert>
+
+    <select id="listOldestReactionSnapshotIdentities"
+            resultType="com.chtholly.counter.mapper.CounterEntityIdentity">
+        SELECT entity_type, entity_id
+        FROM counter_snapshot
+        WHERE metric IN ('like', 'fav')
+        GROUP BY entity_type, entity_id
+        ORDER BY MIN(updated_at), entity_type, entity_id
+        LIMIT #{limit}
+    </select>
 </mapper>

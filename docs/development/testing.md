@@ -36,3 +36,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harn
 前者固定 27 条 Skill、45 条检索、5 条草稿流程与 2 条 Trace 回放候选，并拒绝旧任务租约、双审和 signoff 语义；所有候选在项目本人复核前保持 `CANDIDATE_REQUIRES_OWNER_REVIEW`。后者验证两个缓存场景、三个实际变体、最小 manifest、隔离环境与原始汇总入口。静态合同通过不等于已经产生真实性能数字。
 
 缓存正式数据仅运行 12 次固定对照：`stable-hot` 下 `db-only/full` 各 3 次，`expiry-spike` 下 `full-no-singleflight/full` 各 3 次。每次使用独立环境并保留 p95、错误率、MySQL 查询次数和同 key 真实加载次数；缺少任一原始指标的结果为 `INCOMPLETE`，不得用于比较。环境和命令详见 [`benchmarks/README.md`](../../benchmarks/README.md)。
+
+## 互动计数恢复验证
+
+以下两组集成测试分别固定 Redis 5 Lua 语义，以及 Redis/Kafka/MySQL 的批次重试、重启幂等、消息遗漏和周期校准。它们必须使用 `integration-test` profile；普通 `mvn test` 不会执行。
+
+```powershell
+cd apps/server
+mvn -q -Pintegration-test '-Dit.test=CounterFactMaintenanceLuaIT' verify
+mvn -q -Pintegration-test '-Dit.test=CounterGoldenPathIT' verify
+```
+
+`CounterFactMaintenanceLuaIT` 覆盖重复与并发状态切换、无过期维护 fence 的活跃拒绝与崩溃接管、epoch、分片索引局部丢失失败关闭、非零 cursor 跨实例续扫、持久候选轮转和 Redis 5 兼容性。`CounterGoldenPathIT` 分别验证 MySQL 快照失败会回滚 inbox 并允许同 event ID 重试、Kafka listener 对瞬时处理失败执行整批自动重试、消费者重启、DLT broker 确认，以及“Lua 已更新 Bitmap/SDS 但事件未投递”后由周期校准恢复 Bitmap、Redis SDS 与 MySQL 快照一致；前两项是独立故障路径，不将其合并宣称为一次端到端故障。该链路只承诺最终收敛，不宣称 Redis 与 Kafka 原子提交或 exactly-once。

@@ -13,30 +13,18 @@ import com.chtholly.post.model.Post;
 import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
-import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.http.HttpStatus;
-import org.redisson.api.RedissonClient;
-import org.redisson.api.RLock;
-import org.redisson.api.RRateLimiter;
-import org.redisson.api.RateType;
-import org.redisson.api.RBucket;
-import org.springframework.beans.factory.annotation.Value;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Distributed counter service: Redis Bitmap for idempotent like/fav facts,
  * Kafka/ApplicationEvent for async aggregation, SDS for O(1) count reads.
- *
- * <p>Rebuild path uses rate limiting and exponential backoff to avoid storms on hot entities.
  */
 @Slf4j
 @Service
@@ -46,28 +34,15 @@ public class CounterServiceImpl implements CounterService {
     private final DefaultRedisScript<List> toggleScript;
     private final DefaultRedisScript<Long> effectiveCountScript;
     private final CounterEventPublisher counterEventPublisher;
-    private final RedissonClient redisson;
     private final PostMapper postMapper;
     private final UserMapper userMapper;
     private final CounterCalibrationService calibrationService;
-    @Value("${counter.rebuild.lock.ttl-ms:5000}")
-    private long lockTtlMs;
-    @Value("${counter.rebuild.rate.permits:3}")
-    private int ratePermits;
-    @Value("${counter.rebuild.rate.window-seconds:10}")
-    private int rateWindowSeconds;
-    @Value("${counter.rebuild.backoff.base-ms:500}")
-    private long backoffBaseMs;
-    @Value("${counter.rebuild.backoff.max-ms:30000}")
-    private long backoffMaxMs;
 
     public CounterServiceImpl(StringRedisTemplate redis, CounterEventPublisher counterEventPublisher,
-                              RedissonClient redisson,
                               PostMapper postMapper, UserMapper userMapper,
                               CounterCalibrationService calibrationService) {
         this.redis = redis;
         this.counterEventPublisher = counterEventPublisher;
-        this.redisson = redisson;
         this.postMapper = postMapper;
         this.userMapper = userMapper;
         this.calibrationService = calibrationService;
@@ -128,13 +103,19 @@ public class CounterServiceImpl implements CounterService {
                 bmKey,
                 CounterKeys.sdsKey(etype, eid),
                 CounterKeys.factMaintenanceFenceKey(etype, eid),
-                CounterKeys.factEpochKey(etype, eid));
+                CounterKeys.factEpochKey(etype, eid),
+                CounterKeys.bitmapShardIndexKey(metric, etype, eid),
+                CounterKeys.bitmapShardIndexKey(
+                        "like".equals(metric) ? "fav" : "like", etype, eid),
+                CounterKeys.bitmapCalibrationCandidatesKey());
         List<String> args = List.of(
                 String.valueOf(bit),
                 add ? "add" : "remove",
                 String.valueOf(idx),
                 String.valueOf(CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE),
-                String.valueOf(CounterSchema.FIELD_SIZE));
+                String.valueOf(CounterSchema.FIELD_SIZE),
+                CounterBitmapIndexService.SHARD_INDEX_SENTINEL,
+                etype + ":" + eid);
         List<?> rawResult = redis.execute(toggleScript, keys, args.toArray());
         ToggleResult result = mapToggleResult(rawResult);
         if (result.status() == 2L) {
@@ -145,10 +126,18 @@ public class CounterServiceImpl implements CounterService {
             }
         }
         if (result.status() == -1L) {
-            throw new BusinessException(
-                    ErrorCode.CONFLICT,
-                    "互动计数正在维护，请稍后重试",
-                    HttpStatus.SERVICE_UNAVAILABLE.value());
+            try {
+                calibrationService.reconcileEntity(etype, eid);
+                result = mapToggleResult(redis.execute(toggleScript, keys, args.toArray()));
+            } catch (IllegalStateException exception) {
+                throw maintenanceUnavailable(exception);
+            }
+        }
+        if (result.status() == -1L || result.status() == 3L) {
+            throw maintenanceUnavailable(null);
+        }
+        if (result.status() == 2L) {
+            throw new IllegalStateException("Counter reconciliation did not restore the SDS structure");
         }
         boolean ok = result.status() == 1L;
         if (ok) {
@@ -160,6 +149,15 @@ public class CounterServiceImpl implements CounterService {
         return ok;
     }
 
+    private static BusinessException maintenanceUnavailable(Throwable cause) {
+        BusinessException exception = new BusinessException(
+                ErrorCode.CONFLICT,
+                "互动计数正在维护，请稍后重试",
+                HttpStatus.SERVICE_UNAVAILABLE.value());
+        if (cause != null) { exception.initCause(cause); }
+        return exception;
+    }
+
     private static ToggleResult mapToggleResult(List<?> values) {
         if (values == null || values.size() != 2
                 || !(values.get(0) instanceof Number status)
@@ -168,7 +166,8 @@ public class CounterServiceImpl implements CounterService {
         }
         long statusValue = status.longValue();
         long epochValue = epoch.longValue();
-        if ((statusValue != -1L && statusValue != 0L && statusValue != 1L && statusValue != 2L)
+        if ((statusValue != -1L && statusValue != 0L && statusValue != 1L
+                && statusValue != 2L && statusValue != 3L)
                 || epochValue < 0L) {
             throw new IllegalStateException("Counter toggle Lua returned an invalid result");
         }
@@ -203,121 +202,47 @@ public class CounterServiceImpl implements CounterService {
     }
 
     /**
-     * Returns aggregated counts from SDS; triggers bitmap rebuild when structure is missing.
+     * Returns aggregated counts from SDS and reconciles reaction fields from Bitmap authority when missing.
      *
      * @param metrics Subset of metrics to read (e.g. "like", "fav").
      */
     @Override
     public Map<String, Long> getCounts(String entityType, String entityId, List<String> metrics) {
+        CounterSchema.requirePersistableIdentity(entityType, entityId);
         String sdsKey = CounterKeys.sdsKey(entityType, entityId);
         int expectedLen = CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE;
-        // SDS 固定结构：按大端 32 位编码
         byte[] raw = getRaw(sdsKey);
-        boolean needRebuild = (raw == null || raw.length != expectedLen);
-
         Map<String, Long> result = new LinkedHashMap<>();
 
-        if (needRebuild) {
-            List<String> bitmapMetrics = metrics.stream()
-                    .filter(metric -> !"view".equals(metric))
-                    .toList();
+        if (raw == null || raw.length != expectedLen) {
             if (metrics.contains("view")) {
                 result.put("view", getEffectiveCount(entityType, entityId, "view"));
             }
-            if (bitmapMetrics.isEmpty()) {
+            boolean needsReaction = metrics.stream()
+                    .anyMatch(metric -> "like".equals(metric) || "fav".equals(metric));
+            if (!needsReaction) {
                 return result;
             }
-            log.info("计数结构不存在，需要重建");
-            // 限流与指数退避：避免在热点实体上触发重建风暴
-            if (inBackoff(entityType, entityId)) {
-                for (String m : bitmapMetrics) {
-                    result.putIfAbsent(m, 0L);
-                }
-                return result;
-            }
-
-            if (!allowedByRateLimiter(entityType, entityId)) {
-                escalateBackoff(entityType, entityId);
-                for (String m : bitmapMetrics) {
-                    result.putIfAbsent(m, 0L);
-                }
-                return result;
-            }
-
-            String lockKey = "post".equals(entityType)
-                    ? CounterKeys.factMaintenanceLockKey(entityType, entityId)
-                    : String.format("lock:sds-rebuild:%s:%s", entityType, entityId);
-
-            RLock lock = redisson.getLock(lockKey);
-            boolean locked = false;
-
             try {
-                // 使用 Redisson 看门狗机制：不指定租期，自动续约（由 Redisson 的 lockWatchdogTimeout 控制）
-                locked = lock.tryLock(0L, TimeUnit.MILLISECONDS);
-                if (!locked) {
-                    escalateBackoff(entityType, entityId);
-                    for (String m : bitmapMetrics) {
-                        result.putIfAbsent(m, 0L);
-                    }
-                    return result;
-                }
-                // 结构可能在等待同一实体锁期间被事实维护或另一重建线程修复。
-                // 持锁后必须重读，避免用锁前的缺失快照覆盖刚完成的精确 SDS。
-                byte[] currentRaw = getRaw(sdsKey);
-                if (currentRaw != null && currentRaw.length == expectedLen) {
-                    for (String m : bitmapMetrics) {
-                        Integer idx = CounterSchema.NAME_TO_IDX.get(m);
-                        if (idx != null) {
-                            result.put(m, readInt32BE(currentRaw, idx * CounterSchema.FIELD_SIZE));
-                        }
-                    }
-                    resetBackoff(entityType, entityId);
-                    return result;
-                }
-                // 依据位图分片统计真实计数（仅由持锁者执行重建）
-                byte[] newSds = new byte[expectedLen];
-                List<String> rebuildFields = new ArrayList<>();
-                for (String m : bitmapMetrics) {
-                    Integer idx = CounterSchema.NAME_TO_IDX.get(m);
-                    if (idx == null) {
-                        continue;
-                    }
-                    long sum = bitCountShardsPipelined(m, entityType, entityId);
-                    writeInt32BE(newSds, idx * CounterSchema.FIELD_SIZE, sum);
-                    result.put(m, sum);
-                    rebuildFields.add(String.valueOf(idx));
-                }
-                // 回写SDS并清理聚合桶，避免重复加算
-                setRaw(sdsKey, newSds);
-                if (!rebuildFields.isEmpty()) {
-                    String aggKey = CounterKeys.aggKey(entityType, entityId);
-                    redis.opsForHash().delete(aggKey, rebuildFields.toArray());
-                }
-                resetBackoff(entityType, entityId);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                escalateBackoff(entityType, entityId);
-                for (String m : bitmapMetrics) {
-                    result.putIfAbsent(m, 0L);
-                }
-                return result;
-            } finally {
-                if (locked) {
-                    try {
-                        lock.unlock();
-                    } catch (Exception ignore) {}
-                }
+                calibrationService.reconcileEntity(entityType, entityId);
+            } catch (RuntimeException exception) {
+                log.warn("Counter read reconciliation failed entityType={} entityId={}: {}",
+                        entityType, entityId, exception.getMessage());
             }
-        } else {
-            for (String m : metrics) {
-                Integer idx = CounterSchema.NAME_TO_IDX.get(m);
-                if (idx == null) {
-                    continue;
-                }
+            raw = getRaw(sdsKey);
+            if (raw == null || raw.length != expectedLen) {
+                throw new BusinessException(
+                        ErrorCode.INTERNAL_ERROR,
+                        "互动计数暂时不可用，请稍后重试",
+                        HttpStatus.SERVICE_UNAVAILABLE.value());
+            }
+        }
 
-                int off = idx * CounterSchema.FIELD_SIZE;
-                long val = readInt32BE(raw, off); // 大端读取单段 32 位值
-                result.put(m, val);
+        for (String metric : metrics) {
+            if (result.containsKey(metric)) { continue; }
+            Integer index = CounterSchema.NAME_TO_IDX.get(metric);
+            if (index != null) {
+                result.put(metric, readInt32BE(raw, index * CounterSchema.FIELD_SIZE));
             }
         }
         return result;
@@ -347,7 +272,7 @@ public class CounterServiceImpl implements CounterService {
 
     /**
      * 批量获取实体计数（管道批量 GET 降低 RTT）。
-     * 缺失或结构异常（长度不符）时按零返回，保证接口稳定。
+     * reaction SDS 缺失或结构异常时从 Bitmap 权威事实校准；恢复失败则返回 503。
      * @param entityType 实体类型
      * @param entityIds 实体ID列表
      * @param metrics 指标名列表
@@ -389,9 +314,7 @@ public class CounterServiceImpl implements CounterService {
                     m.put(name, val);
                 }
             } else {
-                for (String name : metrics) {
-                    m.put(name, 0L); // 缺失或异常结构时补零，避免接口失败与重建风暴
-                }
+                m.putAll(getCounts(entityType, eid, metrics));
             }
             out.put(eid, m);
         }
@@ -477,76 +400,6 @@ public class CounterServiceImpl implements CounterService {
     }
 
     /**
-     * 写入 SDS 原始字节（覆盖式写）。
-     */
-    private void setRaw(String key, byte[] val) {
-        redis.execute((RedisCallback<Void>) connection -> {
-            connection.stringCommands().set(key.getBytes(StandardCharsets.UTF_8), val);
-            return null;
-        });
-    }
-
-    /**
-     * 是否处于指数退避期：期间跳过重建并返回降级结果。
-     */
-    private boolean inBackoff(String entityType, String entityId) {
-        String bKey = String.format("backoff:sds-rebuild:until:%s:%s", entityType, entityId);
-        RBucket<Long> bucket = redisson.getBucket(bKey);
-        Long until = bucket.get();
-
-        return until != null && System.currentTimeMillis() < until;
-    }
-
-    /**
-     * 增加退避级别并设置下次允许尝试的时间（指数递增，封顶）。
-     */
-    private void escalateBackoff(String entityType, String entityId) {
-        String eKey = String.format("backoff:sds-rebuild:exp:%s:%s", entityType, entityId);
-        String uKey = String.format("backoff:sds-rebuild:until:%s:%s", entityType, entityId);
-
-        RBucket<Integer> expB = redisson.getBucket(eKey);
-        RBucket<Long> untilB = redisson.getBucket(uKey);
-        Integer exp = expB.get();
-
-        int nextExp = Math.min(exp == null ? 0 : exp + 1, 10);
-        long delay = Math.min(backoffBaseMs * (1L << nextExp), backoffMaxMs);
-        long until = System.currentTimeMillis() + delay;
-
-        // 设置过期时间，避免长时间残留
-        expB.set(nextExp);
-        untilB.set(until, Duration.ofMillis(delay + 1000));
-    }
-
-    /**
-     * 重置退避状态（成功重建后）。
-     */
-    private void resetBackoff(String entityType, String entityId) {
-        String eKey = String.format("backoff:sds-rebuild:exp:%s:%s", entityType, entityId);
-        String uKey = String.format("backoff:sds-rebuild:until:%s:%s", entityType, entityId);
-
-        try {
-            redisson.getBucket(eKey).delete();
-        } catch (Exception ignore) {}
-
-        try {
-            redisson.getBucket(uKey).delete();
-        } catch (Exception ignore) {}
-    }
-
-    /**
-     * 限流判断：单位窗口可重建次数，防止抖动与风暴。
-     */
-    private boolean allowedByRateLimiter(String entityType, String entityId) {
-        String rlKey = String.format("rl:sds-rebuild:%s:%s", entityType, entityId);
-        RRateLimiter limiter = redisson.getRateLimiter(rlKey);
-
-        // 初始化速率（如已存在则忽略）
-        limiter.trySetRate(RateType.OVERALL, ratePermits, Duration.ofSeconds(rateWindowSeconds));
-
-        return limiter.tryAcquire(1);
-    }
-
-    /**
      * 以大端序读取 32 位无符号整型。
      */
     private static long readInt32BE(byte[] buf, int off) {
@@ -557,51 +410,6 @@ public class CounterServiceImpl implements CounterService {
         return n;
     }
 
-    /**
-     * 以大端序写入 32 位无符号整型（截断到 0~2^32-1）。
-     */
-    private static void writeInt32BE(byte[] buf, int off, long val) {
-        long n = Math.max(0, Math.min(val, 0xFFFF_FFFFL));
-        buf[off] = (byte) ((n >>> 24) & 0xFF);
-        buf[off + 1] = (byte) ((n >>> 16) & 0xFF);
-        buf[off + 2] = (byte) ((n >>> 8) & 0xFF);
-        buf[off + 3] = (byte) (n & 0xFF);
-    }
-
-    /**
-     * 基于位图分片进行管道化 BITCOUNT 汇总，用于按事实重建计数。
-     * 使用 SCAN 迭代分片 key，避免 KEYS 阻塞 Redis。
-     */
-    private long bitCountShardsPipelined(String metric, String etype, String eid) {
-        String pattern = String.format("bm:%s:%s:%s:*", metric, etype, eid);
-        Set<String> keys = new LinkedHashSet<>();
-        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
-        try (Cursor<String> cursor = redis.scan(options)) {
-            while (cursor.hasNext()) {
-                keys.add(cursor.next());
-            }
-        }
-        if (keys.isEmpty()) {
-            return 0L;
-        }
-
-        // 管道批量 BITCOUNT 汇总
-        List<Object> res = redis.executePipelined((RedisCallback<Object>) connection -> {
-            for (String k : keys) {
-                connection.stringCommands().bitCount(k.getBytes(StandardCharsets.UTF_8));
-            }
-            return null;
-        });
-        long sum = 0L;
-
-        for (Object o : res) {
-            if (o instanceof Number n) {
-                sum += n.longValue();
-            }
-        }
-        return sum;
-    }
-
     private record ToggleResult(long status, long factEpoch) {}
 
     // Redis 内嵌 Lua（Redis 5/6 的 Lua 5.1），位图原子切换（分片内偏移）
@@ -610,11 +418,16 @@ public class CounterServiceImpl implements CounterService {
             local cntKey = KEYS[2]
             local fenceKey = KEYS[3]
             local epochKey = KEYS[4]
+            local bitmapIndexKey = KEYS[5]
+            local peerBitmapIndexKey = KEYS[6]
+            local candidatesKey = KEYS[7]
             local offset = tonumber(ARGV[1])
             local op = ARGV[2] -- 'add' or 'remove'
             local idx = tonumber(ARGV[3])
             local expectedLength = tonumber(ARGV[4])
             local fieldSize = tonumber(ARGV[5])
+            local indexSentinel = ARGV[6]
+            local candidateMember = ARGV[7]
             local uint32Max = 4294967295
             local function keyType(key)
               local reply = redis.call('TYPE', key)
@@ -625,16 +438,23 @@ public class CounterServiceImpl implements CounterService {
             local counterType = keyType(cntKey)
             local fenceType = keyType(fenceKey)
             local epochType = keyType(epochKey)
+            local bitmapIndexType = keyType(bitmapIndexKey)
+            local peerBitmapIndexType = keyType(peerBitmapIndexKey)
+            local candidatesType = keyType(candidatesKey)
             if (bitmapType ~= 'none' and bitmapType ~= 'string')
                   or (counterType ~= 'none' and counterType ~= 'string')
                   or (fenceType ~= 'none' and fenceType ~= 'string')
-                  or (epochType ~= 'none' and epochType ~= 'string') then
+                  or (epochType ~= 'none' and epochType ~= 'string')
+                  or (bitmapIndexType ~= 'none' and bitmapIndexType ~= 'set')
+                  or (peerBitmapIndexType ~= 'none' and peerBitmapIndexType ~= 'set')
+                  or (candidatesType ~= 'none' and candidatesType ~= 'zset') then
               return redis.error_reply('counter fact key has an invalid Redis type')
             end
             if not offset or offset < 0 or offset >= 32768 or offset ~= math.floor(offset)
                   or (op ~= 'add' and op ~= 'remove')
                   or (idx ~= 1 and idx ~= 2)
-                  or expectedLength ~= 20 or fieldSize ~= 4 then
+                  or expectedLength ~= 20 or fieldSize ~= 4
+                  or indexSentinel ~= '@v1' or not candidateMember or candidateMember == '' then
               return redis.error_reply('counter toggle arguments are invalid')
             end
             local epochText = redis.call('GET', epochKey) or '0'
@@ -649,9 +469,26 @@ public class CounterServiceImpl implements CounterService {
             if not raw or string.len(raw) ~= expectedLength then
               return {2, epoch}
             end
+            local knownCandidate = redis.call('ZSCORE', candidatesKey, candidateMember)
+            if knownCandidate and (bitmapIndexType == 'none' or peerBitmapIndexType == 'none'
+                  or redis.call('SISMEMBER', bitmapIndexKey, indexSentinel) == 0
+                  or redis.call('SISMEMBER', peerBitmapIndexKey, indexSentinel) == 0) then
+              return {3, epoch}
+            end
+            redis.call('SADD', bitmapIndexKey, indexSentinel)
+            redis.call('SADD', peerBitmapIndexKey, indexSentinel)
+            redis.call('ZADD', candidatesKey, 'NX', 0, candidateMember)
             local prev = redis.call('GETBIT', bmKey, offset)
             local target = op == 'add' and 1 or 0
-            if prev == target then return {0, epoch} end
+            if prev == target then
+              if redis.call('BITCOUNT', bmKey) == 0 then
+                redis.call('DEL', bmKey)
+                redis.call('SREM', bitmapIndexKey, bmKey)
+              else
+                redis.call('SADD', bitmapIndexKey, bmKey)
+              end
+              return {0, epoch}
+            end
             local function read32be(value, byteOffset)
               local b1, b2, b3, b4 = string.byte(value, byteOffset + 1, byteOffset + 4)
               return ((b1 * 256 + b2) * 256 + b3) * 256 + b4
@@ -672,6 +509,12 @@ public class CounterServiceImpl implements CounterService {
                   .. string.sub(raw, byteOffset + fieldSize + 1)
             redis.call('SETBIT', bmKey, offset, target)
             redis.call('SET', cntKey, nextRaw)
+            if redis.call('BITCOUNT', bmKey) == 0 then
+              redis.call('DEL', bmKey)
+              redis.call('SREM', bitmapIndexKey, bmKey)
+            else
+              redis.call('SADD', bitmapIndexKey, bmKey)
+            end
             return {1, epoch}
             """;
 

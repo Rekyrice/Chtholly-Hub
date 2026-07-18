@@ -5,7 +5,12 @@ import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.event.CounterTopics;
 import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
+import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.counter.service.impl.CounterCalibrationService;
+import com.chtholly.counter.service.impl.CounterServiceImpl;
+import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.user.mapper.UserMapper;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -16,6 +21,8 @@ import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
@@ -30,9 +37,13 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.ArgumentMatchers.anyList;
 
 /** Verifies the counter path against real Redis, Kafka, and MySQL instances. */
 class CounterGoldenPathIT extends AbstractGoldenPathIT {
@@ -42,8 +53,11 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
     @Autowired
     private CounterService counterService;
 
-    @Autowired
+    @SpyBean
     private CounterAggregationProcessor aggregationProcessor;
+
+    @Autowired
+    private CounterCalibrationService calibrationService;
 
     @Autowired
     private KafkaTemplate<String, String> kafka;
@@ -112,7 +126,7 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
     }
 
     @Test
-    void snapshotFailureRollsBackInboxSoTheEventCanBeRetried() {
+    void snapshotFailureRollsBackInboxSoTheSameBatchCanBeRetried() {
         String entityId = "7002";
         jdbc.update(
                 "INSERT INTO counter_snapshot "
@@ -134,6 +148,21 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
                 Long.class,
                 entityId)).isEqualTo(Long.MAX_VALUE);
         assertThat(redis.hasKey("counter:event:evt-overflow")).isFalse();
+
+        jdbc.update(
+                "UPDATE counter_snapshot SET count_value = 0 WHERE entity_type = 'post' "
+                        + "AND entity_id = ? AND metric = 'view'",
+                entityId);
+
+        assertThat(aggregationProcessor.applyBatch(List.of(event))).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM counter_event_inbox WHERE event_id = 'evt-overflow'",
+                Long.class)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject(
+                "SELECT count_value FROM counter_snapshot "
+                        + "WHERE entity_type = 'post' AND entity_id = ? AND metric = 'view'",
+                Long.class,
+                entityId)).isEqualTo(1L);
     }
 
     @Test
@@ -209,6 +238,151 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
 
         assertThat(dltPayload.get()).isEqualTo("not-json");
         awaitAggregationConsumerCaughtUp();
+    }
+
+    @Test
+    void kafkaListenerRetriesTheWholeBatchAfterOneTransientProcessorFailure() throws Exception {
+        MessageListenerContainer container =
+                kafkaListenerRegistry.getListenerContainer("counter-aggregation-events");
+        assertThat(container).isNotNull();
+        try {
+            CountDownLatch stopped = new CountDownLatch(1);
+            container.stop(stopped::countDown);
+            assertThat(stopped.await(10, TimeUnit.SECONDS)).isTrue();
+
+            CounterEvent first = CounterEvent.of("evt-batch-retry-a", "post", "7008", "view", 0, 0L, 1);
+            CounterEvent second = CounterEvent.of("evt-batch-retry-b", "post", "7008", "view", 0, 0L, 1);
+            String firstPayload = objectMapper.writeValueAsString(first);
+            String secondPayload = objectMapper.writeValueAsString(second);
+            kafka.send(CounterTopics.EVENTS, "post:7008:view", firstPayload).get(10, TimeUnit.SECONDS);
+            kafka.send(CounterTopics.EVENTS, "post:7008:view", secondPayload).get(10, TimeUnit.SECONDS);
+
+            AtomicInteger attempts = new AtomicInteger();
+            doAnswer(invocation -> {
+                List<CounterEvent> batch = invocation.getArgument(0);
+                boolean isTargetBatch = batch.stream().map(CounterEvent::getEventId).toList()
+                        .containsAll(List.of("evt-batch-retry-a", "evt-batch-retry-b"));
+                if (isTargetBatch && attempts.incrementAndGet() == 1) {
+                    throw new TransientDataAccessResourceException("temporary MySQL failure");
+                }
+                return invocation.callRealMethod();
+            }).when(aggregationProcessor).applyBatch(anyList());
+
+            container.start();
+            Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+                assertThat(attempts.get()).isEqualTo(2);
+                assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM counter_event_inbox WHERE event_id IN (?, ?)",
+                        Long.class,
+                        "evt-batch-retry-a",
+                        "evt-batch-retry-b")).isEqualTo(2L);
+                assertThat(jdbc.queryForObject(
+                        "SELECT count_value FROM counter_snapshot "
+                                + "WHERE entity_type = 'post' AND entity_id = '7008' AND metric = 'view'",
+                        Long.class)).isEqualTo(2L);
+            });
+            awaitAggregationConsumerCaughtUp();
+        } finally {
+            if (!container.isRunning()) {
+                container.start();
+                Awaitility.await().atMost(Duration.ofSeconds(10)).until(container::isRunning);
+            }
+        }
+    }
+
+    @Test
+    void scheduledCalibrationRepairsRedisOnlyAndMysqlOnlyReactionState() {
+        String redisOnlyId = "7010";
+        long userId = 42L;
+        redis.opsForValue().setBit(
+                CounterKeys.bitmapKey("like", "post", redisOnlyId, BitmapShard.chunkOf(userId)),
+                BitmapShard.bitOf(userId),
+                true);
+
+        String mysqlOnlyId = "7011";
+        jdbc.update(
+                "INSERT INTO counter_snapshot "
+                        + "(entity_type, entity_id, metric, count_value, fact_epoch, updated_at) VALUES "
+                        + "('post', ?, 'like', 9, 0, NOW(3)), "
+                        + "('post', ?, 'fav', 7, 0, NOW(3))",
+                mysqlOnlyId,
+                mysqlOnlyId);
+
+        calibrationService.reconcileScheduled();
+
+        assertThat(counterService.getCounts("post", redisOnlyId, List.of("like", "fav")))
+                .containsEntry("like", 1L)
+                .containsEntry("fav", 0L);
+        assertThat(counterService.getCounts("post", mysqlOnlyId, List.of("like", "fav")))
+                .containsEntry("like", 0L)
+                .containsEntry("fav", 0L);
+        Map<String, Object> redisOnlySnapshot = jdbc.queryForMap(
+                "SELECT MAX(CASE WHEN metric = 'like' THEN count_value END) AS like_count, "
+                        + "MAX(CASE WHEN metric = 'fav' THEN count_value END) AS fav_count, "
+                        + "MIN(fact_epoch) AS min_epoch FROM counter_snapshot "
+                        + "WHERE entity_type = 'post' AND entity_id = ?",
+                redisOnlyId);
+        assertThat(redisOnlySnapshot)
+                .containsEntry("like_count", 1L)
+                .containsEntry("fav_count", 0L);
+        assertThat(((Number) redisOnlySnapshot.get("min_epoch")).longValue()).isEqualTo(1L);
+        assertThat(jdbc.queryForObject(
+                "SELECT SUM(count_value) FROM counter_snapshot "
+                        + "WHERE entity_type = 'post' AND entity_id = ?",
+                Long.class,
+                mysqlOnlyId)).isZero();
+    }
+
+    @Test
+    void scheduledCalibrationRepairsTheLuaToKafkaLossWindowToBitmapRedisAndMysqlAgreement() {
+        String entityId = "7012";
+        long userId = 43L;
+        String sdsKey = CounterKeys.sdsKey("post", entityId);
+        byte[] emptySds = new byte[CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE];
+        redis.execute((RedisCallback<Void>) connection -> {
+            connection.stringCommands().set(sdsKey.getBytes(StandardCharsets.UTF_8), emptySds);
+            return null;
+        });
+        CounterService droppedPublisherService = new CounterServiceImpl(
+                redis,
+                ignored -> { },
+                mock(PostMapper.class),
+                mock(UserMapper.class),
+                calibrationService);
+
+        assertThat(droppedPublisherService.like("post", entityId, userId)).isTrue();
+        assertThat(droppedPublisherService.getCounts("post", entityId, List.of("like", "fav")))
+                .containsEntry("like", 1L)
+                .containsEntry("fav", 0L);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM counter_event_inbox WHERE entity_id = ?",
+                Long.class,
+                entityId)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM counter_snapshot WHERE entity_type = 'post' AND entity_id = ?",
+                Long.class,
+                entityId)).isZero();
+
+        calibrationService.reconcileScheduled();
+
+        String bitmapKey = CounterKeys.bitmapKey(
+                "like", "post", entityId, BitmapShard.chunkOf(userId));
+        Long bitCount = redis.execute((RedisCallback<Long>) connection ->
+                connection.stringCommands().bitCount(bitmapKey.getBytes(StandardCharsets.UTF_8)));
+        assertThat(bitCount).isEqualTo(1L);
+        assertThat(droppedPublisherService.getCounts("post", entityId, List.of("like", "fav")))
+                .containsEntry("like", 1L)
+                .containsEntry("fav", 0L);
+        assertThat(jdbc.queryForObject(
+                "SELECT count_value FROM counter_snapshot "
+                        + "WHERE entity_type = 'post' AND entity_id = ? AND metric = 'like'",
+                Long.class,
+                entityId)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject(
+                "SELECT count_value FROM counter_snapshot "
+                        + "WHERE entity_type = 'post' AND entity_id = ? AND metric = 'fav'",
+                Long.class,
+                entityId)).isZero();
     }
 
     private KafkaConsumer<String, String> newProbeConsumer() {
