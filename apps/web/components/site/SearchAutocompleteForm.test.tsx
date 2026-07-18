@@ -86,6 +86,52 @@ describe("SearchAutocompleteForm", () => {
     expect(searchService.suggest).toHaveBeenCalledWith("珂", 8);
   });
 
+  it("does not revive stale suggestions after clearing, blurring and focusing again", async () => {
+    vi.mocked(searchService.suggest).mockResolvedValue({ items: ["旧建议"] });
+    render(<SearchAutocompleteForm initialQuery="" tags={[]} sort="relevance" />);
+    const input = screen.getByRole("combobox", { name: "搜索文章" });
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "旧" } });
+    await advance();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: "旧建议" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    fireEvent.change(input, { target: { value: "" } });
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+    fireEvent.blur(input);
+    fireEvent.focus(input);
+
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("option", { name: "旧建议" })).not.toBeInTheDocument();
+  });
+
+  it("clears active suggestions at composition start and refetches after composition end", async () => {
+    vi.mocked(searchService.suggest).mockResolvedValue({ items: ["珂朵莉"] });
+    render(<SearchAutocompleteForm initialQuery="" tags={[]} sort="relevance" />);
+    const input = screen.getByRole("combobox", { name: "搜索文章" });
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "珂" } });
+    await advance();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input).toHaveAttribute("aria-activedescendant");
+
+    fireEvent.compositionStart(input);
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+    expect(screen.queryByRole("option", { name: "珂朵莉" })).not.toBeInTheDocument();
+
+    fireEvent.compositionEnd(input, { data: "珂" });
+    await advance();
+    expect(searchService.suggest).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("option", { name: "珂朵莉" })).toBeVisible();
+  });
+
   it("does not let an older response overwrite suggestions for a newer query", async () => {
     const older = deferred<{ items: string[] }>();
     const newer = deferred<{ items: string[] }>();

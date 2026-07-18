@@ -49,13 +49,23 @@ function appendUnique(current: FeedItem[], incoming: FeedItem[]) {
 }
 
 export default function SearchResults(props: SearchResultsProps) {
-  const { query, tags, sort, initial } = props;
   const currentScope = scopeKey(props);
-  const [storedState, setStoredState] = useState(() => initialState(currentScope, initial));
-  const state =
-    storedState.scopeKey === currentScope
-      ? storedState
-      : initialState(currentScope, initial);
+
+  return <ScopedSearchResults key={currentScope} {...props} currentScope={currentScope} />;
+}
+
+type ScopedSearchResultsProps = SearchResultsProps & {
+  currentScope: string;
+};
+
+function ScopedSearchResults({
+  query,
+  tags,
+  sort,
+  initial,
+  currentScope,
+}: ScopedSearchResultsProps) {
+  const [state, setState] = useState(() => initialState(currentScope, initial));
   const mounted = useRef(false);
   const requestSequence = useRef(0);
   const loadingLock = useRef({ scopeKey: "", active: false });
@@ -76,7 +86,7 @@ export default function SearchResults(props: SearchResultsProps) {
     const sequence = ++requestSequence.current;
     const after = state.nextAfter;
     loadingLock.current = { scopeKey: requestScope, active: true };
-    setStoredState({ ...state, loading: true, failed: false });
+    setState({ ...state, loading: true, failed: false });
 
     try {
       const response = await searchService.search({
@@ -89,7 +99,7 @@ export default function SearchResults(props: SearchResultsProps) {
       if (response.degraded) throw new Error("search degraded");
       if (!mounted.current || sequence !== requestSequence.current) return;
 
-      setStoredState((current) => {
+      setState((current) => {
         if (current.scopeKey !== requestScope) return current;
         return {
           scopeKey: requestScope,
@@ -102,7 +112,7 @@ export default function SearchResults(props: SearchResultsProps) {
       });
     } catch {
       if (!mounted.current || sequence !== requestSequence.current) return;
-      setStoredState((current) =>
+      setState((current) =>
         current.scopeKey === requestScope
           ? { ...current, loading: false, failed: true }
           : current,

@@ -143,13 +143,18 @@ export default function SearchAutocompleteForm({
           aria-controls={listboxId}
           aria-activedescendant={activeOptionId}
           onChange={(event) => {
+            requestSequence.current += 1;
             setQuery(event.target.value);
+            setSuggestions([]);
             setActiveIndex(-1);
+            setLoading(false);
             setOpen(false);
           }}
           onFocus={() => {
             setFocused(true);
-            if (suggestions.length > 0) setOpen(true);
+            if (!isComposing && query.trim().length > 0 && suggestions.length > 0) {
+              setOpen(true);
+            }
           }}
           onBlur={() => {
             setFocused(false);
@@ -159,6 +164,8 @@ export default function SearchAutocompleteForm({
           onCompositionStart={() => {
             requestSequence.current += 1;
             setIsComposing(true);
+            setSuggestions([]);
+            setActiveIndex(-1);
             setLoading(false);
             setOpen(false);
           }}

@@ -153,4 +153,53 @@ describe("SearchResults", () => {
     expect(screen.getByRole("heading", { name: "新查询结果" })).toBeVisible();
     expect(screen.queryByText("旧请求迟到")).not.toBeInTheDocument();
   });
+
+  it("does not reuse a pending A scope when props switch A to B and back to A", async () => {
+    const oldARequest = deferred<SearchResponse>();
+    const initialA = response({
+      items: [item("a", "A 范围初始结果")],
+      nextAfter: "cursor-a",
+      hasMore: true,
+    });
+    const initialB = response({
+      items: [item("b", "B 范围结果")],
+      nextAfter: null,
+      hasMore: false,
+    });
+    vi.mocked(searchService.search).mockReturnValue(oldARequest.promise);
+    const { rerender } = render(
+      <SearchResults query="A" tags={[]} sort="relevance" initial={initialA} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
+    expect(screen.getByRole("region", { name: "搜索结果" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+
+    rerender(
+      <SearchResults query="B" tags={[]} sort="relevance" initial={initialB} />,
+    );
+    rerender(
+      <SearchResults query="A" tags={[]} sort="relevance" initial={initialA} />,
+    );
+
+    expect(screen.getByRole("heading", { name: "A 范围初始结果" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "加载更多" })).toBeEnabled();
+    expect(screen.getByRole("region", { name: "搜索结果" })).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+
+    await act(async () => {
+      oldARequest.resolve(
+        response({
+          items: [item("late-a", "旧 A 请求迟到")],
+          nextAfter: null,
+          hasMore: false,
+        }),
+      );
+    });
+    expect(screen.getByRole("heading", { name: "A 范围初始结果" })).toBeVisible();
+    expect(screen.queryByText("旧 A 请求迟到")).not.toBeInTheDocument();
+  });
 });
