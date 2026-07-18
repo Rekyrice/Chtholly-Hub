@@ -19,7 +19,7 @@
                                   "p95",
                                   "errorRate",
                                   "mysqlQueryCount",
-                                  "originLoadCount"
+                                  "sameKeyLoadCount"
                               ]
                 },
     "ownerReviewRequired":  true

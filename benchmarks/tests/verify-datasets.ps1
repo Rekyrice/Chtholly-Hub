@@ -62,6 +62,8 @@ else {
     Assert-True -Condition ($manifest.counts.retrieval -eq 45) -Message 'Manifest must declare 45 retrieval candidates'
     Assert-True -Condition ($manifest.counts.draftFlows -eq 5) -Message 'Manifest must declare five draft flows'
     Assert-True -Condition ($manifest.counts.traceReplays -eq 2) -Message 'Manifest must declare two Trace replay cases'
+    Assert-True -Condition ($manifest.metrics.cache -contains 'sameKeyLoadCount') -Message 'Cache metric name must use sameKeyLoadCount'
+    Assert-True -Condition (-not ($manifest.metrics.cache -contains 'originLoadCount')) -Message 'Obsolete originLoadCount metric must not remain'
 }
 
 $skills = Read-JsonLines -Path $skillPath

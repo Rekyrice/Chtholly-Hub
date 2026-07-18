@@ -32,7 +32,8 @@ try {
         'scripts/benchmark/new-benchmark-token.ps1',
         'scripts/benchmark/run.ps1',
         'scripts/benchmark/seed.ps1',
-        'scripts/benchmark/summarize.ps1'
+        'scripts/benchmark/summarize.ps1',
+        'scripts/benchmark/verify-matrix.ps1'
     )
     foreach ($path in $requiredFiles) { Assert-File -RelativePath $path }
 
@@ -81,6 +82,7 @@ try {
     $environmentPath = Join-Path $repoRoot 'scripts/benchmark/environment.ps1'
     $runPath = Join-Path $repoRoot 'scripts/benchmark/run.ps1'
     $summarizePath = Join-Path $repoRoot 'scripts/benchmark/summarize.ps1'
+    $matrixPath = Join-Path $repoRoot 'scripts/benchmark/verify-matrix.ps1'
     $environmentSource = if (Test-Path -LiteralPath $environmentPath -PathType Leaf) { Get-Content -Raw -LiteralPath $environmentPath -Encoding UTF8 } else { '' }
     $runSource = if (Test-Path -LiteralPath $runPath -PathType Leaf) { Get-Content -Raw -LiteralPath $runPath -Encoding UTF8 } else { '' }
     $summarizeSource = if (Test-Path -LiteralPath $summarizePath -PathType Leaf) { Get-Content -Raw -LiteralPath $summarizePath -Encoding UTF8 } else { '' }
@@ -161,6 +163,83 @@ try {
                 if (-not $resolved.StartsWith($allowed, [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe cleanup target: $resolved" }
                 Remove-Item -LiteralPath $resolved -Recurse -Force
             }
+        }
+    }
+
+    if (Test-Path -LiteralPath $matrixPath -PathType Leaf) {
+        $resultsRoot = Join-Path $repoRoot '.benchmark-results'
+        $runIds = [System.Collections.Generic.List[string]]::new()
+        $cleanupPaths = [System.Collections.Generic.List[string]]::new()
+        $matrixOutput = Join-Path $resultsRoot "matrix-contract-$PID.json"
+        $head = (git rev-parse HEAD).Trim()
+        $cells = @(
+            @{ scenario = 'stable-hot'; variant = 'db-only' },
+            @{ scenario = 'stable-hot'; variant = 'full' },
+            @{ scenario = 'expiry-spike'; variant = 'full-no-singleflight' },
+            @{ scenario = 'expiry-spike'; variant = 'full' }
+        )
+        try {
+            $index = 0
+            foreach ($cell in $cells) {
+                foreach ($repetition in 1..3) {
+                    $index++
+                    $runId = "matrix-contract-$PID-$index"
+                    $environmentRunId = "$runId-env"
+                    $runDirectory = Join-Path $resultsRoot $runId
+                    $environmentDirectory = Join-Path $resultsRoot $environmentRunId
+                    New-Item -ItemType Directory -Force -Path $runDirectory, $environmentDirectory | Out-Null
+                    $runIds.Add($runId)
+                    $cleanupPaths.Add($runDirectory)
+                    $cleanupPaths.Add($environmentDirectory)
+
+                    $isExpiry = $cell.scenario -eq 'expiry-spike'
+                    $manifest = [ordered]@{
+                        runId = $runId; profile = 'standard'; scenario = $cell.scenario; variant = $cell.variant
+                        repetition = $repetition; subjectCommit = $head; executionCommit = $head
+                        harnessCommit = $head; datasetCommit = $head; environmentId = "project-$index"
+                        workload = [ordered]@{ seed = 20260715; concurrency = 64; warmupSeconds = 60; durationSeconds = 300 }
+                        status = 'COMPLETED'; effectiveReadMode = $cell.variant
+                        singleFlightEnabled = $cell.variant -eq 'full'; cacheMetricsAvailable = $true
+                        cacheInvalidatedAt = if ($isExpiry) { '2026-07-19T00:00:00Z' } else { $null }
+                        coldStartVerified = $isExpiry
+                    }
+                    $summary = [ordered]@{
+                        runId = $runId; status = 'COMPLETED'; profile = 'standard'; scenario = $cell.scenario
+                        variant = $cell.variant; repetition = $repetition; subjectCommit = $head
+                        harnessCommit = $head; datasetCommit = $head
+                        metrics = [ordered]@{ p95Ms = 10 + $index; errorRate = 0; mysqlQueryCount = 2; sameKeyLoadCount = 1 }
+                    }
+                    $environment = [ordered]@{ environmentRunId = $environmentRunId }
+                    $runtime = [ordered]@{
+                        runId = $environmentRunId; profile = 'standard'; scenario = $cell.scenario; variant = $cell.variant
+                        projectName = "project-$index"; executionCommit = $head
+                        imageIds = [ordered]@{ mysql = 'sha256:mysql'; redis = 'sha256:redis'; server = 'sha256:java' }
+                    }
+                    $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runDirectory 'manifest.json') -Encoding UTF8
+                    $summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runDirectory 'summary.json') -Encoding UTF8
+                    $environment | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'environment.json') -Encoding UTF8
+                    $runtime | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $environmentDirectory 'environment-runtime.json') -Encoding UTF8
+                }
+            }
+
+            & $matrixPath -ResultsRoot $resultsRoot -RunIds $runIds.ToArray() -OutputPath $matrixOutput
+            $matrix = Get-Content -Raw -LiteralPath $matrixOutput -Encoding UTF8 | ConvertFrom-Json
+            Assert-True -Condition ($matrix.status -eq 'COMPLETE' -and $matrix.runCount -eq 12) -Message 'Matrix verifier must accept the exact 12-run cache matrix'
+
+            $firstSummaryPath = Join-Path (Join-Path $resultsRoot $runIds[0]) 'summary.json'
+            $firstSummary = Get-Content -Raw -LiteralPath $firstSummaryPath -Encoding UTF8 | ConvertFrom-Json
+            $firstSummary.status = 'INCOMPLETE'
+            $firstSummary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $firstSummaryPath -Encoding UTF8
+            $rejected = $false
+            try { & $matrixPath -ResultsRoot $resultsRoot -RunIds $runIds.ToArray() -OutputPath $matrixOutput }
+            catch { $rejected = $true }
+            Assert-True -Condition $rejected -Message 'Matrix verifier must reject an incomplete run'
+        }
+        finally {
+            foreach ($path in $cleanupPaths) {
+                if (Test-Path -LiteralPath $path -PathType Container) { Remove-Item -LiteralPath $path -Recurse -Force }
+            }
+            if (Test-Path -LiteralPath $matrixOutput -PathType Leaf) { Remove-Item -LiteralPath $matrixOutput -Force }
         }
     }
 }
