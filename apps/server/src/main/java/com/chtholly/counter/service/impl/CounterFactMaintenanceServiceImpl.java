@@ -45,7 +45,7 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
     private static final String MUTATION_MANAGED = "managed";
     private static final String MUTATION_ORPHAN = "orphan";
     private static final int LUA_RESULT_SIZE = 5;
-    private static final int LUA_CORE_KEY_COUNT = 8;
+    private static final int LUA_CORE_KEY_COUNT = 10;
 
     private final StringRedisTemplate redis;
     private final RedissonClient redisson;
@@ -337,6 +337,8 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
         keys.add(CounterKeys.bitmapCalibrationCandidatesKey());
         keys.add(CounterKeys.bitmapShardIndexKey(METRIC_LIKE, ENTITY_TYPE_POST, String.valueOf(postId)));
         keys.add(CounterKeys.bitmapShardIndexKey(METRIC_FAV, ENTITY_TYPE_POST, String.valueOf(postId)));
+        keys.add(CounterKeys.bitmapShardIndexCountKey(METRIC_LIKE, ENTITY_TYPE_POST, String.valueOf(postId)));
+        keys.add(CounterKeys.bitmapShardIndexCountKey(METRIC_FAV, ENTITY_TYPE_POST, String.valueOf(postId)));
         keys.addAll(bitmapMetrics.keySet());
         for (String metric : bitmapMetrics.values()) {
             keys.add(CounterKeys.bitmapShardIndexKey(
@@ -528,6 +530,8 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             local candidatesKey = KEYS[6]
             local likeBitmapIndexKey = KEYS[7]
             local favBitmapIndexKey = KEYS[8]
+            local likeBitmapIndexCountKey = KEYS[9]
+            local favBitmapIndexCountKey = KEYS[10]
             local expectedToken = ARGV[1]
             local expectedLength = tonumber(ARGV[2])
             local fieldSize = tonumber(ARGV[3])
@@ -537,7 +541,7 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             local indexSentinel = ARGV[7]
             local candidateMember = ARGV[8]
             local argumentIndex = 9
-            local bitmapKeyOffset = 8
+            local bitmapKeyOffset = 10
             local uint32Max = 4294967295
             local function keyType(key)
               local reply = redis.call('TYPE', key)
@@ -554,6 +558,8 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             local candidatesType = keyType(candidatesKey)
             local likeBitmapIndexType = keyType(likeBitmapIndexKey)
             local favBitmapIndexType = keyType(favBitmapIndexKey)
+            local likeBitmapIndexCountType = keyType(likeBitmapIndexCountKey)
+            local favBitmapIndexCountType = keyType(favBitmapIndexCountKey)
             if (cntType ~= 'none' and cntType ~= 'string')
                   or (aggType ~= 'none' and aggType ~= 'hash')
                   or (aggIndexType ~= 'none' and aggIndexType ~= 'set')
@@ -561,7 +567,9 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
                   or (epochType ~= 'none' and epochType ~= 'string')
                   or (candidatesType ~= 'none' and candidatesType ~= 'zset')
                   or (likeBitmapIndexType ~= 'none' and likeBitmapIndexType ~= 'set')
-                  or (favBitmapIndexType ~= 'none' and favBitmapIndexType ~= 'set') then
+                  or (favBitmapIndexType ~= 'none' and favBitmapIndexType ~= 'set')
+                  or (likeBitmapIndexCountType ~= 'none' and likeBitmapIndexCountType ~= 'string')
+                  or (favBitmapIndexCountType ~= 'none' and favBitmapIndexCountType ~= 'string') then
               return redis.error_reply('counter core key has an invalid Redis type')
             end
             if redis.call('GET', fenceKey) ~= expectedToken then
@@ -686,6 +694,10 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
                 redis.call('SADD', bitmapIndexKeys[bitmapIndex], bitmapKey)
               end
             end
+            redis.call('SET', likeBitmapIndexCountKey,
+                  tostring(redis.call('SCARD', likeBitmapIndexKey) - 1))
+            redis.call('SET', favBitmapIndexCountKey,
+                  tostring(redis.call('SCARD', favBitmapIndexKey) - 1))
 
             local function encodeUnsignedInt32(value)
               local b1 = math.floor(value / 16777216) % 256

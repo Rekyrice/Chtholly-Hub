@@ -47,4 +47,4 @@ mvn -q -Pintegration-test '-Dit.test=CounterFactMaintenanceLuaIT' verify
 mvn -q -Pintegration-test '-Dit.test=CounterGoldenPathIT' verify
 ```
 
-`CounterFactMaintenanceLuaIT` 覆盖重复与并发状态切换、无过期维护 fence 的活跃拒绝与崩溃接管、epoch、分片索引局部丢失失败关闭、非零 cursor 跨实例续扫、持久候选轮转和 Redis 5 兼容性。`CounterGoldenPathIT` 分别验证 MySQL 快照失败会回滚 inbox 并允许同 event ID 重试、Kafka listener 对瞬时处理失败执行整批自动重试、消费者重启、DLT broker 确认，以及“Lua 已更新 Bitmap/SDS 但事件未投递”后由周期校准恢复 Bitmap、Redis SDS 与 MySQL 快照一致；前两项是独立故障路径，不将其合并宣称为一次端到端故障。该链路只承诺最终收敛，不宣称 Redis 与 Kafka 原子提交或 exactly-once。
+`CounterFactMaintenanceLuaIT` 覆盖重复与并发状态切换、无过期维护 fence 的活跃拒绝与崩溃接管、epoch、索引与候选同时丢失、单个 shard 成员丢失、非零 cursor 跨实例续扫、持久候选轮转和 Redis 5 兼容性。`CounterGoldenPathIT` 分别验证 MySQL 快照失败会回滚 inbox 并允许同 event ID 重试、Kafka listener 对瞬时处理失败执行整批自动重试、消费者重启、DLT broker 确认，以及“Lua 已更新 Bitmap/SDS 但事件未投递”后由周期校准恢复 Bitmap、Redis SDS 与 MySQL 快照一致；前两项是独立故障路径，不将其合并宣称为一次端到端故障。该链路只承诺最终收敛，不宣称 Redis 与 Kafka 原子提交或 exactly-once。

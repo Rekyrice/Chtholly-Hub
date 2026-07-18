@@ -163,14 +163,16 @@ class CounterFactMaintenanceServiceImplTest {
                 "counter:fact-maintenance:post:10",
                 "counter:fact-epoch:post:10",
                 "counter:calibration:reaction-bitmap:candidates",
+                "bmidxcnt:like:post:10",
+                "bmidxcnt:fav:post:10",
                 likeKey,
                 "bm:fav:post:10:0",
                 "bmidx:like:post:10",
                 "bmidx:fav:post:10");
         assertThat(invocation.arguments()).startsWith(invocation.arguments().getFirst(),
                 "20", "4", "1", "2", "2", "@v1", "post:10", "like", "fav");
-        assertThat(invocation.arguments()).containsSubsequence("9", "7", "0", "orphan");
-        assertThat(invocation.arguments()).endsWith("9", "7", "0", "orphan");
+        assertThat(invocation.arguments()).containsSubsequence("11", "7", "0", "orphan");
+        assertThat(invocation.arguments()).endsWith("11", "7", "0", "orphan");
         assertThat(invocation.arguments()).filteredOn("orphan"::equals).hasSize(1);
         verify(lock).unlock();
     }

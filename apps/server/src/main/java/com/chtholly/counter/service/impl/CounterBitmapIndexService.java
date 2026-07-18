@@ -67,21 +67,24 @@ public class CounterBitmapIndexService {
             throw new IllegalStateException("Counter Bitmap shard index backfill is incomplete");
         }
         String indexKey = CounterKeys.bitmapShardIndexKey(metric, entityType, entityId);
+        String countKey = CounterKeys.bitmapShardIndexCountKey(metric, entityType, entityId);
         Set<String> members = redis.opsForSet().members(indexKey);
         if (members == null) {
             throw new IllegalStateException("Counter Bitmap shard index could not be read");
         }
-        if (!members.contains(SHARD_INDEX_SENTINEL)) {
-            Double score = redis.opsForZSet().score(
-                    CounterKeys.bitmapCalibrationCandidatesKey(),
-                    member(new CounterEntityIdentity(entityType, entityId)));
-            if (score != null) {
-                throw new IllegalStateException("Counter Bitmap shard index is missing");
-            }
-            if (!members.isEmpty()) {
-                throw new IllegalStateException("Counter Bitmap shard index is incomplete");
-            }
+        String expectedText = redis.opsForValue().get(countKey);
+        Double score = redis.opsForZSet().score(
+                CounterKeys.bitmapCalibrationCandidatesKey(),
+                member(new CounterEntityIdentity(entityType, entityId)));
+        if (members.isEmpty() && expectedText == null && score == null) {
             return Set.of();
+        }
+        if (!members.contains(SHARD_INDEX_SENTINEL) || expectedText == null) {
+            throw new IllegalStateException("Counter Bitmap shard index is missing");
+        }
+        long expectedCount = parseExpectedCount(expectedText);
+        if (expectedCount != members.size() - 1L) {
+            throw new IllegalStateException("Counter Bitmap shard index is incomplete");
         }
         LinkedHashSet<String> validated = new LinkedHashSet<>();
         String prefix = "bm:" + metric + ":" + entityType + ":" + entityId + ":";
@@ -97,6 +100,18 @@ public class CounterBitmapIndexService {
             validated.add(member);
         }
         return Set.copyOf(validated);
+    }
+
+    private static long parseExpectedCount(String value) {
+        try {
+            long count = Long.parseLong(value);
+            if (count < 0L || !Long.toString(count).equals(value)) {
+                throw new IllegalStateException("Counter Bitmap shard index count is invalid");
+            }
+            return count;
+        } catch (NumberFormatException exception) {
+            throw new IllegalStateException("Counter Bitmap shard index count is invalid", exception);
+        }
     }
 
     /** Moves an attempted Redis candidate to the tail; absent MySQL-only candidates are ignored. */

@@ -107,7 +107,10 @@ public class CounterServiceImpl implements CounterService {
                 CounterKeys.bitmapShardIndexKey(metric, etype, eid),
                 CounterKeys.bitmapShardIndexKey(
                         "like".equals(metric) ? "fav" : "like", etype, eid),
-                CounterKeys.bitmapCalibrationCandidatesKey());
+                CounterKeys.bitmapCalibrationCandidatesKey(),
+                CounterKeys.bitmapShardIndexCountKey(metric, etype, eid),
+                CounterKeys.bitmapShardIndexCountKey(
+                        "like".equals(metric) ? "fav" : "like", etype, eid));
         List<String> args = List.of(
                 String.valueOf(bit),
                 add ? "add" : "remove",
@@ -421,6 +424,8 @@ public class CounterServiceImpl implements CounterService {
             local bitmapIndexKey = KEYS[5]
             local peerBitmapIndexKey = KEYS[6]
             local candidatesKey = KEYS[7]
+            local bitmapIndexCountKey = KEYS[8]
+            local peerBitmapIndexCountKey = KEYS[9]
             local offset = tonumber(ARGV[1])
             local op = ARGV[2] -- 'add' or 'remove'
             local idx = tonumber(ARGV[3])
@@ -441,13 +446,17 @@ public class CounterServiceImpl implements CounterService {
             local bitmapIndexType = keyType(bitmapIndexKey)
             local peerBitmapIndexType = keyType(peerBitmapIndexKey)
             local candidatesType = keyType(candidatesKey)
+            local bitmapIndexCountType = keyType(bitmapIndexCountKey)
+            local peerBitmapIndexCountType = keyType(peerBitmapIndexCountKey)
             if (bitmapType ~= 'none' and bitmapType ~= 'string')
                   or (counterType ~= 'none' and counterType ~= 'string')
                   or (fenceType ~= 'none' and fenceType ~= 'string')
                   or (epochType ~= 'none' and epochType ~= 'string')
                   or (bitmapIndexType ~= 'none' and bitmapIndexType ~= 'set')
                   or (peerBitmapIndexType ~= 'none' and peerBitmapIndexType ~= 'set')
-                  or (candidatesType ~= 'none' and candidatesType ~= 'zset') then
+                  or (candidatesType ~= 'none' and candidatesType ~= 'zset')
+                  or (bitmapIndexCountType ~= 'none' and bitmapIndexCountType ~= 'string')
+                  or (peerBitmapIndexCountType ~= 'none' and peerBitmapIndexCountType ~= 'string') then
               return redis.error_reply('counter fact key has an invalid Redis type')
             end
             if not offset or offset < 0 or offset >= 32768 or offset ~= math.floor(offset)
@@ -470,13 +479,28 @@ public class CounterServiceImpl implements CounterService {
               return {2, epoch}
             end
             local knownCandidate = redis.call('ZSCORE', candidatesKey, candidateMember)
-            if knownCandidate and (bitmapIndexType == 'none' or peerBitmapIndexType == 'none'
-                  or redis.call('SISMEMBER', bitmapIndexKey, indexSentinel) == 0
-                  or redis.call('SISMEMBER', peerBitmapIndexKey, indexSentinel) == 0) then
-              return {3, epoch}
+            local hasMetadata = knownCandidate or bitmapType ~= 'none'
+                  or bitmapIndexType ~= 'none' or peerBitmapIndexType ~= 'none'
+                  or bitmapIndexCountType ~= 'none' or peerBitmapIndexCountType ~= 'none'
+            local function indexIsComplete(indexKey, countKey)
+              if redis.call('SISMEMBER', indexKey, indexSentinel) == 0 then return false end
+              local expectedText = redis.call('GET', countKey)
+              if not expectedText or not string.match(expectedText, '^%d+$')
+                    or (expectedText ~= '0' and string.match(expectedText, '^0')) then
+                return false
+              end
+              local expected = tonumber(expectedText)
+              return expected and expected >= 0 and expected == math.floor(expected)
+                    and redis.call('SCARD', indexKey) - 1 == expected
+            end
+            if hasMetadata and (not indexIsComplete(bitmapIndexKey, bitmapIndexCountKey)
+                  or not indexIsComplete(peerBitmapIndexKey, peerBitmapIndexCountKey)) then
+                return {3, epoch}
             end
             redis.call('SADD', bitmapIndexKey, indexSentinel)
             redis.call('SADD', peerBitmapIndexKey, indexSentinel)
+            redis.call('SETNX', bitmapIndexCountKey, '0')
+            redis.call('SETNX', peerBitmapIndexCountKey, '0')
             redis.call('ZADD', candidatesKey, 'NX', 0, candidateMember)
             local prev = redis.call('GETBIT', bmKey, offset)
             local target = op == 'add' and 1 or 0
@@ -487,6 +511,8 @@ public class CounterServiceImpl implements CounterService {
               else
                 redis.call('SADD', bitmapIndexKey, bmKey)
               end
+              redis.call('SET', bitmapIndexCountKey,
+                    tostring(redis.call('SCARD', bitmapIndexKey) - 1))
               return {0, epoch}
             end
             local function read32be(value, byteOffset)
@@ -515,6 +541,8 @@ public class CounterServiceImpl implements CounterService {
             else
               redis.call('SADD', bitmapIndexKey, bmKey)
             end
+            redis.call('SET', bitmapIndexCountKey,
+                  tostring(redis.call('SCARD', bitmapIndexKey) - 1))
             return {1, epoch}
             """;
 

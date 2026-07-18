@@ -59,15 +59,31 @@ for _, bitmapKey in ipairs(page[2]) do
     local indexKey = 'bmidx:' .. metric .. ':' .. entityType .. ':' .. entityId
     local likeIndexKey = 'bmidx:like:' .. entityType .. ':' .. entityId
     local favIndexKey = 'bmidx:fav:' .. entityType .. ':' .. entityId
+    local likeCountKey = 'bmidxcnt:like:' .. entityType .. ':' .. entityId
+    local favCountKey = 'bmidxcnt:fav:' .. entityType .. ':' .. entityId
     if (keyType(likeIndexKey) ~= 'none' and keyType(likeIndexKey) ~= 'set')
-          or (keyType(favIndexKey) ~= 'none' and keyType(favIndexKey) ~= 'set') then
+          or (keyType(favIndexKey) ~= 'none' and keyType(favIndexKey) ~= 'set')
+          or (keyType(likeCountKey) ~= 'none' and keyType(likeCountKey) ~= 'string')
+          or (keyType(favCountKey) ~= 'none' and keyType(favCountKey) ~= 'string') then
       return redis.error_reply('counter Bitmap shard index has an invalid Redis type')
+    end
+    for _, countKey in ipairs({likeCountKey, favCountKey}) do
+      local expectedText = redis.call('GET', countKey)
+      if expectedText then
+        local expected = tonumber(expectedText)
+        if not string.match(expectedText, '^%d+$')
+              or (expectedText ~= '0' and string.match(expectedText, '^0'))
+              or not expected or expected < 0 or expected ~= math.floor(expected)
+              or expected >= maxExactInteger then
+          return redis.error_reply('counter Bitmap shard index count is invalid')
+        end
+      end
     end
     table.insert(entries, {indexKey, bitmapKey})
     local member = entityType .. ':' .. entityId
     if not uniqueMembers[member] then
       uniqueMembers[member] = true
-      entityIndexes[member] = {likeIndexKey, favIndexKey}
+      entityIndexes[member] = {likeIndexKey, favIndexKey, likeCountKey, favCountKey}
       if not redis.call('ZSCORE', candidatesKey, member) then
         newMemberCount = newMemberCount + 1
       end
@@ -81,9 +97,21 @@ end
 for _, entry in ipairs(entries) do
   redis.call('SADD', entry[1], entry[2])
 end
+local function preserveExpectedCount(indexKey, countKey)
+  local actual = redis.call('SCARD', indexKey) - 1
+  local expectedText = redis.call('GET', countKey)
+  if not expectedText then
+    redis.call('SET', countKey, tostring(actual))
+    return
+  end
+  local expected = tonumber(expectedText)
+  if actual > expected then redis.call('SET', countKey, tostring(actual)) end
+end
 for _, indexes in pairs(entityIndexes) do
   redis.call('SADD', indexes[1], indexSentinel)
   redis.call('SADD', indexes[2], indexSentinel)
+  preserveExpectedCount(indexes[1], indexes[3])
+  preserveExpectedCount(indexes[2], indexes[4])
 end
 for member, _ in pairs(uniqueMembers) do
   if not redis.call('ZSCORE', candidatesKey, member) then

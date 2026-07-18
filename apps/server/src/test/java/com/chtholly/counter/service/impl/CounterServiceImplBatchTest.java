@@ -170,7 +170,9 @@ class CounterServiceImplBatchTest {
                 "counter:fact-epoch:post:99",
                 "bmidx:like:post:99",
                 "bmidx:fav:post:99",
-                "counter:calibration:reaction-bitmap:candidates");
+                "counter:calibration:reaction-bitmap:candidates",
+                "bmidxcnt:like:post:99",
+                "bmidxcnt:fav:post:99");
         assertThat(script.getValue().getScriptAsString()).contains(
                 "string.len(raw)", "SET', cntKey", "SADD', bitmapIndexKey",
                 "SADD', peerBitmapIndexKey", "SREM', bitmapIndexKey");

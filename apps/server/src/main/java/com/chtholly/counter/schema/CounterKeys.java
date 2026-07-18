@@ -25,6 +25,11 @@ public final class CounterKeys {
         return String.format("bmidx:%s:%s:%s", metric, entityType, entityId);
     }
 
+    /** Expected non-sentinel member count used to detect a partial shard-index loss. */
+    public static String bitmapShardIndexCountKey(String metric, String entityType, String entityId) {
+        return String.format("bmidxcnt:%s:%s:%s", metric, entityType, entityId);
+    }
+
     /** Persistent cursor for the bounded legacy Bitmap index backfill. */
     public static String bitmapIndexBackfillCursorKey() {
         return "counter:calibration:reaction-bitmap:cursor";

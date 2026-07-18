@@ -399,6 +399,56 @@ class CounterFactMaintenanceLuaIT {
     }
 
     @Test
+    void missingShardIndexAndCandidateStillCannotEraseBitmapAuthority() {
+        String entityId = "90010";
+        long userId = 50L;
+        String bitmapKey = CounterKeys.bitmapKey(
+                "like", "post", entityId, BitmapShard.chunkOf(userId));
+        redis.opsForValue().setBit(bitmapKey, BitmapShard.bitOf(userId), true);
+        assertThat(bitmapIndex.discoverCandidates(1))
+                .contains(new CounterEntityIdentity("post", entityId));
+        redis.delete(CounterKeys.bitmapShardIndexKey("like", "post", entityId));
+        redis.opsForZSet().remove(
+                CounterKeys.bitmapCalibrationCandidatesKey(), "post:" + entityId);
+        CounterCalibrationService calibration = new CounterCalibrationService(
+                redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50);
+
+        assertThatThrownBy(() -> calibration.reconcileEntity("post", entityId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("shard index");
+
+        assertThat(redis.opsForValue().getBit(bitmapKey, BitmapShard.bitOf(userId))).isTrue();
+        assertThat(redis.hasKey(CounterKeys.sdsKey("post", entityId))).isFalse();
+    }
+
+    @Test
+    void missingSingleShardMemberCannotSilentlyReduceAuthoritativeCount() {
+        String entityId = "90011";
+        long firstUser = 51L;
+        long secondUser = BitmapShard.CHUNK_SIZE + 52L;
+        String firstKey = CounterKeys.bitmapKey(
+                "like", "post", entityId, BitmapShard.chunkOf(firstUser));
+        String secondKey = CounterKeys.bitmapKey(
+                "like", "post", entityId, BitmapShard.chunkOf(secondUser));
+        redis.opsForValue().setBit(firstKey, BitmapShard.bitOf(firstUser), true);
+        redis.opsForValue().setBit(secondKey, BitmapShard.bitOf(secondUser), true);
+        assertThat(bitmapIndex.discoverCandidates(1))
+                .contains(new CounterEntityIdentity("post", entityId));
+        redis.opsForSet().remove(
+                CounterKeys.bitmapShardIndexKey("like", "post", entityId), secondKey);
+        CounterCalibrationService calibration = new CounterCalibrationService(
+                redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50);
+
+        assertThatThrownBy(() -> calibration.reconcileEntity("post", entityId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("shard index");
+
+        assertThat(redis.opsForValue().getBit(firstKey, BitmapShard.bitOf(firstUser))).isTrue();
+        assertThat(redis.opsForValue().getBit(secondKey, BitmapShard.bitOf(secondUser))).isTrue();
+        assertThat(redis.hasKey(CounterKeys.sdsKey("post", entityId))).isFalse();
+    }
+
+    @Test
     void managedMaintenanceTakesOverAStaleFenceWithoutExpiryUntilReconciliationCompletes() {
         long postId = 90_007L;
         long managedUser = 1L;
