@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "benchmark-dataset-v1",
+  "labelStatus": "COLLECTED_UNREVIEWED",
+  "splitPolicy": {
+    "developmentPercent": 60,
+    "validationPercent": 20,
+    "sealedTestPercent": 20,
+    "groupIsolation": ["normalizedIntent", "documentId", "templateFamily"]
+  },
+  "reviewPolicy": {
+    "ordinarySecondReviewPercent": 20,
+    "doubleReviewCategories": ["no-answer", "security", "permission", "write"],
+    "modelOutputCanBeGold": false
+  },
+  "sources": {
+    "questions": {
+      "path": "apps/server/src/test/resources/eval/test-questions.yml",
+      "observedCount": 50,
+      "status": "COLLECTED_UNREVIEWED",
+      "use": "candidate-seed"
+    },
+    "dimensions": {
+      "path": "apps/server/src/test/resources/eval/dimensions.yml",
+      "observedCount": 9,
+      "status": "COLLECTED_UNREVIEWED",
+      "use": "candidate-scoring-dimensions"
+    }
+  },
+  "targets": {
+    "readonlySkill": 120,
+    "statefulDraftTask": 100,
+    "retrievalAndGeneration": 150
+  }
+}

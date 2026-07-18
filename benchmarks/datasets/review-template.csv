@@ -1,0 +1,1 @@
+sampleId,normalizedIntent,templateFamily,sourceType,difficulty,split,snapshotId,labelStatus,acceptedSkillIds,requiredTools,optionalTools,forbiddenTools,relevantDocumentIds,acceptableChunks,answerExists,allowedSources,expectedCitations,hardFails,reviewer,reviewedAt,secondReviewer,secondReviewedAt,adjudicationReason
