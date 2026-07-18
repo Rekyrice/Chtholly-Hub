@@ -6,28 +6,22 @@ profiles:
     users: 200
     interactions: 10000
     relations: 10000
-    warmupSeconds: 30
-    durationSeconds: 60
-    concurrency: [4, 16]
-    repetitions: 1
+    warmupSeconds: 10
+    durationSeconds: 30
+    concurrency: 4
   standard:
     posts: 10000
     users: 2000
     interactions: 100000
     relations: 100000
-    warmupSeconds: 120
-    durationSeconds: 600
-    concurrency: [16, 64, 256]
-    repetitions: 3
-distribution:
-  kind: fixed-zipf-approximation
-  hotTrafficPercent: 80
-  hotContentPercent: 20
-scenarios:
-  cache:
-    detailPercent: 70
-    feedPercent: 30
-  mixed:
-    readPercent: 85
-    interactionPercent: 10
-    relationPercent: 5
+    warmupSeconds: 60
+    durationSeconds: 300
+    concurrency: 64
+cache:
+  formalRuns: 12
+  repetitions: 3
+  scenarios:
+    stable-hot:
+      variants: [db-only, full]
+    expiry-spike:
+      variants: [full-no-singleflight, full]

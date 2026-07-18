@@ -1,53 +1,50 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chtholly.local/benchmark-manifest.schema.json",
-  "title": "Chtholly Hub benchmark manifest",
+  "title": "Chtholly Hub cache benchmark manifest",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
   "required": [
     "schemaVersion",
     "runId",
     "profile",
     "scenario",
     "variant",
+    "repetition",
     "subjectCommit",
     "executionCommit",
     "harnessCommit",
     "datasetCommit",
     "environmentId",
-    "repetition",
-    "experiment",
-    "numberKind",
+    "workload",
     "status",
-    "startedAt"
+    "startedAt",
+    "endedAt"
   ],
   "properties": {
     "schemaVersion": { "const": 1 },
     "runId": { "type": "string", "minLength": 1 },
     "profile": { "enum": ["smoke", "standard"] },
-    "scenario": { "enum": ["all", "cache", "counter", "relation", "fault"] },
-    "variant": { "type": "string", "minLength": 1 },
+    "scenario": { "enum": ["stable-hot", "expiry-spike"] },
+    "variant": { "enum": ["db-only", "full-no-singleflight", "full"] },
+    "repetition": { "type": "integer", "minimum": 1, "maximum": 3 },
     "subjectCommit": { "type": "string", "minLength": 7 },
     "executionCommit": { "type": "string", "minLength": 7 },
     "harnessCommit": { "type": "string", "minLength": 7 },
     "datasetCommit": { "type": "string", "minLength": 7 },
-    "environmentId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-    "repetition": { "type": "integer", "minimum": 1 },
-    "experiment": {
+    "environmentId": { "type": "string", "minLength": 1 },
+    "workload": {
       "type": "object",
-      "required": ["hypothesis", "primaryMetric", "direction", "confidenceMethod", "hardFail"],
+      "additionalProperties": false,
+      "required": ["seed", "concurrency", "warmupSeconds", "durationSeconds"],
       "properties": {
-        "hypothesis": { "type": "string", "minLength": 1 },
-        "primaryMetric": { "type": "string", "minLength": 1 },
-        "direction": { "enum": ["LOWER", "HIGHER"] },
-        "confidenceMethod": { "type": "string", "minLength": 1 },
-        "hardFail": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+        "seed": { "type": "integer" },
+        "concurrency": { "type": "integer", "minimum": 1 },
+        "warmupSeconds": { "type": "integer", "minimum": 0 },
+        "durationSeconds": { "type": "integer", "minimum": 1 }
       }
     },
-    "numberKind": { "enum": ["CONFIG", "OBSERVED", "TARGET", "THRESHOLD"] },
-    "status": {
-      "enum": ["PLANNED", "VALIDATED", "RUNNING", "COMPLETED", "FAILED", "BLOCKED_EXTERNAL"]
-    },
+    "status": { "enum": ["VALIDATED", "RUNNING", "COMPLETED", "FAILED", "INCOMPLETE"] },
     "startedAt": { "type": "string", "format": "date-time" },
     "endedAt": { "type": ["string", "null"], "format": "date-time" }
   }

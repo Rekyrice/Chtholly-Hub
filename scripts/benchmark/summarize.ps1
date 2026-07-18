@@ -1,107 +1,106 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$RunDirectory,
-
-    [string]$ArchiveDirectory
+    [string]$RunDirectory
 )
 
 $ErrorActionPreference = 'Stop'
 $resolvedRunDirectory = (Resolve-Path -LiteralPath $RunDirectory).Path
 $manifestPath = Join-Path $resolvedRunDirectory 'manifest.json'
 $environmentPath = Join-Path $resolvedRunDirectory 'environment.json'
-if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-    throw "Missing manifest: $manifestPath"
+foreach ($path in @($manifestPath, $environmentPath)) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Missing benchmark input: $path"
+    }
 }
-if (-not (Test-Path -LiteralPath $environmentPath -PathType Leaf)) {
-    throw "Missing environment snapshot: $environmentPath"
+
+function Get-MetricValues {
+    param([object]$Metric)
+    if ($null -eq $Metric) { return $null }
+    if ($null -ne $Metric.PSObject.Properties['values']) { return $Metric.values }
+    return $Metric
 }
 
 $manifest = Get-Content -Raw -LiteralPath $manifestPath -Encoding UTF8 | ConvertFrom-Json
 $k6Path = Join-Path $resolvedRunDirectory 'raw/k6.json'
-$metrics = [ordered]@{}
+$applicationMetricsPath = Join-Path $resolvedRunDirectory 'raw/application-metrics.json'
+$p95Ms = $null
+$errorRate = $null
+$mysqlQueryCount = $null
+$sameKeyLoadCount = $null
+
 if (Test-Path -LiteralPath $k6Path -PathType Leaf) {
     $k6 = Get-Content -Raw -LiteralPath $k6Path -Encoding UTF8 | ConvertFrom-Json
-    $durationValues = $k6.metrics.http_req_duration.values
-    $metrics = [ordered]@{
-        requests = $k6.metrics.http_reqs.values.count
-        requestRate = $k6.metrics.http_reqs.values.rate
-        errorRate = $k6.metrics.http_req_failed.values.rate
-        checkRate = $k6.metrics.checks.values.rate
-        p50Ms = $durationValues.med
-        p95Ms = $durationValues.'p(95)'
-        p99Ms = $durationValues.'p(99)'
-    }
+    $duration = Get-MetricValues -Metric $k6.metrics.http_req_duration
+    $failures = Get-MetricValues -Metric $k6.metrics.http_req_failed
+    if ($null -ne $duration) { $p95Ms = $duration.'p(95)' }
+    if ($null -ne $failures) { $errorRate = $failures.rate }
+}
+
+if (Test-Path -LiteralPath $applicationMetricsPath -PathType Leaf) {
+    $applicationMetrics = Get-Content -Raw -LiteralPath $applicationMetricsPath -Encoding UTF8 | ConvertFrom-Json
+    $mysqlQueryCount = $applicationMetrics.mysqlQueryCount
+    $sameKeyLoadCount = $applicationMetrics.sameKeyLoadCount
+}
+
+$summaryStatus = $manifest.status
+if ($manifest.status -eq 'COMPLETED' -and
+        ($null -eq $p95Ms -or $null -eq $errorRate -or $null -eq $mysqlQueryCount -or $null -eq $sameKeyLoadCount)) {
+    $summaryStatus = 'INCOMPLETE'
 }
 
 $summary = [ordered]@{
     schemaVersion = 1
     runId = $manifest.runId
-    status = $manifest.status
-    numberKind = $manifest.numberKind
+    status = $summaryStatus
     profile = $manifest.profile
     scenario = $manifest.scenario
     variant = $manifest.variant
+    repetition = $manifest.repetition
     subjectCommit = $manifest.subjectCommit
+    executionCommit = $manifest.executionCommit
     harnessCommit = $manifest.harnessCommit
     datasetCommit = $manifest.datasetCommit
-    dirty = $manifest.dirty
-    metrics = $metrics
-    conclusion = if ($manifest.status -eq 'COMPLETED') { 'COLLECTED_UNREVIEWED' } else { $manifest.status }
+    environmentId = $manifest.environmentId
+    metrics = [ordered]@{
+        p95Ms = $p95Ms
+        errorRate = $errorRate
+        mysqlQueryCount = $mysqlQueryCount
+        sameKeyLoadCount = $sameKeyLoadCount
+    }
 }
 $summaryPath = Join-Path $resolvedRunDirectory 'summary.json'
-$summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryPath -Encoding utf8
+$summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
-$summaryMarkdown = @(
-    "# Benchmark run $($manifest.runId)",
+@(
+    "# Cache benchmark $($manifest.runId)",
     '',
-    "- Status: $($manifest.status)",
-    "- Profile: $($manifest.profile)",
+    "- Status: $summaryStatus",
     "- Scenario: $($manifest.scenario)",
     "- Variant: $($manifest.variant)",
+    "- Repetition: $($manifest.repetition)",
     "- Subject commit: $($manifest.subjectCommit)",
     "- Harness commit: $($manifest.harnessCommit)",
     "- Dataset commit: $($manifest.datasetCommit)",
-    "- Dirty: $($manifest.dirty)",
-    "- Evidence state: $($summary.conclusion)",
     '',
-    'This summary is deterministic output from the recorded manifest and raw files. It does not upgrade the run to REPRODUCED.'
-)
-$summaryMarkdown | Set-Content -LiteralPath (Join-Path $resolvedRunDirectory 'summary.md') -Encoding utf8
+    '| Metric | Value |',
+    '|---|---:|',
+    "| p95Ms | $p95Ms |",
+    "| errorRate | $errorRate |",
+    "| mysqlQueryCount | $mysqlQueryCount |",
+    "| sameKeyLoadCount | $sameKeyLoadCount |"
+) | Set-Content -LiteralPath (Join-Path $resolvedRunDirectory 'summary.md') -Encoding UTF8
 
 $failureLines = [System.Collections.Generic.List[string]]::new()
-if ($manifest.status -ne 'COMPLETED') {
-    $failureLines.Add("Run status is $($manifest.status).")
+if ($summaryStatus -eq 'INCOMPLETE') {
+    $failureLines.Add('The run is missing one or more required raw metrics; no comparison is allowed.')
 }
-if ($manifest.dirty) {
-    $failureLines.Add('The subject worktree was dirty; this run is diagnostic only.')
+elseif ($summaryStatus -notin @('COMPLETED', 'VALIDATED')) {
+    $failureLines.Add("The run status is $summaryStatus.")
 }
-if ($failureLines.Count -eq 0) {
-    $failureLines.Add('No harness-level failure was recorded. Application-level failures remain subject to raw result review.')
+else {
+    $failureLines.Add('No harness-level failure was recorded.')
 }
-$failureLines | Set-Content -LiteralPath (Join-Path $resolvedRunDirectory 'failures.md') -Encoding utf8
-
-$checksumPath = Join-Path $resolvedRunDirectory 'checksums.sha256'
-$checksumLines = Get-ChildItem -LiteralPath $resolvedRunDirectory -Recurse -File |
-    Where-Object { $_.FullName -ne $checksumPath } |
-    Sort-Object FullName |
-    ForEach-Object {
-        $relative = $_.FullName.Substring($resolvedRunDirectory.Length).TrimStart('\', '/').Replace('\', '/')
-        $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        "$hash  $relative"
-    }
-$checksumLines | Set-Content -LiteralPath $checksumPath -Encoding ascii
-
-if (-not [string]::IsNullOrWhiteSpace($ArchiveDirectory)) {
-    New-Item -ItemType Directory -Path $ArchiveDirectory -Force | Out-Null
-    $archivePath = Join-Path (Resolve-Path -LiteralPath $ArchiveDirectory).Path "$($manifest.runId).zip"
-    if (Test-Path -LiteralPath $archivePath) {
-        throw "Archive already exists: $archivePath"
-    }
-    Compress-Archive -Path (Join-Path $resolvedRunDirectory '*') -DestinationPath $archivePath -CompressionLevel Optimal
-    $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    Write-Output "Archive: $archivePath"
-    Write-Output "SHA-256: $archiveHash"
-}
+$failureLines | Set-Content -LiteralPath (Join-Path $resolvedRunDirectory 'failures.md') -Encoding UTF8
 
 Write-Output "Summary: $summaryPath"

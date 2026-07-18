@@ -24,8 +24,15 @@ CI 也保持相同隔离：`backend-test` 运行 `mvn test -Dspring.profiles.act
 - 前端行为：Vitest 与生产构建都运行；只有单测不能证明 Next.js 生产边界可构建。
 - 数据库或部署：除静态检查外，在隔离环境验证 schema/增量顺序和健康检查，避免对生产数据试跑。
 
-## 基准合同验证
+## 最小基准合同
 
-根目录执行 `powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harness.ps1`，验证 manifest schema、隔离环境计划、本地 benchmark token、runId 不可变、提交身份、确定性 seed、k6 语法和汇总归档入口。该命令只验证合同，不产生可用于性能主张的数字。
+根目录依次执行：
 
-正式 standard 运行使用 `scripts/benchmark/environment.ps1` 创建带 runId 所有权的隔离 Compose 网络和卷，并要求 runner 的业务 subject、实际 execution、harness、dataset、JAR 哈希与环境快照一致。`smoke`、`ValidateOnly`、dirty worktree 或缺少原始指标的运行只能作为诊断资产。
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-datasets.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harness.ps1
+```
+
+前者固定 27 条 Skill、45 条检索、5 条草稿流程与 2 条 Trace 回放候选，并拒绝旧任务租约、双审和 signoff 语义；所有候选在项目本人复核前保持 `CANDIDATE_REQUIRES_OWNER_REVIEW`。后者验证两个缓存场景、三个实际变体、最小 manifest、隔离环境与原始汇总入口。静态合同通过不等于已经产生真实性能数字。
+
+缓存正式数据仅运行 12 次固定对照：`stable-hot` 下 `db-only/full` 各 3 次，`expiry-spike` 下 `full-no-singleflight/full` 各 3 次。每次使用独立环境并保留 p95、错误率、MySQL 查询次数和同 key 真实加载次数；缺少任一原始指标的结果为 `INCOMPLETE`，不得用于比较。环境和命令详见 [`benchmarks/README.md`](../../benchmarks/README.md)。

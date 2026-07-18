@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Validate', 'Start', 'Status', 'Stop')]
+    [ValidateSet('Validate', 'Start', 'Stop')]
     [string]$Action,
 
     [Parameter(Mandatory = $true)]
@@ -11,7 +11,10 @@ param(
     [ValidateSet('smoke', 'standard')]
     [string]$Profile = 'smoke',
 
-    [ValidateSet('db-only', 'redis-db', 'full')]
+    [ValidateSet('stable-hot', 'expiry-spike')]
+    [string]$Scenario = 'stable-hot',
+
+    [ValidateSet('db-only', 'full-no-singleflight', 'full')]
     [string]$Variant = 'full',
 
     [ValidateRange(1024, 65535)]
@@ -21,13 +24,7 @@ param(
     [int]$MysqlPort = 13306,
 
     [ValidateRange(1024, 65535)]
-    [int]$RedisPort = 16379,
-
-    [ValidateRange(1024, 65535)]
-    [int]$KafkaPort = 19092,
-
-    [ValidateRange(1024, 65535)]
-    [int]$ElasticsearchPort = 19200
+    [int]$RedisPort = 16379
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,23 +37,16 @@ $sourceCompose = Join-Path $repoRoot 'docker-compose.prod.yml'
 $overrideCompose = Join-Path $runtimeRoot 'compose.override.yml'
 $environmentFile = Join-Path $runtimeRoot '.env'
 $runtimeManifestPath = Join-Path $resultDirectory 'environment-runtime.json'
+
 $safeRunId = ($RunId.ToLowerInvariant() -replace '[^a-z0-9-]', '-').Trim('-')
 if ($safeRunId.Length -gt 20) { $safeRunId = $safeRunId.Substring(0, 20).TrimEnd('-') }
-$runIdHashAlgorithm = [Security.Cryptography.SHA256]::Create()
+$hash = [Security.Cryptography.SHA256]::Create()
 try {
-    $runIdHash = [BitConverter]::ToString(
-        $runIdHashAlgorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($RunId))).Replace('-', '').ToLowerInvariant()
+    $runIdHash = [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($RunId))).Replace('-', '').ToLowerInvariant()
 }
-finally {
-    $runIdHashAlgorithm.Dispose()
-}
+finally { $hash.Dispose() }
 $projectName = "chtholly-bm-$safeRunId-$($runIdHash.Substring(0, 12))"
-$services = @('mysql', 'redis', 'kafka', 'elasticsearch', 'server')
-$cacheReadMode = switch ($Variant) {
-    'db-only' { 'db-only' }
-    'redis-db' { 'redis' }
-    default { 'full' }
-}
+$services = @('mysql', 'redis', 'server')
 $plan = [ordered]@{
     action = $Action
     runId = $RunId
@@ -64,30 +54,21 @@ $plan = [ordered]@{
     isolated = $true
     removeVolumesOnStop = $true
     profile = $Profile
+    scenario = $Scenario
     variant = $Variant
-    cacheReadMode = $cacheReadMode
-    port = $Port
+    cacheReadMode = $Variant
+    services = $services
     hostBaseUrl = "http://127.0.0.1:$Port"
     k6BaseUrl = 'http://server:8888'
-    services = $services
-    sourceCompose = 'docker-compose.prod.yml'
-    serverRuntime = 'compose-container'
-    searchMode = 'degraded-no-backfill'
-    dependencyPorts = [ordered]@{
-        mysql = $MysqlPort
-        redis = $RedisPort
-        kafka = $KafkaPort
-        elasticsearch = $ElasticsearchPort
-    }
+    dependencyPorts = [ordered]@{ mysql = $MysqlPort; redis = $RedisPort }
 }
-
 if ($Action -eq 'Validate') {
     $plan | ConvertTo-Json -Depth 5
     exit 0
 }
 
 function Assert-RuntimePath {
-    param([Parameter(Mandatory = $true)][string]$Path)
+    param([string]$Path)
     $resolvedBase = (Resolve-Path -LiteralPath $runtimeBase).Path + [IO.Path]::DirectorySeparatorChar
     $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
     if (-not $resolvedPath.StartsWith($resolvedBase, [StringComparison]::OrdinalIgnoreCase)) {
@@ -98,110 +79,62 @@ function Assert-RuntimePath {
 
 function Invoke-Compose {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
-    $composeArguments = @('compose', '-p', $projectName, '--env-file', $environmentFile,
-        '-f', $sourceCompose, '-f', $overrideCompose) + $Arguments
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'Continue'
-        & docker @composeArguments
-        $composeExitCode = $LASTEXITCODE
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-    if ($composeExitCode -ne 0) {
-        throw "Docker Compose failed with exit code $composeExitCode."
-    }
+    & docker compose -p $projectName --env-file $environmentFile -f $sourceCompose -f $overrideCompose @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "Docker Compose failed with exit code $LASTEXITCODE" }
 }
 
 function Get-OwnedServerContainer {
-    $containerIdPath = Join-Path $runtimeRoot 'server.container-id'
-    if (-not (Test-Path -LiteralPath $containerIdPath -PathType Leaf)) {
-        return $null
-    }
-    $containerId = (Get-Content -LiteralPath $containerIdPath -Encoding ascii | Select-Object -First 1).Trim()
-    if ([string]::IsNullOrWhiteSpace($containerId)) {
-        return $null
-    }
-    $inspectJson = (& docker inspect $containerId 2>$null | Out-String)
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($inspectJson)) {
-        return $null
-    }
-    $inspect = ($inspectJson | ConvertFrom-Json | Select-Object -First 1)
-    $name = $inspect.Name.TrimStart('/')
-    $owner = $inspect.Config.Labels.'chtholly.benchmark.owner'
-    if ($name -ne "$projectName-server" -or $owner -ne $RunId) {
-        throw "Refusing to operate on an unverified benchmark server container: $containerId"
+    $path = Join-Path $runtimeRoot 'server.container-id'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $containerId = (Get-Content -LiteralPath $path -Encoding ascii | Select-Object -First 1).Trim()
+    if ([string]::IsNullOrWhiteSpace($containerId)) { return $null }
+    $inspectText = (& docker inspect $containerId 2>$null | Out-String)
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($inspectText)) { return $null }
+    $inspect = $inspectText | ConvertFrom-Json | Select-Object -First 1
+    if ($inspect.Config.Labels.'chtholly.benchmark.owner' -ne $RunId) {
+        throw "Refusing to operate on an unowned server container: $containerId"
     }
     return $containerId
 }
 
-function Stop-OwnedServerContainer {
+function Preserve-ServerLog {
+    $containerId = Get-OwnedServerContainer
+    if ($null -eq $containerId) { return }
+    $rawDirectory = Join-Path $resultDirectory 'raw'
+    New-Item -ItemType Directory -Path $rawDirectory -Force | Out-Null
+    & docker logs $containerId 2>&1 | Set-Content -LiteralPath (Join-Path $rawDirectory 'server.log') -Encoding UTF8
+}
+
+function Stop-OwnedEnvironment {
+    if (-not (Test-Path -LiteralPath $runtimeRoot -PathType Container)) { return }
+    Assert-RuntimePath -Path $runtimeRoot | Out-Null
+    try { Preserve-ServerLog } catch { }
     $containerId = Get-OwnedServerContainer
     if ($null -ne $containerId) {
         & docker rm -f $containerId | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "Cannot remove owned benchmark server container: $containerId"
-        }
+        if ($LASTEXITCODE -ne 0) { throw "Cannot remove owned server container: $containerId" }
     }
+    Invoke-Compose down --volumes --remove-orphans
+    Remove-Item -LiteralPath $runtimeRoot -Recurse -Force
 }
 
-function Preserve-ServerLogs {
-    $containerId = Get-OwnedServerContainer
-    if ($null -ne $containerId) {
-        $previousErrorActionPreference = $ErrorActionPreference
-        try {
-            $ErrorActionPreference = 'Continue'
-            & docker logs $containerId 2>&1 |
-                Set-Content -LiteralPath (Join-Path $runtimeRoot 'server.stdout.log') -Encoding utf8
-        }
-        finally { $ErrorActionPreference = $previousErrorActionPreference }
-    }
-    $rawDirectory = Join-Path $resultDirectory 'raw'
-    New-Item -ItemType Directory -Path $rawDirectory -Force | Out-Null
-    foreach ($name in @('server.stdout.log', 'server.stderr.log', 'server-build.log')) {
-        $source = Join-Path $runtimeRoot $name
-        if (Test-Path -LiteralPath $source -PathType Leaf) {
-            Copy-Item -LiteralPath $source -Destination (Join-Path $rawDirectory $name) -Force
-        }
-    }
-}
-
-if ($Action -in @('Status', 'Stop')) {
+if ($Action -eq 'Stop') {
     if (-not (Test-Path -LiteralPath $runtimeRoot -PathType Container)) {
         throw "Benchmark environment is not registered: $RunId"
     }
-    Assert-RuntimePath -Path $runtimeRoot | Out-Null
-    if (-not $projectName.StartsWith('chtholly-bm-', [StringComparison]::Ordinal)) {
-        throw "Refusing to operate on an unowned Compose project: $projectName"
-    }
-    if ($Action -eq 'Status') {
-        Invoke-Compose ps
-        $serverContainer = Get-OwnedServerContainer
-        $serverRunning = $null -ne $serverContainer -and
-            ((& docker inspect --format '{{.State.Running}}' $serverContainer | Out-String).Trim() -eq 'true')
-        Write-Output "server-container-running=$serverRunning"
-        exit 0
-    }
-
-    Preserve-ServerLogs
-    Stop-OwnedServerContainer
-    Invoke-Compose down --volumes --remove-orphans
-    Remove-Item -LiteralPath $runtimeRoot -Recurse -Force
+    Stop-OwnedEnvironment
     Write-Output "Stopped isolated benchmark environment $projectName."
     exit 0
 }
 
+if (Test-Path -LiteralPath $runtimeRoot) { throw "Benchmark environment already exists: $RunId" }
 $executionCommit = (git -C $repoRoot rev-parse HEAD).Trim()
 $executionDirty = -not [string]::IsNullOrWhiteSpace((git -C $repoRoot status --porcelain | Out-String))
-if ($Profile -eq 'standard' -and $executionDirty) {
-    throw 'Formal standard benchmark environment requires a clean worktree'
-}
+if ($Profile -eq 'standard' -and $executionDirty) { throw 'Standard benchmark environments require a clean worktree' }
 
 New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $resultDirectory -Force | Out-Null
 Assert-RuntimePath -Path $runtimeRoot | Out-Null
-
 $rootPassword = 'bm-root-' + [Guid]::NewGuid().ToString('N')
 $appPassword = 'bm-app-' + [Guid]::NewGuid().ToString('N')
 @(
@@ -211,7 +144,7 @@ $appPassword = 'bm-app-' + [Guid]::NewGuid().ToString('N')
     'MYSQL_DATABASE=chtholly',
     'NEXT_PUBLIC_SITE_URL=http://localhost',
     'NEXT_PUBLIC_OSS_PUBLIC_URL=http://localhost/uploads',
-    'KAFKA_ENABLED=true',
+    'KAFKA_ENABLED=false',
     'LLM_ENABLED=false'
 ) | Set-Content -LiteralPath $environmentFile -Encoding ascii
 
@@ -225,89 +158,43 @@ services:
   redis:
     ports:
       - "127.0.0.1:${RedisPort}:6379"
-  elasticsearch:
-    ports:
-      - "127.0.0.1:${ElasticsearchPort}:9200"
-  kafka:
-    ports:
-      - "127.0.0.1:${KafkaPort}:29092"
-    environment:
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://127.0.0.1:${KafkaPort}"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
-"@ | Set-Content -LiteralPath $overrideCompose -Encoding utf8
+"@ | Set-Content -LiteralPath $overrideCompose -Encoding UTF8
 
 try {
     Invoke-Compose config --quiet
-    Invoke-Compose up -d --wait --wait-timeout 420 mysql redis elasticsearch kafka
-
+    Invoke-Compose up -d --wait --wait-timeout 240 mysql redis
     $containerIds = [ordered]@{}
-    $containerNames = [ordered]@{}
-    foreach ($service in @('mysql', 'redis', 'kafka', 'elasticsearch')) {
-        $idOutput = & docker compose -p $projectName --env-file $environmentFile `
-            -f $sourceCompose -f $overrideCompose ps -q $service
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($idOutput | Out-String))) {
-            throw "Cannot resolve container for benchmark service: $service"
-        }
-        $containerId = (($idOutput | Out-String).Trim())
-        $containerIds[$service] = $containerId
-        $containerNames[$service] = ((& docker inspect --format '{{.Name}}' $containerId | Out-String).Trim()).TrimStart('/')
+    foreach ($service in @('mysql', 'redis')) {
+        $id = ((& docker compose -p $projectName --env-file $environmentFile -f $sourceCompose -f $overrideCompose ps -q $service | Out-String).Trim())
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($id)) { throw "Cannot resolve container: $service" }
+        $containerIds[$service] = $id
     }
 
-    $previousRootPassword = $env:BENCHMARK_MYSQL_ROOT_PASSWORD
-    $previousDatabase = $env:BENCHMARK_MYSQL_DATABASE
+    $previousPassword = $env:BENCHMARK_MYSQL_ROOT_PASSWORD
     try {
         $env:BENCHMARK_MYSQL_ROOT_PASSWORD = $rootPassword
-        $env:BENCHMARK_MYSQL_DATABASE = 'chtholly'
-        & (Join-Path $PSScriptRoot 'seed.ps1') -Profile $Profile `
-            -MysqlContainer $containerIds.mysql -RedisContainer $containerIds.redis
-        if ($LASTEXITCODE -ne 0) { throw "Benchmark seed failed with exit code $LASTEXITCODE." }
+        & (Join-Path $PSScriptRoot 'seed.ps1') -Profile $Profile -MysqlContainer $containerIds.mysql -RedisContainer $containerIds.redis
+        if ($LASTEXITCODE -ne 0) { throw 'Benchmark seed failed' }
     }
-    finally {
-        $env:BENCHMARK_MYSQL_ROOT_PASSWORD = $previousRootPassword
-        $env:BENCHMARK_MYSQL_DATABASE = $previousDatabase
-    }
+    finally { $env:BENCHMARK_MYSQL_ROOT_PASSWORD = $previousPassword }
 
     $serverDirectory = Join-Path $repoRoot 'apps/server'
-    $buildLog = Join-Path $runtimeRoot 'server-build.log'
     Push-Location $serverDirectory
     try {
-        $previousErrorActionPreference = $ErrorActionPreference
-        try {
-            $ErrorActionPreference = 'Continue'
-            & mvn -q -DskipTests clean package 2>&1 | Tee-Object -FilePath $buildLog
-            $buildExitCode = $LASTEXITCODE
-        }
-        finally {
-            $ErrorActionPreference = $previousErrorActionPreference
-        }
+        & mvn -q -DskipTests clean package
+        if ($LASTEXITCODE -ne 0) { throw 'Building the benchmark server failed' }
     }
     finally { Pop-Location }
-    if ($buildExitCode -ne 0) {
-        throw "Building the benchmark server failed with exit code $buildExitCode."
-    }
     $serverJar = Get-ChildItem -LiteralPath (Join-Path $serverDirectory 'target') -Filter 'chtholly-server-*.jar' -File |
-        Where-Object { $_.Name -notlike '*.original' } |
-        Sort-Object LastWriteTimeUtc -Descending |
-        Select-Object -First 1
-    if ($null -eq $serverJar) {
-        throw 'Cannot find the packaged benchmark server JAR.'
-    }
+        Where-Object Name -NotLike '*.original' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    if ($null -eq $serverJar) { throw 'Cannot find the packaged server JAR' }
 
-    $serverJarSha256 = (Get-FileHash -LiteralPath $serverJar.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-    $serverRuntimeImage = 'apache/kafka:latest'
-    & docker image inspect $serverRuntimeImage *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Required local Java 21 runtime image is unavailable: $serverRuntimeImage"
-    }
+    $network = ((& docker network ls --filter "label=com.docker.compose.project=$projectName" --format '{{.Name}}' | Out-String).Trim())
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($network)) { throw 'Cannot resolve the benchmark network' }
+    $runtimeImage = 'apache/kafka:latest'
+    & docker image inspect $runtimeImage *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Required local Java runtime image is unavailable: $runtimeImage" }
 
-    $benchmarkNetwork = ((& docker network ls `
-        --filter "label=com.docker.compose.project=$projectName" `
-        --filter 'label=com.docker.compose.network=default' `
-        --format '{{.Name}}' | Out-String).Trim())
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($benchmarkNetwork)) {
-        throw 'Cannot resolve the isolated benchmark network.'
-    }
     $serverEnvironmentFile = Join-Path $runtimeRoot 'server.env'
     @(
         'SERVER_PORT=8888',
@@ -318,106 +205,60 @@ try {
         "MYSQL_PASSWORD=$appPassword",
         'REDIS_HOST=redis',
         'REDIS_PORT=6379',
-        'KAFKA_ENABLED=true',
-        'KAFKA_BOOTSTRAP_SERVERS=kafka:9092',
+        'KAFKA_ENABLED=false',
         'ES_URIS=http://127.0.0.1:1',
         'CANAL_ENABLED=false',
         'LLM_ENABLED=false',
         'STORAGE_LOCAL_PATH=/tmp/chtholly-uploads',
-        "CACHE_READ_MODE=$cacheReadMode",
+        "CACHE_READ_MODE=$Variant",
+        "CACHE_BENCHMARK_SCENARIO=$Scenario",
         'LOGGING_LEVEL_COM_CHTHOLLY=WARN',
-        'MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus',
-        'MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED=true'
+        'MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,metrics,prometheus'
     ) | Set-Content -LiteralPath $serverEnvironmentFile -Encoding ascii
-    $serverContainerId = ((& docker run -d `
-        --name "$projectName-server" `
-        --label "chtholly.benchmark.owner=$RunId" `
-        --network $benchmarkNetwork `
-        --network-alias server `
-        --memory 1536m `
-        -p "127.0.0.1:$Port`:8888" `
-        --env-file $serverEnvironmentFile `
+
+    $serverContainerId = ((& docker run -d --name "$projectName-server" `
+        --label "chtholly.benchmark.owner=$RunId" --network $network --network-alias server `
+        --memory 1536m -p "127.0.0.1:$Port`:8888" --env-file $serverEnvironmentFile `
         --mount "type=bind,source=$($serverJar.FullName),target=/app/app.jar,readonly" `
-        --entrypoint java `
-        --pull never `
-        $serverRuntimeImage `
-        -jar /app/app.jar | Out-String).Trim())
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($serverContainerId)) {
-        throw 'Starting the benchmark server container failed.'
-    }
-    Set-Content -LiteralPath (Join-Path $runtimeRoot 'server.container-id') `
-        -Value $serverContainerId -Encoding ascii
-    $containerIds.server = $serverContainerId
-    $containerNames.server = "$projectName-server"
+        --entrypoint java --pull never $runtimeImage -jar /app/app.jar | Out-String).Trim())
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($serverContainerId)) { throw 'Starting the server container failed' }
+    Set-Content -LiteralPath (Join-Path $runtimeRoot 'server.container-id') -Value $serverContainerId -Encoding ascii
 
     $healthy = $false
-    $healthToken = (& (Join-Path $PSScriptRoot 'new-benchmark-token.ps1') `
-        -UserId 910000000000000001 -TtlSeconds 1800 | Out-String).Trim()
-    $healthHeaders = @{ Authorization = "Bearer $healthToken" }
-    $healthDeadline = [DateTimeOffset]::UtcNow.AddMinutes(3)
-    while ([DateTimeOffset]::UtcNow -lt $healthDeadline) {
-        $serverRunning = ((& docker inspect --format '{{.State.Running}}' $serverContainerId 2>$null |
-            Out-String).Trim()) -eq 'true'
-        if (-not $serverRunning) { break }
+    $deadline = [DateTimeOffset]::UtcNow.AddMinutes(3)
+    while ([DateTimeOffset]::UtcNow -lt $deadline) {
         try {
-            $health = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:$Port/actuator/health/liveness" `
-                -Headers $healthHeaders -TimeoutSec 5
+            $health = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:$Port/actuator/health" -TimeoutSec 5
             if ($health.status -eq 'UP') { $healthy = $true; break }
         }
         catch { }
         Start-Sleep -Seconds 2
     }
-    if (-not $healthy) {
-        throw "Benchmark server failed to become healthy on port $Port."
-    }
-
-    $healthToken = $null
-    $healthHeaders = $null
+    if (-not $healthy) { throw "Benchmark server failed to become healthy on port $Port" }
 
     $runtimeManifest = [ordered]@{
         schemaVersion = 1
         capturedAt = [DateTimeOffset]::UtcNow.ToString('o')
         runId = $RunId
         projectName = $projectName
-        isolated = $true
-        removeVolumesOnStop = $true
         profile = $Profile
+        scenario = $Scenario
         variant = $Variant
-        cacheReadMode = $cacheReadMode
-        port = $Port
+        cacheReadMode = $Variant
         hostBaseUrl = "http://127.0.0.1:$Port"
         k6BaseUrl = 'http://server:8888'
-        benchmarkNetwork = $benchmarkNetwork
+        benchmarkNetwork = $network
         services = $services
-        containerIds = $containerIds
-        containerNames = $containerNames
-        serverRuntime = 'compose-container'
-        applicationLogLevel = 'WARN'
-        searchMode = 'degraded-no-backfill'
-        serverContainerId = $serverContainerId
-        serverImage = $serverRuntimeImage
-        serverImageId = ((& docker image inspect --format '{{.Id}}' $serverRuntimeImage | Out-String).Trim())
+        containerIds = [ordered]@{ mysql = $containerIds.mysql; redis = $containerIds.redis; server = $serverContainerId }
         executionCommit = $executionCommit
         executionDirty = $executionDirty
-        serverJarSha256 = $serverJarSha256
-        dependencyPorts = [ordered]@{
-            mysql = $MysqlPort
-            redis = $RedisPort
-            kafka = $KafkaPort
-            elasticsearch = $ElasticsearchPort
-        }
+        serverJarSha256 = (Get-FileHash -LiteralPath $serverJar.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         secretsRecorded = $false
     }
-    $runtimeManifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runtimeManifestPath -Encoding utf8
-    $runtimeManifest | ConvertTo-Json -Depth 8
+    $runtimeManifest | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $runtimeManifestPath -Encoding UTF8
+    $runtimeManifest | ConvertTo-Json -Depth 7
 }
 catch {
-    try { Preserve-ServerLogs } catch { }
-    try { Stop-OwnedServerContainer } catch { }
-    try { Invoke-Compose down --volumes --remove-orphans } catch { }
-    if (Test-Path -LiteralPath $runtimeRoot -PathType Container) {
-        Assert-RuntimePath -Path $runtimeRoot | Out-Null
-        Remove-Item -LiteralPath $runtimeRoot -Recurse -Force
-    }
+    try { Stop-OwnedEnvironment } catch { }
     throw
 }

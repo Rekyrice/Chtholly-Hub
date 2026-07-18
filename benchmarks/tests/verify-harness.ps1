@@ -6,220 +6,153 @@ $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Assert-True {
-    param(
-        [Parameter(Mandatory = $true)]
-        [bool]$Condition,
-        [Parameter(Mandatory = $true)]
-        [string]$Message
-    )
-
-    if (-not $Condition) {
-        $failures.Add($Message)
-    }
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) { $failures.Add($Message) }
 }
 
 function Assert-File {
-    param([Parameter(Mandatory = $true)][string]$RelativePath)
-
-    $path = Join-Path $repoRoot $RelativePath
-    Assert-True -Condition (Test-Path -LiteralPath $path -PathType Leaf) -Message "Missing file: $RelativePath"
+    param([string]$RelativePath)
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $repoRoot $RelativePath) -PathType Leaf) -Message "Missing file: $RelativePath"
 }
 
 Push-Location $repoRoot
 try {
     git check-ignore --quiet .benchmark-results/probe
-    Assert-True -Condition ($LASTEXITCODE -eq 0) -Message '.benchmark-results/ must be ignored by Git'
-
-    $trackedResults = @(git ls-files '.benchmark-results/**')
-    Assert-True -Condition ($trackedResults.Count -eq 0) -Message '.benchmark-results/ must not contain tracked files'
+    Assert-True -Condition ($LASTEXITCODE -eq 0) -Message '.benchmark-results/ must be ignored'
+    Assert-True -Condition (@(git ls-files '.benchmark-results/**').Count -eq 0) -Message '.benchmark-results/ must not contain tracked files'
 
     $requiredFiles = @(
         'benchmarks/README.md',
         'benchmarks/config/standard.yml',
-        'benchmarks/k6/backend-scenarios.js',
+        'benchmarks/k6/cache-scenarios.js',
         'benchmarks/schema/manifest.schema.json',
-        'scripts/benchmark/run.ps1',
+        'benchmarks/seed/standard.sql',
+        'benchmarks/templates/experiment-report.md',
         'scripts/benchmark/environment.ps1',
         'scripts/benchmark/new-benchmark-token.ps1',
+        'scripts/benchmark/run.ps1',
         'scripts/benchmark/seed.ps1',
-        'scripts/benchmark/summarize.ps1',
-        'docs/benchmarks/evidence-index.yml'
+        'scripts/benchmark/summarize.ps1'
     )
-    foreach ($relativePath in $requiredFiles) {
-        Assert-File -RelativePath $relativePath
-    }
+    foreach ($path in $requiredFiles) { Assert-File -RelativePath $path }
 
-    $schemaPath = Join-Path $repoRoot 'benchmarks/schema/manifest.schema.json'
-    if (Test-Path -LiteralPath $schemaPath -PathType Leaf) {
-        $schema = Get-Content -Raw -LiteralPath $schemaPath -Encoding UTF8 | ConvertFrom-Json
-        foreach ($requiredProperty in @('subjectCommit', 'executionCommit', 'harnessCommit', 'datasetCommit', 'environmentId', 'repetition', 'experiment', 'profile', 'scenario', 'runId', 'status')) {
-            Assert-True -Condition ($schema.required -contains $requiredProperty) -Message "Manifest schema must require $requiredProperty"
-        }
+    foreach ($path in @(
+        'benchmarks/k6/backend-scenarios.js',
+        'docs/benchmarks/evidence-index.yml'
+    )) {
+        Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $repoRoot $path) -PathType Leaf)) -Message "Obsolete harness file remains: $path"
     }
 
     $configPath = Join-Path $repoRoot 'benchmarks/config/standard.yml'
     if (Test-Path -LiteralPath $configPath -PathType Leaf) {
         $config = Get-Content -Raw -LiteralPath $configPath -Encoding UTF8
-        foreach ($token in @('smoke:', 'standard:', 'concurrency:', 'warmupSeconds:', 'durationSeconds:', 'seed:')) {
-            Assert-True -Condition $config.Contains($token) -Message "Workload config must contain $token"
+        foreach ($token in @('stable-hot:', 'expiry-spike:', 'db-only', 'full-no-singleflight', 'full', 'formalRuns: 12', 'repetitions: 3')) {
+            Assert-True -Condition ($config.Contains($token)) -Message "Benchmark config must contain $token"
+        }
+        foreach ($token in @('mixed:', 'relationPercent:', 'redis-db')) {
+            Assert-True -Condition (-not $config.Contains($token)) -Message "Benchmark config must not contain $token"
         }
     }
 
-    $k6Path = Join-Path $repoRoot 'benchmarks/k6/backend-scenarios.js'
+    $schemaPath = Join-Path $repoRoot 'benchmarks/schema/manifest.schema.json'
+    if (Test-Path -LiteralPath $schemaPath -PathType Leaf) {
+        $schema = Get-Content -Raw -LiteralPath $schemaPath -Encoding UTF8 | ConvertFrom-Json
+        foreach ($property in @('runId', 'profile', 'scenario', 'variant', 'repetition', 'subjectCommit', 'executionCommit', 'harnessCommit', 'datasetCommit', 'environmentId', 'workload', 'status', 'startedAt')) {
+            Assert-True -Condition ($schema.required -contains $property) -Message "Manifest schema must require $property"
+        }
+        foreach ($property in @('experiment', 'numberKind', 'artifacts')) {
+            Assert-True -Condition ($null -eq $schema.properties.$property) -Message "Manifest schema must not retain $property governance"
+        }
+    }
+
+    $k6Path = Join-Path $repoRoot 'benchmarks/k6/cache-scenarios.js'
     if (Test-Path -LiteralPath $k6Path -PathType Leaf) {
         & node --check $k6Path
-        Assert-True -Condition ($LASTEXITCODE -eq 0) -Message 'k6 scenario must be valid JavaScript syntax'
+        Assert-True -Condition ($LASTEXITCODE -eq 0) -Message 'Cache k6 scenario must be valid JavaScript'
         $k6Source = Get-Content -Raw -LiteralPath $k6Path -Encoding UTF8
-        Assert-True -Condition $k6Source.Contains('920000000000000001') -Message 'k6 default post IDs must match the deterministic seed range'
-        Assert-True -Condition $k6Source.Contains('910000000000000002') -Message 'k6 default user IDs must match the deterministic seed range'
+        foreach ($token in @('stable-hot', 'expiry-spike', '920000000000000001', '/api/v1/posts/detail/')) {
+            Assert-True -Condition ($k6Source.Contains($token)) -Message "Cache k6 scenario must contain $token"
+        }
+        foreach ($token in @('/api/v1/action/', '/api/v1/relation/', 'BENCHMARK_TOKEN')) {
+            Assert-True -Condition (-not $k6Source.Contains($token)) -Message "Cache k6 scenario must not contain $token"
+        }
     }
 
-    $runScript = Join-Path $repoRoot 'scripts/benchmark/run.ps1'
-    $environmentScript = Join-Path $repoRoot 'scripts/benchmark/environment.ps1'
-    $tokenScript = Join-Path $repoRoot 'scripts/benchmark/new-benchmark-token.ps1'
-    $seedScript = Join-Path $repoRoot 'scripts/benchmark/seed.ps1'
-    $summarizeScript = Join-Path $repoRoot 'scripts/benchmark/summarize.ps1'
-    if (Test-Path -LiteralPath $environmentScript -PathType Leaf) {
-        $environmentSource = Get-Content -Raw -LiteralPath $environmentScript -Encoding UTF8
-        foreach ($token in @('executionCommit', 'executionDirty', 'clean package', "applicationLogLevel = 'WARN'", "'ES_URIS=http://127.0.0.1:1'", '/actuator/health/liveness', 'new-benchmark-token.ps1')) {
-            Assert-True -Condition $environmentSource.Contains($token) -Message "Benchmark environment must contain $token"
-        }
-        foreach ($obsoleteToken in @(
-                ('Invoke-Counter' + 'RecoveryWarmup'),
-                ('Counter' + 'StreamBridge'),
-                ('X' + 'ADD'),
-                ('X' + 'ACK'),
-                ('P' + 'EL'))) {
-            Assert-True -Condition (-not $environmentSource.Contains($obsoleteToken)) -Message "Benchmark environment must not retain $obsoleteToken"
-        }
-        $environmentPlan = & $environmentScript `
-            -Action Validate `
-            -RunId harness-environment-contract `
-            -Profile smoke `
-            -Variant full `
-            -Port 18888 | Out-String | ConvertFrom-Json
-        Assert-True -Condition $environmentPlan.isolated -Message 'Benchmark environment must declare isolated ownership'
-        Assert-True -Condition $environmentPlan.removeVolumesOnStop -Message 'Benchmark environment must remove only its owned volumes'
-        Assert-True -Condition ($environmentPlan.projectName -match '^chtholly-bm-[a-z0-9-]+-[0-9a-f]{12}$') -Message 'Benchmark project must combine a readable owned prefix with a RunId hash'
-        Assert-True -Condition ($environmentPlan.services.Count -eq 5) -Message 'Benchmark environment must reuse exactly five service types'
-        Assert-True -Condition ($environmentPlan.services -contains 'server') -Message 'Benchmark environment must include the application server'
-        Assert-True -Condition ($environmentPlan.serverRuntime -eq 'compose-container') -Message 'Benchmark server must run in the isolated Compose network'
-        Assert-True -Condition ($environmentPlan.k6BaseUrl -eq 'http://server:8888') -Message 'k6 must address the server through the isolated network'
-        Assert-True -Condition ($environmentPlan.searchMode -eq 'degraded-no-backfill') -Message 'Non-search baseline must preregister degraded search without startup backfill'
-        Assert-True -Condition (-not ($environmentPlan.PSObject.Properties.Name -contains 'password')) -Message 'Validation output must not expose generated credentials'
-        $collisionPlan = & $environmentScript `
-            -Action Validate `
-            -RunId 'harness-environment-contract-shared-prefix-alpha' `
-            -Profile smoke `
-            -Variant full `
-            -Port 18889 | Out-String | ConvertFrom-Json
-        $collisionPeerPlan = & $environmentScript `
-            -Action Validate `
-            -RunId 'harness-environment-contract-shared-prefix-beta' `
-            -Profile smoke `
-            -Variant full `
-            -Port 18890 | Out-String | ConvertFrom-Json
-        Assert-True -Condition ($collisionPlan.projectName -ne $collisionPeerPlan.projectName) -Message 'Distinct RunIds must not collide after Compose name truncation'
-    }
-    if (Test-Path -LiteralPath $tokenScript -PathType Leaf) {
-        $tokenPlan = & $tokenScript -UserId 910000000000000001 -ValidateOnly | Out-String | ConvertFrom-Json
-        Assert-True -Condition ($tokenPlan.algorithm -eq 'RS256') -Message 'Benchmark token must use the application RS256 contract'
-        Assert-True -Condition ($tokenPlan.issuer -eq 'chtholly') -Message 'Benchmark token must use the application issuer'
-        Assert-True -Condition ($tokenPlan.userId -eq 910000000000000001) -Message 'Benchmark token must bind the seeded caller'
-        Assert-True -Condition (-not ($tokenPlan.PSObject.Properties.Name -contains 'token')) -Message 'Token validation output must not contain a token'
-    }
-    if ((Test-Path -LiteralPath $runScript -PathType Leaf) -and (Test-Path -LiteralPath $seedScript -PathType Leaf) -and (Test-Path -LiteralPath $summarizeScript -PathType Leaf)) {
-        $seedPlan = & $seedScript -Profile smoke -ValidateOnly | Out-String | ConvertFrom-Json
-        Assert-True -Condition ($seedPlan.users -eq 200) -Message 'Smoke seed must declare 200 users'
-        Assert-True -Condition ($seedPlan.posts -eq 1000) -Message 'Smoke seed must declare 1000 posts'
-        Assert-True -Condition ($seedPlan.interactions -eq 10000) -Message 'Smoke seed must declare 10000 authoritative interaction states'
-        Assert-True -Condition ($seedPlan.relations -eq 10000) -Message 'Smoke seed must declare 10000 relations'
+    $environmentPath = Join-Path $repoRoot 'scripts/benchmark/environment.ps1'
+    $runPath = Join-Path $repoRoot 'scripts/benchmark/run.ps1'
+    $summarizePath = Join-Path $repoRoot 'scripts/benchmark/summarize.ps1'
+    $environmentSource = if (Test-Path -LiteralPath $environmentPath -PathType Leaf) { Get-Content -Raw -LiteralPath $environmentPath -Encoding UTF8 } else { '' }
+    $runSource = if (Test-Path -LiteralPath $runPath -PathType Leaf) { Get-Content -Raw -LiteralPath $runPath -Encoding UTF8 } else { '' }
+    $summarizeSource = if (Test-Path -LiteralPath $summarizePath -PathType Leaf) { Get-Content -Raw -LiteralPath $summarizePath -Encoding UTF8 } else { '' }
 
-        $head = (git rev-parse HEAD).Trim()
-        $subject = (git rev-parse origin/main).Trim()
-        $candidateManifest = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'benchmarks/datasets/agent-reliability-v3/manifest.json') -Encoding UTF8 | ConvertFrom-Json
-        $dataset = [string]$candidateManifest.datasetCommit
-        $runId = 'harness-contract-test'
+    foreach ($token in @('db-only', 'full-no-singleflight', 'full', 'CACHE_READ_MODE', 'KAFKA_ENABLED=false', 'CANAL_ENABLED=false')) {
+        Assert-True -Condition ($environmentSource.Contains($token)) -Message "Benchmark environment must contain $token"
+    }
+    Assert-True -Condition (-not $environmentSource.Contains('new-benchmark-token.ps1')) -Message 'Cache environment health check must not issue an auth token'
+
+    foreach ($token in @('stable-hot', 'expiry-spike', 'db-only', 'full-no-singleflight', 'full', 'cache-scenarios.js')) {
+        Assert-True -Condition ($runSource.Contains($token)) -Message "Runner must contain $token"
+    }
+    Assert-True -Condition ($runSource.Contains('new-benchmark-token.ps1')) -Message 'Runner must authenticate its Actuator metric reads without persisting the token'
+    foreach ($token in @("'all'", "'counter'", "'relation'", "'fault'")) {
+        Assert-True -Condition (-not $runSource.Contains($token)) -Message "Runner must not retain scenario $token"
+    }
+    foreach ($token in @('ArchiveDirectory', 'Compress-Archive', 'checksums.sha256', 'EVIDENCE_ARCHIVE_DIR')) {
+        Assert-True -Condition (-not $summarizeSource.Contains($token)) -Message "Summarizer must not contain $token"
+    }
+    foreach ($token in @('p95Ms', 'errorRate', 'mysqlQueryCount', 'sameKeyLoadCount')) {
+        Assert-True -Condition ($summarizeSource.Contains($token)) -Message "Summarizer must contain $token"
+    }
+
+    if ($environmentSource.Contains('full-no-singleflight')) {
+        $plan = & $environmentPath -Action Validate -RunId harness-contract -Profile smoke -Variant full-no-singleflight | Out-String | ConvertFrom-Json
+        Assert-True -Condition ($plan.isolated -and $plan.removeVolumesOnStop) -Message 'Environment must declare isolated lifecycle'
+        Assert-True -Condition ($plan.services.Count -eq 3) -Message 'Cache environment must contain MySQL, Redis and server only'
+        Assert-True -Condition ($plan.cacheReadMode -eq 'full-no-singleflight') -Message 'Environment must preserve the no-SingleFlight mode'
+        Assert-True -Condition (-not ($plan.PSObject.Properties.Name -contains 'password')) -Message 'Validation output must not expose credentials'
+    }
+
+    $seedPath = Join-Path $repoRoot 'scripts/benchmark/seed.ps1'
+    if (Test-Path -LiteralPath $seedPath -PathType Leaf) {
+        $seedPlan = & $seedPath -Profile smoke -ValidateOnly | Out-String | ConvertFrom-Json
+        Assert-True -Condition ($seedPlan.posts -eq 1000 -and $seedPlan.users -eq 200) -Message 'Smoke seed must remain deterministic'
+    }
+
+    if ($runSource.Contains('stable-hot') -and $summarizeSource.Contains('sameKeyLoadCount')) {
+        $runId = "harness-contract-$PID"
         $runDirectory = Join-Path $repoRoot ".benchmark-results/$runId"
-
-        & $runScript -Profile smoke -Scenario all -RunId $runId -SubjectCommit $subject -HarnessCommit $head -DatasetCommit $dataset -Repetition 1 -ValidateOnly
-        Assert-True -Condition ($LASTEXITCODE -eq 0) -Message 'run.ps1 validation mode must succeed without starting services'
-
-        $manifestPath = Join-Path $runDirectory 'manifest.json'
-        $environmentPath = Join-Path $runDirectory 'environment.json'
-        Assert-True -Condition (Test-Path -LiteralPath $manifestPath -PathType Leaf) -Message 'Validation run must write manifest.json'
-        Assert-True -Condition (Test-Path -LiteralPath $environmentPath -PathType Leaf) -Message 'Validation run must write environment.json'
-
-        if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-            $manifest = Get-Content -Raw -LiteralPath $manifestPath -Encoding UTF8 | ConvertFrom-Json
-            Assert-True -Condition ($manifest.status -eq 'VALIDATED') -Message 'Validation manifest status must be VALIDATED'
-            Assert-True -Condition ($manifest.numberKind -eq 'CONFIG') -Message 'Validation manifest numberKind must be CONFIG'
-            Assert-True -Condition ($manifest.repetition -eq 1) -Message 'Validation manifest must record the repetition'
-            Assert-True -Condition ($manifest.subjectCommit -eq $subject) -Message 'Manifest must preserve the business subject commit'
-            Assert-True -Condition ($manifest.executionCommit -eq $head) -Message 'Manifest must distinguish the checked-out execution commit'
-            Assert-True -Condition ($manifest.datasetCommit -eq $dataset) -Message 'Manifest must bind the frozen dataset commit'
-            Assert-True -Condition (-not [string]::IsNullOrWhiteSpace($manifest.environmentId)) -Message 'Validation manifest must record an environmentId'
-            Assert-True -Condition ($null -ne $manifest.experiment.hardFail) -Message 'Validation manifest must preregister hard failures'
-        }
-
-        $immutableRunIdRejected = $false
+        if (Test-Path -LiteralPath $runDirectory) { throw "Unexpected test run directory: $runDirectory" }
+        $head = (git rev-parse HEAD).Trim()
         try {
-            & $runScript -Profile smoke -Scenario all -RunId $runId -SubjectCommit $subject -HarnessCommit $head -DatasetCommit $dataset -Repetition 1 -ValidateOnly
-        }
-        catch {
-            $immutableRunIdRejected = $_.Exception.Message.Contains('already exists')
-        }
-        Assert-True -Condition $immutableRunIdRejected -Message 'Runner must reject reuse of an existing runId'
+            & $runPath -Profile smoke -Scenario stable-hot -Variant full -RunId $runId -Repetition 1 -SubjectCommit $head -HarnessCommit $head -DatasetCommit $head -ValidateOnly
+            $manifest = Get-Content -Raw -LiteralPath (Join-Path $runDirectory 'manifest.json') -Encoding UTF8 | ConvertFrom-Json
+            Assert-True -Condition ($manifest.status -eq 'VALIDATED') -Message 'ValidateOnly manifest must be VALIDATED'
+            Assert-True -Condition ($manifest.scenario -eq 'stable-hot' -and $manifest.variant -eq 'full') -Message 'Manifest must preserve the cache experiment identity'
+            Assert-True -Condition ($null -eq $manifest.experiment -and $null -eq $manifest.numberKind) -Message 'Manifest must stay minimal'
 
-        $latestBusinessCommit = (git log -1 --format='%H' $head -- apps/server/src/main).Trim()
-        $businessAncestor = (git rev-parse "$latestBusinessCommit^").Trim()
-        $businessRunId = 'harness-business-identity-rejection'
-        $businessRunDirectory = Join-Path $repoRoot ".benchmark-results/$businessRunId"
-        $businessSubjectRejected = $false
-        try {
-            & $runScript -Profile smoke -Scenario all -RunId $businessRunId -SubjectCommit $businessAncestor -HarnessCommit $head -DatasetCommit $dataset -Repetition 1 -ValidateOnly
-        }
-        catch {
-            $businessSubjectRejected = $_.Exception.Message.Contains('business changes')
-        }
-        Assert-True -Condition $businessSubjectRejected -Message 'Harness-only subject allowance must reject intervening business changes'
-        Assert-True -Condition (-not (Test-Path -LiteralPath $businessRunDirectory)) -Message 'Rejected identity must not create a run directory'
-
-        $runSource = Get-Content -Raw -LiteralPath $runScript -Encoding UTF8
-        Assert-True -Condition (-not $runSource.Contains('--untracked-files=no')) -Message 'Dirty detection must include untracked files'
-        Assert-True -Condition $runSource.Contains('BENCHMARK_POST_IDS') -Message 'Runner must pass deterministic post IDs to k6'
-        Assert-True -Condition $runSource.Contains('BENCHMARK_USER_IDS') -Message 'Runner must pass deterministic user IDs to k6'
-        Assert-True -Condition $runSource.Contains('warmup-k6.log') -Message 'Runner must execute and retain an independent warmup phase'
-
-        & $summarizeScript -RunDirectory $runDirectory
-        Assert-True -Condition ($LASTEXITCODE -eq 0) -Message 'summarize.ps1 must accept a validation run'
-        foreach ($name in @('summary.json', 'summary.md', 'failures.md', 'checksums.sha256')) {
-            Assert-True -Condition (Test-Path -LiteralPath (Join-Path $runDirectory $name) -PathType Leaf) -Message "Summarizer must create $name"
-        }
-
-        $archiveDirectory = Join-Path $repoRoot '.benchmark-results/harness-contract-archive'
-        & $summarizeScript -RunDirectory $runDirectory -ArchiveDirectory $archiveDirectory
-        $archivePath = Join-Path $archiveDirectory "$runId.zip"
-        Assert-True -Condition (Test-Path -LiteralPath $archivePath -PathType Leaf) -Message 'Summarizer must create an external evidence archive'
-        if (Test-Path -LiteralPath $archivePath -PathType Leaf) {
-            Assert-True -Condition ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.Length -eq 64) -Message 'Evidence archive must have a SHA-256 hash'
-        }
-
-        if (Test-Path -LiteralPath $runDirectory -PathType Container) {
-            $resolvedRunDirectory = (Resolve-Path -LiteralPath $runDirectory).Path
-            $resultsRoot = (Resolve-Path -LiteralPath (Join-Path $repoRoot '.benchmark-results')).Path + [System.IO.Path]::DirectorySeparatorChar
-            if (-not $resolvedRunDirectory.StartsWith($resultsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                throw "Unsafe cleanup target: $resolvedRunDirectory"
+            $fixtureK6 = [ordered]@{ metrics = [ordered]@{
+                http_req_duration = [ordered]@{ values = [ordered]@{ 'p(95)' = 42.5 } }
+                http_req_failed = [ordered]@{ values = [ordered]@{ rate = 0.01 } }
+            } }
+            $fixtureApplication = [ordered]@{ mysqlQueryCount = 7; sameKeyLoadCount = 2 }
+            $fixtureK6 | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $runDirectory 'raw/k6.json') -Encoding UTF8
+            $fixtureApplication | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runDirectory 'raw/application-metrics.json') -Encoding UTF8
+            & $summarizePath -RunDirectory $runDirectory
+            foreach ($name in @('summary.json', 'summary.md', 'failures.md')) {
+                Assert-True -Condition (Test-Path -LiteralPath (Join-Path $runDirectory $name) -PathType Leaf) -Message "Summarizer must create $name"
             }
-            Remove-Item -LiteralPath $resolvedRunDirectory -Recurse -Force
+            $summary = Get-Content -Raw -LiteralPath (Join-Path $runDirectory 'summary.json') -Encoding UTF8 | ConvertFrom-Json
+            Assert-True -Condition ($summary.metrics.p95Ms -eq 42.5 -and $summary.metrics.errorRate -eq 0.01) -Message 'Summarizer must preserve k6 p95 and error rate'
+            Assert-True -Condition ($summary.metrics.mysqlQueryCount -eq 7 -and $summary.metrics.sameKeyLoadCount -eq 2) -Message 'Summarizer must preserve application load counts'
+            Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $runDirectory 'checksums.sha256'))) -Message 'Summarizer must not create checksum governance'
         }
-        if (Test-Path -LiteralPath $archiveDirectory -PathType Container) {
-            $resolvedArchiveDirectory = (Resolve-Path -LiteralPath $archiveDirectory).Path
-            $resultsRoot = (Resolve-Path -LiteralPath (Join-Path $repoRoot '.benchmark-results')).Path + [System.IO.Path]::DirectorySeparatorChar
-            if (-not $resolvedArchiveDirectory.StartsWith($resultsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                throw "Unsafe cleanup target: $resolvedArchiveDirectory"
+        finally {
+            if (Test-Path -LiteralPath $runDirectory -PathType Container) {
+                $resolved = (Resolve-Path -LiteralPath $runDirectory).Path
+                $allowed = (Resolve-Path -LiteralPath (Join-Path $repoRoot '.benchmark-results')).Path + [IO.Path]::DirectorySeparatorChar
+                if (-not $resolved.StartsWith($allowed, [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe cleanup target: $resolved" }
+                Remove-Item -LiteralPath $resolved -Recurse -Force
             }
-            Remove-Item -LiteralPath $resolvedArchiveDirectory -Recurse -Force
         }
     }
 }
@@ -228,8 +161,8 @@ finally {
 }
 
 if ($failures.Count -gt 0) {
-    $failures | ForEach-Object { Write-Error $_ }
+    $failures | ForEach-Object { Write-Output "FAIL: $_" }
     exit 1
 }
 
-Write-Output 'Benchmark harness contract verified.'
+Write-Output 'Minimal benchmark harness verified.'

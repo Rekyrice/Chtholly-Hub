@@ -1,51 +1,47 @@
-# 系统基准入口
+# 最小基准与评测入口
 
-本目录保存可版本化的 workload、manifest schema 和确定性 seed 逻辑。原始运行结果只写入仓库根目录下已忽略的 `.benchmark-results/`，不得强制加入 Git。
+本目录只保存六条技术主线直接使用的确定性 seed、缓存 k6 场景、运行 manifest 和小规模 Agent 候选集。原始运行结果统一写入已忽略的 `.benchmark-results/`，不得使用 `git add -f`。
 
-## 版本合同
-
-每次运行必须分别记录：
-
-- `subjectCommit`：被测业务实现；
-- `executionCommit`：实际构建并启动服务的检出提交；首次仅增加 harness/data 的基线允许它晚于 `subjectCommit`；
-- `harnessCommit`：本目录与 `scripts/benchmark/` 的版本；
-- `datasetCommit`：seed 或评测数据定义的版本。
-
-不同 harness 或 dataset 的结果不可直接比较。工作树不干净的运行只能用于调试，不能升级为 `REPRODUCED`。
-
-## 入口
+## 静态合同
 
 ```powershell
-# 先验证并启动本次运行独占的 MySQL、Redis、Kafka、Elasticsearch 和服务容器
-./scripts/benchmark/environment.ps1 -Action Validate -RunId env-smoke -Profile smoke -Variant full
-./scripts/benchmark/environment.ps1 -Action Start -RunId env-smoke -Profile smoke -Variant full
-
-# 先写入确定性 MySQL 权威数据与 Redis Bitmap 成员状态；不直接伪造 SDS 等派生结果
-./scripts/benchmark/seed.ps1 -Profile smoke -MysqlContainer mysql -RedisContainer redis
-
-# 只验证参数、manifest 和环境快照，不启动服务或产生性能结论
-./scripts/benchmark/run.ps1 -Profile smoke -Scenario all -RunId validate-local -Repetition 1 -ValidateOnly
-
-# Dockerized k6 smoke；EnvironmentRunId 将 k6 接入同一隔离网络
-./scripts/benchmark/run.ps1 -Profile smoke -Scenario all -RunId smoke-local -EnvironmentRunId env-smoke
-
-# 运行结束后只停止并删除该 runId 拥有的容器和卷
-./scripts/benchmark/environment.ps1 -Action Stop -RunId env-smoke
-
-# 标准场景需要在看到结果前固定并发档位；默认取 profile 的第一档
-./scripts/benchmark/run.ps1 -Profile standard -Scenario cache -Variant full -RunId cache-full-01 -Concurrency 16 -Repetition 1
-
-# 确定性汇总；可选导出只读证据包到仓库外目录
-./scripts/benchmark/summarize.ps1 -RunDirectory ./.benchmark-results/cache-full-01
-./scripts/benchmark/summarize.ps1 -RunDirectory ./.benchmark-results/cache-full-01 -ArchiveDirectory $env:EVIDENCE_ARCHIVE_DIR
+powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-datasets.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harness.ps1
 ```
 
-`counter` 与 `relation` 写场景需要由调用者在进程环境中提供 `BENCHMARK_TOKEN`。可用 `new-benchmark-token.ps1` 为确定性种子用户签发本地短期 token；脚本只记录 token 是否存在，不把内容写入 manifest。隔离环境内 k6 通过 `http://server:8888` 访问服务。
+Agent 候选集位于 `benchmarks/datasets/agent-evaluation/`：27 条 Skill、45 条检索、5 条草稿流程和 2 条 Trace 回放。它们都标记为 `CANDIDATE_REQUIRES_OWNER_REVIEW`，在项目本人复核前不能作为人工 gold。
 
-当前后端 cache/counter/relation 基准不测搜索质量，隔离环境将 `searchMode` 固定为 `degraded-no-backfill`，避免应用启动回灌把 1,000/10,000 条内容读取等待计入服务启动。搜索与 Agent 检索实验使用独立场景和明确的索引快照，不能与本模式的结果混用。
+## 缓存环境与运行
 
-runId 是不可变证据身份，目录已存在时 runner 会失败关闭，不能覆盖旧结果。正式 standard 运行还会验证干净 worktree、`subjectCommit..executionCommit` 之间没有业务改动、harness/dataset 文件树、隔离环境源码提交及 JAR SHA-256。
+缓存环境只启动 MySQL、Redis 和 Spring Boot；Kafka、Canal、Elasticsearch 与 LLM 均关闭，因此它不能证明关系 Outbox 或搜索链路。
 
-## 数据状态
+```powershell
+# 先检查计划，再启动一个 runId 独占的环境
+./scripts/benchmark/environment.ps1 -Action Validate -RunId cache-env-01 -Profile smoke -Scenario stable-hot -Variant full
+./scripts/benchmark/environment.ps1 -Action Start -RunId cache-env-01 -Profile smoke -Scenario stable-hot -Variant full
 
-`smoke` 与 `-ValidateOnly` 只产生 `CONFIG` 级运行记录。正式结果至少需要 standard profile、冻结的提交与数据、三次独立运行、完整原始产物和人工复核；脚本不会自动把结果标记为 `REPRODUCED`。
+# ValidateOnly 只验证 manifest；真实运行必须绑定上面的 EnvironmentRunId
+./scripts/benchmark/run.ps1 -Profile smoke -Scenario stable-hot -Variant full -RunId cache-config-01 -ValidateOnly
+./scripts/benchmark/run.ps1 -Profile smoke -Scenario stable-hot -Variant full -RunId cache-full-01 -EnvironmentRunId cache-env-01
+
+./scripts/benchmark/environment.ps1 -Action Stop -RunId cache-env-01
+```
+
+正式缓存数据固定为 12 次独立运行：
+
+- `stable-hot`：`db-only` 与 `full` 各 3 次；
+- `expiry-spike`：`full-no-singleflight` 与 `full` 各 3 次。
+
+每次正式运行使用独立环境，记录 `subjectCommit`、`executionCommit`、`harnessCommit`、`datasetCommit`、环境身份和 repetition。只比较 p95、错误率、MySQL 查询次数与同 key 真实加载次数；任一原始指标缺失时汇总状态为 `INCOMPLETE`。
+
+`CACHE_READ_MODE` 必须先由生产缓存配置真实消费，并由 Java 测试证明三种模式行为不同，之后才能采集或引用对照结果。
+
+## 汇总
+
+runner 会自动调用确定性汇总，也可重新执行：
+
+```powershell
+./scripts/benchmark/summarize.ps1 -RunDirectory ./.benchmark-results/cache-full-01
+```
+
+汇总只生成 `summary.json`、`summary.md` 和 `failures.md`。仓库不生成 ZIP、checksum 台账或证据晋级状态；原始结果与报告由运行者在被忽略目录中保留。
