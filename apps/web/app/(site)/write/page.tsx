@@ -8,6 +8,7 @@ import "../../styles/write.css";
 import MarkdownToolbar from "@/components/write/MarkdownToolbar";
 import TagAutocomplete from "@/components/write/TagAutocomplete";
 import WriteSidebar from "@/components/write/WriteSidebar";
+import DraftEditPanel from "@/components/write/DraftEditPanel";
 import { Button } from "@/components/ui/Button";
 import { useRequireAuth } from "@/lib/hooks/useRequireAuth";
 import { ApiError } from "@/lib/services/apiClient";
@@ -164,22 +165,7 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
     setLoading(true);
     setError("");
     try {
-      const id = await ensureDraftPostId();
-      const presign = await storageService.presign({
-        scene: "post_content",
-        postId: id,
-        contentType: "text/markdown",
-      });
-      const etagRaw = await storageService.uploadPut(presign, markdown);
-      const etag = etagRaw || (await sha256Hex(markdown)).slice(0, 32);
-      const size = new TextEncoder().encode(markdown).length;
-      const sha256 = await sha256Hex(markdown);
-      await postService.confirmContent(id, {
-        objectKey: presign.objectKey,
-        etag,
-        sha256,
-        size,
-      });
+      const { draftId: id } = await syncDraftContent(markdown);
       const tagList = tags.map((t) => t.trim()).filter(Boolean).slice(0, 20);
       await postService.patchMetadata(id, {
         title: title.trim(),
@@ -198,6 +184,28 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const syncDraftContent = async (exactMarkdown: string) => {
+    const id = await ensureDraftPostId();
+    const presign = await storageService.presign({
+      scene: "post_content",
+      postId: id,
+      contentType: "text/markdown",
+    });
+    const [etagRaw, sha256] = await Promise.all([
+      storageService.uploadPut(presign, exactMarkdown),
+      sha256Hex(exactMarkdown),
+    ]);
+    const etag = etagRaw || sha256.slice(0, 32);
+    const size = new TextEncoder().encode(exactMarkdown).length;
+    await postService.confirmContent(id, {
+      objectKey: presign.objectKey,
+      etag,
+      sha256,
+      size,
+    });
+    return { draftId: id, sha256 };
   };
 
   const onSuggestDescription = async () => {
@@ -386,7 +394,18 @@ function WriteEditor({ initialDraft }: { initialDraft: WriteDraft }) {
         description={description}
         markdown={markdown}
         saveStatus={saveStatus}
-      />
+      >
+        <DraftEditPanel
+          markdown={markdown}
+          ensureDraftContent={syncDraftContent}
+          onApply={(candidateContent) => {
+            setMarkdown(candidateContent);
+            setPreview(false);
+            markDirty();
+          }}
+          disabled={loading}
+        />
+      </WriteSidebar>
       </div>
     </div>
   );

@@ -67,3 +67,32 @@ export type RelatedPostSummary = {
 };
 
 export type PostSummary = RelatedPostSummary;
+
+export type DraftEditPreviewStatus = "PENDING" | "APPLIED" | "REJECTED" | "EXPIRED";
+
+export type DraftEditPreviewRequest = {
+  baseContent: string;
+  baseContentSha256: string;
+  instruction: string;
+};
+
+export type DraftEditPreviewResponse = {
+  previewId: string;
+  draftId: string;
+  skillId: "draft-edit";
+  skillVersion: "v1";
+  baseContentSha256: string;
+  candidateContentSha256: string;
+  previewHash: string;
+  candidateContent: string;
+  status: DraftEditPreviewStatus;
+  expiresAt: string;
+};
+
+export type DraftEditDecisionResponse = {
+  previewId: string;
+  draftId: string;
+  status: DraftEditPreviewStatus;
+  contentSha256: string | null;
+  contentUrl: string | null;
+};
