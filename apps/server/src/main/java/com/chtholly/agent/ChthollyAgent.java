@@ -13,6 +13,11 @@ import com.chtholly.agent.runtime.AgentLoopExecutor;
 import com.chtholly.agent.runtime.AgentLoopRequest;
 import com.chtholly.agent.runtime.AgentLoopResult;
 import com.chtholly.agent.runtime.AgentSpanAttributes;
+import com.chtholly.agent.skill.SkillDefinition;
+import com.chtholly.agent.skill.SkillExecutionContext;
+import com.chtholly.agent.skill.SkillOutputValidator;
+import com.chtholly.agent.skill.SkillRegistry;
+import com.chtholly.agent.skill.SkillSelector;
 import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -26,6 +31,7 @@ import reactor.core.publisher.Flux;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -56,6 +62,9 @@ public class ChthollyAgent {
     private final ContextEngine contextEngine;
     private final TracePersistenceService tracePersistenceService;
     private final AgentDomainConfig agentDomainConfig;
+    private final SkillRegistry skillRegistry;
+    private final SkillSelector skillSelector;
+    private final SkillOutputValidator skillOutputValidator;
 
     /**
      * Runs one agent turn, emitting think/act/observe/delta/final/error events via sink.
@@ -87,11 +96,19 @@ public class ChthollyAgent {
      */
     public void run(String question, long userId, AgentConversationMemory memory, String sessionId,
                     String pageContext, Consumer<AgentEvent> sink) {
+        run(question, userId, memory, sessionId, pageContext, null, sink);
+    }
+
+    /** Runs one turn with an optional server-validated product task type. */
+    public void run(String question, long userId, AgentConversationMemory memory, String sessionId,
+                    String pageContext, String taskType, Consumer<AgentEvent> sink) {
         int maxSteps = Math.max(1, properties.getMaxSteps());
         AgentExecutionTrace trace = new AgentExecutionTrace(userId, sessionId, maxSteps);
         Observation agentSpan = agentObservationService.startAgentSpan(trace.getCorrelationId(), userId);
         try (Observation.Scope ignored = agentSpan.openScope()) {
-            runInternal(question, userId, memory, sessionId, pageContext, sink, maxSteps, trace, agentSpan);
+            runInternal(
+                    question, userId, memory, sessionId, pageContext, taskType,
+                    sink, maxSteps, trace, agentSpan);
         } finally {
             trace.finish();
             agentObservationService.finishSpan(agentSpan, AgentSpanAttributes.agent(trace));
@@ -105,6 +122,7 @@ public class ChthollyAgent {
                              AgentConversationMemory memory,
                              String sessionId,
                              String pageContext,
+                             String taskType,
                              Consumer<AgentEvent> sink,
                              int maxSteps,
                              AgentExecutionTrace trace,
@@ -122,6 +140,17 @@ public class ChthollyAgent {
                 toolMap.put(tool.name(), tool);
             }
 
+            SkillSelector.SkillSelection selection = selectSkill(
+                    userId, sessionId, taskType, question, pageContext, toolMap.keySet());
+            if (selection != null
+                    && selection.status() == SkillSelector.Status.CLARIFICATION_REQUIRED) {
+                completeClarification(question, memory, sink, trace);
+                return;
+            }
+            if (isSelected(selection)) {
+                toolMap.keySet().retainAll(selection.allowedTools());
+            }
+
             String historyBlock = memory == null ? "" : memory.formatForPrompt();
             String system = contextEngine.buildSystemPrompt(
                     userId,
@@ -130,6 +159,10 @@ public class ChthollyAgent {
                     toolMap.values(),
                     historyBlock,
                     question.trim());
+            if (isSelected(selection)) {
+                system = bindSkillPrompt(system, selection);
+                maxSteps = Math.min(maxSteps, selection.definition().maxSteps());
+            }
             AgentLoopRequest request = new AgentLoopRequest(
                     system,
                     question.trim(),
@@ -157,6 +190,52 @@ public class ChthollyAgent {
             trace.terminateError();
             trace.setErrorMessage(e.getMessage());
             throw e;
+        }
+    }
+
+    private SkillSelector.SkillSelection selectSkill(
+            long userId,
+            String sessionId,
+            String taskType,
+            String question,
+            String pageContext,
+            Set<String> availableTools) {
+        if (skillRegistry == null || skillSelector == null) {
+            return null;
+        }
+        Set<String> toolNames = Set.copyOf(availableTools);
+        return skillSelector.select(
+                skillRegistry.enabled(),
+                new SkillExecutionContext(
+                        userId, sessionId, taskType, question, pageContext, toolNames, toolNames));
+    }
+
+    private boolean isSelected(SkillSelector.SkillSelection selection) {
+        return selection != null && selection.status() == SkillSelector.Status.SELECTED;
+    }
+
+    private String bindSkillPrompt(String system, SkillSelector.SkillSelection selection) {
+        SkillDefinition definition = selection.definition();
+        return system + "\n\n## 当前领域 Skill\n\n"
+                + "skillId=" + definition.id() + "\n"
+                + "skillVersion=" + definition.version() + "\n"
+                + "outputType=" + definition.outputType() + "\n"
+                + "allowedTools=" + selection.allowedTools().stream().sorted()
+                .collect(java.util.stream.Collectors.joining(",")) + "\n\n"
+                + definition.instructionTemplate();
+    }
+
+    private void completeClarification(
+            String question,
+            AgentConversationMemory memory,
+            Consumer<AgentEvent> sink,
+            AgentExecutionTrace trace) {
+        String answer = "请明确选择页面解释、证据大纲或草稿事实核查中的一项任务。";
+        trace.terminateFinalAnswer(answer);
+        emitFinal(sink, answer);
+        if (memory != null) {
+            memory.add(AgentTurn.user(question.trim()));
+            memory.add(AgentTurn.assistant(answer));
         }
     }
 

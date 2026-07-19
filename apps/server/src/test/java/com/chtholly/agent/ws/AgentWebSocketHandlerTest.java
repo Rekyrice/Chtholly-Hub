@@ -263,6 +263,36 @@ class AgentWebSocketHandlerTest {
     }
 
     @Test
+    void passesExplicitTaskTypeToSkillAwareAgentBoundary() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-skill");
+        when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=skill"));
+        when(ticketStore.consume("skill")).thenReturn(89L);
+        when(memoryStore.getOrCreateMemory(89L, "sess-chat-skill")).thenReturn(memory);
+        doNothing().when(agent).run(
+                any(), anyLong(), any(), any(), any(), any(), any());
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.handleTextMessage(rawSession, new TextMessage("""
+                {
+                  "type": "chat",
+                  "sessionId": "sess-chat-skill",
+                  "message": "解释这个页面",
+                  "taskType": "page-explain",
+                  "context": {"page": "/post/1"}
+                }
+                """));
+
+        verify(agent).run(
+                eq("解释这个页面"),
+                eq(89L),
+                eq(memory),
+                eq("sess-skill"),
+                any(),
+                eq("page-explain"),
+                any());
+    }
+
+    @Test
     void reflectsOnConversationAfterConnectionClosed() throws Exception {
         when(rawSession.getId()).thenReturn("sess-reflect");
         when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=t5"));

@@ -1,0 +1,26 @@
+id: evidence-outline
+version: v1
+enabled: true
+description: 生成逐节绑定证据的结构化大纲，不写入草稿或正式内容。
+supportedIntents: [evidence_outline, writing_outline]
+requiredContext: [QUESTION]
+allowedTools: [article_rag, fulltext_search, bangumi_search, bangumi_characters, bangumi_person_works]
+instructionTemplate: |
+  输出 Markdown 结构化大纲，至少两个带标题的章节；每节说明目标、要点和可用 Evidence。
+  遵守用户给出的长度、语气、结构、资料范围与剧透限制；未解决问题单列。
+  不得生成写入动作，不得引用本轮 Evidence 之外的站内事实。
+inputSchema:
+  topic: string
+  spoilerScope: string
+  sourceScope: string
+outputSchema:
+  type: EVIDENCE_OUTLINE
+  requiresEvidence: true
+  minSections: 2
+  maxChars: 5000
+validators: [citation, outline-structure, length, spoiler-scope, source-dedup]
+riskLevel: READ_ONLY
+approvalPolicy: NONE
+timeoutBudgetMs: 45000
+maxSteps: 5
+evaluationDatasetVersion: skill-readonly-seed-v1

@@ -15,6 +15,11 @@ import com.chtholly.agent.runtime.AgentLlmInvoker;
 import com.chtholly.agent.runtime.AgentLoopExecutor;
 import com.chtholly.agent.runtime.AgentLoopRequest;
 import com.chtholly.agent.runtime.AgentLoopResult;
+import com.chtholly.agent.skill.SkillDefinition;
+import com.chtholly.agent.skill.SkillExecutionContext;
+import com.chtholly.agent.skill.SkillOutputValidator;
+import com.chtholly.agent.skill.SkillRegistry;
+import com.chtholly.agent.skill.SkillSelector;
 import com.chtholly.agent.trace.TracePersistenceService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.observation.Observation;
@@ -29,6 +34,7 @@ import reactor.core.publisher.Flux;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -64,6 +70,10 @@ class ChthollyAgentTest {
     private TracePersistenceService tracePersistenceService;
     @Mock
     private AgentConversationMemory memory;
+    @Mock
+    private SkillRegistry skillRegistry;
+    @Mock
+    private SkillSelector skillSelector;
 
     private AgentProperties properties;
     private AgentDomainConfig domainConfig;
@@ -83,13 +93,16 @@ class ChthollyAgentTest {
                 loopExecutor,
                 properties,
                 new ObjectMapper(),
-                List.of(tool("search")),
+                List.of(tool("search"), tool("draft_write")),
                 agentMetrics,
                 observationService,
                 new CharacterSoulService("soul"),
                 contextEngine,
                 tracePersistenceService,
-                domainConfig);
+                domainConfig,
+                skillRegistry,
+                skillSelector,
+                new SkillOutputValidator());
         events = new ArrayList<>();
     }
 
@@ -118,6 +131,46 @@ class ChthollyAgentTest {
         assertThat(request.historyBlock()).isEqualTo("history");
         assertThat(request.tools()).containsKey("search");
         assertThat(request.maxSteps()).isEqualTo(4);
+    }
+
+    @Test
+    void selectedReadOnlySkillReceivesPageContextAndNarrowsRuntimeTools() {
+        SkillDefinition definition = skillDefinition();
+        when(memory.formatForPrompt()).thenReturn("");
+        when(skillRegistry.enabled()).thenReturn(List.of(definition));
+        when(skillSelector.select(any(), any())).thenReturn(new SkillSelector.SkillSelection(
+                SkillSelector.Status.SELECTED,
+                definition,
+                "explicit_task_type",
+                1.0,
+                Set.of("search")));
+        when(contextEngine.buildSystemPrompt(
+                anyLong(), anyString(), anyString(), any(), anyString(), anyString()))
+                .thenReturn("assembled system");
+        when(loopExecutor.execute(any(), any(), any(), any()))
+                .thenReturn(AgentLoopResult.terminal(
+                        AgentLoopResult.Status.MAX_STEPS, List.of(), "stopped"));
+
+        agent.run(
+                "解释这个页面",
+                7L,
+                memory,
+                "session",
+                "页面：文章详情",
+                "page-explain",
+                events::add);
+
+        ArgumentCaptor<SkillExecutionContext> contextCaptor =
+                ArgumentCaptor.forClass(SkillExecutionContext.class);
+        verify(skillSelector).select(eq(List.of(definition)), contextCaptor.capture());
+        assertThat(contextCaptor.getValue().taskType()).isEqualTo("page-explain");
+        assertThat(contextCaptor.getValue().pageContext()).isEqualTo("页面：文章详情");
+        ArgumentCaptor<AgentLoopRequest> requestCaptor = ArgumentCaptor.forClass(AgentLoopRequest.class);
+        verify(loopExecutor).execute(requestCaptor.capture(), any(), eq(agentSpan), any());
+        assertThat(requestCaptor.getValue().tools()).containsOnlyKeys("search");
+        assertThat(requestCaptor.getValue().systemPrompt())
+                .contains("skillId=page-explain", "skillVersion=v1", "只读合同");
+        assertThat(requestCaptor.getValue().maxSteps()).isEqualTo(3);
     }
 
     @Test
@@ -254,6 +307,26 @@ class ChthollyAgentTest {
                 return "unused";
             }
         };
+    }
+
+    private SkillDefinition skillDefinition() {
+        return new SkillDefinition(
+                "page-explain",
+                "v1",
+                true,
+                "test skill",
+                List.of("page_explain"),
+                List.of("QUESTION", "PAGE"),
+                List.of("search"),
+                "只读合同",
+                Map.of("question", "string"),
+                Map.of("type", "PAGE_EXPLAIN", "requiresEvidence", true),
+                List.of("citation"),
+                "READ_ONLY",
+                "NONE",
+                30_000,
+                3,
+                "test-v1");
     }
 
     private AgentDomainConfig domainConfig() {

@@ -150,6 +150,13 @@ agent:
   memory-ttl-minutes: ${AGENT_MEMORY_TTL_MINUTES:120}
   stream-char-delay-ms: ${AGENT_STREAM_CHAR_DELAY_MS:50}
   tool-timeout-seconds: ${AGENT_TOOL_TIMEOUT_SECONDS:30}
+  skills:
+    page-explain:
+      enabled: ${AGENT_SKILL_PAGE_EXPLAIN_ENABLED:true}
+    evidence-outline:
+      enabled: ${AGENT_SKILL_EVIDENCE_OUTLINE_ENABLED:true}
+    draft-fact-check:
+      enabled: ${AGENT_SKILL_DRAFT_FACT_CHECK_ENABLED:true}
 
 bangumi:
   enabled: ${BANGUMI_ENABLED:true}
