@@ -35,14 +35,20 @@ public abstract class AbstractGoldenPathIT {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractGoldenPathIT.class);
 
-    private static final Network NETWORK = Network.newNetwork();
+    protected static final Network NETWORK = Network.newNetwork();
 
     protected static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("chtholly")
             .withUsername("chtholly")
             .withPassword("chtholly")
-            .withCommand("--log-bin-trust-function-creators=1")
-            .withNetwork(NETWORK);
+            .withCommand(
+                    "--server-id=1",
+                    "--log-bin=mysql-bin",
+                    "--binlog-format=ROW",
+                    "--binlog-row-image=FULL",
+                    "--log-bin-trust-function-creators=1")
+            .withNetwork(NETWORK)
+            .withNetworkAliases("mysql");
 
     protected static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine")
             .withExposedPorts(6379)
