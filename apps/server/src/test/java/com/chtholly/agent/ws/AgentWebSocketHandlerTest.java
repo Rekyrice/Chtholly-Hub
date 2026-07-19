@@ -1,6 +1,7 @@
 package com.chtholly.agent.ws;
 
 import com.chtholly.agent.ChthollyAgent;
+import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.cognitive.CognitiveEngine;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentConversationMemory;
@@ -11,6 +12,7 @@ import com.chtholly.agent.notification.NotificationChannel;
 import com.chtholly.agent.notification.NotificationService;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.state.CharacterStateService;
+import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -189,6 +192,38 @@ class AgentWebSocketHandlerTest {
 
         verify(characterStateService).recordInteraction(66L);
         verify(characterStateService).updateEmotion(66L, "hi");
+    }
+
+    @Test
+    void sameConnectionTwoChatTurnsUseDistinctCorrelationIds() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-two-turns");
+        when(rawSession.getAttributes()).thenReturn(new java.util.concurrent.ConcurrentHashMap<>());
+        when(rawSession.getUri()).thenReturn(
+                URI.create("ws://localhost/api/v1/agent/ws?ticket=two-turns"));
+        when(ticketStore.consume("two-turns")).thenReturn(67L);
+        when(memoryStore.getOrCreateMemory(67L, "sess-chat-two")).thenReturn(memory);
+        List<String> correlationIds = new CopyOnWriteArrayList<>();
+        List<String> traceCorrelationIds = new CopyOnWriteArrayList<>();
+        doAnswer(invocation -> {
+            correlationIds.add(MDC.get(CorrelationIdSupport.MDC_CORRELATION_ID));
+            traceCorrelationIds.add(new AgentExecutionTrace(67L, "sess-chat-two", 3).getCorrelationId());
+            return null;
+        }).when(agent).run(any(), anyLong(), any(), any(), any(), any());
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.handleTextMessage(rawSession, new TextMessage(
+                "{\"type\":\"chat\",\"sessionId\":\"sess-chat-two\",\"message\":\"first\"}"));
+        handler.handleTextMessage(rawSession, new TextMessage(
+                "{\"type\":\"chat\",\"sessionId\":\"sess-chat-two\",\"message\":\"second\"}"));
+
+        assertThat(correlationIds)
+                .hasSize(2)
+                .allMatch(id -> id != null && !id.isBlank());
+        assertThat(correlationIds.get(0)).isNotEqualTo(correlationIds.get(1));
+        assertThat(traceCorrelationIds).containsExactly(
+                correlationIds.get(0).replace("-", ""),
+                correlationIds.get(1).replace("-", ""));
+        assertThat(traceCorrelationIds.get(0)).isNotEqualTo(traceCorrelationIds.get(1));
     }
 
     @Test

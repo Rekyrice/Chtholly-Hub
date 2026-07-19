@@ -117,6 +117,32 @@ class ContextContributorIsolationTest {
                 .contribute(request("", question, AnchorContext.builder().build()));
 
         assertThat(contribution.degraded()).isTrue();
+        assertThat(contribution.retrievalStatuses()).containsEntry("semantic", "FAILED");
+    }
+
+    @Test
+    void rejectedEvidenceMarksItsSuccessfulRoutesDegraded() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        String question = "帮我查资料";
+        when(hybridSearchService.hybridSearch(question, 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(
+                        List.of(new SearchResult(
+                                "post:1", "title", "snippet", "semantic+keyword", 0.8,
+                                "post:1", "post:1#0", "v1", null, Set.of("PUBLIC"))),
+                        java.util.Map.of(
+                                "semantic", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                                "keyword", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                                "entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)));
+
+        ContextContribution contribution = new KnowledgeContextContributor(hybridSearchService, null)
+                .contribute(request("", question, AnchorContext.builder().build()));
+
+        assertThat(contribution.evidence()).isEmpty();
+        assertThat(contribution.degraded()).isTrue();
+        assertThat(contribution.retrievalStatuses())
+                .containsEntry("semantic", "FAILED")
+                .containsEntry("keyword", "FAILED")
+                .containsEntry("entity", "SUCCESS_EMPTY");
     }
 
     private ContextRequest request(String pageContext, String question, AnchorContext anchors) {

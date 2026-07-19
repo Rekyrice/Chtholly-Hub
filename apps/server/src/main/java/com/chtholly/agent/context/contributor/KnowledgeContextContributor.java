@@ -14,7 +14,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Renders known facts, semantic anchors, and hybrid search results. */
 @Slf4j
@@ -56,17 +58,22 @@ public class KnowledgeContextContributor implements ContextContributor {
 
         boolean retrievalRequested = isQueryIntent(request.userQuestion()) || request.evidenceRequired();
         List<Evidence> evidence = new ArrayList<>();
+        Map<String, String> retrievalStatuses = new LinkedHashMap<>();
         if (retrievalRequested) {
             if (hybridSearchService == null) {
                 degraded = true;
+                markAllRoutesFailed(retrievalStatuses);
             } else {
                 try {
                     HybridSearchService.HybridSearchResponse response =
                             hybridSearchService.hybridSearch(request.userQuestion(), 5);
                     if (response == null) {
                         degraded = true;
+                        markAllRoutesFailed(retrievalStatuses);
                     } else {
                         degraded |= response.degraded();
+                        response.statuses().forEach((route, status) ->
+                                retrievalStatuses.put(route, status.name()));
                         List<SearchResult> results = response.documents();
                         for (int index = 0; index < results.size(); index++) {
                             SearchResult result = results.get(index);
@@ -74,6 +81,7 @@ public class KnowledgeContextContributor implements ContextContributor {
                                 evidence.add(Evidence.fromSearchResult(result, index + 1));
                             } catch (IllegalArgumentException exception) {
                                 degraded = true;
+                                markEvidenceRoutesFailed(retrievalStatuses, result);
                                 log.warn("Rejected incomplete retrieval evidence: sourceId={}",
                                         result == null ? null : result.getId());
                             }
@@ -82,12 +90,14 @@ public class KnowledgeContextContributor implements ContextContributor {
                 } catch (RuntimeException exception) {
                     log.warn("Hybrid search context failed", exception);
                     degraded = true;
+                    markAllRoutesFailed(retrievalStatuses);
                 }
             }
         }
 
         return new ContextContribution(
-                name(), order(), prompt.toString(), degraded, evidence, retrievalRequested);
+                name(), order(), prompt.toString(), degraded, evidence, retrievalRequested,
+                retrievalStatuses);
     }
 
     private boolean appendKnownFacts(StringBuilder prompt, String userQuestion) {
@@ -150,6 +160,30 @@ public class KnowledgeContextContributor implements ContextContributor {
 
     private static void appendSeparator(StringBuilder prompt) {
         if (!prompt.isEmpty()) prompt.append("\n\n");
+    }
+
+    private static void markAllRoutesFailed(Map<String, String> statuses) {
+        statuses.put("semantic", "FAILED");
+        statuses.put("keyword", "FAILED");
+        statuses.put("entity", "FAILED");
+    }
+
+    private static void markEvidenceRoutesFailed(
+            Map<String, String> statuses,
+            SearchResult result) {
+        boolean marked = false;
+        String source = result == null ? null : result.getSource();
+        if (source != null) {
+            for (String route : source.split("\\+")) {
+                if (statuses.containsKey(route)) {
+                    statuses.put(route, "FAILED");
+                    marked = true;
+                }
+            }
+        }
+        if (!marked) {
+            markAllRoutesFailed(statuses);
+        }
     }
 
     private static boolean hasText(String value) {

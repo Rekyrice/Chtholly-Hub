@@ -123,6 +123,10 @@ public class TracePersistenceService {
      * 从失败 trace 提取模式键，格式：{category}:{detail}:{failure_type}
      */
     String extractPatternKey(ExecutionTraceRow trace) {
+        String fixedFailure = fixedFailureType(trace.getTracePayload());
+        if (fixedFailure != null) {
+            return "failure:" + fixedFailure.toLowerCase(java.util.Locale.ROOT);
+        }
         String error = trace.getErrorMessage() == null ? "" : trace.getErrorMessage().toLowerCase();
         if (error.contains("timeout") || error.contains("超时")) {
             return "execution:llm:timeout";
@@ -132,7 +136,7 @@ public class TracePersistenceService {
         for (Map<String, Object> call : toolCalls) {
             Object success = call.get("success");
             if (Boolean.FALSE.equals(success)) {
-                String tool = String.valueOf(call.getOrDefault("tool", "unknown"));
+                String tool = boundedToolName(call.get("tool"));
                 long durationMs = toLong(call.get("duration_ms"));
                 if (durationMs >= 5_000 || String.valueOf(call.get("input_summary")).contains("timeout")) {
                     return "tool:" + tool + ":timeout";
@@ -149,6 +153,24 @@ public class TracePersistenceService {
             return "step:parse:error";
         }
         return "execution:unknown:failure";
+    }
+
+    private String fixedFailureType(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return null;
+        }
+        try {
+            String value = objectMapper.readTree(payload).path("failureType").asText("");
+            AgentExecutionTrace.FailureType type = AgentExecutionTrace.FailureType.valueOf(value);
+            return type == AgentExecutionTrace.FailureType.NONE ? null : type.name();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String boundedToolName(Object value) {
+        String tool = value == null ? "" : String.valueOf(value);
+        return tool.matches("[a-z0-9_]{1,64}") ? tool : "unknown";
     }
 
     private String defaultResolutionHint(String patternKey) {

@@ -128,6 +128,21 @@ class HybridSearchServiceTest {
     }
 
     @Test
+    void preservesTimeoutAsAStableRouteStatus() {
+        when(ragService.search("timeout", 4))
+                .thenThrow(new RuntimeException(new java.util.concurrent.TimeoutException("slow")));
+        when(searchService.search("timeout", 4, null, null, SearchSort.RELEVANCE, null))
+                .thenReturn(page());
+        when(knowledgeService.searchEntities("timeout", 2)).thenReturn(List.of());
+
+        HybridSearchService.HybridSearchResponse response =
+                hybridSearchService.hybridSearch("timeout", 2);
+
+        assertThat(response.statuses().get("semantic").name()).isEqualTo("TIMEOUT");
+        assertThat(response.degraded()).isTrue();
+    }
+
+    @Test
     void equalRrfScoresUseStableArticleIdTieBreak() {
         when(ragService.search("tie", 4)).thenReturn(List.of(semantic(10, "10#0", "sha-10")));
         when(searchService.search("tie", 4, null, null, SearchSort.RELEVANCE, null))

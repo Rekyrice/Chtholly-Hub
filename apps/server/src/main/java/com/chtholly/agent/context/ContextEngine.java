@@ -11,8 +11,10 @@ import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 
 /** Assembles the system prompt from an anchor snapshot and ordered contributors. */
 @Slf4j
@@ -88,8 +90,10 @@ public class ContextEngine {
                 .map(contributor -> safeContribution(contributor, request))
                 .toList();
         List<com.chtholly.agent.evidence.Evidence> candidates = new ArrayList<>();
+        Map<String, String> retrievalStatuses = new TreeMap<>();
         for (ContextContribution contribution : contributions) {
             candidates.addAll(contribution.evidence());
+            retrievalStatuses.putAll(contribution.retrievalStatuses());
         }
         EvidenceSet evidenceSet = EvidenceSet.of(candidates, Set.of("PUBLIC"));
         boolean evidenceRequired = forceEvidenceRequired || contributions.stream()
@@ -103,7 +107,7 @@ public class ContextEngine {
         if (!renderedEvidence.isBlank()) {
             prompt = prompt.isBlank() ? renderedEvidence : prompt + "\n\n" + renderedEvidence;
         }
-        return new AgentContextSnapshot(prompt, evidenceSet, evidenceRequired);
+        return new AgentContextSnapshot(prompt, evidenceSet, evidenceRequired, retrievalStatuses);
     }
 
     ContextContribution safeContribution(ContextContributor contributor, ContextRequest request) {
@@ -122,7 +126,8 @@ public class ContextEngine {
             boolean degraded = contribution.degraded() || metadataMismatch;
             ContextContribution normalized = new ContextContribution(
                     contributor.name(), contributor.order(), contribution.content(), degraded,
-                    contribution.evidence(), contribution.evidenceRequired());
+                    contribution.evidence(), contribution.evidenceRequired(),
+                    contribution.retrievalStatuses());
             if (normalized.degraded()) {
                 log.warn("Context contribution degraded: {}", contributor.name());
             }

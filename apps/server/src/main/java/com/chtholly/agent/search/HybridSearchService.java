@@ -204,8 +204,22 @@ public class HybridSearchService {
                     normalized.isEmpty() ? RetrievalStatus.SUCCESS_EMPTY : RetrievalStatus.SUCCESS_RESULTS);
         } catch (Exception exception) {
             log.warn("Hybrid {} search failed: {}", source, exception.getMessage());
-            return new SearchOutcome(List.of(), RetrievalStatus.FAILED);
+            return new SearchOutcome(
+                    List.of(), isTimeout(exception) ? RetrievalStatus.TIMEOUT : RetrievalStatus.FAILED);
         }
+    }
+
+    private boolean isTimeout(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof java.util.concurrent.TimeoutException
+                    || current.getClass().getSimpleName().toLowerCase(java.util.Locale.ROOT)
+                    .contains("timeout")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private AuthoritySnapshot loadAuthority(SearchOutcome... outcomes) {
@@ -334,6 +348,7 @@ public class HybridSearchService {
     public enum RetrievalStatus {
         SUCCESS_RESULTS,
         SUCCESS_EMPTY,
+        TIMEOUT,
         FAILED
     }
 
@@ -347,7 +362,8 @@ public class HybridSearchService {
         }
 
         public boolean degraded() {
-            return statuses.containsValue(RetrievalStatus.FAILED);
+            return statuses.containsValue(RetrievalStatus.FAILED)
+                    || statuses.containsValue(RetrievalStatus.TIMEOUT);
         }
 
         static HybridSearchResponse empty() {

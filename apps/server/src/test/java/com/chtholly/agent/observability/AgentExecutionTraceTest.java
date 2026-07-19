@@ -1,8 +1,14 @@
 package com.chtholly.agent.observability;
 
+import com.chtholly.agent.evidence.Evidence;
+import com.chtholly.agent.evidence.EvidenceSet;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -73,11 +79,72 @@ class AgentExecutionTraceTest {
         assertThat(toolCall.path("step_index").asInt()).isZero();
         assertThat(toolCall.path("sequence").asInt()).isEqualTo(2);
         assertThat(toolCall.path("input_summary").asText())
-                .doesNotContain("input-secret")
-                .contains("[REDACTED]");
+                .doesNotContain("input-secret", "query", "trace")
+                .matches("sha256=[a-f0-9]{64};chars=\\d+");
         assertThat(toolCall.path("observation_summary").asText())
-                .doesNotContain("super-secret-token", "plain-secret")
-                .contains("[REDACTED]")
-                .hasSizeLessThanOrEqualTo(512);
+                .doesNotContain("super-secret-token", "plain-secret", "authorization")
+                .matches("sha256=[a-f0-9]{64};chars=\\d+");
+    }
+
+    @Test
+    void tracePayloadCarriesReplayableVersionsEvidenceAndFixedFailureClassification() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        EvidenceSet evidence = EvidenceSet.of(List.of(new Evidence(
+                "ev-1", "POST", "post:1", "post:1", "post:1#0",
+                "title", "semantic+keyword", "v1", "hash-1", "excerpt",
+                1, 0.9, Set.of("PUBLIC"), "E1")), Set.of("PUBLIC"));
+
+        trace.recordTurnContext(
+                "question token=super-secret", "page: /post/1", "deepseek-chat", "candidate");
+        trace.recordSkillSelection("SELECTED", "page-explain", "v1");
+        trace.recordSkillValidation("VALID");
+        trace.recordRetrieval(Map.of(
+                "semantic", "SUCCESS_RESULTS",
+                "keyword", "SUCCESS_RESULTS",
+                "entity", "SUCCESS_EMPTY"), evidence);
+        trace.recordCitationValidation("UNKNOWN_CITATION");
+        trace.recordTools(Set.of("article_rag"));
+        trace.markFailure(AgentExecutionTrace.FailureType.CITATION_INVALID);
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+
+        assertThat(payload.path("components").path("prompt").asText()).isEqualTo("agent-prompt-v1");
+        assertThat(payload.path("components").path("model").asText()).isEqualTo("deepseek-chat");
+        assertThat(payload.path("components").path("retrieval").asText()).isEqualTo("document-rrf-v1");
+        assertThat(payload.path("components").path("tools").asText()).isEqualTo("agent-tool-v1");
+        assertThat(payload.path("toolVersions").path("article_rag").asText())
+                .isEqualTo("agent-tool-v1");
+        assertThat(payload.path("skill").path("id").asText()).isEqualTo("page-explain");
+        assertThat(payload.path("skill").path("version").asText()).isEqualTo("v1");
+        assertThat(payload.path("skill").path("validationStatus").asText()).isEqualTo("VALID");
+        assertThat(payload.path("retrieval").path("statuses").path("entity").asText())
+                .isEqualTo("SUCCESS_EMPTY");
+        assertThat(payload.path("retrieval").path("evidenceCount").asInt()).isEqualTo(1);
+        assertThat(payload.path("retrieval").path("citationValidationStatus").asText())
+                .isEqualTo("UNKNOWN_CITATION");
+        assertThat(payload.path("retrieval").path("evidence").path(0).path("documentId").asText())
+                .isEqualTo("post:1");
+        assertThat(payload.path("retrieval").path("evidence").path(0).toString())
+                .doesNotContain("excerpt", "title");
+        assertThat(payload.path("failureType").asText()).isEqualTo("CITATION_INVALID");
+        assertThat(payload.path("runMode").asText()).isEqualTo("candidate");
+        assertThat(payload.path("input").path("fingerprint").asText()).hasSize(64);
+        assertThat(payload.path("input").path("questionFingerprint").asText()).hasSize(64);
+        assertThat(payload.path("input").path("pageContextFingerprint").asText()).hasSize(64);
+        assertThat(payload.toString())
+                .doesNotContain("super-secret", "question token", "page: /post/1", "excerpt");
+    }
+
+    @Test
+    void llmCallCountIsNotOverwrittenByCallEvents() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        trace.recordLlmCall(0, 100, 200, 80, 12L);
+        trace.recordLlmCall(1, 120, 220, 90, 15L);
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+
+        assertThat(payload.path("llmCallCount").asInt()).isEqualTo(2);
+        assertThat(payload.path("llmCalls").isArray()).isTrue();
+        assertThat(payload.path("llmCalls")).hasSize(2);
     }
 }

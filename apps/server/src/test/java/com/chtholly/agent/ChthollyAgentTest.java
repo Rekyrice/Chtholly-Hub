@@ -40,10 +40,12 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
@@ -68,6 +70,10 @@ class ChthollyAgentTest {
     private Observation agentSpan;
     @Mock
     private Observation llmSpan;
+    @Mock
+    private Observation skillSpan;
+    @Mock
+    private Observation retrievalSpan;
     @Mock
     private ContextEngine contextEngine;
     @Mock
@@ -215,6 +221,31 @@ class ChthollyAgentTest {
     }
 
     @Test
+    void answerSinkFailureDoesNotFinishSuccessfulLlmSpanTwice() {
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("assembled system"));
+        when(loopExecutor.execute(any(), any(), any(), any()))
+                .thenReturn(AgentLoopResult.finalReady(List.of("current question"), 1, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("final answer"));
+
+        assertThatThrownBy(() -> agent.run(
+                "question",
+                7L,
+                memory,
+                event -> {
+                    throw new IllegalStateException("sink closed");
+                }))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("sink closed");
+
+        verify(observationService, times(1)).finishSpan(eq(llmSpan), anyMap(), eq(Map.of()));
+        verify(observationService, never()).finishSpanError(eq(llmSpan), anyString(), anyMap(), anyMap());
+    }
+
+    @Test
     void nonFinalLoopOutcomeDoesNotStreamOrWriteMemoryButStillPersistsTrace() {
         when(memory.formatForPrompt()).thenReturn("");
         when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
@@ -250,6 +281,7 @@ class ChthollyAgentTest {
         ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
         assertThat(traceCaptor.getValue().getErrorMessage()).isEqualTo("QUESTION_EMPTY");
+        assertThat(traceCaptor.getValue().getFailureType().name()).isEqualTo("INVALID_INPUT");
     }
 
     @Test
@@ -269,7 +301,7 @@ class ChthollyAgentTest {
     }
 
     @Test
-    void agentSpanDurationMatchesFinishedPersistedTrace() {
+    void agentSpanDoesNotDuplicateNativeDurationButTraceKeepsIt() {
         when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(snapshot("system"));
         when(loopExecutor.execute(any(), any(), any(), any())).thenAnswer(invocation -> {
@@ -286,17 +318,22 @@ class ChthollyAgentTest {
         agent.run("question", 7L, null, events::add);
 
         ArgumentCaptor<Map<String, String>> attributesCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(observationService).finishSpan(eq(agentSpan), attributesCaptor.capture());
+        verify(observationService).finishSpan(
+                eq(agentSpan), attributesCaptor.capture(), eq(Map.of()));
         ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
-        long spanDuration = Long.parseLong(attributesCaptor.getValue().get("agent.duration_ms"));
-        assertThat(spanDuration).isEqualTo(traceCaptor.getValue().getDurationMs());
-        assertThat(spanDuration).isGreaterThanOrEqualTo(15);
+        assertThat(attributesCaptor.getValue())
+                .containsEntry("status", "max_steps")
+                .doesNotContainKey("agent.duration_ms");
+        assertThat(traceCaptor.getValue().getDurationMs()).isGreaterThanOrEqualTo(15);
     }
 
     @Test
     void finalGenerationReceivesImmutableSkillAndEvidenceSystem() {
         SkillDefinition definition = skillDefinition();
+        when(observationService.startSkillSpan(agentSpan)).thenReturn(skillSpan);
+        when(observationService.startRetrievalSpan(agentSpan, "document-rrf-v1"))
+                .thenReturn(retrievalSpan);
         when(memory.formatForPrompt()).thenReturn("");
         when(skillRegistry.enabled()).thenReturn(List.of(definition));
         when(skillSelector.select(any(), any())).thenReturn(new SkillSelector.SkillSelection(
@@ -323,10 +360,48 @@ class ChthollyAgentTest {
                 .contains("<evidence_data>证据内容</evidence_data>")
                 .contains("Answer with soul");
         assertThat(eventContents()).containsExactly("有依据 [E1]", "有依据 [E1]");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("skill").path("id").asText()).isEqualTo("page-explain");
+        assertThat(payload.path("skill").path("version").asText()).isEqualTo("v1");
+        assertThat(payload.path("skill").path("validationStatus").asText()).isEqualTo("VALID");
+        assertThat(payload.path("retrieval").path("statuses").path("semantic").asText())
+                .isEqualTo("SUCCESS_RESULTS");
+        assertThat(payload.path("retrieval").path("evidenceCount").asInt()).isEqualTo(1);
+        assertThat(payload.path("retrieval").path("citationValidationStatus").asText())
+                .isEqualTo("VALID");
+        assertThat(payload.path("components").path("model").asText()).isEqualTo("test-model");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> skillLow = ArgumentCaptor.forClass(Map.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> skillHigh = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpan(eq(skillSpan), skillLow.capture(), skillHigh.capture());
+        assertThat(skillLow.getValue())
+                .containsEntry("skill.id", "page-explain")
+                .containsEntry("skill.version", "v1")
+                .containsEntry("status", "valid");
+        assertThat(skillHigh.getValue())
+                .containsEntry("skill.selection.status", "SELECTED")
+                .containsEntry("skill.validation.status", "VALID");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> retrievalLow = ArgumentCaptor.forClass(Map.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> retrievalHigh = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpan(
+                eq(retrievalSpan), retrievalLow.capture(), retrievalHigh.capture());
+        assertThat(retrievalLow.getValue()).containsEntry("status", "success");
+        assertThat(retrievalHigh.getValue())
+                .containsEntry("retrieval.semantic.status", "SUCCESS_RESULTS")
+                .containsEntry("retrieval.evidence_count", "1")
+                .containsEntry("retrieval.citation_validation", "VALID");
     }
 
     @Test
     void forgedCitationNeverReachesDeltaMemoryOrTrace() {
+        when(observationService.startRetrievalSpan(agentSpan, "document-rrf-v1"))
+                .thenReturn(retrievalSpan);
         when(memory.formatForPrompt()).thenReturn("");
         when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(groundedSnapshot("assembled system"));
@@ -350,6 +425,18 @@ class ChthollyAgentTest {
         verify(tracePersistenceService).persist(traceCaptor.capture());
         assertThat(traceCaptor.getValue().getFinalAnswerLength())
                 .isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER.length());
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("retrieval").path("citationValidationStatus").asText())
+                .isEqualTo("UNKNOWN_CITATION");
+        assertThat(payload.path("failureType").asText()).isEqualTo("CITATION_INVALID");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> retrievalLow = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpanError(
+                eq(retrievalSpan), eq("retrieval_failed"), retrievalLow.capture(), anyMap());
+        assertThat(retrievalLow.getValue())
+                .containsEntry("status", "error")
+                .containsEntry("error.type", "CITATION_INVALID");
     }
 
     @Test
@@ -384,6 +471,115 @@ class ChthollyAgentTest {
         verify(memory, times(2)).add(turnCaptor.capture());
         assertThat(turnCaptor.getAllValues()).extracting(AgentTurn::content)
                 .containsExactly("帮我查站内事实", EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("retrieval").path("citationValidationStatus").asText())
+                .isEqualTo("NO_EVIDENCE");
+        assertThat(payload.path("failureType").asText()).isEqualTo("RETRIEVAL_EMPTY");
+    }
+
+    @Test
+    void requiredEvidenceTimeoutKeepsTimeoutFailureClassification() {
+        when(observationService.startRetrievalSpan(agentSpan, "document-rrf-v1"))
+                .thenReturn(retrievalSpan);
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new AgentContextSnapshot(
+                        "assembled system",
+                        EvidenceSet.empty(),
+                        true,
+                        Map.of(
+                                "semantic", "TIMEOUT",
+                                "keyword", "SUCCESS_EMPTY",
+                                "entity", "SUCCESS_EMPTY")));
+
+        agent.run("帮我查站内事实", 7L, memory, events::add);
+
+        verify(loopExecutor, never()).execute(any(), any(), any(), any());
+        verify(llmInvoker, never()).stream(anyString(), anyString(), anyDouble(), anyInt());
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("failureType").asText()).isEqualTo("RETRIEVAL_TIMEOUT");
+        assertThat(payload.path("retrieval").path("degraded").asBoolean()).isTrue();
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> retrievalLow = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpanError(
+                eq(retrievalSpan), eq("retrieval_failed"), retrievalLow.capture(), anyMap());
+        assertThat(retrievalLow.getValue()).containsEntry("error.type", "RETRIEVAL_TIMEOUT");
+    }
+
+    @Test
+    void invalidSkillOutputIsBufferedAndClassifiedBeforeAnyAnswerEvent() {
+        SkillDefinition definition = evidenceOutlineDefinition();
+        when(observationService.startSkillSpan(agentSpan)).thenReturn(skillSpan);
+        when(memory.formatForPrompt()).thenReturn("");
+        when(skillRegistry.enabled()).thenReturn(List.of(definition));
+        when(skillSelector.select(any(), any())).thenReturn(new SkillSelector.SkillSelection(
+                SkillSelector.Status.SELECTED,
+                definition,
+                "explicit_task_type",
+                1.0,
+                Set.of("search")));
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), eq(true)))
+                .thenReturn(groundedSnapshot("assembled system"));
+        when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
+                AgentLoopResult.finalReady(List.of("current question"), 1, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("只有一行 [E1]"));
+
+        agent.run("生成证据大纲", 7L, memory, "session", "页面", "evidence-outline", events::add);
+
+        String safeOutput = new SkillOutputValidator()
+                .validate(definition, "只有一行 [E1]", evidence(), "生成证据大纲")
+                .output();
+        assertThat(eventTypes()).containsExactly("delta", "final");
+        assertThat(eventContents()).containsOnly(safeOutput).noneMatch(content -> content.contains("只有一行"));
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("skill").path("validationStatus").asText()).isEqualTo("SCHEMA_INVALID");
+        assertThat(payload.path("retrieval").path("citationValidationStatus").asText()).isEqualTo("VALID");
+        assertThat(payload.path("failureType").asText()).isEqualTo("SKILL_VALIDATION_FAILED");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> skillLow = ArgumentCaptor.forClass(Map.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> skillHigh = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpanError(
+                eq(skillSpan), eq("skill_failed"), skillLow.capture(), skillHigh.capture());
+        assertThat(skillLow.getValue()).containsEntry("error.type", "SKILL_VALIDATION_FAILED");
+        assertThat(skillHigh.getValue()).containsEntry("skill.validation.status", "SCHEMA_INVALID");
+    }
+
+    @Test
+    void clarificationRequiredIsClassifiedWithoutEnteringContextOrModel() {
+        when(skillRegistry.enabled()).thenReturn(List.of());
+        when(skillSelector.select(any(), any())).thenReturn(new SkillSelector.SkillSelection(
+                SkillSelector.Status.CLARIFICATION_REQUIRED,
+                null,
+                "unknown_or_ambiguous_task_type",
+                0.0,
+                Set.of()));
+
+        agent.run("执行未知任务", 7L, memory, "session", "页面", "unknown", events::add);
+
+        verify(contextEngine, never()).buildSnapshot(
+                anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean());
+        verify(loopExecutor, never()).execute(any(), any(), any(), any());
+        verify(llmInvoker, never()).stream(anyString(), anyString(), anyDouble(), anyInt());
+        assertThat(eventTypes()).containsExactly("final");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("skill").path("selectionStatus").asText())
+                .isEqualTo("CLARIFICATION_REQUIRED");
+        assertThat(payload.path("failureType").asText()).isEqualTo("SKILL_NO_MATCH");
     }
 
     private List<String> eventTypes() {
@@ -401,7 +597,10 @@ class ChthollyAgentTest {
     private AgentContextSnapshot groundedSnapshot(String systemPrompt) {
         EvidenceSet evidence = evidence();
         return new AgentContextSnapshot(
-                systemPrompt + "\n\n" + evidence.renderForPrompt(), evidence, true);
+                systemPrompt + "\n\n" + evidence.renderForPrompt(), evidence, true, Map.of(
+                        "semantic", "SUCCESS_RESULTS",
+                        "keyword", "SUCCESS_RESULTS",
+                        "entity", "SUCCESS_EMPTY"));
     }
 
     private EvidenceSet evidence() {
@@ -444,6 +643,26 @@ class ChthollyAgentTest {
                 Map.of("question", "string"),
                 Map.of("type", "PAGE_EXPLAIN", "requiresEvidence", true),
                 List.of("citation"),
+                "READ_ONLY",
+                "NONE",
+                30_000,
+                3,
+                "test-v1");
+    }
+
+    private SkillDefinition evidenceOutlineDefinition() {
+        return new SkillDefinition(
+                "evidence-outline",
+                "v1",
+                true,
+                "test outline skill",
+                List.of("evidence_outline"),
+                List.of("QUESTION", "PAGE"),
+                List.of("search"),
+                "只读证据大纲合同",
+                Map.of("question", "string"),
+                Map.of("type", "EVIDENCE_OUTLINE", "requiresEvidence", true, "minSections", 2),
+                List.of("citation", "outline-structure"),
                 "READ_ONLY",
                 "NONE",
                 30_000,

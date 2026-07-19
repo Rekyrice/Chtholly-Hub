@@ -159,7 +159,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         executor.execute(() -> {
-            String correlationId = (String) session.getAttributes().get(CorrelationIdSupport.MDC_CORRELATION_ID);
+            String correlationId = CorrelationIdSupport.generate();
             String path = session.getUri() == null ? "/api/v1/agent/ws" : session.getUri().getPath();
             CorrelationIdSupport.runWithContext(
                     CorrelationIdSupport.context(correlationId, "WS", path),

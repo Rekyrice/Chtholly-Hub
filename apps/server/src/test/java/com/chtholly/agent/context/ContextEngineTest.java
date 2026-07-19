@@ -210,7 +210,10 @@ class ContextEngineTest {
         when(hybridSearchService.hybridSearch("帮我查一下芙莉莲的时间主题", 5)).thenReturn(
                 new HybridSearchService.HybridSearchResponse(List.of(
                         authorizedSearchResult("post:9", "时间的重量", "芙莉莲文章片段")
-                ), java.util.Map.of()));
+                ), java.util.Map.of(
+                        "semantic", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                        "keyword", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                        "entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)));
 
         AgentContextSnapshot snapshot = engine.buildSnapshot(
                 7L,
@@ -230,6 +233,10 @@ class ContextEngineTest {
         assertThat(snapshot.evidenceRequired()).isTrue();
         assertThat(snapshot.evidenceSet().items()).hasSize(1);
         assertThat(snapshot.evidenceSet().items().getFirst().documentId()).isEqualTo("post:9");
+        assertThat(snapshot.retrievalStatuses()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "semantic", "SUCCESS_RESULTS",
+                "keyword", "SUCCESS_RESULTS",
+                "entity", "SUCCESS_EMPTY"));
         verify(hybridSearchService).hybridSearch("帮我查一下芙莉莲的时间主题", 5);
     }
 
@@ -248,6 +255,7 @@ class ContextEngineTest {
 
         assertThat(snapshot.evidenceRequired()).isTrue();
         assertThat(snapshot.evidenceSet().isEmpty()).isTrue();
+        assertThat(snapshot.retrievalStatuses()).containsEntry("semantic", "SUCCESS_EMPTY");
     }
 
     @Test
