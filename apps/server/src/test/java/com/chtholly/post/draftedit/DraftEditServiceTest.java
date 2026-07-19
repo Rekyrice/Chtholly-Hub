@@ -1,6 +1,7 @@
 package com.chtholly.post.draftedit;
 
 import com.chtholly.agent.runtime.AgentLlmInvoker;
+import com.chtholly.agent.observability.AgentObservationService;
 import com.chtholly.agent.skill.SkillDefinition;
 import com.chtholly.agent.skill.SkillOutputValidator;
 import com.chtholly.agent.skill.SkillRegistry;
@@ -12,6 +13,7 @@ import com.chtholly.post.model.Post;
 import com.chtholly.post.service.impl.PostCacheInvalidator;
 import com.chtholly.storage.StorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.observation.Observation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,6 +50,9 @@ class DraftEditServiceTest {
     @Mock private SnowflakeIdGenerator ids;
     @Mock private PostCacheInvalidator cacheInvalidator;
     @Mock private TransactionOperations transactions;
+    @Mock private AgentObservationService observationService;
+    @Mock private Observation previewSpan;
+    @Mock private Observation applySpan;
 
     private DraftEditService service;
 
@@ -55,11 +60,12 @@ class DraftEditServiceTest {
     void setUp() {
         service = new DraftEditService(
                 postMapper, previewMapper, registry, new SkillOutputValidator(), llm, storage,
-                ids, cacheInvalidator, transactions, new ObjectMapper());
+                ids, cacheInvalidator, transactions, new ObjectMapper(), observationService);
     }
 
     @Test
     void ownershipAndBaseHashAreValidatedBeforeModelInvocation() {
+        when(observationService.startDraftPreviewSpan("v1")).thenReturn(previewSpan);
         when(registry.enabled()).thenReturn(List.of(definition()));
         String base = "# draft";
         String baseSha = DraftEditService.sha256(base);
@@ -70,10 +76,18 @@ class DraftEditServiceTest {
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
 
         verifyNoInteractions(llm, previewMapper);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> low = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpanError(
+                eq(previewSpan), eq("draft_preview_failed"), low.capture(), eq(Map.of()));
+        assertThat(low.getValue())
+                .containsEntry("status", "permission_denied")
+                .containsEntry("error.type", "PERMISSION_DENIED");
     }
 
     @Test
     void structuredCandidateIsPersistedWithPinnedSkillVersionAndHashes() throws Exception {
+        when(observationService.startDraftPreviewSpan("v1")).thenReturn(previewSpan);
         when(registry.enabled()).thenReturn(List.of(definition()));
         String base = "# draft";
         String candidate = "# polished\n\ncontent";
@@ -101,6 +115,10 @@ class DraftEditServiceTest {
         assertThat(result.previewId()).isEqualTo("99");
         assertThat(result.candidateContent()).isEqualTo(candidate);
         assertThat(result.previewHash()).isEqualTo(saved.getPreviewHash());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> low = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpan(eq(previewSpan), low.capture(), eq(Map.of()));
+        assertThat(low.getValue()).containsEntry("status", "pending");
     }
 
     @Test
@@ -118,6 +136,7 @@ class DraftEditServiceTest {
 
     @Test
     void staleBaseVersionCannotOverwriteNewerDraft() throws Exception {
+        when(observationService.startDraftApplySpan("v1")).thenReturn(applySpan);
         executeTransactionsImmediately();
         DraftEditPreview preview = pendingPreview();
         when(previewMapper.findByIdForUpdate(99L)).thenReturn(preview);
@@ -131,10 +150,18 @@ class DraftEditServiceTest {
 
         verify(postMapper, never()).applyDraftEdit(any(Post.class), anyString());
         verify(previewMapper, never()).markApplied(eq(99L), any(Instant.class));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> low = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpanError(
+                eq(applySpan), eq("draft_apply_failed"), low.capture(), eq(Map.of()));
+        assertThat(low.getValue())
+                .containsEntry("status", "version_conflict")
+                .containsEntry("error.type", "DRAFT_VERSION_CONFLICT");
     }
 
     @Test
     void confirmationWritesImmutableObjectAndAppliesExactlyOnce() throws Exception {
+        when(observationService.startDraftApplySpan("v1")).thenReturn(applySpan);
         executeTransactionsImmediately();
         DraftEditPreview preview = pendingPreview();
         when(previewMapper.findByIdForUpdate(99L)).thenReturn(preview);
@@ -158,10 +185,15 @@ class DraftEditServiceTest {
         assertThat(post.getValue().getContentSha256()).isEqualTo(preview.getCandidateContentSha256());
         verify(cacheInvalidator).invalidate(42L);
         assertThat(result.status()).isEqualTo(DraftEditPreview.APPLIED);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> low = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpan(eq(applySpan), low.capture(), eq(Map.of()));
+        assertThat(low.getValue()).containsEntry("status", "applied");
     }
 
     @Test
     void alreadyAppliedConfirmationIsIdempotent() throws Exception {
+        when(observationService.startDraftApplySpan("v1")).thenReturn(applySpan);
         executeTransactionsImmediately();
         DraftEditPreview applied = pendingPreview();
         applied.setStatus(DraftEditPreview.APPLIED);
@@ -179,6 +211,10 @@ class DraftEditServiceTest {
                 anyString(), any(), anyString(), anyLong(), eq(applied.getCandidateContentSha256()));
         verify(postMapper, never()).applyDraftEdit(any(Post.class), anyString());
         verify(cacheInvalidator).invalidate(42L);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> low = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpan(eq(applySpan), low.capture(), eq(Map.of()));
+        assertThat(low.getValue()).containsEntry("status", "idempotent_hit");
     }
 
     @Test
@@ -197,6 +233,7 @@ class DraftEditServiceTest {
 
     @Test
     void explicitRejectEndsPendingPreviewWithoutWritingContent() {
+        when(observationService.startDraftApplySpan("v1")).thenReturn(applySpan);
         executeTransactionsImmediately();
         DraftEditPreview preview = pendingPreview();
         when(previewMapper.findByIdForUpdate(99L)).thenReturn(preview);
@@ -209,10 +246,15 @@ class DraftEditServiceTest {
         verify(previewMapper).markRejected(eq(99L), any(Instant.class));
         verifyNoInteractions(storage);
         verify(postMapper, never()).applyDraftEdit(any(Post.class), anyString());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> low = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpan(eq(applySpan), low.capture(), eq(Map.of()));
+        assertThat(low.getValue()).containsEntry("status", "rejected");
     }
 
     @Test
     void expiredPreviewIsPersistentlyClosedBeforeAnyStorageWrite() {
+        when(observationService.startDraftApplySpan("v1")).thenReturn(applySpan);
         executeTransactionsImmediately();
         DraftEditPreview preview = pendingPreview();
         preview.setExpiresAt(Instant.now().minusSeconds(1));
@@ -226,6 +268,13 @@ class DraftEditServiceTest {
 
         verify(previewMapper).markExpired(eq(99L), any(Instant.class));
         verifyNoInteractions(storage);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> low = ArgumentCaptor.forClass(Map.class);
+        verify(observationService).finishSpanError(
+                eq(applySpan), eq("draft_apply_failed"), low.capture(), eq(Map.of()));
+        assertThat(low.getValue())
+                .containsEntry("status", "expired")
+                .containsEntry("error.type", "DRAFT_VERSION_CONFLICT");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.chtholly.post.draftedit;
 
+import com.chtholly.agent.observability.AgentObservationService;
 import com.chtholly.agent.runtime.AgentLlmInvoker;
 import com.chtholly.agent.skill.SkillDefinition;
 import com.chtholly.agent.skill.SkillOutputValidator;
@@ -13,6 +14,8 @@ import com.chtholly.post.service.impl.PostCacheInvalidator;
 import com.chtholly.storage.StorageService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.observation.Observation;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -50,6 +53,7 @@ public class DraftEditService {
     private final PostCacheInvalidator cacheInvalidator;
     private final TransactionOperations transactions;
     private final ObjectMapper objectMapper;
+    private final AgentObservationService observationService;
 
     public DraftEditService(
             PostMapper postMapper,
@@ -62,6 +66,23 @@ public class DraftEditService {
             PostCacheInvalidator cacheInvalidator,
             TransactionOperations transactions,
             ObjectMapper objectMapper) {
+        this(postMapper, previewMapper, registry, validator, llm, storage, ids,
+                cacheInvalidator, transactions, objectMapper, null);
+    }
+
+    @Autowired
+    public DraftEditService(
+            PostMapper postMapper,
+            DraftEditPreviewMapper previewMapper,
+            SkillRegistry registry,
+            SkillOutputValidator validator,
+            AgentLlmInvoker llm,
+            StorageService storage,
+            SnowflakeIdGenerator ids,
+            PostCacheInvalidator cacheInvalidator,
+            TransactionOperations transactions,
+            ObjectMapper objectMapper,
+            AgentObservationService observationService) {
         this.postMapper = postMapper;
         this.previewMapper = previewMapper;
         this.registry = registry;
@@ -72,6 +93,7 @@ public class DraftEditService {
         this.cacheInvalidator = cacheInvalidator;
         this.transactions = transactions;
         this.objectMapper = objectMapper;
+        this.observationService = observationService;
     }
 
     public PreviewResult createPreview(
@@ -80,53 +102,64 @@ public class DraftEditService {
             String baseContent,
             String declaredBaseSha256,
             String instruction) {
-        SkillDefinition definition = enabledDefinition();
-        String computedBaseSha256 = sha256(baseContent);
-        if (!secureEquals(computedBaseSha256, declaredBaseSha256)) {
-            throw conflict("基础内容摘要不匹配");
-        }
-        Post draft = postMapper.findById(draftId);
-        validateDraft(draft, ownerId, computedBaseSha256);
-
-        String rawCandidate;
+        Observation span = startDraftPreviewSpan();
         try {
-            rawCandidate = llm.call(
-                    definition.instructionTemplate() + "\n只返回包含 candidateContent 字段的 JSON 对象。",
-                    objectMapper.writeValueAsString(Map.of(
-                            "draftId", String.valueOf(draftId),
-                            "baseContentSha256", computedBaseSha256,
-                            "instruction", instruction,
-                            "draftContent", baseContent)),
-                    0.1,
-                    8192);
-        } catch (Exception e) {
-            throw internal("草稿候选生成失败", e);
-        }
+            SkillDefinition definition = enabledDefinition();
+            String computedBaseSha256 = sha256(baseContent);
+            if (!secureEquals(computedBaseSha256, declaredBaseSha256)) {
+                throw conflict("基础内容摘要不匹配");
+            }
+            Post draft = postMapper.findById(draftId);
+            validateDraft(draft, ownerId, computedBaseSha256);
 
-        String candidate = parseCandidate(rawCandidate);
-        SkillOutputValidator.SkillValidationResult validation =
-                validator.validateDraftContent(definition, baseContent, candidate);
-        if (validation.status() != SkillOutputValidator.Status.VALID) {
-            throw internal("草稿候选未通过 Skill 合同校验: " + String.join(",", validation.errors()), null);
-        }
+            String rawCandidate;
+            try {
+                rawCandidate = llm.call(
+                        definition.instructionTemplate()
+                                + "\n只返回包含 candidateContent 字段的 JSON 对象。",
+                        objectMapper.writeValueAsString(Map.of(
+                                "draftId", String.valueOf(draftId),
+                                "baseContentSha256", computedBaseSha256,
+                                "instruction", instruction,
+                                "draftContent", baseContent)),
+                        0.1,
+                        8192);
+            } catch (Exception e) {
+                throw internal("草稿候选生成失败", e);
+            }
 
-        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
-        DraftEditPreview preview = DraftEditPreview.builder()
-                .id(ids.nextId())
-                .ownerId(ownerId)
-                .draftId(draftId)
-                .skillId(definition.id())
-                .skillVersion(definition.version())
-                .baseContentSha256(computedBaseSha256)
-                .candidateContent(validation.output())
-                .candidateContentSha256(sha256(validation.output()))
-                .status(DraftEditPreview.PENDING)
-                .createdAt(now)
-                .expiresAt(now.plus(PREVIEW_TTL))
-                .build();
-        preview.setPreviewHash(previewHash(preview));
-        previewMapper.insert(preview);
-        return previewResult(preview);
+            String candidate = parseCandidate(rawCandidate);
+            SkillOutputValidator.SkillValidationResult validation =
+                    validator.validateDraftContent(definition, baseContent, candidate);
+            if (validation.status() != SkillOutputValidator.Status.VALID) {
+                throw internal(
+                        "草稿候选未通过 Skill 合同校验: " + String.join(",", validation.errors()),
+                        null);
+            }
+
+            Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+            DraftEditPreview preview = DraftEditPreview.builder()
+                    .id(ids.nextId())
+                    .ownerId(ownerId)
+                    .draftId(draftId)
+                    .skillId(definition.id())
+                    .skillVersion(definition.version())
+                    .baseContentSha256(computedBaseSha256)
+                    .candidateContent(validation.output())
+                    .candidateContentSha256(sha256(validation.output()))
+                    .status(DraftEditPreview.PENDING)
+                    .createdAt(now)
+                    .expiresAt(now.plus(PREVIEW_TTL))
+                    .build();
+            preview.setPreviewHash(previewHash(preview));
+            previewMapper.insert(preview);
+            PreviewResult result = previewResult(preview);
+            finishDraftSpan(span, "pending");
+            return result;
+        } catch (RuntimeException exception) {
+            finishDraftError(span, "draft_preview_failed", exception);
+            throw exception;
+        }
     }
 
     public DecisionResult confirm(
@@ -134,26 +167,37 @@ public class DraftEditService {
             long draftId,
             long previewId,
             String suppliedPreviewHash) {
-        ConfirmPreflight preflight = transactions.execute(status -> confirmPreflightLocked(
-                ownerId, draftId, previewId, suppliedPreviewHash));
-        if (DraftEditPreview.EXPIRED.equals(preflight.status())) {
-            throw conflict("草稿编辑预览已过期");
+        Observation span = startDraftApplySpan();
+        try {
+            ConfirmPreflight preflight = transactions.execute(status -> confirmPreflightLocked(
+                    ownerId, draftId, previewId, suppliedPreviewHash));
+            if (DraftEditPreview.EXPIRED.equals(preflight.status())) {
+                throw conflict("草稿编辑预览已过期");
+            }
+            StoredCandidate stored = storeCandidate(preflight.preview());
+            if (DraftEditPreview.APPLIED.equals(preflight.status())) {
+                cacheInvalidator.invalidate(draftId);
+                DecisionResult result = decision(
+                        preflight.preview(), DraftEditPreview.APPLIED, stored.publicUrl());
+                finishDraftSpan(span, "idempotent_hit");
+                return result;
+            }
+            String outcome = transactions.execute(status -> applyLocked(
+                    ownerId, draftId, previewId, suppliedPreviewHash, stored));
+            if (DraftEditPreview.APPLIED.equals(outcome)) {
+                cacheInvalidator.invalidate(draftId);
+                DecisionResult result = decision(preflight.preview(), outcome, stored.publicUrl());
+                finishDraftSpan(span, "applied");
+                return result;
+            }
+            if (DraftEditPreview.EXPIRED.equals(outcome)) {
+                throw conflict("草稿编辑预览已过期");
+            }
+            throw conflict("草稿内容已更新，请重新生成预览");
+        } catch (RuntimeException exception) {
+            finishDraftError(span, "draft_apply_failed", exception);
+            throw exception;
         }
-        StoredCandidate stored = storeCandidate(preflight.preview());
-        if (DraftEditPreview.APPLIED.equals(preflight.status())) {
-            cacheInvalidator.invalidate(draftId);
-            return decision(preflight.preview(), DraftEditPreview.APPLIED, stored.publicUrl());
-        }
-        String outcome = transactions.execute(status -> applyLocked(
-                ownerId, draftId, previewId, suppliedPreviewHash, stored));
-        if (DraftEditPreview.APPLIED.equals(outcome)) {
-            cacheInvalidator.invalidate(draftId);
-            return decision(preflight.preview(), outcome, stored.publicUrl());
-        }
-        if (DraftEditPreview.EXPIRED.equals(outcome)) {
-            throw conflict("草稿编辑预览已过期");
-        }
-        throw conflict("草稿内容已更新，请重新生成预览");
     }
 
     public DecisionResult reject(
@@ -161,27 +205,39 @@ public class DraftEditService {
             long draftId,
             long previewId,
             String suppliedPreviewHash) {
-        String outcome = transactions.execute(status -> {
-            DraftEditPreview current = requireOwned(
-                    previewMapper.findByIdForUpdate(previewId), ownerId, draftId, suppliedPreviewHash);
-            if (DraftEditPreview.REJECTED.equals(current.getStatus())) {
+        Observation span = startDraftApplySpan();
+        try {
+            String outcome = transactions.execute(status -> {
+                DraftEditPreview current = requireOwned(
+                        previewMapper.findByIdForUpdate(previewId),
+                        ownerId,
+                        draftId,
+                        suppliedPreviewHash);
+                if (DraftEditPreview.REJECTED.equals(current.getStatus())) {
+                    return DraftEditPreview.REJECTED;
+                }
+                requirePending(current);
+                Instant now = Instant.now();
+                if (expired(current, now)) {
+                    previewMapper.markExpired(previewId, now);
+                    return DraftEditPreview.EXPIRED;
+                }
+                if (previewMapper.markRejected(previewId, now) != 1) {
+                    throw internal("草稿编辑预览状态更新失败", null);
+                }
                 return DraftEditPreview.REJECTED;
+            });
+            if (DraftEditPreview.EXPIRED.equals(outcome)) {
+                throw conflict("草稿编辑预览已过期");
             }
-            requirePending(current);
-            Instant now = Instant.now();
-            if (expired(current, now)) {
-                previewMapper.markExpired(previewId, now);
-                return DraftEditPreview.EXPIRED;
-            }
-            if (previewMapper.markRejected(previewId, now) != 1) {
-                throw internal("草稿编辑预览状态更新失败", null);
-            }
-            return DraftEditPreview.REJECTED;
-        });
-        if (DraftEditPreview.EXPIRED.equals(outcome)) {
-            throw conflict("草稿编辑预览已过期");
+            DecisionResult result = new DecisionResult(
+                    String.valueOf(previewId), String.valueOf(draftId), outcome, null, null);
+            finishDraftSpan(span, "rejected");
+            return result;
+        } catch (RuntimeException exception) {
+            finishDraftError(span, "draft_apply_failed", exception);
+            throw exception;
         }
-        return new DecisionResult(String.valueOf(previewId), String.valueOf(draftId), outcome, null, null);
     }
 
     private String applyLocked(
@@ -407,6 +463,66 @@ public class DraftEditService {
                 status,
                 preview.getCandidateContentSha256(),
                 publicUrl);
+    }
+
+    private Observation startDraftPreviewSpan() {
+        return observationService == null ? null : observationService.startDraftPreviewSpan(SKILL_VERSION);
+    }
+
+    private Observation startDraftApplySpan() {
+        return observationService == null ? null : observationService.startDraftApplySpan(SKILL_VERSION);
+    }
+
+    private void finishDraftSpan(Observation span, String status) {
+        if (observationService != null) {
+            observationService.finishSpan(
+                    span,
+                    Map.of(
+                            "component.version", "draft-edit-v1",
+                            "status", status),
+                    Map.of());
+        }
+    }
+
+    private void finishDraftError(Observation span, String operation, RuntimeException exception) {
+        if (observationService == null) {
+            return;
+        }
+        observationService.finishSpanError(
+                span,
+                operation,
+                Map.of(
+                        "component.version", "draft-edit-v1",
+                        "status", draftErrorStatus(exception),
+                        "error.type", draftErrorType(exception)),
+                Map.of());
+    }
+
+    private String draftErrorStatus(RuntimeException exception) {
+        if (exception instanceof BusinessException businessException) {
+            if (businessException.getErrorCode() == ErrorCode.FORBIDDEN) {
+                return "permission_denied";
+            }
+            if (businessException.getErrorCode() == ErrorCode.CONFLICT) {
+                return businessException.getMessage() != null
+                                && businessException.getMessage().contains("过期")
+                        ? "expired"
+                        : "version_conflict";
+            }
+        }
+        return "error";
+    }
+
+    private String draftErrorType(RuntimeException exception) {
+        if (exception instanceof BusinessException businessException) {
+            if (businessException.getErrorCode() == ErrorCode.FORBIDDEN) {
+                return "PERMISSION_DENIED";
+            }
+            if (businessException.getErrorCode() == ErrorCode.CONFLICT) {
+                return "DRAFT_VERSION_CONFLICT";
+            }
+        }
+        return "INTERNAL_ERROR";
     }
 
     private BusinessException conflict(String message) {
