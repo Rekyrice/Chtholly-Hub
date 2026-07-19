@@ -126,7 +126,33 @@ foreach ($bucket in $expectedRetrievalCounts.Keys) {
 
 $expectedDraftFlows = @('confirm', 'reject', 'duplicate-confirm', 'expired-preview', 'version-conflict')
 Assert-True -Condition ((@($draftFlows.flow | Sort-Object) -join ',') -eq (@($expectedDraftFlows | Sort-Object) -join ',')) -Message 'Draft flows must cover the five fixed outcomes'
-Assert-True -Condition ((@($traceReplays.failureClass | Sort-Object) -join ',') -eq 'RETRIEVAL_EMPTY,SKILL_VALIDATION_FAILED') -Message 'Trace replays must cover retrieval and Skill/draft failures'
+Assert-True -Condition ((@($traceReplays.failureClass | Sort-Object) -join ',') -eq 'CITATION_INVALID,RETRIEVAL_EMPTY') -Message 'Trace replays must cover retrieval and citation validation failures'
+$expectedTracePairs = @{
+    'trace-replay-001' = '2d613e81:6c8e694c'
+    'trace-replay-002' = '6c8e694c:314700cc'
+}
+foreach ($traceReplay in $traceReplays) {
+    $actualPair = "$($traceReplay.baselineCommit):$($traceReplay.candidateCommit)"
+    Assert-True -Condition ($actualPair -eq $expectedTracePairs[$traceReplay.sampleId]) -Message "Trace replay pair is incorrect: $($traceReplay.sampleId)"
+    Assert-True -Condition ($traceReplay.invariant -eq 'same-input-data-environment') -Message "Trace replay invariant is incomplete: $($traceReplay.sampleId)"
+    Assert-True -Condition ($traceReplay.fixture.question -and $null -ne $traceReplay.fixture.pageContext) -Message "Trace replay fixture is missing: $($traceReplay.sampleId)"
+    Assert-True -Condition ($traceReplay.regressionTests.Count -gt 0) -Message "Trace replay must cite deterministic regression tests: $($traceReplay.sampleId)"
+    foreach ($role in @('baseline', 'candidate')) {
+        $expected = $traceReplay.expected.$role
+        foreach ($property in @(
+            'failureType',
+            'traceStatus',
+            'retrievalComponent',
+            'citationValidator',
+            'entityStatus',
+            'evidenceCount',
+            'citationValidationStatus'
+        )) {
+            Assert-True -Condition ($null -ne $expected.$property) `
+                -Message "Trace replay expected.$role must contain observable $property`: $($traceReplay.sampleId)"
+        }
+    }
+}
 
 if (Test-Path -LiteralPath $seedPath -PathType Leaf) {
     $seed = Get-Content -Raw -LiteralPath $seedPath -Encoding UTF8

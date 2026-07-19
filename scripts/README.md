@@ -9,7 +9,7 @@
 | [`git-hooks/`](git-hooks/) | `prepare-commit-msg` | 可选 Git 提交信息钩子；仓库不会自动安装 |
 | [`oss/`](oss/README.md) | `upload-seed-markdown.mjs`、`upload-markdown.mjs` | 上传 Phase A 或单篇 Markdown 正文 |
 | [`seed-content/`](seed-content/) | `render-community-interaction-review.mjs` | 生成 content-v3 社区资料与互动的本地只读审阅页 |
-| [`benchmark/`](benchmark/) | `environment.ps1`、`run.ps1`、`seed.ps1`、`summarize.ps1` | 运行隔离缓存基准并汇总被忽略的原始结果 |
+| [`benchmark/`](benchmark/) | `environment.ps1`、`run.ps1`、`seed.ps1`、`summarize.ps1`、`trace-replay.ps1` | 运行隔离缓存基准，或脱敏导出并比较固定 Agent Trace 回放 |
 
 日常 Windows 开发从 Monorepo 根目录运行：
 

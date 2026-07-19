@@ -97,7 +97,9 @@ Core 包括交互入口、上下文合同、运行时、工具合同、会话记
 
 ### Trace 与 Quality
 
-- `ChthollyAgent` 为一次运行建立 [`AgentExecutionTrace`](../../apps/server/src/main/java/com/chtholly/agent/observability/AgentExecutionTrace.java)，[`AgentObservationService`](../../apps/server/src/main/java/com/chtholly/agent/observability/AgentObservationService.java) 建立 Agent → LLM → Tool 的 Micrometer span；[`TracePersistenceService`](../../apps/server/src/main/java/com/chtholly/agent/trace/TracePersistenceService.java) 异步落库并定时挖掘失败模式。
+- `ChthollyAgent` 为一次运行建立 [`AgentExecutionTrace`](../../apps/server/src/main/java/com/chtholly/agent/observability/AgentExecutionTrace.java)，[`AgentObservationService`](../../apps/server/src/main/java/com/chtholly/agent/observability/AgentObservationService.java) 建立 Agent 父 Span，以及 LLM、Tool、Skill 选择、三路检索和草稿预览/应用子 Span；[`TracePersistenceService`](../../apps/server/src/main/java/com/chtholly/agent/trace/TracePersistenceService.java) 异步落库并定时挖掘失败模式。
+- `trace_payload` 保存组件版本、Skill 选择/校验、三路检索状态、Evidence 标识、引用校验、固定失败类型、运行模式和脱敏输入指纹。完整问题、页面上下文、回答、草稿正文和工具原始输入/输出不进入新增字段；工具摘要只保存 SHA-256 与字符数。
+- [`trace-replay.ps1`](../../scripts/benchmark/trace-replay.ps1) 从 loopback Admin Trace API 白名单导出固定回放，并只在输入、数据快照、环境、harness 与 dataset 身份一致时比较 baseline/candidate。离线 fixture 固定为 `OFFLINE_UNVERIFIED`；当前 API 导出没有独立 runtime manifest 锚点，固定为 `API_UNVERIFIED`，两者都不能作为真实前后 Trace 证据。具体命令见[最小基准与评测入口](../../benchmarks/README.md)。
 - Quality 不是聊天循环的一步。[`LlmQualityEvaluationService`](../../apps/server/src/main/java/com/chtholly/agent/quality/LlmQualityEvaluationService.java) 优先使用可用 `ChatClient`，不可用或失败时退回 [`HeuristicQualityEvaluationService`](../../apps/server/src/main/java/com/chtholly/agent/quality/HeuristicQualityEvaluationService.java)，所以调用者不应假设一定发生 LLM 请求。
 
 ## 配置来源与启用边界

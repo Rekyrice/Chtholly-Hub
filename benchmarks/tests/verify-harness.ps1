@@ -28,11 +28,13 @@ try {
         'benchmarks/schema/manifest.schema.json',
         'benchmarks/seed/standard.sql',
         'benchmarks/templates/experiment-report.md',
+        'benchmarks/tests/verify-trace-replay.ps1',
         'scripts/benchmark/environment.ps1',
         'scripts/benchmark/new-benchmark-token.ps1',
         'scripts/benchmark/run.ps1',
         'scripts/benchmark/seed.ps1',
         'scripts/benchmark/summarize.ps1',
+        'scripts/benchmark/trace-replay.ps1',
         'scripts/benchmark/verify-matrix.ps1'
     )
     foreach ($path in $requiredFiles) { Assert-File -RelativePath $path }

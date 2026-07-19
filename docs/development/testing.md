@@ -30,10 +30,13 @@ CI 也保持相同隔离：`backend-test` 运行 `mvn test -Dspring.profiles.act
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-datasets.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-trace-replay.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harness.ps1
 ```
 
-前者固定 27 条 Skill、45 条检索、5 条草稿流程与 2 条 Trace 回放候选，并拒绝旧任务租约、双审和 signoff 语义；所有候选在项目本人复核前保持 `CANDIDATE_REQUIRES_OWNER_REVIEW`。后者验证两个缓存场景、三个实际变体、最小 manifest、隔离环境与原始汇总入口。静态合同通过不等于已经产生真实性能数字。
+数据集合同固定 27 条 Skill、45 条检索、5 条草稿流程与 2 条 Trace 回放候选，并拒绝旧任务租约、双审和 signoff 语义；所有候选在项目本人复核前保持 `CANDIDATE_REQUIRES_OWNER_REVIEW`。Trace 合同验证白名单脱敏、输入指纹、准确提交对、角色顺序和相同数据/环境约束；缓存 harness 合同验证两个缓存场景、三个实际变体、最小 manifest、隔离环境与原始汇总入口。静态合同通过不等于已经产生真实性能数字或真实 Trace 证据。
+
+`-TraceResponsePath` 只用于被忽略目录中的合同 fixture，并固定标记为 `OFFLINE_UNVERIFIED`；当前 API 导出缺少独立 runtime manifest 锚点，一律标记为 `API_UNVERIFIED`。两组历史提交早于当前固定 Trace schema，在受控插桩、实际运行以及外部 runtime manifest 校验完成前不得晋级 `REAL_TRACE`。提交对、命令和输出边界见 [`benchmarks/README.md`](../../benchmarks/README.md)。
 
 缓存正式数据仅运行 12 次固定对照：`stable-hot` 下 `db-only/full` 各 3 次，`expiry-spike` 下 `full-no-singleflight/full` 各 3 次。每次使用独立环境并保留 p95、错误率、MySQL 查询次数和同 key 真实加载次数；缺少任一原始指标的结果为 `INCOMPLETE`，不得用于比较。环境和命令详见 [`benchmarks/README.md`](../../benchmarks/README.md)。
 
