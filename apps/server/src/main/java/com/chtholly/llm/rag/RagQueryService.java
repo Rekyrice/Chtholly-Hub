@@ -1,8 +1,12 @@
 package com.chtholly.llm.rag;
 
 import com.chtholly.agent.CharacterSoulService;
+import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.search.SearchResult;
+import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.Post;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.deepseek.DeepSeekChatOptions;
 import org.springframework.ai.document.Document;
@@ -10,127 +14,208 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-/**
- * RAG 问答查询服务：
- * - 在问答前保障索引，检索相关上下文并构造提示词
- * - 通过 ChatClient 以流式（SSE）方式返回模型输出
- */
+/** Retrieves only current, MySQL-authorized public RAG chunks. */
+@Slf4j
 @Service
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class RagQueryService {
-    // 向量检索接口（Elasticsearch 向量库封装）
-    private final VectorStore vectorStore;
-    // 大模型对话客户端（在 LlmConfig 中通过 @Qualifier 绑定 deepSeekChatModel）
-    private final ChatClient chatClient;
-    // 索引服务：确保帖子在问答前已建立/更新索引
-    private final RagIndexService indexService;
-    // 统一角色设定：文章问答与完整 Agent 使用同一份珂朵莉人格
-    private final CharacterSoulService characterSoulService;
 
-    /**
-     * Searches indexed post chunks and returns unified agent search results.
-     *
-     * @param query Query text.
-     * @param topK  Maximum result count.
-     * @return Semantic post chunk results.
-     */
+    private final VectorStore vectorStore;
+    private final ChatClient chatClient;
+    private final RagIndexService indexService;
+    private final CharacterSoulService characterSoulService;
+    private final PostMapper postMapper;
+
+    /** Searches vector chunks and rejects missing, revoked, private, or stale post versions. */
     public List<SearchResult> search(String query, int topK) {
-        if (query == null || query.isBlank() || topK <= 0) {
+        if (!StringUtils.hasText(query) || topK <= 0) {
             return List.of();
         }
         List<Document> docs = vectorStore.similaritySearch(
-                SearchRequest.builder().query(query.trim()).topK(topK).build()
-        );
+                SearchRequest.builder().query(query.trim()).topK(topK).build());
+        if (docs == null || docs.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Post> posts = loadPosts(docs);
         List<SearchResult> results = new ArrayList<>(docs.size());
         for (Document doc : docs) {
-            Object postId = doc.getMetadata().get("postId");
-            String id = postId == null ? "semantic:" + results.size() : "post:" + postId;
-            String title = stringValue(doc.getMetadata().get("title"), "帖子片段");
-            String snippet = truncate(doc.getText(), 240);
-            results.add(new SearchResult(id, title, snippet, "semantic", 0.0));
+            Long postId = parsePostId(doc.getMetadata().get("postId"));
+            Post post = postId == null ? null : posts.get(postId);
+            if (!eligible(doc, post)) {
+                continue;
+            }
+            String id = "post:" + postId;
+            String sourceHash = currentContentHash(post);
+            String sourceVersion = post.getUpdateTime() == null
+                    ? "current"
+                    : post.getUpdateTime().toString();
+            results.add(new SearchResult(
+                    id,
+                    StringUtils.hasText(post.getTitle()) ? post.getTitle() : stringValue(doc.getMetadata().get("title"), "帖子片段"),
+                    truncate(doc.getText(), 240),
+                    "semantic",
+                    doc.getScore() == null ? 0.0 : doc.getScore(),
+                    id,
+                    nullableString(doc.getMetadata().get("chunkId")),
+                    sourceVersion,
+                    sourceHash,
+                    Set.of("PUBLIC")));
         }
         return List.copyOf(results);
     }
 
-    /**
-     * 使用 WebFlux 返回回答内容的流。
-     */
     public Flux<String> streamAnswerFlux(long postId, String question, int topK, int maxTokens) {
         return streamAnswerFlux(postId, question, List.of(), topK, maxTokens);
     }
 
-    /**
-     * Streams a post-scoped answer with local article conversation history.
-     *
-     * @param postId current post ID
-     * @param question current reader question
-     * @param history completed turns from this article page
-     * @param topK maximum retrieved chunk count
-     * @param maxTokens maximum generated tokens
-     * @return answer fragments
-     */
+    /** Streams a post-scoped answer only when current verified chunks are available. */
     public Flux<String> streamAnswerFlux(long postId,
                                          String question,
                                          List<RagConversationTurn> history,
                                          int topK,
                                          int maxTokens) {
-        // 轻量保障：如索引不存在或指纹未变更则跳过，否则重建
-        indexService.ensureIndexed(postId);
+        try {
+            indexService.ensureIndexed(postId);
+        } catch (RuntimeException exception) {
+            log.warn("RAG index reconciliation failed for post {}: {}", postId, exception.getMessage());
+            return Flux.just(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        }
 
-        // 检索上下文：先宽召回，再按 postId 做服务端过滤
-        List<String> contexts = searchContexts(String.valueOf(postId), question, Math.max(1, topK));
+        List<String> contexts;
+        try {
+            contexts = searchContexts(postId, question, Math.max(1, topK));
+        } catch (RuntimeException exception) {
+            log.warn("RAG context retrieval failed for post {}: {}", postId, exception.getMessage());
+            return Flux.just(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        }
+        if (contexts.isEmpty()) {
+            return Flux.just(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        }
+
         PostQaPromptBuilder.Prompt prompt = PostQaPromptBuilder.build(
                 characterSoulService.getSoulContent(), contexts, history, question);
-
         return chatClient
-                .prompt() // 构建对话
+                .prompt()
                 .system(prompt.system())
                 .user(prompt.user())
                 .options(DeepSeekChatOptions.builder()
-                        .model("deepseek-chat") // 指定 DeepSeek 模型
-                        .temperature(0.2)       // 低温度：更稳健、少发散
-                        .maxTokens(maxTokens)    // 控制最大输出长度
+                        .model("deepseek-chat")
+                        .temperature(0.2)
+                        .maxTokens(maxTokens)
                         .build())
-                .stream()  // 以流式（SSE）返回模型输出
-                .content(); // 转换为 Flux<String>
+                .stream()
+                .content();
     }
 
-    /**
-     * 语义检索上下文：
-     * - 先进行宽召回（fetchK ≥ 3×topK，至少 20）提高召回率
-     * - 再按 metadata.postId 做服务端过滤，避免跨帖子污染
-     */
-    private List<String> searchContexts(String postId, String query, int topK) {
-        int fetchK = Math.max(topK * 3, 20); // 宽召回：扩大初始检索集合
+    private List<String> searchContexts(long postId, String query, int topK) {
+        Post post = postMapper.findById(postId);
+        if (!isPublicPublished(post) || !StringUtils.hasText(currentContentHash(post))) {
+            return List.of();
+        }
+        int fetchK = Math.max(topK * 3, 20);
         List<Document> docs = vectorStore.similaritySearch(
-                SearchRequest.builder().query(query).topK(fetchK).build() // 语义相似检索
-        );
-        List<String> out = new ArrayList<>(topK);
-        for (Document d : docs) {
-            Object pid = d.getMetadata().get("postId");
-            if (pid != null && postId.equals(String.valueOf(pid))) { // 仅保留当前帖子对应的切片
-                String txt = d.getText();
-                if (txt != null && !txt.isEmpty()) {
-                    out.add(txt);
-                    if (out.size() >= topK) break; // 只取前 topK 个上下文
+                SearchRequest.builder().query(query).topK(fetchK).build());
+        if (docs == null || docs.isEmpty()) {
+            return List.of();
+        }
+        List<String> contexts = new ArrayList<>(topK);
+        for (Document document : docs) {
+            Long candidateId = parsePostId(document.getMetadata().get("postId"));
+            if (candidateId != null && candidateId == postId && eligible(document, post)
+                    && StringUtils.hasText(document.getText())) {
+                contexts.add(document.getText());
+                if (contexts.size() >= topK) {
+                    break;
                 }
             }
         }
-        return out;
+        return List.copyOf(contexts);
+    }
+
+    private Map<Long, Post> loadPosts(List<Document> docs) {
+        Set<Long> ids = new LinkedHashSet<>();
+        for (Document doc : docs) {
+            Long postId = parsePostId(doc.getMetadata().get("postId"));
+            if (postId != null) {
+                ids.add(postId);
+            }
+        }
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<Post> rows = postMapper.findByIds(List.copyOf(ids));
+        Map<Long, Post> posts = new LinkedHashMap<>();
+        if (rows != null) {
+            for (Post row : rows) {
+                if (row != null && row.getId() != null) {
+                    posts.put(row.getId(), row);
+                }
+            }
+        }
+        return Map.copyOf(posts);
+    }
+
+    private boolean eligible(Document document, Post post) {
+        if (!isPublicPublished(post)) {
+            return false;
+        }
+        String indexedSha = nullableString(document.getMetadata().get("contentSha256"));
+        if (StringUtils.hasText(post.getContentSha256())) {
+            return post.getContentSha256().equalsIgnoreCase(indexedSha);
+        }
+        String indexedEtag = nullableString(document.getMetadata().get("contentEtag"));
+        return StringUtils.hasText(post.getContentEtag()) && post.getContentEtag().equals(indexedEtag);
+    }
+
+    private boolean isPublicPublished(Post post) {
+        return post != null
+                && "published".equalsIgnoreCase(post.getStatus())
+                && "public".equalsIgnoreCase(post.getVisible());
+    }
+
+    private String currentContentHash(Post post) {
+        if (post == null) {
+            return null;
+        }
+        return StringUtils.hasText(post.getContentSha256())
+                ? post.getContentSha256()
+                : nullableString(post.getContentEtag());
+    }
+
+    private Long parsePostId(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            long id = Long.parseLong(String.valueOf(value));
+            return id > 0 ? id : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private static String stringValue(Object value, String fallback) {
+        String text = nullableString(value);
+        return text == null ? fallback : text;
+    }
+
+    private static String nullableString(Object value) {
         if (value == null) {
-            return fallback;
+            return null;
         }
         String text = String.valueOf(value);
-        return text.isBlank() ? fallback : text;
+        return text.isBlank() ? null : text;
     }
 
     private static String truncate(String text, int maxChars) {

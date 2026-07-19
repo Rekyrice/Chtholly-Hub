@@ -28,6 +28,10 @@ public interface SearchService {
             String q, int size, String tagsCsv, String after,
             SearchSort sort, Long currentUserIdNullable);
 
+    /** Maps domain entity names to published articles using the structured analysis index. */
+    PageResponse<FeedItemResponse> searchByEntityNames(
+            List<String> entityNames, int size, Long currentUserIdNullable);
+
     /**
      * Aggregates Hub page search-backed regions with one msearch request.
      *

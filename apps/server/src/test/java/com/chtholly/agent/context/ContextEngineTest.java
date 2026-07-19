@@ -206,9 +206,10 @@ class ContextEngineTest {
     void injectsHybridSearchResultsForQueryIntent() {
         HybridSearchService hybridSearchService = mock(HybridSearchService.class);
         ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
-        when(hybridSearchService.hybridSearch("帮我查一下芙莉莲的时间主题", 5)).thenReturn(List.of(
-                new SearchResult("post:9", "时间的重量", "芙莉莲文章片段", "hybrid", 0.2)
-        ));
+        when(hybridSearchService.hybridSearch("帮我查一下芙莉莲的时间主题", 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(List.of(
+                        new SearchResult("post:9", "时间的重量", "芙莉莲文章片段", "hybrid", 0.2)
+                ), java.util.Map.of()));
 
         String prompt = engine.buildSystemPrompt(
                 7L,

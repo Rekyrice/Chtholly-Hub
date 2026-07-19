@@ -85,7 +85,10 @@ public class KnowledgeContextContributor implements ContextContributor {
         boolean degraded = false;
         if (isQueryIntent(userQuestion) && hybridSearchService != null) {
             try {
-                List<SearchResult> results = hybridSearchService.hybridSearch(userQuestion, 5);
+                HybridSearchService.HybridSearchResponse response =
+                        hybridSearchService.hybridSearch(userQuestion, 5);
+                degraded = response.degraded();
+                List<SearchResult> results = response.documents();
                 if (results != null) {
                     for (SearchResult result : results) {
                         String line = formatSearchResult(result);

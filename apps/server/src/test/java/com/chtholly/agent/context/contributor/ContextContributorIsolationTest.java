@@ -75,8 +75,10 @@ class ContextContributorIsolationTest {
         when(graphService.contextForQuestion(question, 5))
                 .thenThrow(new IllegalStateException("graph unavailable"));
         when(knowledgeService.searchRelevantKnowledge(question, 3)).thenReturn(List.of("known fact"));
-        when(hybridSearchService.hybridSearch(question, 5)).thenReturn(List.of(
-                new SearchResult("post:1", "result title", "result snippet", "hybrid", 0.8)));
+        when(hybridSearchService.hybridSearch(question, 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(List.of(
+                        new SearchResult("post:1", "result title", "result snippet", "hybrid", 0.8)),
+                        java.util.Map.of()));
         AnchorContext anchors = AnchorContext.builder().semantic(List.of("anchor semantic")).build();
 
         ContextContribution graph = new GraphContextContributor(graphService)
@@ -90,6 +92,24 @@ class ContextContributorIsolationTest {
                 .contains("## 你知道的事", "known fact")
                 .contains("## 相关知识", "anchor semantic", "result title：result snippet");
         assertThat(knowledge.degraded()).isFalse();
+    }
+
+    @Test
+    void hybridRouteFailureMarksKnowledgeContributionDegraded() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        String question = "帮我查资料";
+        when(hybridSearchService.hybridSearch(question, 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(
+                        List.of(),
+                        java.util.Map.of(
+                                "semantic", HybridSearchService.RetrievalStatus.FAILED,
+                                "keyword", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY,
+                                "entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)));
+
+        ContextContribution contribution = new KnowledgeContextContributor(hybridSearchService, null)
+                .contribute(request("", question, AnchorContext.builder().build()));
+
+        assertThat(contribution.degraded()).isTrue();
     }
 
     private ContextRequest request(String pageContext, String question, AnchorContext anchors) {

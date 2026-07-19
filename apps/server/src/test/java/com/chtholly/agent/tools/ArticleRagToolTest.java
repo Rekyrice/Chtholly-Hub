@@ -1,77 +1,49 @@
 package com.chtholly.agent.tools;
 
-import com.chtholly.post.mapper.PostMapper;
-import com.chtholly.post.model.Post;
-import org.junit.jupiter.api.BeforeEach;
+import com.chtholly.agent.search.SearchResult;
+import com.chtholly.llm.rag.RagQueryService;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class ArticleRagToolTest {
 
-    @Mock
-    private VectorStore vectorStore;
-    @Mock
-    private PostMapper postMapper;
+    @Test
+    void executeUsesTheMysqlAuthorizedRagBoundary() {
+        RagQueryService ragQueryService = mock(RagQueryService.class);
+        when(ragQueryService.search("time", 5)).thenReturn(List.of(new SearchResult(
+                "post:42",
+                "时间的重量",
+                "verified current chunk",
+                "semantic",
+                0.8,
+                "post:42",
+                "42#0",
+                "current",
+                "sha-42",
+                Set.of("PUBLIC"))));
+        ArticleRagTool tool = new ArticleRagTool(ragQueryService);
 
-    private ArticleRagTool tool;
+        String result = tool.execute(Map.of("query", "time", "topK", 5), 7L);
 
-    @BeforeEach
-    void setUp() {
-        tool = new ArticleRagTool(vectorStore, postMapper);
+        verify(ragQueryService).search("time", 5);
+        assertThat(result).contains("时间的重量", "post:42", "verified current chunk");
     }
 
     @Test
-    void given_topKDocs_when_execute_then_batchLoadsPostsOnce() {
-        List<Document> docs = List.of(
-                new Document("chunk-1", Map.of("postId", 1L, "title", "t1")),
-                new Document("chunk-2", Map.of("postId", 2L, "title", "t2")),
-                new Document("chunk-3", Map.of("postId", 1L, "title", "t1-dup"))
-        );
-        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(docs);
+    void executeReturnsNoAnswerWhenNoAuthorizedArticlesRemain() {
+        RagQueryService ragQueryService = mock(RagQueryService.class);
+        when(ragQueryService.search("secret", 5)).thenReturn(List.of());
+        ArticleRagTool tool = new ArticleRagTool(ragQueryService);
 
-        Post p1 = new Post();
-        p1.setId(1L);
-        p1.setTitle("Post One");
-        p1.setSlug("post-one");
-        Post p2 = new Post();
-        p2.setId(2L);
-        p2.setTitle("Post Two");
-        p2.setSlug("post-two");
-        when(postMapper.findByIds(any())).thenReturn(List.of(p1, p2));
-
-        String result = tool.execute(Map.of("query", "test", "topK", 10), 1L);
-
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<Long>> idsCaptor = ArgumentCaptor.forClass(List.class);
-        verify(postMapper, times(1)).findByIds(idsCaptor.capture());
-        assertThat(idsCaptor.getValue()).containsExactlyInAnyOrder(1L, 2L);
-        verify(postMapper, times(0)).findById(any());
-        assertThat(result).contains("Post One").contains("Post Two").contains("/post/post-one");
-    }
-
-    @Test
-    void given_noDocs_when_execute_then_noDbQuery() {
-        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
-
-        String result = tool.execute(Map.of("query", "empty"), 1L);
-
-        verify(postMapper, times(0)).findByIds(any());
-        assertThat(result).contains("未找到");
+        assertThat(tool.execute(Map.of("query", "secret"), 7L))
+                .contains("未找到", "公开访问");
     }
 }

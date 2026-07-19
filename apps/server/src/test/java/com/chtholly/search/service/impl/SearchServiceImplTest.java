@@ -132,6 +132,31 @@ class SearchServiceImplTest {
     }
 
     @Test
+    void givenEntityNames_whenSearchByEntityNames_thenUsesOneNestedArticleQuery() throws Exception {
+        co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> empty = emptySearchResponse();
+        when(es.search(any(Function.class), any(Class.class))).thenReturn(empty);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Function<SearchRequest.Builder, ObjectBuilder<SearchRequest>>> captor =
+                ArgumentCaptor.forClass(Function.class);
+
+        PageResponse<FeedItemResponse> response = service.searchByEntityNames(
+                List.of("芙莉莲", "辛美尔"), 5, null);
+
+        verify(es).search(captor.capture(), any(Class.class));
+        SearchRequest request = captor.getValue().apply(new SearchRequest.Builder()).build();
+        assertThat(response.degraded()).isFalse();
+        assertThat(request.size()).isEqualTo(5);
+        assertThat(request.query().bool().must().getFirst().nested().path())
+                .isEqualTo("contentAnalysis.entities");
+        assertThat(request.query().bool().must().getFirst().nested().query().terms().field())
+                .isEqualTo("contentAnalysis.entities.name");
+        assertThat(request.query().bool().must().getFirst().nested().query().terms().terms().value())
+                .extracting(FieldValue::stringValue)
+                .containsExactly("芙莉莲", "辛美尔");
+        assertThat(request.query().bool().filter().getFirst().term().field()).isEqualTo("status");
+    }
+
+    @Test
     void given_sortValues_when_search_then_cursorEncodesAndDecodesConsistently() throws Exception {
         Map<String, Object> source = Map.of(
                 "content_id", 99L,
