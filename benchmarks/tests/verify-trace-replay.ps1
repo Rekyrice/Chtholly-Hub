@@ -79,6 +79,8 @@ foreach ($token in @('Invoke-RestMethod', 'CHOLLY_TRACE_ADMIN_TOKEN', 'AllowUnco
     Assert-Contract (-not $runner.Contains($token)) "Minimal Trace runner must not contain legacy token $token"
 }
 Assert-Contract (-not $runner.Contains('Expand-Archive')) 'Trace runner must avoid Windows long-path Expand-Archive failures'
+Assert-Contract (-not $runner.Contains('[IO.Path]::GetRelativePath')) `
+    'Trace runner must remain compatible with Windows PowerShell 5.1'
 Assert-Contract (-not $runner.Contains('Remove-Item -LiteralPath $resolved -Recurse')) `
     'Trace runtime cleanup must support validated Windows long paths'
 foreach ($token in @('.expected', 'rootCause', 'primaryChange')) {

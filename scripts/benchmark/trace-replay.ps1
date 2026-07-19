@@ -67,7 +67,7 @@ function Get-ProductionDigest {
     $paths = @(Get-ChildItem -LiteralPath (Join-Path $ServerRoot 'src/main') -Recurse -File)
     $paths += Get-Item -LiteralPath (Join-Path $ServerRoot 'pom.xml')
     $lines = $paths | Sort-Object FullName | ForEach-Object {
-        $relative = [IO.Path]::GetRelativePath($ServerRoot, $_.FullName).Replace('\', '/')
+        $relative = $_.FullName.Substring($ServerRoot.Length).TrimStart('\', '/').Replace('\', '/')
         "$relative $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
     }
     return Get-Sha256Text ($lines -join "`n")
@@ -348,7 +348,7 @@ else { $projectionFailures | Set-Content (Join-Path $resultDirectory 'failures.m
 $checksumPath = Join-Path $resultDirectory 'checksums.sha256'
 $checksumLines = Get-ChildItem -LiteralPath $resultDirectory -Recurse -File |
     Where-Object FullName -ne $checksumPath | Sort-Object FullName | ForEach-Object {
-        $relative = [IO.Path]::GetRelativePath($resultDirectory, $_.FullName).Replace('\', '/')
+        $relative = $_.FullName.Substring($resultDirectory.Length).TrimStart('\', '/').Replace('\', '/')
         "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $relative"
     }
 $checksumLines | Set-Content -LiteralPath $checksumPath -Encoding UTF8
