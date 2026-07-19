@@ -62,9 +62,22 @@ class HybridSearchServiceTest {
                 post(3, "Keyword only", "sha-3", "public"),
                 post(4, "Entity only", "sha-4", "public")));
 
-        HybridSearchService.HybridSearchResponse response =
-                hybridSearchService.hybridSearch("frieren time", 4);
+        HybridSearchService.RetrievalSnapshot snapshot =
+                hybridSearchService.retrievalSnapshot("frieren time", 4);
+        HybridSearchService.HybridSearchResponse response = snapshot.response();
 
+        assertThat(snapshot.semanticDocuments()).extracting(SearchResult::getId)
+                .containsExactly("post:2", "post:1");
+        assertThat(snapshot.keywordDocuments()).extracting(SearchResult::getId)
+                .containsExactly("post:2", "post:3");
+        assertThat(snapshot.entityDocuments()).extracting(SearchResult::getId)
+                .containsExactly("post:2", "post:4");
+        assertThat(snapshot.semanticDocuments()).extracting(SearchResult::getSource)
+                .containsOnly("semantic");
+        assertThat(snapshot.keywordDocuments()).extracting(SearchResult::getSource)
+                .containsOnly("keyword");
+        assertThat(snapshot.entityDocuments()).extracting(SearchResult::getSource)
+                .containsOnly("entity");
         assertThat(response.documents()).extracting(SearchResult::getId)
                 .containsExactly("post:2", "post:1", "post:3", "post:4");
         assertThat(response.documents().getFirst().getScore()).isEqualTo(3.0 / 61.0);
@@ -75,6 +88,9 @@ class HybridSearchServiceTest {
                 "keyword", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
                 "entity", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS));
         verify(knowledgeService).searchEntities("frieren time", 4);
+        verify(ragService).search("frieren time", 8);
+        verify(searchService).search(
+                "frieren time", 8, null, null, SearchSort.RELEVANCE, null);
         verify(searchService).searchByEntityNames(
                 List.of("葬送的芙莉莲"), 8, null);
     }
@@ -94,9 +110,13 @@ class HybridSearchServiceTest {
                 post(2, "Private", "sha-2", "private"),
                 post(3, "Current public", "sha-3", "public")));
 
-        HybridSearchService.HybridSearchResponse response =
-                hybridSearchService.hybridSearch("authority", 3);
+        HybridSearchService.RetrievalSnapshot snapshot =
+                hybridSearchService.retrievalSnapshot("authority", 3);
+        HybridSearchService.HybridSearchResponse response = snapshot.response();
 
+        assertThat(snapshot.semanticDocuments()).isEmpty();
+        assertThat(snapshot.keywordDocuments()).extracting(SearchResult::getId)
+                .containsExactly("post:3");
         assertThat(response.documents()).extracting(SearchResult::getId)
                 .containsExactly("post:3");
         assertThat(response.statuses())

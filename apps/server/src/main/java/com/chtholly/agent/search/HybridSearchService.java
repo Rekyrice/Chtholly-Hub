@@ -49,8 +49,13 @@ public class HybridSearchService {
 
     /** Runs all three retrievers, authorizes candidates in MySQL, then applies document-level RRF. */
     public HybridSearchResponse hybridSearch(String query, int topK) {
+        return retrievalSnapshot(query, topK).response();
+    }
+
+    /** Package-local read-only seam for comparing the three authorized document routes. */
+    RetrievalSnapshot retrievalSnapshot(String query, int topK) {
         if (!StringUtils.hasText(query) || topK <= 0) {
-            return HybridSearchResponse.empty();
+            return RetrievalSnapshot.empty();
         }
         int safeTopK = Math.min(topK, 20);
         int fetchK = safeTopK * 2;
@@ -75,12 +80,14 @@ public class HybridSearchService {
                 .limit(safeTopK)
                 .toList();
 
-        return new HybridSearchResponse(
+        HybridSearchResponse response = new HybridSearchResponse(
                 documents,
                 Map.of(
                         SEMANTIC, semantic.status(),
                         KEYWORD, keyword.status(),
                         ENTITY, entity.status()));
+        return new RetrievalSnapshot(
+                semanticDocuments, keywordDocuments, entityDocuments, response);
     }
 
     /** Keeps the first chunk for display while allowing one vote per article per route. */
@@ -101,11 +108,18 @@ public class HybridSearchService {
         for (List<SearchResult> resultList : resultLists) {
             for (SearchResult result : resultList) {
                 if (result != null && StringUtils.hasText(result.getDocumentId())) {
-                    merged.putIfAbsent(result.getDocumentId(), result);
+                    merged.putIfAbsent(result.getDocumentId(), copy(result));
                 }
             }
         }
         return merged;
+    }
+
+    private SearchResult copy(SearchResult result) {
+        return new SearchResult(
+                result.getId(), result.getTitle(), result.getSnippet(), result.getSource(), result.getScore(),
+                result.getDocumentId(), result.getChunkId(), result.getSourceVersion(), result.getSourceHash(),
+                result.getPermissions());
     }
 
     @SafeVarargs
@@ -368,6 +382,24 @@ public class HybridSearchService {
 
         static HybridSearchResponse empty() {
             return new HybridSearchResponse(List.of(), Map.of());
+        }
+    }
+
+    record RetrievalSnapshot(
+            List<SearchResult> semanticDocuments,
+            List<SearchResult> keywordDocuments,
+            List<SearchResult> entityDocuments,
+            HybridSearchResponse response) {
+
+        RetrievalSnapshot {
+            semanticDocuments = semanticDocuments == null ? List.of() : List.copyOf(semanticDocuments);
+            keywordDocuments = keywordDocuments == null ? List.of() : List.copyOf(keywordDocuments);
+            entityDocuments = entityDocuments == null ? List.of() : List.copyOf(entityDocuments);
+            response = response == null ? HybridSearchResponse.empty() : response;
+        }
+
+        static RetrievalSnapshot empty() {
+            return new RetrievalSnapshot(List.of(), List.of(), List.of(), HybridSearchResponse.empty());
         }
     }
 
