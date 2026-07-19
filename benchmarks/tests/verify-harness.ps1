@@ -103,6 +103,8 @@ try {
     }
     Assert-True -Condition (-not $runSource.Contains('Start-Sleep -Seconds 2')) -Message 'Expiry spike must use explicit cache invalidation instead of a fixed sleep'
     Assert-True -Condition ($runSource.Contains('redis-cli') -and $runSource.Contains('docker restart')) -Message 'Expiry spike must clear Redis detail data and restart the owned server'
+    Assert-True -Condition ($runSource.Contains('/actuator/info')) -Message 'Runner recovery must use the server readiness endpoint instead of aggregate dependency health'
+    Assert-True -Condition (-not $runSource.Contains('/actuator/health')) -Message 'Runner recovery must not require disabled benchmark dependencies to be healthy'
     foreach ($token in @('imageIds', 'mysql', 'redis', 'server')) {
         Assert-True -Condition ($environmentSource.Contains($token)) -Message "Environment manifest must record image identity token $token"
     }

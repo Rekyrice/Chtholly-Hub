@@ -121,8 +121,8 @@ function Wait-BenchmarkServer {
     $deadline = [DateTimeOffset]::UtcNow.AddMinutes(3)
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
         try {
-            $health = Invoke-RestMethod -UseBasicParsing -Uri "$BaseUrl/actuator/health" -TimeoutSec 5
-            if ($health.status -eq 'UP') { return }
+            $response = Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/actuator/info" -TimeoutSec 5
+            if ($response.StatusCode -eq 200) { return }
         }
         catch { }
         Start-Sleep -Seconds 1
