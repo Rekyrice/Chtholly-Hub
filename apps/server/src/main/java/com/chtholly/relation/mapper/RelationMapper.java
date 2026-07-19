@@ -14,6 +14,8 @@ import java.util.Date;
  */
 @Mapper
 public interface RelationMapper {
+    record CalibrationCandidate(long id, long fromUserId, long toUserId) {}
+
     /**
      * 插入关注关系。
      * @param id 主键ID
@@ -129,4 +131,7 @@ public interface RelationMapper {
      * 统计粉丝数（有效关系）。
      */
     int countFollowerActive(@Param("toUserId") Long toUserId);
+
+    List<CalibrationCandidate> listCalibrationCandidatesAfter(@Param("afterId") Long afterId,
+                                                               @Param("limit") int limit);
 }

@@ -5,6 +5,7 @@ import com.chtholly.relation.mapper.RelationMapper;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.relation.service.impl.RelationCacheInvalidator;
+import com.chtholly.post.feed.FeedTimelineService;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -22,15 +23,18 @@ public class RelationEventProcessor {
     private final StringRedisTemplate redis;
     private final UserCounterService userCounterService;
     private final RelationCacheInvalidator cacheInvalidator;
+    private final FeedTimelineService feedTimelineService;
 
     public RelationEventProcessor(RelationMapper mapper,
                                   StringRedisTemplate redis,
                                   UserCounterService userCounterService,
-                                  RelationCacheInvalidator cacheInvalidator) {
+                                  RelationCacheInvalidator cacheInvalidator,
+                                  FeedTimelineService feedTimelineService) {
         this.mapper = mapper;
         this.redis = redis;
         this.userCounterService = userCounterService;
         this.cacheInvalidator = cacheInvalidator;
+        this.feedTimelineService = feedTimelineService;
     }
 
     /**
@@ -38,24 +42,33 @@ public class RelationEventProcessor {
      * @param evt 关系事件
      */
     public void process(RelationEvent evt) {
-        Map<String, Object> activeFollowing = mapper.findActiveFollowingRow(evt.fromUserId(), evt.toUserId());
-        if (activeFollowing != null) {
+        reconcile(evt.fromUserId(), evt.toUserId());
+    }
+
+    /** Rebuilds one relation pair from the current following authority. */
+    public void reconcile(long fromUserId, long toUserId) {
+        Map<String, Object> activeFollowing = mapper.findActiveFollowingRow(fromUserId, toUserId);
+        boolean active = activeFollowing != null;
+        if (active) {
             long activeFollowingId = ((Number) activeFollowing.get("id")).longValue();
             Date createdAt = toDate(activeFollowing.get("createdAt"));
-            mapper.insertFollower(activeFollowingId, evt.toUserId(), evt.fromUserId(), 1, createdAt);
-            cacheInvalidator.invalidateLocalProjection(evt.fromUserId(), evt.toUserId());
-            updateActiveCache("uf:flws:" + evt.fromUserId(), String.valueOf(evt.toUserId()), createdAt.getTime());
-            updateActiveCache("uf:fans:" + evt.toUserId(), String.valueOf(evt.fromUserId()), createdAt.getTime());
+            mapper.insertFollower(activeFollowingId, toUserId, fromUserId, 1, createdAt);
+            cacheInvalidator.invalidateLocalProjection(fromUserId, toUserId);
+            updateActiveCache("uf:flws:" + fromUserId, String.valueOf(toUserId), createdAt.getTime());
+            updateActiveCache("uf:fans:" + toUserId, String.valueOf(fromUserId), createdAt.getTime());
         } else {
-            mapper.cancelFollower(evt.toUserId(), evt.fromUserId());
-            cacheInvalidator.invalidateLocalProjection(evt.fromUserId(), evt.toUserId());
-            removeFromCache("uf:flws:" + evt.fromUserId(), String.valueOf(evt.toUserId()));
-            removeFromCache("uf:fans:" + evt.toUserId(), String.valueOf(evt.fromUserId()));
+            mapper.cancelFollower(toUserId, fromUserId);
+            cacheInvalidator.invalidateLocalProjection(fromUserId, toUserId);
+            removeFromCache("uf:flws:" + fromUserId, String.valueOf(toUserId));
+            removeFromCache("uf:fans:" + toUserId, String.valueOf(fromUserId));
         }
 
-        userCounterService.rebuildAllCounters(evt.fromUserId());
-        if (!evt.fromUserId().equals(evt.toUserId())) {
-            userCounterService.rebuildAllCounters(evt.toUserId());
+        userCounterService.rebuildAllCounters(fromUserId);
+        if (fromUserId != toUserId) {
+            userCounterService.rebuildAllCounters(toUserId);
+        }
+        if (!active) {
+            feedTimelineService.removeAuthorFromTimeline(fromUserId, toUserId);
         }
     }
 

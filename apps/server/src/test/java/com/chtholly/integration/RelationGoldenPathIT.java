@@ -3,6 +3,7 @@ package com.chtholly.integration;
 import com.chtholly.relation.service.RelationService;
 import com.chtholly.relation.outbox.OutboxTopics;
 import com.chtholly.relation.outbox.RelationOutboxReplayService;
+import com.chtholly.relation.service.RelationCalibrationService;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,9 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
 
     @Autowired
     private RelationOutboxReplayService replayService;
+
+    @Autowired
+    private RelationCalibrationService calibrationService;
 
     @BeforeEach
     void setUpData() {
@@ -203,6 +207,42 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
         assertThat(userCounter(FROM_USER_ID, 0)).isEqualTo(1L);
         assertThat(userCounter(TO_USER_ID, 1)).isEqualTo(1L);
         assertThat(redis.hasKey("consumed:outbox:relation:" + outboxId)).isTrue();
+    }
+
+    @Test
+    void scheduledCalibrationRepairsCanceledRelationProjectionsFromFollowingAuthority() throws Exception {
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        publishTwice(outboxEvent("FollowCreated"));
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM follower
+                        WHERE from_user_id=? AND to_user_id=? AND rel_status=1
+                        """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne());
+        assertThat(relationService.following(FROM_USER_ID, 10, 0)).containsExactly(TO_USER_ID);
+        assertThat(relationService.followers(TO_USER_ID, 10, 0)).containsExactly(FROM_USER_ID);
+
+        assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM following
+                WHERE from_user_id=? AND to_user_id=? AND rel_status=1
+                """, Long.class, FROM_USER_ID, TO_USER_ID)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM follower
+                WHERE from_user_id=? AND to_user_id=? AND rel_status=1
+                """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne();
+
+        calibrationService.reconcileScheduled();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM follower
+                WHERE from_user_id=? AND to_user_id=? AND rel_status=1
+                """, Long.class, FROM_USER_ID, TO_USER_ID)).isZero();
+        assertThat(redis.opsForZSet().score(
+                "uf:flws:" + FROM_USER_ID, String.valueOf(TO_USER_ID))).isNull();
+        assertThat(redis.opsForZSet().score(
+                "uf:fans:" + TO_USER_ID, String.valueOf(FROM_USER_ID))).isNull();
+        assertThat(userCounter(FROM_USER_ID, 0)).isZero();
+        assertThat(userCounter(TO_USER_ID, 1)).isZero();
     }
 
     private Map<String, Object> outboxEvent(String type) {

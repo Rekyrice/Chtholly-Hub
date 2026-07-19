@@ -4,6 +4,7 @@ import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.relation.event.RelationEvent;
 import com.chtholly.relation.mapper.RelationMapper;
 import com.chtholly.relation.service.impl.RelationCacheInvalidator;
+import com.chtholly.post.feed.FeedTimelineService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,11 +44,15 @@ class RelationEventProcessorTest {
     @Mock
     private RelationCacheInvalidator cacheInvalidator;
 
+    @Mock
+    private FeedTimelineService feedTimelineService;
+
     private RelationEventProcessor processor;
 
     @BeforeEach
     void setUp() {
-        processor = new RelationEventProcessor(relationMapper, redis, userCounterService, cacheInvalidator);
+        processor = new RelationEventProcessor(
+                relationMapper, redis, userCounterService, cacheInvalidator, feedTimelineService);
     }
 
     @Test
@@ -73,6 +78,7 @@ class RelationEventProcessorTest {
         verifyCountersRebuiltOnce();
         verifyNoCounterDeltas();
         verify(cacheInvalidator).invalidateLocalProjection(11L, 22L);
+        verify(feedTimelineService).removeAuthorFromTimeline(11L, 22L);
     }
 
     @Test
@@ -96,6 +102,7 @@ class RelationEventProcessorTest {
         verifyCountersRebuiltOnce();
         verifyNoCounterDeltas();
         verify(cacheInvalidator).invalidateLocalProjection(11L, 22L);
+        verify(feedTimelineService, never()).removeAuthorFromTimeline(11L, 22L);
     }
 
     @Test
