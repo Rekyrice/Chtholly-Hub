@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Param;
 
 import java.time.Instant;
 
+/** Persists and atomically transitions controlled draft-edit preview records. */
 @Mapper
 public interface DraftEditPreviewMapper {
 

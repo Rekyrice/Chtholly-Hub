@@ -6,7 +6,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
-/** 缓存基准所需的运行模式与回源计数。 */
+/** Exposes the cache runtime mode and origin-load counters used by the benchmark harness. */
 @Component
 public class CacheMetrics {
 
