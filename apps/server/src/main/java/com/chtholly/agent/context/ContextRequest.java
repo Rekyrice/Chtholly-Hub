@@ -11,6 +11,18 @@ public record ContextRequest(
         Iterable<AgentTool> tools,
         String conversationHistory,
         String userQuestion,
-        AnchorContext anchors
+        AnchorContext anchors,
+        boolean evidenceRequired
 ) {
+
+    public ContextRequest(
+            long userId,
+            String sessionId,
+            String pageContext,
+            Iterable<AgentTool> tools,
+            String conversationHistory,
+            String userQuestion,
+            AnchorContext anchors) {
+        this(userId, sessionId, pageContext, tools, conversationHistory, userQuestion, anchors, false);
+    }
 }

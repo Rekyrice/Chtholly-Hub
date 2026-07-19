@@ -167,7 +167,7 @@ public class RagQueryService {
     }
 
     private boolean eligible(Document document, Post post) {
-        if (!isPublicPublished(post)) {
+        if (!isPublicPublished(post) || !StringUtils.hasText(document.getText())) {
             return false;
         }
         String indexedSha = nullableString(document.getMetadata().get("contentSha256"));

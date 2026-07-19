@@ -5,6 +5,7 @@ import com.chtholly.agent.context.ContextContribution;
 import com.chtholly.agent.context.ContextContributor;
 import com.chtholly.agent.context.ContextOrder;
 import com.chtholly.agent.context.ContextRequest;
+import com.chtholly.agent.evidence.Evidence;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
 import lombok.extern.slf4j.Slf4j;
@@ -51,10 +52,42 @@ public class KnowledgeContextContributor implements ContextContributor {
     public ContextContribution contribute(ContextRequest request) {
         StringBuilder prompt = new StringBuilder();
         boolean degraded = appendKnownFacts(prompt, request.userQuestion());
-        degraded |= appendRelevantKnowledge(prompt, request.anchors().semantic(), request.userQuestion());
-        return prompt.isEmpty()
-                ? ContextContribution.empty(name(), order(), degraded)
-                : new ContextContribution(name(), order(), prompt.toString(), degraded);
+        appendSemanticAnchors(prompt, request.anchors().semantic());
+
+        boolean retrievalRequested = isQueryIntent(request.userQuestion()) || request.evidenceRequired();
+        List<Evidence> evidence = new ArrayList<>();
+        if (retrievalRequested) {
+            if (hybridSearchService == null) {
+                degraded = true;
+            } else {
+                try {
+                    HybridSearchService.HybridSearchResponse response =
+                            hybridSearchService.hybridSearch(request.userQuestion(), 5);
+                    if (response == null) {
+                        degraded = true;
+                    } else {
+                        degraded |= response.degraded();
+                        List<SearchResult> results = response.documents();
+                        for (int index = 0; index < results.size(); index++) {
+                            SearchResult result = results.get(index);
+                            try {
+                                evidence.add(Evidence.fromSearchResult(result, index + 1));
+                            } catch (IllegalArgumentException exception) {
+                                degraded = true;
+                                log.warn("Rejected incomplete retrieval evidence: sourceId={}",
+                                        result == null ? null : result.getId());
+                            }
+                        }
+                    }
+                } catch (RuntimeException exception) {
+                    log.warn("Hybrid search context failed", exception);
+                    degraded = true;
+                }
+            }
+        }
+
+        return new ContextContribution(
+                name(), order(), prompt.toString(), degraded, evidence, retrievalRequested);
     }
 
     private boolean appendKnownFacts(StringBuilder prompt, String userQuestion) {
@@ -74,33 +107,13 @@ public class KnowledgeContextContributor implements ContextContributor {
         }
     }
 
-    private boolean appendRelevantKnowledge(StringBuilder prompt, List<String> semantic, String userQuestion) {
+    private void appendSemanticAnchors(StringBuilder prompt, List<String> semantic) {
         List<String> knowledgeLines = new ArrayList<>();
         if (semantic != null) {
             for (String item : semantic) {
                 if (hasText(item)) knowledgeLines.add(item.trim());
             }
         }
-
-        boolean degraded = false;
-        if (isQueryIntent(userQuestion) && hybridSearchService != null) {
-            try {
-                HybridSearchService.HybridSearchResponse response =
-                        hybridSearchService.hybridSearch(userQuestion, 5);
-                degraded = response.degraded();
-                List<SearchResult> results = response.documents();
-                if (results != null) {
-                    for (SearchResult result : results) {
-                        String line = formatSearchResult(result);
-                        if (hasText(line)) knowledgeLines.add(line);
-                    }
-                }
-            } catch (RuntimeException e) {
-                log.warn("Hybrid search context failed", e);
-                degraded = true;
-            }
-        }
-
         if (!knowledgeLines.isEmpty()) {
             appendSeparator(prompt);
             prompt.append("## 相关知识\n\n");
@@ -108,7 +121,6 @@ public class KnowledgeContextContributor implements ContextContributor {
                 prompt.append("- ").append(item).append('\n');
             }
         }
-        return degraded;
     }
 
     static boolean isQueryIntent(String question) {
@@ -134,13 +146,6 @@ public class KnowledgeContextContributor implements ContextContributor {
                 || text.contains("轻音") || text.contains("虫师") || text.contains("紫罗兰")
                 || text.contains("clannad") || text.contains("air") || text.contains("aria")
                 || text.contains("anime") || text.contains("manga");
-    }
-
-    private static String formatSearchResult(SearchResult result) {
-        if (result == null) return "";
-        String title = hasText(result.getTitle()) ? result.getTitle().trim() : "Result";
-        String snippet = hasText(result.getSnippet()) ? result.getSnippet().trim() : "";
-        return snippet.isEmpty() ? title : title + "：" + snippet;
     }
 
     private static void appendSeparator(StringBuilder prompt) {

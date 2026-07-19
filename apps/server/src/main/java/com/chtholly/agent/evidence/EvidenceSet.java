@@ -32,18 +32,19 @@ public final class EvidenceSet {
         return EMPTY;
     }
 
-    /** Filters evidence by caller permissions and assigns deterministic per-turn citations. */
+    /** Filters evidence fail-closed and assigns deterministic per-turn citations. */
     public static EvidenceSet of(List<Evidence> candidates, Set<String> allowedPermissions) {
         if (candidates == null || candidates.isEmpty()) {
             return empty();
         }
         Set<String> allowed = allowedPermissions == null ? Set.of() : Set.copyOf(allowedPermissions);
         List<Evidence> accepted = new ArrayList<>();
-        Set<String> evidenceIds = new LinkedHashSet<>();
+        Set<String> documentIds = new LinkedHashSet<>();
         for (Evidence candidate : candidates) {
             if (candidate == null
+                    || candidate.permissions().isEmpty()
                     || !allowed.containsAll(candidate.permissions())
-                    || !evidenceIds.add(candidate.evidenceId())) {
+                    || !documentIds.add(candidate.documentId())) {
                 continue;
             }
             int rank = accepted.size() + 1;
@@ -72,12 +73,14 @@ public final class EvidenceSet {
                 最终回答中的站内事实只能使用下列方括号 citationId。
                 """);
         for (Evidence evidence : items) {
-            prompt.append("\n- [").append(evidence.citationId()).append("]")
-                    .append(" sourceType=").append(evidence.sourceType())
-                    .append(" sourceId=").append(evidence.sourceId())
-                    .append(" documentId=").append(evidence.documentId())
-                    .append(" version=").append(evidence.sourceVersion())
-                    .append(" hash=").append(evidence.sourceHash())
+            prompt.append("\n- [").append(escape(evidence.citationId())).append("]")
+                    .append(" sourceType=").append(escape(evidence.sourceType()))
+                    .append(" sourceId=").append(escape(evidence.sourceId()))
+                    .append(" documentId=").append(escape(evidence.documentId()))
+                    .append(" title=").append(escape(evidence.title()))
+                    .append(" sources=").append(escape(evidence.retrievalSource()))
+                    .append(" version=").append(escape(evidence.sourceVersion()))
+                    .append(" hash=").append(escape(evidence.sourceHash()))
                     .append("\n  <evidence_data>")
                     .append(sanitizeExcerpt(evidence.excerpt()))
                     .append("</evidence_data>\n");
@@ -85,26 +88,53 @@ public final class EvidenceSet {
         return prompt.toString().strip();
     }
 
-    /** Converts unknown or missing citations into an explicit no-answer response. */
-    public String validateFinalAnswer(String answer) {
+    /** Validates citations for the immutable evidence snapshot used by this turn. */
+    public ValidationResult validate(String answer, boolean evidenceRequired) {
         String normalized = answer == null ? "" : answer.strip();
+        if (INSUFFICIENT_EVIDENCE_ANSWER.equals(normalized)) {
+            return new ValidationResult(ValidationStatus.NO_ANSWER, normalized, List.of());
+        }
+
         Matcher matcher = CITATION.matcher(normalized);
         boolean foundCitation = false;
+        LinkedHashSet<String> unknownCitationIds = new LinkedHashSet<>();
         while (matcher.find()) {
             foundCitation = true;
-            if (!citationIds.contains(matcher.group(1))) {
-                return INSUFFICIENT_EVIDENCE_ANSWER;
+            String citationId = matcher.group(1);
+            if (!citationIds.contains(citationId)) {
+                unknownCitationIds.add(citationId);
             }
         }
-        if ((!items.isEmpty() && !foundCitation) || (items.isEmpty() && foundCitation)) {
-            return INSUFFICIENT_EVIDENCE_ANSWER;
+        if (!unknownCitationIds.isEmpty()) {
+            return new ValidationResult(
+                    ValidationStatus.UNKNOWN_CITATION,
+                    INSUFFICIENT_EVIDENCE_ANSWER,
+                    List.copyOf(unknownCitationIds));
         }
-        return normalized;
+        if (evidenceRequired && items.isEmpty()) {
+            return new ValidationResult(
+                    ValidationStatus.NO_EVIDENCE,
+                    INSUFFICIENT_EVIDENCE_ANSWER,
+                    List.of());
+        }
+        if (evidenceRequired && !foundCitation) {
+            return new ValidationResult(
+                    ValidationStatus.MISSING_CITATION,
+                    INSUFFICIENT_EVIDENCE_ANSWER,
+                    List.of());
+        }
+        return new ValidationResult(ValidationStatus.VALID, normalized, List.of());
+    }
+
+    /** Compatibility boundary for callers that require citations whenever evidence was retrieved. */
+    public String validateFinalAnswer(String answer) {
+        return validate(answer, !items.isEmpty()).safeAnswer();
     }
 
     public String contentHash() {
         String canonical = items.stream()
-                .map(item -> item.evidenceId() + "|" + item.sourceVersion() + "|" + item.sourceHash())
+                .map(item -> item.evidenceId() + "|" + item.documentId() + "|"
+                        + item.sourceVersion() + "|" + item.sourceHash())
                 .collect(java.util.stream.Collectors.joining("\n"));
         return sha256(canonical);
     }
@@ -114,9 +144,20 @@ public final class EvidenceSet {
                 .replaceAll("(?i)</?evidence_data[^>]*>", "")
                 .replaceAll("[\\p{Cntrl}&&[^\\r\\n\\t]]", " ")
                 .strip();
-        return sanitized.length() <= MAX_EXCERPT_CHARS
+        String truncated = sanitized.length() <= MAX_EXCERPT_CHARS
                 ? sanitized
                 : sanitized.substring(0, MAX_EXCERPT_CHARS) + "…";
+        return escape(truncated);
+    }
+
+    private static String escape(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
     }
 
     private static String sha256(String input) {
@@ -126,6 +167,24 @@ public final class EvidenceSet {
             return java.util.HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    public enum ValidationStatus {
+        VALID,
+        NO_ANSWER,
+        NO_EVIDENCE,
+        MISSING_CITATION,
+        UNKNOWN_CITATION
+    }
+
+    public record ValidationResult(
+            ValidationStatus status,
+            String safeAnswer,
+            List<String> unknownCitationIds) {
+
+        public ValidationResult {
+            unknownCitationIds = unknownCitationIds == null ? List.of() : List.copyOf(unknownCitationIds);
         }
     }
 }

@@ -58,6 +58,27 @@ class SkillOutputValidatorTest {
     }
 
     @Test
+    void deterministicNoAnswerBypassesSkillSpecificSchemaChecks() {
+        EvidenceSet evidence = evidence();
+
+        var outline = validator.validate(
+                registry.require("evidence-outline", "v1"),
+                EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
+                evidence);
+        var factCheck = validator.validate(
+                registry.require("draft-fact-check", "v1"),
+                EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
+                evidence);
+
+        assertThat(outline.status()).isEqualTo(SkillOutputValidator.Status.INSUFFICIENT_EVIDENCE);
+        assertThat(outline.output()).isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        assertThat(outline.errors()).containsExactly("model_no_answer");
+        assertThat(factCheck.status()).isEqualTo(SkillOutputValidator.Status.INSUFFICIENT_EVIDENCE);
+        assertThat(factCheck.output()).isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        assertThat(factCheck.errors()).containsExactly("model_no_answer");
+    }
+
+    @Test
     void draftEditRejectsNoOpAndOversizedCandidate() {
         SkillDefinition definition = new SkillDefinition(
                 "draft-edit", "v1", true, "edit", List.of("draft_edit"),
@@ -80,7 +101,8 @@ class SkillOutputValidatorTest {
     private EvidenceSet evidence() {
         Evidence item = new Evidence(
                 "ev-1", "POST", "post:1", "post:1", "chunk-1",
-                "v1", "hash-1", "证据内容", 1, 0.9, Set.of("PUBLIC"), "E1");
+                "文章标题", "semantic+keyword", "v1", "hash-1", "证据内容",
+                1, 0.9, Set.of("PUBLIC"), "E1");
         return EvidenceSet.of(List.of(item), Set.of("PUBLIC"));
     }
 }

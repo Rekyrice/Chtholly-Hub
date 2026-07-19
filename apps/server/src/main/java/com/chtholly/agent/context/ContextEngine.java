@@ -3,10 +3,12 @@ package com.chtholly.agent.context;
 import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
+import com.chtholly.agent.evidence.EvidenceSet;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -45,7 +47,8 @@ public class ContextEngine {
      * @return complete system prompt
      */
     public String buildSystemPrompt(long userId, String sessionId, String pageContext, String userQuestion) {
-        return buildSystemPrompt(userId, sessionId, pageContext, List.of(), "", userQuestion);
+        return buildSnapshot(userId, sessionId, pageContext, List.of(), "", userQuestion, false)
+                .systemPrompt();
     }
 
     /**
@@ -62,15 +65,45 @@ public class ContextEngine {
     public String buildSystemPrompt(long userId, String sessionId, String pageContext,
                                     Iterable<AgentTool> tools, String conversationHistory,
                                     String userQuestion) {
+        return buildSnapshot(
+                userId, sessionId, pageContext, tools, conversationHistory, userQuestion, false)
+                .systemPrompt();
+    }
+
+    /** Builds and freezes the prompt, filtered evidence, and grounding requirement for one turn. */
+    public AgentContextSnapshot buildSnapshot(
+            long userId,
+            String sessionId,
+            String pageContext,
+            Iterable<AgentTool> tools,
+            String conversationHistory,
+            String userQuestion,
+            boolean forceEvidenceRequired) {
         AnchorContext anchors = anchorManager.buildContext(userId, sessionId);
         ContextRequest request = new ContextRequest(
-                userId, sessionId, pageContext, tools, conversationHistory, userQuestion, anchors);
+                userId, sessionId, pageContext, tools, conversationHistory, userQuestion, anchors,
+                forceEvidenceRequired);
 
-        return contributors.stream()
+        List<ContextContribution> contributions = contributors.stream()
                 .map(contributor -> safeContribution(contributor, request))
+                .toList();
+        List<com.chtholly.agent.evidence.Evidence> candidates = new ArrayList<>();
+        for (ContextContribution contribution : contributions) {
+            candidates.addAll(contribution.evidence());
+        }
+        EvidenceSet evidenceSet = EvidenceSet.of(candidates, Set.of("PUBLIC"));
+        boolean evidenceRequired = forceEvidenceRequired || contributions.stream()
+                .anyMatch(ContextContribution::evidenceRequired);
+
+        String prompt = contributions.stream()
                 .filter(contribution -> !contribution.isEmpty())
                 .map(contribution -> contribution.content().strip())
                 .collect(java.util.stream.Collectors.joining("\n\n"));
+        String renderedEvidence = evidenceSet.renderForPrompt();
+        if (!renderedEvidence.isBlank()) {
+            prompt = prompt.isBlank() ? renderedEvidence : prompt + "\n\n" + renderedEvidence;
+        }
+        return new AgentContextSnapshot(prompt, evidenceSet, evidenceRequired);
     }
 
     ContextContribution safeContribution(ContextContributor contributor, ContextRequest request) {
@@ -88,7 +121,8 @@ public class ContextEngine {
             }
             boolean degraded = contribution.degraded() || metadataMismatch;
             ContextContribution normalized = new ContextContribution(
-                    contributor.name(), contributor.order(), contribution.content(), degraded);
+                    contributor.name(), contributor.order(), contribution.content(), degraded,
+                    contribution.evidence(), contribution.evidenceRequired());
             if (normalized.degraded()) {
                 log.warn("Context contribution degraded: {}", contributor.name());
             }

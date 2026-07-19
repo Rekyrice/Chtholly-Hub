@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -107,6 +108,35 @@ class RagQueryServiceTest {
         RagQueryService service = service(vectorStore, mock(ChatClient.class), mock(RagIndexService.class), postMapper);
 
         assertThat(service.search("missing fingerprint", 3)).isEmpty();
+    }
+
+    @Test
+    void semanticSearchRejectsBlankCurrentExcerpt() {
+        VectorStore vectorStore = mock(VectorStore.class);
+        when(vectorStore.similaritySearch(any(org.springframework.ai.vectorstore.SearchRequest.class)))
+                .thenReturn(List.of(document("42", "42#0", "current-sha", "   ")));
+        PostMapper postMapper = mock(PostMapper.class);
+        when(postMapper.findByIds(List.of(42L))).thenReturn(List.of(publicPost(42L, "current-sha")));
+        RagQueryService service = service(
+                vectorStore, mock(ChatClient.class), mock(RagIndexService.class), postMapper);
+
+        assertThat(service.search("blank", 3)).isEmpty();
+    }
+
+    @Test
+    void authorityLookupFailureNeverReturnsUnverifiedChunks() {
+        VectorStore vectorStore = mock(VectorStore.class);
+        when(vectorStore.similaritySearch(any(org.springframework.ai.vectorstore.SearchRequest.class)))
+                .thenReturn(List.of(document("42", "42#0", "current-sha", "chunk")));
+        PostMapper postMapper = mock(PostMapper.class);
+        when(postMapper.findByIds(List.of(42L)))
+                .thenThrow(new IllegalStateException("mysql unavailable"));
+        RagQueryService service = service(
+                vectorStore, mock(ChatClient.class), mock(RagIndexService.class), postMapper);
+
+        assertThatThrownBy(() -> service.search("authority", 3))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("mysql unavailable");
     }
 
     @Test

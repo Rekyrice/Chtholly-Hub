@@ -15,6 +15,7 @@ import com.chtholly.content.ContentIntelligenceReader;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -77,7 +78,9 @@ class ContextContributorIsolationTest {
         when(knowledgeService.searchRelevantKnowledge(question, 3)).thenReturn(List.of("known fact"));
         when(hybridSearchService.hybridSearch(question, 5)).thenReturn(
                 new HybridSearchService.HybridSearchResponse(List.of(
-                        new SearchResult("post:1", "result title", "result snippet", "hybrid", 0.8)),
+                        new SearchResult(
+                                "post:1", "result title", "result snippet", "semantic+keyword", 0.8,
+                                "post:1", "post:1#0", "v1", "hash-1", Set.of("PUBLIC"))),
                         java.util.Map.of()));
         AnchorContext anchors = AnchorContext.builder().semantic(List.of("anchor semantic")).build();
 
@@ -90,7 +93,11 @@ class ContextContributorIsolationTest {
         assertThat(graph.degraded()).isTrue();
         assertThat(knowledge.content())
                 .contains("## 你知道的事", "known fact")
-                .contains("## 相关知识", "anchor semantic", "result title：result snippet");
+                .contains("## 相关知识", "anchor semantic")
+                .doesNotContain("result title", "result snippet");
+        assertThat(knowledge.evidence()).hasSize(1);
+        assertThat(knowledge.evidence().getFirst().title()).isEqualTo("result title");
+        assertThat(knowledge.evidenceRequired()).isTrue();
         assertThat(knowledge.degraded()).isFalse();
     }
 

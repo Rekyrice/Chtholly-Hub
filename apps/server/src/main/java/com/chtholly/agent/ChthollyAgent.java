@@ -2,7 +2,9 @@ package com.chtholly.agent;
 
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.config.AgentProperties;
+import com.chtholly.agent.context.AgentContextSnapshot;
 import com.chtholly.agent.context.ContextEngine;
+import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentExecutionTrace;
@@ -151,20 +153,29 @@ public class ChthollyAgent {
                 toolMap.keySet().retainAll(selection.allowedTools());
             }
 
+            boolean selected = isSelected(selection);
+            SkillDefinition selectedSkill = selected ? selection.definition() : null;
+            boolean skillRequiresEvidence = selectedSkill != null && selectedSkill.requiresEvidence();
             String historyBlock = memory == null ? "" : memory.formatForPrompt();
-            String system = contextEngine.buildSystemPrompt(
+            AgentContextSnapshot contextSnapshot = contextEngine.buildSnapshot(
                     userId,
                     sessionId,
                     pageContext,
                     toolMap.values(),
                     historyBlock,
-                    question.trim());
-            if (isSelected(selection)) {
-                system = bindSkillPrompt(system, selection);
-                maxSteps = Math.min(maxSteps, selection.definition().maxSteps());
+                    question.trim(),
+                    skillRequiresEvidence);
+            if (selected) {
+                contextSnapshot = contextSnapshot.withSystemPrompt(
+                        bindSkillPrompt(contextSnapshot.systemPrompt(), selection));
+                maxSteps = Math.min(maxSteps, selectedSkill.maxSteps());
+            }
+            if (contextSnapshot.evidenceRequired() && contextSnapshot.evidenceSet().isEmpty()) {
+                completeNoAnswer(question, memory, sink, trace);
+                return;
             }
             AgentLoopRequest request = new AgentLoopRequest(
-                    system,
+                    contextSnapshot.systemPrompt(),
                     question.trim(),
                     userId,
                     historyBlock,
@@ -179,7 +190,9 @@ public class ChthollyAgent {
                         memory,
                         trace,
                         agentSpan,
-                        result.finalStepIndex());
+                        result.finalStepIndex(),
+                        contextSnapshot,
+                        selectedSkill);
                 trace.recordStep(
                         result.finalStepIndex(),
                         "final_answer",
@@ -239,6 +252,21 @@ public class ChthollyAgent {
         }
     }
 
+    private void completeNoAnswer(
+            String question,
+            AgentConversationMemory memory,
+            Consumer<AgentEvent> sink,
+            AgentExecutionTrace trace) {
+        String answer = EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER;
+        trace.terminateFinalAnswer(answer);
+        emitThrottledDelta(sink, answer);
+        emitFinal(sink, answer);
+        if (memory != null) {
+            memory.add(AgentTurn.user(question.trim()));
+            memory.add(AgentTurn.assistant(answer));
+        }
+    }
+
     /**
      * Streams the final natural-language answer to the client and persists turn to memory.
      *
@@ -251,11 +279,16 @@ public class ChthollyAgent {
             AgentConversationMemory memory,
             AgentExecutionTrace trace,
             Observation agentSpan,
-            int stepIndex) {
+            int stepIndex,
+            AgentContextSnapshot contextSnapshot,
+            SkillDefinition selectedSkill) {
         String context = String.join("\n\n", transcript);
-        String system = agentDomainConfig.render(
+        String finalInstructions = agentDomainConfig.render(
                 agentDomainConfig.systemPrompt().finalAnswerSystem(),
                 "soul", characterSoulService.getSoulContent());
+        String system = contextSnapshot.systemPrompt().isBlank()
+                ? finalInstructions
+                : contextSnapshot.systemPrompt() + "\n\n" + finalInstructions;
         String userPrompt = context + "\n\n" + agentDomainConfig.systemPrompt().finalAnswerPrompt();
         int inputChars = system.length() + userPrompt.length();
 
@@ -271,17 +304,29 @@ public class ChthollyAgent {
                 if (chunk != null && !chunk.isEmpty()) {
                     firstTokenMs.compareAndSet(-1, System.currentTimeMillis() - trace.getStartedAtMs());
                     full.append(chunk);
-                    emitThrottledDelta(sink, chunk);
                 }
             }).blockLast();
 
-            String answer = truncateAnswer(full.toString());
+            String candidate = truncateAnswer(full.toString());
+            EvidenceSet.ValidationResult evidenceValidation = contextSnapshot.evidenceSet()
+                    .validate(candidate, contextSnapshot.evidenceRequired());
+            String answer = evidenceValidation.safeAnswer();
+            if (selectedSkill != null && skillOutputValidator != null) {
+                answer = skillOutputValidator.validate(
+                        selectedSkill,
+                        answer,
+                        contextSnapshot.evidenceSet(),
+                        question).output();
+            }
             long streamMs = System.currentTimeMillis() - streamStart;
             Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
             trace.recordLlmCall(stepIndex, streamMs, inputChars, answer.length(), ttft);
             agentObservationService.finishSpan(llmSpan, AgentSpanAttributes.llm(
                     streamMs, inputChars, answer.length(), "ok"));
             trace.terminateFinalAnswer(answer);
+            if (!answer.isBlank()) {
+                emitThrottledDelta(sink, answer);
+            }
             emitFinal(sink, answer);
             if (memory != null && !answer.isBlank()) {
                 memory.add(AgentTurn.user(question.trim()));

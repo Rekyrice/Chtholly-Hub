@@ -5,7 +5,10 @@ import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.config.AgentErrorMessages;
 import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.config.AgentSystemPromptConfig;
+import com.chtholly.agent.context.AgentContextSnapshot;
 import com.chtholly.agent.context.ContextEngine;
+import com.chtholly.agent.evidence.Evidence;
+import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentExecutionTrace;
@@ -42,6 +45,7 @@ import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -109,9 +113,9 @@ class ChthollyAgentTest {
     @Test
     void runBuildsContextAndPassesCompleteRequestToLoop() {
         when(memory.formatForPrompt()).thenReturn("history");
-        when(contextEngine.buildSystemPrompt(
-                anyLong(), anyString(), anyString(), any(), anyString(), anyString()))
-                .thenReturn("assembled system");
+        when(contextEngine.buildSnapshot(
+                anyLong(), anyString(), anyString(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("assembled system"));
         when(loopExecutor.execute(any(), any(), any(), any()))
                 .thenReturn(AgentLoopResult.terminal(
                         AgentLoopResult.Status.MAX_STEPS,
@@ -120,8 +124,8 @@ class ChthollyAgentTest {
 
         agent.run("  question  ", 7L, memory, "session", "page", events::add);
 
-        verify(contextEngine).buildSystemPrompt(
-                eq(7L), eq("session"), eq("page"), any(), eq("history"), eq("question"));
+        verify(contextEngine).buildSnapshot(
+                eq(7L), eq("session"), eq("page"), any(), eq("history"), eq("question"), eq(false));
         ArgumentCaptor<AgentLoopRequest> requestCaptor = ArgumentCaptor.forClass(AgentLoopRequest.class);
         verify(loopExecutor).execute(requestCaptor.capture(), any(), eq(agentSpan), any());
         AgentLoopRequest request = requestCaptor.getValue();
@@ -144,9 +148,9 @@ class ChthollyAgentTest {
                 "explicit_task_type",
                 1.0,
                 Set.of("search")));
-        when(contextEngine.buildSystemPrompt(
-                anyLong(), anyString(), anyString(), any(), anyString(), anyString()))
-                .thenReturn("assembled system");
+        when(contextEngine.buildSnapshot(
+                anyLong(), anyString(), anyString(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(groundedSnapshot("assembled system"));
         when(loopExecutor.execute(any(), any(), any(), any()))
                 .thenReturn(AgentLoopResult.terminal(
                         AgentLoopResult.Status.MAX_STEPS, List.of(), "stopped"));
@@ -176,8 +180,8 @@ class ChthollyAgentTest {
     @Test
     void finalReadyStreamsAnswerWritesMemoryAndPersistsSuccessfulTrace() {
         when(memory.formatForPrompt()).thenReturn("history");
-        when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
-                .thenReturn("assembled system");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("assembled system"));
         when(loopExecutor.execute(any(), any(), any(), any()))
                 .thenReturn(AgentLoopResult.finalReady(
                         List.of("history", "current question"),
@@ -194,7 +198,10 @@ class ChthollyAgentTest {
         verify(memory, times(2)).add(turnCaptor.capture());
         assertThat(turnCaptor.getAllValues()).extracting(AgentTurn::content)
                 .containsExactly("question", "final answer");
-        assertThat(eventTypes()).containsExactly("delta", "delta", "final");
+        assertThat(eventTypes()).containsExactly("delta", "final");
+        ArgumentCaptor<String> finalSystemCaptor = ArgumentCaptor.forClass(String.class);
+        verify(llmInvoker).stream(finalSystemCaptor.capture(), anyString(), eq(0.3), eq(1024));
+        assertThat(finalSystemCaptor.getValue()).contains("assembled system", "Answer with soul");
         ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
         assertThat(traceCaptor.getValue().getTerminatedBy()).isEqualTo("final_answer");
@@ -210,8 +217,8 @@ class ChthollyAgentTest {
     @Test
     void nonFinalLoopOutcomeDoesNotStreamOrWriteMemoryButStillPersistsTrace() {
         when(memory.formatForPrompt()).thenReturn("");
-        when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
-                .thenReturn("assembled system");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("assembled system"));
         when(loopExecutor.execute(any(), any(), any(), any())).thenAnswer(invocation -> {
             AgentExecutionTrace trace = invocation.getArgument(1);
             trace.terminateMaxSteps();
@@ -237,7 +244,8 @@ class ChthollyAgentTest {
 
         assertThat(eventTypes()).containsExactly("error");
         assertThat(events.getFirst().data().path("message").asText()).isEqualTo("QUESTION_EMPTY");
-        verify(contextEngine, never()).buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString());
+        verify(contextEngine, never()).buildSnapshot(
+                anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean());
         verify(loopExecutor, never()).execute(any(), any(), any(), any());
         ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
@@ -246,8 +254,8 @@ class ChthollyAgentTest {
 
     @Test
     void publicOverloadWithoutSessionPassesNullContextParameters() {
-        when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
-                .thenReturn("system");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("system"));
         when(loopExecutor.execute(any(), any(), any(), any()))
                 .thenReturn(AgentLoopResult.terminal(
                         AgentLoopResult.Status.LLM_ERROR,
@@ -256,14 +264,14 @@ class ChthollyAgentTest {
 
         agent.run("question", 7L, null, events::add);
 
-        verify(contextEngine).buildSystemPrompt(
-                eq(7L), isNull(), isNull(), any(), eq(""), eq("question"));
+        verify(contextEngine).buildSnapshot(
+                eq(7L), isNull(), isNull(), any(), eq(""), eq("question"), eq(false));
     }
 
     @Test
     void agentSpanDurationMatchesFinishedPersistedTrace() {
-        when(contextEngine.buildSystemPrompt(anyLong(), any(), any(), any(), anyString(), anyString()))
-                .thenReturn("system");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("system"));
         when(loopExecutor.execute(any(), any(), any(), any())).thenAnswer(invocation -> {
             Thread.sleep(20);
             AgentExecutionTrace trace = invocation.getArgument(1);
@@ -286,8 +294,122 @@ class ChthollyAgentTest {
         assertThat(spanDuration).isGreaterThanOrEqualTo(15);
     }
 
+    @Test
+    void finalGenerationReceivesImmutableSkillAndEvidenceSystem() {
+        SkillDefinition definition = skillDefinition();
+        when(memory.formatForPrompt()).thenReturn("");
+        when(skillRegistry.enabled()).thenReturn(List.of(definition));
+        when(skillSelector.select(any(), any())).thenReturn(new SkillSelector.SkillSelection(
+                SkillSelector.Status.SELECTED,
+                definition,
+                "explicit_task_type",
+                1.0,
+                Set.of("search")));
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), eq(true)))
+                .thenReturn(groundedSnapshot("assembled system"));
+        when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
+                AgentLoopResult.finalReady(List.of("current question"), 1, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("有依据 [E1]"));
+
+        agent.run("解释这个页面", 7L, memory, "session", "页面", "page-explain", events::add);
+
+        ArgumentCaptor<String> systemCaptor = ArgumentCaptor.forClass(String.class);
+        verify(llmInvoker).stream(systemCaptor.capture(), anyString(), eq(0.3), eq(1024));
+        assertThat(systemCaptor.getValue())
+                .contains("assembled system")
+                .contains("skillId=page-explain", "skillVersion=v1", "只读合同")
+                .contains("<evidence_data>证据内容</evidence_data>")
+                .contains("Answer with soul");
+        assertThat(eventContents()).containsExactly("有依据 [E1]", "有依据 [E1]");
+    }
+
+    @Test
+    void forgedCitationNeverReachesDeltaMemoryOrTrace() {
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(groundedSnapshot("assembled system"));
+        when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
+                AgentLoopResult.finalReady(List.of("current question"), 1, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("伪造事实 [E999]"));
+
+        agent.run("帮我查站内事实", 7L, memory, events::add);
+
+        assertThat(eventTypes()).containsExactly("delta", "final");
+        assertThat(eventContents())
+                .containsOnly(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER)
+                .noneMatch(content -> content.contains("E999") || content.contains("伪造"));
+        ArgumentCaptor<AgentTurn> turnCaptor = ArgumentCaptor.forClass(AgentTurn.class);
+        verify(memory, times(2)).add(turnCaptor.capture());
+        assertThat(turnCaptor.getAllValues().get(1).content())
+                .isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        assertThat(traceCaptor.getValue().getFinalAnswerLength())
+                .isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER.length());
+    }
+
+    @Test
+    void missingCitationFallsBackBeforeAnyAnswerEvent() {
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(groundedSnapshot("assembled system"));
+        when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
+                AgentLoopResult.finalReady(List.of("current question"), 1, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("没有引用的站内事实"));
+
+        agent.run("帮我查站内事实", 7L, memory, events::add);
+
+        assertThat(eventContents()).containsOnly(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+    }
+
+    @Test
+    void requiredEvidenceEmptyShortCircuitsLoopAndLlm() {
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new AgentContextSnapshot("assembled system", EvidenceSet.empty(), true));
+
+        agent.run("帮我查站内事实", 7L, memory, events::add);
+
+        verify(loopExecutor, never()).execute(any(), any(), any(), any());
+        verify(llmInvoker, never()).stream(anyString(), anyString(), anyDouble(), anyInt());
+        assertThat(eventTypes()).containsExactly("delta", "final");
+        assertThat(eventContents()).containsOnly(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        ArgumentCaptor<AgentTurn> turnCaptor = ArgumentCaptor.forClass(AgentTurn.class);
+        verify(memory, times(2)).add(turnCaptor.capture());
+        assertThat(turnCaptor.getAllValues()).extracting(AgentTurn::content)
+                .containsExactly("帮我查站内事实", EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+    }
+
     private List<String> eventTypes() {
         return events.stream().map(AgentEvent::type).toList();
+    }
+
+    private List<String> eventContents() {
+        return events.stream().map(event -> event.data().path("content").asText()).toList();
+    }
+
+    private AgentContextSnapshot snapshot(String systemPrompt) {
+        return new AgentContextSnapshot(systemPrompt, EvidenceSet.empty(), false);
+    }
+
+    private AgentContextSnapshot groundedSnapshot(String systemPrompt) {
+        EvidenceSet evidence = evidence();
+        return new AgentContextSnapshot(
+                systemPrompt + "\n\n" + evidence.renderForPrompt(), evidence, true);
+    }
+
+    private EvidenceSet evidence() {
+        Evidence item = new Evidence(
+                "ev-1", "POST", "post:1", "post:1", "post:1#0",
+                "文章标题", "semantic+keyword", "v1", "hash-1", "证据内容",
+                1, 0.9, Set.of("PUBLIC"), "E1");
+        return EvidenceSet.of(List.of(item), Set.of("PUBLIC"));
     }
 
     private AgentTool tool(String name) {

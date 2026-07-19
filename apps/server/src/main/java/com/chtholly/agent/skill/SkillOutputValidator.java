@@ -53,10 +53,16 @@ public class SkillOutputValidator {
                     EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
                     List.of("evidence_required"));
         }
+        if (EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER.equals(normalized)) {
+            return new SkillValidationResult(
+                    Status.INSUFFICIENT_EVIDENCE,
+                    EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
+                    List.of("model_no_answer"));
+        }
         if (definition.validators().contains("citation")) {
-            String validated = evidence.validateFinalAnswer(normalized);
-            if (EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER.equals(validated)
-                    && !EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER.equals(normalized)) {
+            EvidenceSet.ValidationResult validation = evidence.validate(
+                    normalized, definition.requiresEvidence());
+            if (validation.status() != EvidenceSet.ValidationStatus.VALID) {
                 return new SkillValidationResult(
                         Status.CITATION_INVALID,
                         EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
