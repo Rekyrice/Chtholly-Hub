@@ -111,6 +111,8 @@ class AgentExecutionTraceTest {
         assertThat(payload.path("components").path("prompt").asText()).isEqualTo("agent-prompt-v1");
         assertThat(payload.path("components").path("model").asText()).isEqualTo("deepseek-chat");
         assertThat(payload.path("components").path("retrieval").asText()).isEqualTo("document-rrf-v1");
+        assertThat(payload.path("components").path("citationValidator").asText())
+                .isEqualTo("evidence-citation-gate-v1");
         assertThat(payload.path("components").path("tools").asText()).isEqualTo("agent-tool-v1");
         assertThat(payload.path("toolVersions").path("article_rag").asText())
                 .isEqualTo("agent-tool-v1");

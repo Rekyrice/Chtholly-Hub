@@ -337,6 +337,7 @@ public class AgentExecutionTrace {
         components.put("skillSelector", AgentComponentVersions.SKILL_SELECTOR);
         components.put("model", modelVersion);
         components.put("retrieval", AgentComponentVersions.RETRIEVAL);
+        components.put("citationValidator", AgentComponentVersions.CITATION_VALIDATOR);
         components.put("tools", AgentComponentVersions.TOOLS);
         components.put("traceSchema", AgentComponentVersions.TRACE_SCHEMA);
         return Map.copyOf(components);
