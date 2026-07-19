@@ -187,13 +187,15 @@ try {
     foreach ($subject in $casesBySubject.Keys) {
         $cases = @($casesBySubject[$subject])
         $stage = Join-Path $tempDirectory $subject.Substring(0, 8)
-        $archive = Join-Path $stage 'subject.zip'
+        $archive = Join-Path $stage 'subject.tar'
         $source = Join-Path $stage 'source'
         New-Item -ItemType Directory -Path $stage -Force | Out-Null
         # git archive guarantees the production source is read from the exact subject object.
-        git -C $repoRoot archive --format=zip -o $archive $subject apps/server
+        git -C $repoRoot archive --format=tar -o $archive $subject apps/server
         if ($LASTEXITCODE -ne 0) { throw "git archive failed for $subject" }
-        Expand-Archive -LiteralPath $archive -DestinationPath $source -Force
+        New-Item -ItemType Directory -Path $source | Out-Null
+        & tar -xf $archive -C $source
+        if ($LASTEXITCODE -ne 0) { throw "tar extraction failed for $subject" }
         $serverRoot = Join-Path $source 'apps/server'
         $productionDigest = Get-ProductionDigest $serverRoot
         $probeDestination = Join-Path $serverRoot 'src/test/java/com/chtholly/integration/HistoricalTraceRuntimeIT.java'
