@@ -49,7 +49,7 @@ function Get-Sha256Text {
 
 function Write-Json {
     param([string]$Path, [object]$Value)
-    $Value | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding UTF8
+    ConvertTo-Json -InputObject $Value -Depth 20 | Set-Content -LiteralPath $Path -Encoding UTF8
 }
 
 function Invoke-MavenLogged {
@@ -62,6 +62,14 @@ function Invoke-MavenLogged {
     } finally { $ErrorActionPreference = $previousPreference }
 }
 
+function Get-JavaVersion {
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'; $output = @(& java -version 2>&1)
+        if ($LASTEXITCODE -ne 0 -or $output.Count -eq 0) { throw 'java -version failed' }
+        return $output[0].ToString()
+    } finally { $ErrorActionPreference = $previousPreference }
+}
 function Get-ProductionDigest {
     param([string]$ServerRoot)
     $paths = @(Get-ChildItem -LiteralPath (Join-Path $ServerRoot 'src/main') -Recurse -File)
@@ -309,7 +317,7 @@ $environment = [ordered]@{
     timezone = 'UTC'; locale = 'zh-CN'
     realBoundaries = @('historical-production-policy', 'mysql-authority', 'trace-persistence', 'trace-query')
     deterministicBoundaries = @('llm', 'semantic-upstream', 'keyword-upstream', 'entity-upstream', 'observation')
-    externalModelCalls = 0; javaVersion = (& java -version 2>&1 | Select-Object -First 1)
+    externalModelCalls = 0; javaVersion = Get-JavaVersion
     mavenVersion = (& mvn -version | Select-Object -First 1); os = "$([Environment]::OSVersion) $env:PROCESSOR_ARCHITECTURE"
     subjectRuntimes = $runtimeRecords
 }

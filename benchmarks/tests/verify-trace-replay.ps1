@@ -65,7 +65,8 @@ foreach ($token in @(
         'unitExitCode', 'integrationExitCode', 'unit.log', 'integration.log', 'failsafe-reports',
         'harnessBlobs', 'datasetBlob', 'deterministicBoundaries', 'Invoke-MavenLogged',
         '-Duser.timezone=UTC', '-Duser.language=zh', '-Duser.country=CN', 'tar -xf',
-        'ToUnixTimeSeconds', '[IO.Directory]::Delete')) {
+        'ToUnixTimeSeconds', '[IO.Directory]::Delete', 'ConvertTo-Json -InputObject $Value',
+        'Get-JavaVersion')) {
     Assert-Contract ($runner.Contains($token)) "Trace runner must contain $token"
 }
 foreach ($token in @(
@@ -81,6 +82,10 @@ foreach ($token in @('Invoke-RestMethod', 'CHOLLY_TRACE_ADMIN_TOKEN', 'AllowUnco
 Assert-Contract (-not $runner.Contains('Expand-Archive')) 'Trace runner must avoid Windows long-path Expand-Archive failures'
 Assert-Contract (-not $runner.Contains('[IO.Path]::GetRelativePath')) `
     'Trace runner must remain compatible with Windows PowerShell 5.1'
+Assert-Contract (-not $runner.Contains('$Value | ConvertTo-Json')) `
+    'Trace JSON writer must preserve single-item arrays'
+Assert-Contract (-not $runner.Contains('& java -version 2>&1 |')) `
+    'Trace environment capture must not treat Java stderr as a terminating error'
 Assert-Contract (-not $runner.Contains('Remove-Item -LiteralPath $resolved -Recurse')) `
     'Trace runtime cleanup must support validated Windows long paths'
 foreach ($token in @('.expected', 'rootCause', 'primaryChange')) {
