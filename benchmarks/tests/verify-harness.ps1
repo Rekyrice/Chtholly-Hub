@@ -32,6 +32,7 @@ try {
         'apps/server/src/test/java/com/chtholly/integration/CounterInteractionEvidenceCollectorIT.java',
         'apps/server/src/test/java/com/chtholly/integration/CounterEvidenceSqlProbe.java',
         'apps/server/src/test/java/com/chtholly/integration/CounterEvidenceResultWriter.java',
+        'apps/server/src/test/java/com/chtholly/agent/skill/SkillCandidateDatasetTest.java',
         'scripts/benchmark/collect-counter-evidence.ps1',
         'scripts/benchmark/environment.ps1',
         'scripts/benchmark/new-benchmark-token.ps1',
