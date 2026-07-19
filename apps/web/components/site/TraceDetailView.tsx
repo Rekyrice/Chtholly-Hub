@@ -5,6 +5,17 @@ import { useEffect, useState } from "react";
 import { traceService } from "@/lib/services/traceService";
 import type { TraceDetail, TraceEvent, TraceStep } from "@/lib/types/trace";
 
+const COMPONENT_FIELDS = [
+  ["prompt", "Prompt"],
+  ["skillSelector", "Skill Selector"],
+  ["model", "模型"],
+  ["retrieval", "检索"],
+  ["tools", "工具协议"],
+  ["traceSchema", "Trace Schema"],
+] as const;
+
+const RETRIEVAL_ROUTES = ["semantic", "keyword", "entity"] as const;
+
 export default function TraceDetailView({ correlationId }: { correlationId: string }) {
   const [trace, setTrace] = useState<TraceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +47,8 @@ export default function TraceDetailView({ correlationId }: { correlationId: stri
     return <div className="admin-loading-card">正在加载 Trace 执行层级……</div>;
   }
 
+  const metadata = projectTracePayload(trace.tracePayload);
+
   return (
     <div className="trace-detail-page">
       <Link href="/admin/traces" className="trace-detail-back">← 返回 Trace 总览</Link>
@@ -56,9 +69,14 @@ export default function TraceDetailView({ correlationId }: { correlationId: stri
         <SummaryItem label="会话" value={trace.sessionId ?? "-"} mono />
         <SummaryItem label="步骤" value={trace.stepsCount ?? trace.steps.length} />
         <SummaryItem label="总耗时" value={formatMs(trace.durationMs)} />
+        <SummaryItem label="运行模式" value={metadata.runMode ?? "-"} />
+        <SummaryItem label="失败类型" value={metadata.failureType ?? "-"} mono />
+        <SummaryItem label="LLM / Tool 调用" value={formatCallCount(metadata)} />
       </dl>
 
       {trace.errorMessage && <div className="admin-alert">{trace.errorMessage}</div>}
+
+      {metadata.hasStructuredMetadata && <TraceMetadataSection metadata={metadata} />}
 
       <section className="trace-timeline" aria-label="Trace 执行时间线">
         {trace.steps.length === 0 ? (
@@ -87,6 +105,89 @@ export default function TraceDetailView({ correlationId }: { correlationId: stri
         <pre>{JSON.stringify(trace.tracePayload, null, 2)}</pre>
       </details>
     </div>
+  );
+}
+
+function TraceMetadataSection({ metadata }: { metadata: TracePayloadMetadata }) {
+  return (
+    <section className="trace-unassigned" aria-labelledby="trace-metadata-title">
+      <header>
+        <h2 id="trace-metadata-title">Trace 运行元数据</h2>
+        <p>仅展示版本、固定状态和 Evidence 标识；正文与原始输入不会投影到摘要区。</p>
+      </header>
+
+      <dl className="trace-detail-summary">
+        {metadata.components.map((component) => (
+          <SummaryItem
+            key={component.key}
+            label={component.label}
+            value={component.value}
+            mono
+          />
+        ))}
+        {metadata.skill && (
+          <>
+            <SummaryItem label="Skill" value={formatSkill(metadata.skill)} mono />
+            <SummaryItem
+              label="选择 / 校验"
+              value={`${metadata.skill.selectionStatus ?? "-"} / ${metadata.skill.validationStatus ?? "-"}`}
+            />
+          </>
+        )}
+        {metadata.retrieval && (
+          <>
+            <SummaryItem label="检索策略" value={metadata.retrieval.strategy ?? "-"} mono />
+            <SummaryItem label="Evidence" value={metadata.retrieval.evidenceCount ?? "-"} />
+            <SummaryItem
+              label="Evidence 快照"
+              value={metadata.retrieval.evidenceSnapshotHash ?? "-"}
+              mono
+            />
+            <SummaryItem
+              label="检索降级"
+              value={metadata.retrieval.degraded == null
+                ? "-"
+                : metadata.retrieval.degraded ? "是" : "否"}
+            />
+            <SummaryItem
+              label="引用校验"
+              value={metadata.retrieval.citationValidationStatus ?? "-"}
+            />
+          </>
+        )}
+      </dl>
+
+      {metadata.retrieval && metadata.retrieval.statuses.length > 0 && (
+        <article className="trace-event trace-event--tool">
+          <header><strong>检索路由状态</strong></header>
+          <dl className="trace-event__tokens">
+            {metadata.retrieval.statuses.map((route) => (
+              <div key={route.route}>
+                <dt>{route.route}</dt>
+                <dd>{`${route.route}: ${route.status}`}</dd>
+              </div>
+            ))}
+          </dl>
+        </article>
+      )}
+
+      {metadata.retrieval && metadata.retrieval.evidence.length > 0 && (
+        <div className="trace-event-list" aria-label="Evidence 元数据">
+          {metadata.retrieval.evidence.map((evidence, index) => (
+            <article className="trace-event trace-event--tool" key={`${evidence.citationId}-${index}`}>
+              <header>
+                <strong>{`${evidence.citationId ?? "-"} · ${evidence.documentId ?? "-"}`}</strong>
+              </header>
+              <dl className="trace-event__tokens">
+                <div><dt>来源</dt><dd>{evidence.source ?? "-"}</dd></div>
+                <div><dt>来源版本</dt><dd>{evidence.sourceVersion ?? "-"}</dd></div>
+                <div><dt>来源摘要</dt><dd className="trace-mono">{evidence.sourceHash ?? "-"}</dd></div>
+              </dl>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -180,4 +281,134 @@ function TraceEventCard({ event }: { event: TraceEvent }) {
 function formatMs(value: number | null | undefined) {
   if (value == null) return "-";
   return value < 1000 ? `${value}ms` : `${(value / 1000).toFixed(1)}s`;
+}
+
+type SafeRecord = Record<string, unknown>;
+
+type TracePayloadMetadata = {
+  runMode: string | null;
+  failureType: string | null;
+  llmCallCount: number | null;
+  toolCallCount: number | null;
+  components: Array<{ key: string; label: string; value: string }>;
+  skill: {
+    id: string | null;
+    version: string | null;
+    selectionStatus: string | null;
+    validationStatus: string | null;
+  } | null;
+  retrieval: {
+    strategy: string | null;
+    evidenceCount: number | null;
+    evidenceSnapshotHash: string | null;
+    degraded: boolean | null;
+    citationValidationStatus: string | null;
+    statuses: Array<{ route: string; status: string }>;
+    evidence: Array<{
+      citationId: string | null;
+      documentId: string | null;
+      source: string | null;
+      sourceVersion: string | null;
+      sourceHash: string | null;
+    }>;
+  } | null;
+  hasStructuredMetadata: boolean;
+};
+
+function projectTracePayload(payload: unknown): TracePayloadMetadata {
+  const root = asRecord(payload);
+  const componentRecord = asRecord(root?.components);
+  const components = componentRecord
+    ? COMPONENT_FIELDS.flatMap(([key, label]) => {
+        const value = boundedString(componentRecord[key]);
+        return value ? [{ key, label, value }] : [];
+      })
+    : [];
+
+  const skillRecord = asRecord(root?.skill);
+  const skill = skillRecord ? {
+    id: boundedString(skillRecord.id),
+    version: boundedString(skillRecord.version),
+    selectionStatus: boundedString(skillRecord.selectionStatus),
+    validationStatus: boundedString(skillRecord.validationStatus),
+  } : null;
+  const projectedSkill = skill && Object.values(skill).some((value) => value != null) ? skill : null;
+
+  const retrievalRecord = asRecord(root?.retrieval);
+  const statusesRecord = asRecord(retrievalRecord?.statuses);
+  const statuses = statusesRecord
+    ? RETRIEVAL_ROUTES.flatMap((route) => {
+        const status = boundedString(statusesRecord[route]);
+        return status ? [{ route, status }] : [];
+      })
+    : [];
+  const evidence = Array.isArray(retrievalRecord?.evidence)
+    ? retrievalRecord.evidence.slice(0, 20).flatMap((value) => {
+        const record = asRecord(value);
+        if (!record) return [];
+        const item = {
+          citationId: boundedString(record.citationId),
+          documentId: boundedString(record.documentId),
+          source: boundedString(record.source),
+          sourceVersion: boundedString(record.sourceVersion),
+          sourceHash: boundedString(record.sourceHash),
+        };
+        return Object.values(item).some((field) => field != null) ? [item] : [];
+      })
+    : [];
+  const retrieval = retrievalRecord ? {
+    strategy: boundedString(retrievalRecord.strategy),
+    evidenceCount: nonNegativeInteger(retrievalRecord.evidenceCount),
+    evidenceSnapshotHash: boundedString(retrievalRecord.evidenceSnapshotHash),
+    degraded: typeof retrievalRecord.degraded === "boolean" ? retrievalRecord.degraded : null,
+    citationValidationStatus: boundedString(retrievalRecord.citationValidationStatus),
+    statuses,
+    evidence,
+  } : null;
+  const projectedRetrieval = retrieval && (
+    retrieval.strategy != null
+    || retrieval.evidenceCount != null
+    || retrieval.evidenceSnapshotHash != null
+    || retrieval.degraded != null
+    || retrieval.citationValidationStatus != null
+    || retrieval.statuses.length > 0
+    || retrieval.evidence.length > 0
+  ) ? retrieval : null;
+
+  return {
+    runMode: boundedString(root?.runMode),
+    failureType: boundedString(root?.failureType),
+    llmCallCount: nonNegativeInteger(root?.llmCallCount),
+    toolCallCount: Array.isArray(root?.toolCalls) ? root.toolCalls.length : null,
+    components,
+    skill: projectedSkill,
+    retrieval: projectedRetrieval,
+    hasStructuredMetadata: components.length > 0 || projectedSkill != null || projectedRetrieval != null,
+  };
+}
+
+function asRecord(value: unknown): SafeRecord | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? value as SafeRecord
+    : null;
+}
+
+function boundedString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized ? normalized.slice(0, 256) : null;
+}
+
+function nonNegativeInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function formatCallCount(metadata: TracePayloadMetadata) {
+  if (metadata.llmCallCount == null && metadata.toolCallCount == null) return "-";
+  return `${metadata.llmCallCount ?? "-"} / ${metadata.toolCallCount ?? "-"}`;
+}
+
+function formatSkill(skill: NonNullable<TracePayloadMetadata["skill"]>) {
+  if (skill.id && skill.version) return `${skill.id} · ${skill.version}`;
+  return skill.id ?? skill.version ?? "-";
 }
