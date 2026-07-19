@@ -29,6 +29,10 @@ try {
         'benchmarks/seed/standard.sql',
         'benchmarks/templates/experiment-report.md',
         'benchmarks/tests/verify-trace-replay.ps1',
+        'apps/server/src/test/java/com/chtholly/integration/CounterInteractionEvidenceCollectorIT.java',
+        'apps/server/src/test/java/com/chtholly/integration/CounterEvidenceSqlProbe.java',
+        'apps/server/src/test/java/com/chtholly/integration/CounterEvidenceResultWriter.java',
+        'scripts/benchmark/collect-counter-evidence.ps1',
         'scripts/benchmark/environment.ps1',
         'scripts/benchmark/new-benchmark-token.ps1',
         'scripts/benchmark/run.ps1',
@@ -82,10 +86,16 @@ try {
     }
 
     $environmentPath = Join-Path $repoRoot 'scripts/benchmark/environment.ps1'
+    $counterCollectorPath = Join-Path $repoRoot 'scripts/benchmark/collect-counter-evidence.ps1'
+    $counterCollectorTestPath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/integration/CounterInteractionEvidenceCollectorIT.java'
+    $counterSqlProbePath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/integration/CounterEvidenceSqlProbe.java'
     $runPath = Join-Path $repoRoot 'scripts/benchmark/run.ps1'
     $summarizePath = Join-Path $repoRoot 'scripts/benchmark/summarize.ps1'
     $matrixPath = Join-Path $repoRoot 'scripts/benchmark/verify-matrix.ps1'
     $environmentSource = if (Test-Path -LiteralPath $environmentPath -PathType Leaf) { Get-Content -Raw -LiteralPath $environmentPath -Encoding UTF8 } else { '' }
+    $counterCollectorSource = if (Test-Path -LiteralPath $counterCollectorPath -PathType Leaf) { Get-Content -Raw -LiteralPath $counterCollectorPath -Encoding UTF8 } else { '' }
+    $counterCollectorTestSource = if (Test-Path -LiteralPath $counterCollectorTestPath -PathType Leaf) { Get-Content -Raw -LiteralPath $counterCollectorTestPath -Encoding UTF8 } else { '' }
+    $counterSqlProbeSource = if (Test-Path -LiteralPath $counterSqlProbePath -PathType Leaf) { Get-Content -Raw -LiteralPath $counterSqlProbePath -Encoding UTF8 } else { '' }
     $runSource = if (Test-Path -LiteralPath $runPath -PathType Leaf) { Get-Content -Raw -LiteralPath $runPath -Encoding UTF8 } else { '' }
     $summarizeSource = if (Test-Path -LiteralPath $summarizePath -PathType Leaf) { Get-Content -Raw -LiteralPath $summarizePath -Encoding UTF8 } else { '' }
 
@@ -107,6 +117,17 @@ try {
     Assert-True -Condition (-not $runSource.Contains('/actuator/health')) -Message 'Runner recovery must not require disabled benchmark dependencies to be healthy'
     foreach ($token in @('imageIds', 'mysql', 'redis', 'server')) {
         Assert-True -Condition ($environmentSource.Contains($token)) -Message "Environment manifest must record image identity token $token"
+    }
+    foreach ($token in @('CounterInteractionEvidenceCollectorIT', 'counter.evidence.enabled', '.benchmark-results', 'status --porcelain', 'subjectCommit', 'harnessCommit', 'datasetCommit')) {
+        Assert-True -Condition ($counterCollectorSource.Contains($token)) -Message "Counter evidence runner must contain $token"
+    }
+    foreach ($token in @('requestTotal', 'stateChangeCount', 'kafkaEventCount', 'dedupHitCount', 'aggregationBatchCount', 'mysqlUpdateCount', 'preCalibrationDiscrepancy', 'postCalibrationDiscrepancy')) {
+        Assert-True -Condition ($counterCollectorSource.Contains($token)) -Message "Counter evidence runner must validate $token"
+        Assert-True -Condition ($counterCollectorTestSource.Contains($token)) -Message "Counter evidence collector must record $token"
+    }
+    $counterCollectorImplementation = $counterCollectorTestSource + $counterSqlProbeSource
+    foreach ($token in @('counter-aggregation-events', 'applyBatch', 'reconcileEntity', 'incrementSnapshots', 'replaceReactionSnapshots')) {
+        Assert-True -Condition ($counterCollectorImplementation.Contains($token)) -Message "Counter evidence collector must exercise $token"
     }
     Assert-True -Condition ($runSource.Contains('new-benchmark-token.ps1')) -Message 'Runner must authenticate its Actuator metric reads without persisting the token'
     Assert-True -Condition ($runSource.Contains("if (`$summary.status -ne 'COMPLETED')")) -Message 'Runner must fail when the final summary is incomplete'
