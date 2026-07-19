@@ -89,6 +89,7 @@ try {
     $counterCollectorPath = Join-Path $repoRoot 'scripts/benchmark/collect-counter-evidence.ps1'
     $counterCollectorTestPath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/integration/CounterInteractionEvidenceCollectorIT.java'
     $counterSqlProbePath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/integration/CounterEvidenceSqlProbe.java'
+    $draftPersistenceTestPath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/integration/DraftEditPersistenceIT.java'
     $runPath = Join-Path $repoRoot 'scripts/benchmark/run.ps1'
     $summarizePath = Join-Path $repoRoot 'scripts/benchmark/summarize.ps1'
     $matrixPath = Join-Path $repoRoot 'scripts/benchmark/verify-matrix.ps1'
@@ -96,6 +97,7 @@ try {
     $counterCollectorSource = if (Test-Path -LiteralPath $counterCollectorPath -PathType Leaf) { Get-Content -Raw -LiteralPath $counterCollectorPath -Encoding UTF8 } else { '' }
     $counterCollectorTestSource = if (Test-Path -LiteralPath $counterCollectorTestPath -PathType Leaf) { Get-Content -Raw -LiteralPath $counterCollectorTestPath -Encoding UTF8 } else { '' }
     $counterSqlProbeSource = if (Test-Path -LiteralPath $counterSqlProbePath -PathType Leaf) { Get-Content -Raw -LiteralPath $counterSqlProbePath -Encoding UTF8 } else { '' }
+    $draftPersistenceTestSource = if (Test-Path -LiteralPath $draftPersistenceTestPath -PathType Leaf) { Get-Content -Raw -LiteralPath $draftPersistenceTestPath -Encoding UTF8 } else { '' }
     $runSource = if (Test-Path -LiteralPath $runPath -PathType Leaf) { Get-Content -Raw -LiteralPath $runPath -Encoding UTF8 } else { '' }
     $summarizeSource = if (Test-Path -LiteralPath $summarizePath -PathType Leaf) { Get-Content -Raw -LiteralPath $summarizePath -Encoding UTF8 } else { '' }
 
@@ -128,6 +130,9 @@ try {
     $counterCollectorImplementation = $counterCollectorTestSource + $counterSqlProbeSource
     foreach ($token in @('counter-aggregation-events', 'applyBatch', 'reconcileEntity', 'incrementSnapshots', 'replaceReactionSnapshots')) {
         Assert-True -Condition ($counterCollectorImplementation.Contains($token)) -Message "Counter evidence collector must exercise $token"
+    }
+    foreach ($token in @('rejectPersistsDecisionWithoutMutatingDraft', 'expiredConfirmPersistsExpiryWithoutMutatingDraft', 'versionConflictPreservesNewerDraftAndPendingPreview')) {
+        Assert-True -Condition ($draftPersistenceTestSource.Contains($token)) -Message "Draft persistence integration test must contain $token"
     }
     Assert-True -Condition ($runSource.Contains('new-benchmark-token.ps1')) -Message 'Runner must authenticate its Actuator metric reads without persisting the token'
     Assert-True -Condition ($runSource.Contains("if (`$summary.status -ne 'COMPLETED')")) -Message 'Runner must fail when the final summary is incomplete'

@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -149,10 +150,84 @@ class DraftEditPersistenceIT extends AbstractGoldenPathIT {
         assertThat(previewMapper.findById(preview.getId()).getStatus()).isEqualTo(DraftEditPreview.PENDING);
     }
 
+    @Test
+    void rejectPersistsDecisionWithoutMutatingDraft() {
+        String baseSha = "e".repeat(64);
+        long draftId = createDraftWithBase(baseSha);
+        DraftEditPreview preview = preview(9004L, draftId, baseSha, "# rejected candidate");
+        previewMapper.insert(preview);
+        Map<String, Object> before = draftState(draftId);
+
+        DraftEditService.DecisionResult result = service(previewMapper)
+                .reject(OWNER_ID, draftId, preview.getId(), preview.getPreviewHash());
+
+        DraftEditPreview persisted = previewMapper.findById(preview.getId());
+        assertThat(result.status()).isEqualTo(DraftEditPreview.REJECTED);
+        assertThat(persisted.getStatus()).isEqualTo(DraftEditPreview.REJECTED);
+        assertThat(persisted.getDecidedAt()).isNotNull();
+        assertThat(draftState(draftId)).isEqualTo(before);
+    }
+
+    @Test
+    void expiredConfirmPersistsExpiryWithoutMutatingDraft() {
+        String baseSha = "f".repeat(64);
+        long draftId = createDraftWithBase(baseSha);
+        DraftEditPreview preview = preview(9005L, draftId, baseSha, "# expired candidate");
+        preview.setExpiresAt(Instant.now().minusSeconds(60).truncatedTo(ChronoUnit.MILLIS));
+        preview.setPreviewHash(previewHash(preview));
+        previewMapper.insert(preview);
+        Map<String, Object> before = draftState(draftId);
+
+        assertThatThrownBy(() -> service(previewMapper)
+                .confirm(OWNER_ID, draftId, preview.getId(), preview.getPreviewHash()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("预览已过期");
+
+        DraftEditPreview persisted = previewMapper.findById(preview.getId());
+        assertThat(persisted.getStatus()).isEqualTo(DraftEditPreview.EXPIRED);
+        assertThat(persisted.getDecidedAt()).isNotNull();
+        assertThat(draftState(draftId)).isEqualTo(before);
+    }
+
+    @Test
+    void versionConflictPreservesNewerDraftAndPendingPreview() {
+        String baseSha = "1".repeat(64);
+        long draftId = createDraftWithBase(baseSha);
+        DraftEditPreview preview = preview(9006L, draftId, baseSha, "# stale candidate");
+        previewMapper.insert(preview);
+        advanceDraft(draftId, "2".repeat(64));
+        Map<String, Object> newerState = draftState(draftId);
+
+        assertThatThrownBy(() -> service(previewMapper)
+                .confirm(OWNER_ID, draftId, preview.getId(), preview.getPreviewHash()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("草稿内容已更新");
+
+        DraftEditPreview persisted = previewMapper.findById(preview.getId());
+        assertThat(persisted.getStatus()).isEqualTo(DraftEditPreview.PENDING);
+        assertThat(persisted.getDecidedAt()).isNull();
+        assertThat(draftState(draftId)).isEqualTo(newerState);
+    }
+
     private long createDraftWithBase(String baseSha) {
         long draftId = postService.createDraft(OWNER_ID);
-        jdbc.update("UPDATE posts SET content_sha256 = ? WHERE id = ?", baseSha, draftId);
+        jdbc.update("UPDATE posts SET content_sha256 = ?, content_url = ?, content_object_key = ?, "
+                        + "content_etag = ?, content_size = ? WHERE id = ?",
+                baseSha, "/draft-base-" + draftId + ".md", "drafts/" + draftId + "/base.md",
+                "base-etag-" + draftId, 17L, draftId);
         return draftId;
+    }
+
+    private void advanceDraft(long draftId, String contentSha) {
+        jdbc.update("UPDATE posts SET content_sha256 = ?, content_url = ?, content_object_key = ?, "
+                        + "content_etag = ?, content_size = ?, update_time = DATE_ADD(update_time, INTERVAL 1 SECOND) "
+                        + "WHERE id = ?",
+                contentSha, "/newer.md", "drafts/" + draftId + "/newer.md", "newer-etag", 23L, draftId);
+    }
+
+    private Map<String, Object> draftState(long draftId) {
+        return jdbc.queryForMap("SELECT creator_id, status, content_url, content_object_key, "
+                + "content_etag, content_size, content_sha256 FROM posts WHERE id = ?", draftId);
     }
 
     private DraftEditPreview preview(long id, long draftId, String baseSha, String candidate) {
@@ -170,7 +245,12 @@ class DraftEditPersistenceIT extends AbstractGoldenPathIT {
                 .createdAt(now)
                 .expiresAt(now.plusSeconds(600))
                 .build();
-        preview.setPreviewHash(sha256(String.join("\n", List.of(
+        preview.setPreviewHash(previewHash(preview));
+        return preview;
+    }
+
+    private String previewHash(DraftEditPreview preview) {
+        return sha256(String.join("\n", List.of(
                 String.valueOf(preview.getId()),
                 String.valueOf(preview.getOwnerId()),
                 String.valueOf(preview.getDraftId()),
@@ -178,8 +258,7 @@ class DraftEditPersistenceIT extends AbstractGoldenPathIT {
                 preview.getSkillVersion(),
                 preview.getBaseContentSha256(),
                 preview.getCandidateContentSha256(),
-                String.valueOf(preview.getExpiresAt().toEpochMilli())))));
-        return preview;
+                String.valueOf(preview.getExpiresAt().toEpochMilli()))));
     }
 
     private DraftEditService service(DraftEditPreviewMapper previews) {
