@@ -33,7 +33,10 @@ try {
         'apps/server/src/test/java/com/chtholly/integration/CounterEvidenceSqlProbe.java',
         'apps/server/src/test/java/com/chtholly/integration/CounterEvidenceResultWriter.java',
         'apps/server/src/test/java/com/chtholly/agent/skill/SkillCandidateDatasetTest.java',
+        'apps/server/src/test/java/com/chtholly/agent/search/RetrievalCandidateEvidenceCollectorIT.java',
+        'apps/server/src/test/java/com/chtholly/agent/search/RetrievalCandidateEvidenceWriter.java',
         'scripts/benchmark/collect-counter-evidence.ps1',
+        'scripts/benchmark/collect-retrieval-evidence.ps1',
         'scripts/benchmark/environment.ps1',
         'scripts/benchmark/new-benchmark-token.ps1',
         'scripts/benchmark/run.ps1',
@@ -88,7 +91,10 @@ try {
 
     $environmentPath = Join-Path $repoRoot 'scripts/benchmark/environment.ps1'
     $counterCollectorPath = Join-Path $repoRoot 'scripts/benchmark/collect-counter-evidence.ps1'
+    $retrievalCollectorPath = Join-Path $repoRoot 'scripts/benchmark/collect-retrieval-evidence.ps1'
     $counterCollectorTestPath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/integration/CounterInteractionEvidenceCollectorIT.java'
+    $retrievalCollectorTestPath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/agent/search/RetrievalCandidateEvidenceCollectorIT.java'
+    $retrievalWriterPath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/agent/search/RetrievalCandidateEvidenceWriter.java'
     $counterSqlProbePath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/integration/CounterEvidenceSqlProbe.java'
     $draftPersistenceTestPath = Join-Path $repoRoot 'apps/server/src/test/java/com/chtholly/integration/DraftEditPersistenceIT.java'
     $runPath = Join-Path $repoRoot 'scripts/benchmark/run.ps1'
@@ -96,7 +102,10 @@ try {
     $matrixPath = Join-Path $repoRoot 'scripts/benchmark/verify-matrix.ps1'
     $environmentSource = if (Test-Path -LiteralPath $environmentPath -PathType Leaf) { Get-Content -Raw -LiteralPath $environmentPath -Encoding UTF8 } else { '' }
     $counterCollectorSource = if (Test-Path -LiteralPath $counterCollectorPath -PathType Leaf) { Get-Content -Raw -LiteralPath $counterCollectorPath -Encoding UTF8 } else { '' }
+    $retrievalCollectorSource = if (Test-Path -LiteralPath $retrievalCollectorPath -PathType Leaf) { Get-Content -Raw -LiteralPath $retrievalCollectorPath -Encoding UTF8 } else { '' }
     $counterCollectorTestSource = if (Test-Path -LiteralPath $counterCollectorTestPath -PathType Leaf) { Get-Content -Raw -LiteralPath $counterCollectorTestPath -Encoding UTF8 } else { '' }
+    $retrievalCollectorTestSource = if (Test-Path -LiteralPath $retrievalCollectorTestPath -PathType Leaf) { Get-Content -Raw -LiteralPath $retrievalCollectorTestPath -Encoding UTF8 } else { '' }
+    $retrievalWriterSource = if (Test-Path -LiteralPath $retrievalWriterPath -PathType Leaf) { Get-Content -Raw -LiteralPath $retrievalWriterPath -Encoding UTF8 } else { '' }
     $counterSqlProbeSource = if (Test-Path -LiteralPath $counterSqlProbePath -PathType Leaf) { Get-Content -Raw -LiteralPath $counterSqlProbePath -Encoding UTF8 } else { '' }
     $draftPersistenceTestSource = if (Test-Path -LiteralPath $draftPersistenceTestPath -PathType Leaf) { Get-Content -Raw -LiteralPath $draftPersistenceTestPath -Encoding UTF8 } else { '' }
     $runSource = if (Test-Path -LiteralPath $runPath -PathType Leaf) { Get-Content -Raw -LiteralPath $runPath -Encoding UTF8 } else { '' }
@@ -123,6 +132,16 @@ try {
     }
     foreach ($token in @('CounterInteractionEvidenceCollectorIT', 'counter.evidence.enabled', '.benchmark-results', 'status --porcelain', 'subjectCommit', 'harnessCommit', 'datasetCommit')) {
         Assert-True -Condition ($counterCollectorSource.Contains($token)) -Message "Counter evidence runner must contain $token"
+    }
+    foreach ($token in @('RetrievalCandidateEvidenceCollectorIT', 'retrieval.candidate.evidence.enabled', '.benchmark-results', 'status --porcelain', 'subjectCommit', 'harnessCommit', 'datasetCommit', 'CANDIDATE_REQUIRES_OWNER_REVIEW', 'apps/server/src/main', 'apps/server/pom.xml', 'diff --quiet', 'expectedChecksumPaths', 'IsPathRooted', 'HashSet')) {
+        Assert-True -Condition ($retrievalCollectorSource.Contains($token)) -Message "Retrieval evidence runner must contain $token"
+    }
+    $retrievalCollectorImplementation = $retrievalCollectorTestSource + $retrievalWriterSource
+    foreach ($token in @('keywordOnly', 'vectorOnly', 'documentRrf3', 'recallAt5', 'mrr', 'citationValidityRate', 'noAnswerAccuracy', 'DETERMINISTIC_LOCAL_HASH_V1', 'REAL_TESTCONTAINERS', 'externalModelCalls', 'formalGold', 'CANDIDATE_REQUIRES_OWNER_REVIEW')) {
+        Assert-True -Condition ($retrievalCollectorImplementation.Contains($token)) -Message "Retrieval evidence collector must contain $token"
+    }
+    foreach ($token in @('DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY')) {
+        Assert-True -Condition (-not $retrievalCollectorSource.Contains($token)) -Message "Retrieval evidence runner must not read paid model credential $token"
     }
     foreach ($token in @('requestTotal', 'stateChangeCount', 'kafkaEventCount', 'dedupHitCount', 'aggregationBatchCount', 'mysqlUpdateCount', 'preCalibrationDiscrepancy', 'postCalibrationDiscrepancy')) {
         Assert-True -Condition ($counterCollectorSource.Contains($token)) -Message "Counter evidence runner must validate $token"

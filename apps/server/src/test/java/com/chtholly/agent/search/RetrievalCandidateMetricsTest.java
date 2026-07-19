@@ -7,7 +7,9 @@ import org.junit.jupiter.api.Test;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -62,6 +64,36 @@ class RetrievalCandidateMetricsTest {
         assertThat(result.noAnswerCount()).isEqualTo(2);
         assertThat(result.formalGold()).isFalse();
         assertThat(result.evidenceStatus()).isEqualTo("CANDIDATE_DIAGNOSTIC_ONLY");
+    }
+
+    @Test
+    void exactDuplicateQueriesFormFortyTwoUnionedCandidateObservations() throws Exception {
+        Map<String, List<JsonNode>> groups = new LinkedHashMap<>();
+        for (JsonNode candidate : readCandidates()) {
+            groups.computeIfAbsent(candidate.path("query").asText(), ignored -> new java.util.ArrayList<>())
+                    .add(candidate);
+        }
+
+        assertThat(groups).hasSize(42);
+        assertThat(groups.values().stream().filter(group -> group.size() > 1)).hasSize(3);
+        assertThat(groups.values().stream()
+                .filter(group -> group.getFirst().path("proposedAnswerExists").asBoolean())
+                .count()).isEqualTo(34);
+        assertThat(groups.values().stream()
+                .filter(group -> !group.getFirst().path("proposedAnswerExists").asBoolean())
+                .count()).isEqualTo(8);
+
+        List<JsonNode> duplicate = groups.values().stream()
+                .filter(group -> group.stream().anyMatch(candidate ->
+                        candidate.path("sampleId").asText().equals("retrieval-0001")))
+                .findFirst().orElseThrow();
+        assertThat(duplicate.stream()
+                .flatMap(candidate -> {
+                    java.util.ArrayList<String> ids = new java.util.ArrayList<>();
+                    candidate.path("proposedDocumentIds").forEach(id -> ids.add(id.asText()));
+                    return ids.stream();
+                }).collect(java.util.stream.Collectors.toSet()))
+                .containsExactlyInAnyOrder("post:benchmark-001", "post:benchmark-011");
     }
 
     @Test

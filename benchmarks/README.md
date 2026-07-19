@@ -12,6 +12,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harn
 
 Agent 候选集位于 `benchmarks/datasets/agent-evaluation/`：27 条 Skill、45 条检索、5 条草稿流程和 2 条 Trace 回放。它们都标记为 `CANDIDATE_REQUIRES_OWNER_REVIEW`，在项目本人复核前不能作为人工 gold。
 
+## 检索候选诊断
+
+检索采集器把 45 行候选按完全相同的 query 合并为 42 个 observation，并对三组重复 query 的建议相关文档取并集。它使用真实 Testcontainers MySQL/Elasticsearch 和本地文件 HTTP 正文，但语料由候选 `scenarioContext` 确定性构造，embedding 是本地 hash 适配器；因此结果固定标记为 `COLLECTED_UNREVIEWED`、`formalGold=false`、`semanticQualityEvidence=false`。
+
+先提交 harness，再以生产检索提交、harness 提交和数据集提交三个独立身份运行：
+
+```powershell
+./scripts/benchmark/collect-retrieval-evidence.ps1 `
+  -RunId retrieval-candidate-001 `
+  -SubjectCommit 70ea7da5 `
+  -HarnessCommit HEAD `
+  -DatasetCommit 9f057df6
+```
+
+结果写入 `.benchmark-results/<runId>/`，包含 manifest、环境快照、42 条原始排名、四项指标汇总、失败样本和 SHA-256 清单。只比较 `keyword-only`、`vector-only` 与 `three-way-document-rrf` 的 Recall@5、MRR、引用合法率和无答案正确率。未运行回答生成时，引用合法率必须保持 `null / NOT_OBSERVED_NO_GENERATION`；不得把检索结果自动包装成引用，也不得把这些数值称为真实模型或生产语义质量。
+
 ## Trace 导出与前后回放
 
 `trace-replay.ps1` 的 `TraceId` 对应现有 Trace API 的 `correlationId`。API 只允许访问 loopback 地址，Admin Token 固定从 `CHOLLY_TRACE_ADMIN_TOKEN` 取得，不写入 manifest、日志或结果文件，也不会随重定向发送。固定问题与页面上下文来自仓库内的合成 fixture，并与 `trace_payload.input` 的三个 SHA-256 指纹逐一核对。导出仅保留组件版本、Skill、三路检索状态、Evidence 数量与快照哈希、引用校验、固定失败类型和汇总数值，不保留问题、页面正文、回答、逐调用明细或 Evidence 元数据。

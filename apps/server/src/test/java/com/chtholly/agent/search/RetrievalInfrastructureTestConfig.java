@@ -55,10 +55,14 @@ class RetrievalInfrastructureTestConfig {
         return new BangumiService() {
             @Override
             public List<BangumiSubjectRow> search(String keyword, int limit) {
+                String entityName = entityName(keyword);
+                if (entityName.isBlank()) {
+                    return List.of();
+                }
                 BangumiSubjectRow row = new BangumiSubjectRow();
                 row.setId(7001L);
-                row.setName("atomic-recovery");
-                row.setNameCn("原子恢复");
+                row.setName(entityName);
+                row.setNameCn(entityName);
                 return List.of(row);
             }
 
@@ -77,5 +81,16 @@ class RetrievalInfrastructureTestConfig {
                 return "";
             }
         };
+    }
+
+    static String entityName(String query) {
+        if (query == null || query.isBlank() || query.contains("没有时请返回证据不足")) {
+            return "";
+        }
+        int opening = query.indexOf('“');
+        int closing = opening < 0 ? -1 : query.indexOf('”', opening + 1);
+        return opening >= 0 && closing > opening + 1
+                ? query.substring(opening + 1, closing).trim()
+                : query.trim();
     }
 }
