@@ -169,7 +169,7 @@ class HistoricalTraceRuntimeIT extends AbstractGoldenPathIT {
         SearchService search = mock(SearchService.class, invocation -> switch (invocation.getMethod().getName()) {
             case "searchByEntityNames" -> {
                 entityMappingCalls.incrementAndGet();
-                assertThat(String.valueOf(invocation.getArgument(0))).contains("初音未来");
+                assertThat(String.valueOf((Object) invocation.getArgument(0))).contains("初音未来");
                 yield article;
             }
             case "search" -> { keywordCalls.incrementAndGet(); yield empty; }
