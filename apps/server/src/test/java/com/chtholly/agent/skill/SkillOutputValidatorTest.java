@@ -57,6 +57,26 @@ class SkillOutputValidatorTest {
         assertThat(validFact.status()).isEqualTo(SkillOutputValidator.Status.VALID);
     }
 
+    @Test
+    void draftEditRejectsNoOpAndOversizedCandidate() {
+        SkillDefinition definition = new SkillDefinition(
+                "draft-edit", "v1", true, "edit", List.of("draft_edit"),
+                List.of("DRAFT_CONTENT", "USER_REQUEST"), List.of(), "preview",
+                java.util.Map.of(), java.util.Map.of("type", "MARKDOWN_DRAFT", "maxChars", 12),
+                List.of("draft-content", "length"), "CONTROLLED_WRITE", "EXPLICIT_CONFIRMATION",
+                30_000, 1, "draft-edit-v1");
+
+        var noOp = validator.validateDraftContent(definition, "same", "same");
+        var oversized = validator.validateDraftContent(definition, "old", "0123456789abc");
+        var valid = validator.validateDraftContent(definition, "old", "new content");
+
+        assertThat(noOp.status()).isEqualTo(SkillOutputValidator.Status.CONSTRAINT_INVALID);
+        assertThat(noOp.errors()).containsExactly("no_content_change");
+        assertThat(oversized.errors()).containsExactly("max_chars_exceeded");
+        assertThat(valid.status()).isEqualTo(SkillOutputValidator.Status.VALID);
+        assertThat(valid.output()).isEqualTo("new content");
+    }
+
     private EvidenceSet evidence() {
         Evidence item = new Evidence(
                 "ev-1", "POST", "post:1", "post:1", "chunk-1",

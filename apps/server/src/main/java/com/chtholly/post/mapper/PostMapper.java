@@ -17,9 +17,13 @@ public interface PostMapper {
 
     Post findById(@Param("id") Long id);
 
+    Post findDraftByIdForUpdate(@Param("id") Long id);
+
     List<Post> findByIds(@Param("ids") List<Long> ids);
 
     int updateContent(Post post);
+
+    int applyDraftEdit(@Param("post") Post post, @Param("baseContentSha256") String baseContentSha256);
 
     int updateMetadata(Post post);
 

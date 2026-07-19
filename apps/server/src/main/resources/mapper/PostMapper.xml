@@ -40,6 +40,10 @@
         SELECT * FROM posts WHERE id = #{id}
     </select>
 
+    <select id="findDraftByIdForUpdate" parameterType="long" resultMap="PostResultMap">
+        SELECT * FROM posts WHERE id = #{id} AND status = 'draft' FOR UPDATE
+    </select>
+
     <select id="findByIds" resultMap="PostResultMap">
         SELECT * FROM posts
         WHERE id IN
@@ -59,6 +63,20 @@
             update_time = #{updateTime}
         </set>
         WHERE id = #{id} AND creator_id = #{creatorId}
+    </update>
+
+    <update id="applyDraftEdit">
+        UPDATE posts
+        SET content_url = #{post.contentUrl},
+            content_object_key = #{post.contentObjectKey},
+            content_etag = #{post.contentEtag},
+            content_size = #{post.contentSize},
+            content_sha256 = #{post.contentSha256},
+            update_time = #{post.updateTime}
+        WHERE id = #{post.id}
+          AND creator_id = #{post.creatorId}
+          AND status = 'draft'
+          AND content_sha256 = #{baseContentSha256}
     </update>
 
     <update id="updateMetadata" parameterType="com.chtholly.post.model.Post">

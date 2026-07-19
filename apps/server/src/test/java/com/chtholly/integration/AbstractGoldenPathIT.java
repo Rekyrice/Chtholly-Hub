@@ -115,7 +115,8 @@ public abstract class AbstractGoldenPathIT {
     protected void cleanDatabase() {
         jdbc.execute("SET FOREIGN_KEY_CHECKS = 0");
         for (String table : new String[]{
-                "counter_event_inbox", "counter_snapshot", "outbox", "follower", "following", "posts", "users"}) {
+                "draft_edit_preview", "counter_event_inbox", "counter_snapshot", "outbox",
+                "follower", "following", "posts", "users"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
         }
         jdbc.execute("SET FOREIGN_KEY_CHECKS = 1");

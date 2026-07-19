@@ -157,6 +157,8 @@ agent:
       enabled: ${AGENT_SKILL_EVIDENCE_OUTLINE_ENABLED:true}
     draft-fact-check:
       enabled: ${AGENT_SKILL_DRAFT_FACT_CHECK_ENABLED:true}
+    draft-edit:
+      enabled: ${AGENT_SKILL_DRAFT_EDIT_ENABLED:true}
 
 bangumi:
   enabled: ${BANGUMI_ENABLED:true}

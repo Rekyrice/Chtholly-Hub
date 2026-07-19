@@ -17,7 +17,7 @@ class SkillRegistryTest {
     private final SkillOutputValidator validator = new SkillOutputValidator();
 
     @Test
-    void loadsExactlyThreeVersionedReadOnlySkillsFromClasspath() throws Exception {
+    void loadsExactlyThreeReadOnlySkillsAndOneControlledWriteSkillFromClasspath() throws Exception {
         SkillRegistry registry = new SkillRegistry(
                 List.of(new PathMatchingResourcePatternResolver().getResources(
                         "classpath*:agent/skills/*/v1.yml")),
@@ -27,9 +27,16 @@ class SkillRegistryTest {
 
         assertThat(registry.enabled()).extracting(SkillDefinition::key)
                 .containsExactly(
+                        "draft-edit@v1",
                         "draft-fact-check@v1",
                         "evidence-outline@v1",
                         "page-explain@v1");
+        assertThat(registry.enabled())
+                .filteredOn(definition -> "READ_ONLY".equals(definition.riskLevel()))
+                .hasSize(3);
+        assertThat(registry.require("draft-edit", "v1"))
+                .extracting(SkillDefinition::riskLevel, SkillDefinition::approvalPolicy)
+                .containsExactly("CONTROLLED_WRITE", "EXPLICIT_CONFIRMATION");
         assertThat(registry.require("page-explain", "v1").allowedTools())
                 .contains("article_rag", "fulltext_search")
                 .doesNotContain("draft_write");
@@ -59,7 +66,7 @@ class SkillRegistryTest {
                 id -> !"evidence-outline".equals(id));
 
         assertThat(registry.enabled()).extracting(SkillDefinition::id)
-                .containsExactly("draft-fact-check", "page-explain");
+                .containsExactly("draft-edit", "draft-fact-check", "page-explain");
         assertThat(registry.require("evidence-outline", "v1")).isNotNull();
     }
 

@@ -24,7 +24,7 @@ public class SkillOutputValidator {
     private static final Pattern EPISODE_REFERENCE = Pattern.compile("第?\\s*(\\d+)\\s*(?:集|话|章)");
     private static final Set<String> SUPPORTED_VALIDATORS = Set.of(
             "citation", "length", "outline-structure", "fact-status",
-            "spoiler-scope", "source-dedup");
+            "spoiler-scope", "source-dedup", "draft-content");
 
     public Set<String> supportedValidatorIds() {
         return SUPPORTED_VALIDATORS;
@@ -94,6 +94,28 @@ public class SkillOutputValidator {
             }
         }
         return new SkillValidationResult(Status.VALID, normalized, List.of());
+    }
+
+    /** Validates a controlled-write candidate without treating the draft as evidence. */
+    public SkillValidationResult validateDraftContent(
+            SkillDefinition definition,
+            String baseContent,
+            String candidateContent) {
+        String base = baseContent == null ? "" : baseContent.strip();
+        String candidate = candidateContent == null ? "" : candidateContent.strip();
+        if (candidate.isBlank()) {
+            return invalid(Status.SCHEMA_INVALID, "empty_output");
+        }
+        if (definition.validators().contains("draft-content") && candidate.equals(base)) {
+            return invalid(Status.CONSTRAINT_INVALID, "no_content_change");
+        }
+        if (definition.validators().contains("length")) {
+            int maxChars = number(definition.outputSchema().get("maxChars"), 8192);
+            if (candidate.length() > maxChars) {
+                return invalid(Status.CONSTRAINT_INVALID, "max_chars_exceeded");
+            }
+        }
+        return new SkillValidationResult(Status.VALID, candidate, List.of());
     }
 
     private SkillValidationResult validateSpoilerScope(String output, String userConstraints) {
