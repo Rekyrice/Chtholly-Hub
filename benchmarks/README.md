@@ -28,32 +28,22 @@ Agent 候选集位于 `benchmarks/datasets/agent-evaluation/`：27 条 Skill、4
 
 结果写入 `.benchmark-results/<runId>/`，包含 manifest、环境快照、42 条原始排名、四项指标汇总、失败样本和 SHA-256 清单。只比较 `keyword-only`、`vector-only` 与 `three-way-document-rrf` 的 Recall@5、MRR、引用合法率和无答案正确率。未运行回答生成时，引用合法率必须保持 `null / NOT_OBSERVED_NO_GENERATION`；不得把检索结果自动包装成引用，也不得把这些数值称为真实模型或生产语义质量。
 
-## Trace 导出与前后回放
+## 历史 Trace 前后回放
 
-`trace-replay.ps1` 的 `TraceId` 对应现有 Trace API 的 `correlationId`。API 只允许访问 loopback 地址，Admin Token 固定从 `CHOLLY_TRACE_ADMIN_TOKEN` 取得，不写入 manifest、日志或结果文件，也不会随重定向发送。固定问题与页面上下文来自仓库内的合成 fixture，并与 `trace_payload.input` 的三个 SHA-256 指纹逐一核对。导出仅保留组件版本、Skill、三路检索状态、Evidence 数量与快照哈希、引用校验、固定失败类型和汇总数值，不保留问题、页面正文、回答、逐调用明细或 Evidence 元数据。
+`trace-replay.ps1` 从数据集固定的三个历史 subject commit 创建 `git archive`，只向归档的 `src/test` 注入同一观察探针，再用 Testcontainers 执行真实 `HybridSearchService`、`ChthollyAgent`、`TracePersistenceService` 和 `TraceQueryService`。生产源码在运行前后计算摘要且不得改变；模型与检索上游使用确定性本地适配器，`externalModelCalls` 固定为 0，不读取 API Key，也不会产生模型费用。
+
+先提交 harness，再绑定 harness 与数据集提交运行：
 
 ```powershell
-$env:CHOLLY_TRACE_ADMIN_TOKEN = '<local-admin-jwt>'
-./scripts/benchmark/trace-replay.ps1 -Action Export `
-  -RunId trace-loop-001-baseline -SampleId trace-replay-001 -SubjectRole baseline `
-  -SubjectCommit 2d613e81 -HarnessCommit HEAD -DatasetCommit HEAD `
-  -TraceId '<correlationId>'
-
-./scripts/benchmark/trace-replay.ps1 -Action Export `
-  -RunId trace-loop-001-candidate -SampleId trace-replay-001 -SubjectRole candidate `
-  -SubjectCommit 6c8e694c -HarnessCommit HEAD -DatasetCommit HEAD `
-  -TraceId '<correlationId>'
-
-./scripts/benchmark/trace-replay.ps1 -Action Compare -RunId trace-loop-001-compare `
-  -BaselineRunDirectory ./.benchmark-results/trace-loop-001-baseline `
-  -CandidateRunDirectory ./.benchmark-results/trace-loop-001-candidate
+./scripts/benchmark/trace-replay.ps1 `
+  -RunId trace-real-001 `
+  -HarnessCommit HEAD `
+  -DatasetCommit 282dc7e0
 ```
 
-第二组固定提交对是 `6c8e694c → 314700cc`，用于验证未知引用在发送前被 Evidence 校验阻断。Compare 只接受相同 `sampleId`、harness、dataset、输入、数据快照与环境指纹，并生成 `manifest.json`、`replay.json`、`diff.csv`、中文 `summary.md` 和 `failures.md`。
+两组固定提交对分别为 `2d613e81 → 6c8e694c`（实体候选没有映射为文章 Evidence）和 `6c8e694c → 314700cc`（未知引用在输出前被 Evidence 门阻断）。采集阶段只向探针传递 `sampleId`、角色、问题和页面上下文，不传递 `expected`、根因或改动说明；全部真实观测落盘后，runner 才使用数据集预期进行比较。
 
-合同测试可把模拟响应放入 `.benchmark-results/` 或 `.codex-tmp/`，通过 `-TraceResponsePath -AllowUncommittedHarness` 离线执行；这类结果固定标记为 `OFFLINE_UNVERIFIED`，且 manifest 明示 `WORKTREE_UNCOMMITTED`，只能证明脱敏与比较合同。当前入口没有外部 runtime manifest 作为制品、数据和环境身份的独立锚点，因此 API 结果一律标记为 `API_UNVERIFIED`，不会根据 Trace 内的自声明自行晋级 `REAL_TRACE`。
-
-两组历史 subject commit 都早于当前固定 Trace schema，本身无法直接生成脚本要求的 payload；因此仓库内的两组确定性结果保持 `OFFLINE_UNVERIFIED`，不得冒充真实前后 Trace。要晋级真实证据，必须运行对应 subject 的受控插桩构建，并增加对独立 runtime manifest 的校验，以绑定实际执行提交、制品哈希、数据指纹和环境指纹。
+结果写入 `.benchmark-results/<runId>/`，包含四份原始安全投影、历史 subject tree 与生产源码摘要、实际执行的回归测试、环境快照、比较结果、失败清单和 SHA-256 清单。旧 Trace schema 中没有的检索与引用字段由测试观察层从真实策略返回、客户端事件和 Memory 写入结果规范化；数据库原始 Trace payload 只保留 SHA-256，不修改历史生产 Trace。满足所有身份、MySQL Trace 行、查询回读、输入指纹和外部调用约束时结果标记为 `REAL_TRACE`，但候选标签仍是 `CANDIDATE_REQUIRES_OWNER_REVIEW / COLLECTED_UNREVIEWED`，不能作为人工 gold。
 
 ## 缓存环境与运行
 
