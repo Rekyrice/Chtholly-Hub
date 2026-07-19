@@ -13,7 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 $resultDirectory = Join-Path $repoRoot ".benchmark-results/$RunId"
-$tempDirectory = Join-Path $repoRoot ".codex-tmp/trace-runtime-$RunId"
+$tempDirectory = Join-Path $repoRoot ".codex-tmp/tr-$PID-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
 $datasetRelative = 'benchmarks/datasets/agent-evaluation/trace-replays.jsonl'
 $runnerRelative = 'scripts/benchmark/trace-replay.ps1'
 $probeRelative = 'benchmarks/fixtures/trace-replay/HistoricalTraceRuntimeIT.java'
@@ -84,7 +84,7 @@ function Remove-ValidatedTemp {
     if (((Get-Item -LiteralPath $resolved -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
         throw "Trace runtime cleanup refuses a reparse point: $resolved"
     }
-    Remove-Item -LiteralPath $resolved -Recurse -Force
+    [IO.Directory]::Delete("\\?\$resolved", $true)
 }
 
 function Add-Case {

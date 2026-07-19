@@ -64,7 +64,8 @@ foreach ($token in @(
         'externalModelCalls', 'traceRowCount', 'checksums.sha256', 'regressionTests',
         'unitExitCode', 'integrationExitCode', 'unit.log', 'integration.log', 'failsafe-reports',
         'harnessBlobs', 'datasetBlob', 'deterministicBoundaries', 'Invoke-MavenLogged',
-        '-Duser.timezone=UTC', '-Duser.language=zh', '-Duser.country=CN', 'tar -xf')) {
+        '-Duser.timezone=UTC', '-Duser.language=zh', '-Duser.country=CN', 'tar -xf',
+        'ToUnixTimeSeconds', '[IO.Directory]::Delete')) {
     Assert-Contract ($runner.Contains($token)) "Trace runner must contain $token"
 }
 foreach ($token in @(
@@ -78,6 +79,8 @@ foreach ($token in @('Invoke-RestMethod', 'CHOLLY_TRACE_ADMIN_TOKEN', 'AllowUnco
     Assert-Contract (-not $runner.Contains($token)) "Minimal Trace runner must not contain legacy token $token"
 }
 Assert-Contract (-not $runner.Contains('Expand-Archive')) 'Trace runner must avoid Windows long-path Expand-Archive failures'
+Assert-Contract (-not $runner.Contains('Remove-Item -LiteralPath $resolved -Recurse')) `
+    'Trace runtime cleanup must support validated Windows long paths'
 foreach ($token in @('.expected', 'rootCause', 'primaryChange')) {
     Assert-Contract (-not $probe.Contains($token)) "Runtime probe must not read comparison oracle $token"
 }
