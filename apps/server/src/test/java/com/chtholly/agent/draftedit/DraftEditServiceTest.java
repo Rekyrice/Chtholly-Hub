@@ -1,4 +1,4 @@
-package com.chtholly.post.draftedit;
+package com.chtholly.agent.draftedit;
 
 import com.chtholly.agent.runtime.AgentLlmInvoker;
 import com.chtholly.agent.observability.AgentObservationService;
@@ -7,6 +7,8 @@ import com.chtholly.agent.skill.SkillOutputValidator;
 import com.chtholly.agent.skill.SkillRegistry;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
+import com.chtholly.post.draftedit.DraftEditPreview;
+import com.chtholly.post.draftedit.DraftEditPreviewMapper;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;

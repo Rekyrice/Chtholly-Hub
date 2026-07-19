@@ -1,9 +1,8 @@
-package com.chtholly.post.api;
+package com.chtholly.agent.draftedit;
 
 import com.chtholly.auth.token.JwtService;
 import com.chtholly.common.ratelimit.RateLimit;
 import com.chtholly.common.ratelimit.RateLimitDimension;
-import com.chtholly.post.draftedit.DraftEditService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
