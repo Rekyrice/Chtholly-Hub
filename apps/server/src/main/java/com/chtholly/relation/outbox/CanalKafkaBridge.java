@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Canal→Kafka 桥接器。
@@ -27,6 +28,7 @@ import java.net.InetSocketAddress;
 @Service
 @ConditionalOnProperty(name = "kafka.enabled", havingValue = "true")
 public class CanalKafkaBridge implements SmartLifecycle {
+    private static final long KAFKA_ACK_TIMEOUT_SECONDS = 10;
     private final KafkaTemplate<String, String> kafka;
     private final ObjectMapper objectMapper;
     private final boolean enabled;
@@ -113,61 +115,20 @@ public class CanalKafkaBridge implements SmartLifecycle {
                 connector.rollback();
                 log.info("Canal connected and subscribed: host={} port={} dest={} filter={} batchSize={} intervalMs={}ms", host, port, destination, filter, batchSize, intervalMs);
                 while (running) {
-                    // 拉取一批未确认消息（不自动 ack）
-                    Message message = connector.getWithoutAck(batchSize);
-                    long batchId = message.getId();
-                    // 空批次或心跳时，按间隔休眠并继续轮询
-                    if (batchId == -1 || message.getEntries() == null || message.getEntries().isEmpty()) {
-                        try {
-                            Thread.sleep(intervalMs);
-                        } catch (InterruptedException ignored) {}
-                        continue;
+                    try {
+                        if (!processNextBatch(connector)) {
+                            pausePolling();
+                        }
+                    } catch (RuntimeException batchFailure) {
+                        log.warn("Canal batch was rolled back and will be retried: {}",
+                                batchFailure.getMessage(), batchFailure);
+                        pausePolling();
                     }
-                    for (CanalEntry.Entry entry : message.getEntries()) {
-                        // 仅处理行级数据变更事件
-                        if (entry.getEntryType() != CanalEntry.EntryType.ROWDATA) {
-                            continue;
-                        }
-                        CanalEntry.RowChange rowChange;
-
-                        try {
-                            // 解析二进制为 RowChange（包含 INSERT/UPDATE 的行变更）
-                            rowChange = CanalEntry.RowChange.parseFrom(entry.getStoreValue());
-                        } catch (Exception e) {
-                            continue;
-                        }
-
-                        CanalEntry.EventType eventType = rowChange.getEventType();
-                        // 仅转发 INSERT/UPDATE 事件，忽略其他类型
-                        if (eventType != CanalEntry.EventType.INSERT && eventType != CanalEntry.EventType.UPDATE) {
-                            continue;
-                        }
-                        ArrayNode dataArray = objectMapper.createArrayNode();
-
-                        for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
-                            // 保留 Outbox 行 ID，让下游能区分业务事件并实现重放幂等。
-                            dataArray.add(rowMapper.toJson(rowData));
-                        }
-
-                        ObjectNode msgNode = objectMapper.createObjectNode();
-                        msgNode.put("table", entry.getHeader().getTableName());
-                        msgNode.put("type", eventType == CanalEntry.EventType.INSERT ? "INSERT" : "UPDATE");
-                        msgNode.set("data", dataArray);
-
-                        try {
-                            // 序列化并发送到 Kafka 主题（canal-outbox）
-                            String json = objectMapper.writeValueAsString(msgNode);
-                            kafka.send(OutboxTopics.CANAL_OUTBOX, json);
-                        } catch (Exception e) {
-                            log.warn("Canal bridge failed to publish outbox row to Kafka: {}", e.getMessage(), e);
-                        }
-                    }
-                    // 批次确认（推进位点），避免消息重放
-                    connector.ack(batchId);
                 }
             } catch (Exception e) {
                 log.error("Canal bridge error", e);
             } finally {
+                running = false;
                 if (connector != null) {
                     // 断开 Canal 连接（资源清理）
                     try {
@@ -179,6 +140,87 @@ public class CanalKafkaBridge implements SmartLifecycle {
                 }
             }
         });
+    }
+
+    /** Processes one Canal batch and advances its position only after every Kafka broker confirmation. */
+    boolean processNextBatch(CanalConnector canalConnector) {
+        Message message = canalConnector.getWithoutAck(batchSize);
+        long batchId = message.getId();
+        if (batchId == -1 || message.getEntries() == null || message.getEntries().isEmpty()) {
+            return false;
+        }
+
+        try {
+            for (CanalEntry.Entry entry : message.getEntries()) {
+                publishEntry(entry);
+            }
+            canalConnector.ack(batchId);
+            return true;
+        } catch (Exception failure) {
+            try {
+                canalConnector.rollback(batchId);
+            } catch (Exception rollbackFailure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+            if (failure instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Failed to process Canal batch " + batchId, failure);
+        }
+    }
+
+    private void publishEntry(CanalEntry.Entry entry) throws Exception {
+        if (entry.getEntryType() != CanalEntry.EntryType.ROWDATA) {
+            return;
+        }
+        CanalEntry.RowChange rowChange = CanalEntry.RowChange.parseFrom(entry.getStoreValue());
+        CanalEntry.EventType eventType = rowChange.getEventType();
+        if (eventType != CanalEntry.EventType.INSERT && eventType != CanalEntry.EventType.UPDATE) {
+            return;
+        }
+
+        ArrayNode dataArray = objectMapper.createArrayNode();
+        String messageKey = null;
+        for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
+            ObjectNode row = rowMapper.toJson(rowData);
+            dataArray.add(row);
+            if (messageKey == null && row.hasNonNull("id")) {
+                messageKey = row.path("id").asText();
+            }
+        }
+        if (dataArray.isEmpty()) {
+            return;
+        }
+
+        ObjectNode envelope = objectMapper.createObjectNode();
+        envelope.put("table", entry.getHeader().getTableName());
+        envelope.put("type", eventType == CanalEntry.EventType.INSERT ? "INSERT" : "UPDATE");
+        envelope.set("data", dataArray);
+        awaitKafkaBroker(messageKey, objectMapper.writeValueAsString(envelope));
+    }
+
+    private void awaitKafkaBroker(String messageKey, String payload) {
+        try {
+            var future = kafka.send(OutboxTopics.CANAL_OUTBOX, messageKey, payload);
+            if (future == null) {
+                throw new IllegalStateException("Kafka send returned no confirmation future");
+            }
+            future.get(KAFKA_ACK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while awaiting Kafka confirmation", interrupted);
+        } catch (Exception failure) {
+            throw new IllegalStateException("Kafka did not confirm Canal batch publication", failure);
+        }
+    }
+
+    private void pausePolling() {
+        try {
+            Thread.sleep(intervalMs);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            running = false;
+        }
     }
 
     /**

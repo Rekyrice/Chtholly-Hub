@@ -1,4 +1,5 @@
 import { Check, Circle, Sparkles } from "lucide-react";
+import type { ReactNode } from "react";
 import { countWritingStats } from "@/lib/utils/markdownInsert";
 
 export type WriteSaveStatus = "saved" | "saving" | "unsaved";
@@ -9,6 +10,7 @@ type WriteSidebarProps = {
   description: string;
   markdown: string;
   saveStatus: WriteSaveStatus;
+  children?: ReactNode;
 };
 
 const SAVE_STATUS_LABEL: Record<WriteSaveStatus, string> = {
@@ -23,6 +25,7 @@ export default function WriteSidebar({
   description,
   markdown,
   saveStatus,
+  children,
 }: WriteSidebarProps) {
   const stats = countWritingStats(markdown);
   const checks = [
@@ -71,6 +74,8 @@ export default function WriteSidebar({
           <div><dt>```</dt><dd>代码块</dd></div>
         </dl>
       </section>
+
+      {children}
 
       <section className="write-sidebar__card write-sidebar__companion">
         <Sparkles size={18} aria-hidden="true" />

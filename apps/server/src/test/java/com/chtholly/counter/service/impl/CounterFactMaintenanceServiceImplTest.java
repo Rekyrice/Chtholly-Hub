@@ -16,9 +16,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisStringCommands;
-import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
-import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -65,6 +63,8 @@ class CounterFactMaintenanceServiceImplTest {
     @Mock
     private UserMapper userMapper;
     @Mock
+    private CounterBitmapIndexService bitmapIndex;
+    @Mock
     private RedisConnection connection;
     @Mock
     private RedisStringCommands stringCommands;
@@ -75,7 +75,7 @@ class CounterFactMaintenanceServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new CounterFactMaintenanceServiceImpl(redis, redisson, userMapper);
+        service = new CounterFactMaintenanceServiceImpl(redis, redisson, userMapper, bitmapIndex);
         lenient().doReturn(1L).when(redis).execute(
                 argThat((RedisScript script) -> script != null && Long.class.equals(script.getResultType())),
                 anyList(), any(Object[].class));
@@ -107,7 +107,7 @@ class CounterFactMaintenanceServiceImplTest {
                 Set.of(1L), Set.of(10L), nullState))
                 .isInstanceOf(NullPointerException.class);
 
-        verifyNoInteractions(redis, redisson, userMapper);
+        verifyNoInteractions(redis, redisson, userMapper, bitmapIndex);
     }
 
     @Test
@@ -133,7 +133,7 @@ class CounterFactMaintenanceServiceImplTest {
     }
 
     @Test
-    void usesScanAndRawBinaryGetPreservesExistingNaturalUserAndPlansOrphanClear() throws Exception {
+    void usesShardIndexAndRawBinaryGetPreservesExistingNaturalUserAndPlansOrphanClear() throws Exception {
         String likeKey = "bm:like:post:10:0";
         stubScans(List.of(likeKey), List.of());
         stubRawBitmaps(Map.of(likeKey, bitmapBytes(1L, 5L, 7L)));
@@ -148,11 +148,8 @@ class CounterFactMaintenanceServiceImplTest {
 
         assertThat(result.posts()).containsEntry(10L,
                 new PostReactionReconciliationResult(10L, 1L, 1L, 1L, 2L, 0L));
-        ArgumentCaptor<ScanOptions> scanOptions = ArgumentCaptor.forClass(ScanOptions.class);
-        verify(redis, times(2)).scan(scanOptions.capture());
-        assertThat(scanOptions.getAllValues())
-                .extracting(ScanOptions::getPattern)
-                .containsExactly("bm:like:post:10:*", "bm:fav:post:10:*");
+        verify(bitmapIndex).requireShardKeys("like", "post", "10");
+        verify(bitmapIndex).requireShardKeys("fav", "post", "10");
         verify(redis, never()).keys(anyString());
         verify(redis, never()).opsForValue();
         verify(stringCommands).get(likeKey.getBytes(StandardCharsets.UTF_8));
@@ -165,12 +162,17 @@ class CounterFactMaintenanceServiceImplTest {
                 "agg:v1:__keys",
                 "counter:fact-maintenance:post:10",
                 "counter:fact-epoch:post:10",
+                "counter:calibration:reaction-bitmap:candidates",
+                "bmidxcnt:like:post:10",
+                "bmidxcnt:fav:post:10",
                 likeKey,
-                "bm:fav:post:10:0");
+                "bm:fav:post:10:0",
+                "bmidx:like:post:10",
+                "bmidx:fav:post:10");
         assertThat(invocation.arguments()).startsWith(invocation.arguments().getFirst(),
-                "20", "4", "1", "2", "2", "like", "fav");
-        assertThat(invocation.arguments()).containsSubsequence("6", "7", "0", "orphan");
-        assertThat(invocation.arguments()).endsWith("6", "7", "0", "orphan");
+                "20", "4", "1", "2", "2", "@v1", "post:10", "like", "fav");
+        assertThat(invocation.arguments()).containsSubsequence("11", "7", "0", "orphan");
+        assertThat(invocation.arguments()).endsWith("11", "7", "0", "orphan");
         assertThat(invocation.arguments()).filteredOn("orphan"::equals).hasSize(1);
         verify(lock).unlock();
     }
@@ -366,13 +368,14 @@ class CounterFactMaintenanceServiceImplTest {
 
         service.reconcileManagedPostReactions(Set.of(1L), Set.of(10L), Map.of());
 
-        InOrder order = inOrder(lock, redis, userMapper);
+        InOrder order = inOrder(lock, redis, bitmapIndex, userMapper);
         order.verify(lock).tryLock(0L, TimeUnit.MILLISECONDS);
         order.verify(redis).execute(
                 argThat((RedisScript script) -> script != null && Long.class.equals(script.getResultType())
-                        && script.getScriptAsString().contains("leaseMillis")),
+                        && script.getScriptAsString().contains("redis.call('SET', fenceKey, token)")),
                 anyList(), any(Object[].class));
-        order.verify(redis, times(2)).scan(any(ScanOptions.class));
+        order.verify(bitmapIndex).requireShardKeys("like", "post", "10");
+        order.verify(bitmapIndex).requireShardKeys("fav", "post", "10");
         order.verify(userMapper).listExistingIds(List.of(5L));
         order.verify(redis).execute(
                 argThat((RedisScript script) -> script != null && List.class.equals(script.getResultType())),
@@ -402,18 +405,9 @@ class CounterFactMaintenanceServiceImplTest {
     }
 
     private void stubScans(List<String>... scans) {
-        Cursor<String>[] cursors = Arrays.stream(scans)
-                .map(this::cursor)
-                .toArray(Cursor[]::new);
-        when(redis.scan(any(ScanOptions.class))).thenReturn(cursors[0], Arrays.copyOfRange(cursors, 1, cursors.length));
-    }
-
-    private Cursor<String> cursor(List<String> keys) {
-        Cursor<String> cursor = mock(Cursor.class);
         AtomicInteger index = new AtomicInteger();
-        when(cursor.hasNext()).thenAnswer(invocation -> index.get() < keys.size());
-        lenient().when(cursor.next()).thenAnswer(invocation -> keys.get(index.getAndIncrement()));
-        return cursor;
+        when(bitmapIndex.requireShardKeys(anyString(), eq("post"), anyString()))
+                .thenAnswer(invocation -> new java.util.LinkedHashSet<>(scans[index.getAndIncrement()]));
     }
 
     private void stubRawBitmaps(Map<String, byte[]> bitmaps) {

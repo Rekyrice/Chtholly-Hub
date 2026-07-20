@@ -164,6 +164,55 @@ public class SearchServiceImpl implements SearchService {
         return new PageResponse<>(items, 0, safeSize, 0L, hasMore, nextCursor, false);
     }
 
+    /** Performs one nested entity-name query and returns ordinary article feed rows. */
+    @SuppressWarnings("unchecked")
+    @Override
+    public PageResponse<FeedItemResponse> searchByEntityNames(
+            List<String> entityNames, int size, Long currentUserIdNullable) {
+        int safeSize = Pagination.clampSize(size);
+        List<String> names = entityNames == null
+                ? List.of()
+                : entityNames.stream()
+                        .filter(java.util.Objects::nonNull)
+                        .map(String::trim)
+                        .filter(value -> !value.isBlank())
+                        .distinct()
+                        .limit(20)
+                        .toList();
+        if (names.isEmpty()) {
+            return new PageResponse<>(List.of(), 0, safeSize, 0L, false, null, false);
+        }
+
+        co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> response;
+        try {
+            response = es.search(request -> request
+                            .index(INDEX)
+                            .size(safeSize)
+                            .query(query -> query.bool(bool -> bool
+                                    .must(must -> must.nested(nested -> nested
+                                            .path("contentAnalysis.entities")
+                                            .query(nestedQuery -> nestedQuery.terms(terms -> terms
+                                                    .field("contentAnalysis.entities.name")
+                                                    .terms(values -> values.value(names.stream()
+                                                            .map(FieldValue::of)
+                                                            .toList()))))))
+                                    .filter(filter -> filter.term(term -> term
+                                            .field("status")
+                                            .value(value -> value.stringValue("published"))))))
+                            .sort(sortsFor(SearchSort.RELEVANCE)),
+                    (Class<Map<String, Object>>) (Class<?>) Map.class);
+        } catch (Exception exception) {
+            log.warn("Entity article search failed for {} names: {}", names.size(), exception.getMessage());
+            return new PageResponse<>(List.of(), 0, safeSize, 0L, false, null, true);
+        }
+
+        List<Hit<Map<String, Object>>> hits = response.hits() == null
+                ? List.of()
+                : response.hits().hits();
+        List<FeedItemResponse> items = hitMapper.mapPostHits(hits, currentUserIdNullable);
+        return new PageResponse<>(items, 0, safeSize, 0L, items.size() >= safeSize, null, false);
+    }
+
     /**
      * Aggregates Hub search regions with one Elasticsearch msearch request.
      *

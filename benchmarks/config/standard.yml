@@ -1,0 +1,27 @@
+schemaVersion: 1
+seed: 20260715
+profiles:
+  smoke:
+    posts: 1000
+    users: 200
+    interactions: 10000
+    relations: 10000
+    warmupSeconds: 10
+    durationSeconds: 30
+    concurrency: 4
+  standard:
+    posts: 10000
+    users: 2000
+    interactions: 100000
+    relations: 100000
+    warmupSeconds: 60
+    durationSeconds: 300
+    concurrency: 64
+cache:
+  formalRuns: 12
+  repetitions: 3
+  scenarios:
+    stable-hot:
+      variants: [db-only, full]
+    expiry-spike:
+      variants: [full-no-singleflight, full]

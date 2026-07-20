@@ -7,9 +7,8 @@ import com.chtholly.counter.service.CounterFactMaintenanceService;
 import com.chtholly.user.mapper.UserMapper;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.data.redis.core.Cursor;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.RedisCallback;
-import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -46,12 +45,12 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
     private static final String MUTATION_MANAGED = "managed";
     private static final String MUTATION_ORPHAN = "orphan";
     private static final int LUA_RESULT_SIZE = 5;
-    private static final int LUA_CORE_KEY_COUNT = 5;
-    private static final long FENCE_LEASE_MILLIS = 60_000L;
+    private static final int LUA_CORE_KEY_COUNT = 10;
 
     private final StringRedisTemplate redis;
     private final RedissonClient redisson;
     private final UserMapper userMapper;
+    private final CounterBitmapIndexService bitmapIndex;
     private final DefaultRedisScript<List> reconciliationScript;
     private final DefaultRedisScript<Long> acquireFenceScript;
     private final DefaultRedisScript<Long> releaseFenceScript;
@@ -66,19 +65,23 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
     public CounterFactMaintenanceServiceImpl(
             StringRedisTemplate redis,
             RedissonClient redisson,
-            UserMapper userMapper) {
+            UserMapper userMapper,
+            CounterBitmapIndexService bitmapIndex) {
         this.redis = Objects.requireNonNull(redis, "redis");
         this.redisson = Objects.requireNonNull(redisson, "redisson");
         this.userMapper = Objects.requireNonNull(userMapper, "userMapper");
+        this.bitmapIndex = Objects.requireNonNull(bitmapIndex, "bitmapIndex");
         this.reconciliationScript = new DefaultRedisScript<>();
         this.reconciliationScript.setResultType(List.class);
         this.reconciliationScript.setScriptText(RECONCILE_POST_REACTIONS_LUA);
         this.acquireFenceScript = new DefaultRedisScript<>();
         this.acquireFenceScript.setResultType(Long.class);
-        this.acquireFenceScript.setScriptText(ACQUIRE_FENCE_LUA);
+        this.acquireFenceScript.setLocation(
+                new ClassPathResource("lua/counter/fact-maintenance-fence-acquire.lua"));
         this.releaseFenceScript = new DefaultRedisScript<>();
         this.releaseFenceScript.setResultType(Long.class);
-        this.releaseFenceScript.setScriptText(RELEASE_FENCE_LUA);
+        this.releaseFenceScript.setLocation(
+                new ClassPathResource("lua/counter/fact-maintenance-fence-release.lua"));
     }
 
     /** {@inheritDoc} */
@@ -147,14 +150,8 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
     }
 
     private void snapshotMetric(long postId, String metric, PostBitmapSnapshot snapshot) {
-        String pattern = String.format("bm:%s:%s:%d:*", metric, ENTITY_TYPE_POST, postId);
-        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
-        Set<String> shardKeys = new LinkedHashSet<>();
-        try (Cursor<String> cursor = redis.scan(options)) {
-            while (cursor.hasNext()) {
-                shardKeys.add(cursor.next());
-            }
-        }
+        Set<String> shardKeys = bitmapIndex.requireShardKeys(
+                metric, ENTITY_TYPE_POST, String.valueOf(postId));
 
         for (String shardKey : shardKeys) {
             long chunk = parseChunk(shardKey, metric, postId);
@@ -273,8 +270,7 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
         Long acquired = redis.execute(
                 acquireFenceScript,
                 List.of(CounterKeys.factMaintenanceFenceKey(ENTITY_TYPE_POST, String.valueOf(postId))),
-                token,
-                String.valueOf(FENCE_LEASE_MILLIS));
+                token);
         return Long.valueOf(1L).equals(acquired);
     }
 
@@ -338,10 +334,20 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
         keys.add(CounterKeys.aggIndexKey());
         keys.add(CounterKeys.factMaintenanceFenceKey(ENTITY_TYPE_POST, String.valueOf(postId)));
         keys.add(CounterKeys.factEpochKey(ENTITY_TYPE_POST, String.valueOf(postId)));
+        keys.add(CounterKeys.bitmapCalibrationCandidatesKey());
+        keys.add(CounterKeys.bitmapShardIndexKey(METRIC_LIKE, ENTITY_TYPE_POST, String.valueOf(postId)));
+        keys.add(CounterKeys.bitmapShardIndexKey(METRIC_FAV, ENTITY_TYPE_POST, String.valueOf(postId)));
+        keys.add(CounterKeys.bitmapShardIndexCountKey(METRIC_LIKE, ENTITY_TYPE_POST, String.valueOf(postId)));
+        keys.add(CounterKeys.bitmapShardIndexCountKey(METRIC_FAV, ENTITY_TYPE_POST, String.valueOf(postId)));
         keys.addAll(bitmapMetrics.keySet());
+        for (String metric : bitmapMetrics.values()) {
+            keys.add(CounterKeys.bitmapShardIndexKey(
+                    metric, ENTITY_TYPE_POST, String.valueOf(postId)));
+        }
 
         Map<String, Integer> luaKeyIndexes = new LinkedHashMap<>();
-        for (int index = LUA_CORE_KEY_COUNT; index < keys.size(); index++) {
+        int bitmapKeyEnd = LUA_CORE_KEY_COUNT + bitmapMetrics.size();
+        for (int index = LUA_CORE_KEY_COUNT; index < bitmapKeyEnd; index++) {
             luaKeyIndexes.put(keys.get(index), index + 1);
         }
 
@@ -352,6 +358,8 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
         arguments.add(String.valueOf(CounterSchema.IDX_LIKE));
         arguments.add(String.valueOf(CounterSchema.IDX_FAV));
         arguments.add(String.valueOf(bitmapMetrics.size()));
+        arguments.add(CounterBitmapIndexService.SHARD_INDEX_SENTINEL);
+        arguments.add(ENTITY_TYPE_POST + ":" + postId);
         arguments.addAll(bitmapMetrics.values());
 
         List<BitMutation> mutations = new ArrayList<>();
@@ -519,14 +527,21 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             local aggIndexKey = KEYS[3]
             local fenceKey = KEYS[4]
             local epochKey = KEYS[5]
+            local candidatesKey = KEYS[6]
+            local likeBitmapIndexKey = KEYS[7]
+            local favBitmapIndexKey = KEYS[8]
+            local likeBitmapIndexCountKey = KEYS[9]
+            local favBitmapIndexCountKey = KEYS[10]
             local expectedToken = ARGV[1]
             local expectedLength = tonumber(ARGV[2])
             local fieldSize = tonumber(ARGV[3])
             local likeIndex = tonumber(ARGV[4])
             local favIndex = tonumber(ARGV[5])
             local bitmapKeyCount = tonumber(ARGV[6])
-            local argumentIndex = 7
-            local bitmapKeyOffset = 5
+            local indexSentinel = ARGV[7]
+            local candidateMember = ARGV[8]
+            local argumentIndex = 9
+            local bitmapKeyOffset = 10
             local uint32Max = 4294967295
             local function keyType(key)
               local reply = redis.call('TYPE', key)
@@ -540,11 +555,21 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             local aggIndexType = keyType(aggIndexKey)
             local fenceType = keyType(fenceKey)
             local epochType = keyType(epochKey)
+            local candidatesType = keyType(candidatesKey)
+            local likeBitmapIndexType = keyType(likeBitmapIndexKey)
+            local favBitmapIndexType = keyType(favBitmapIndexKey)
+            local likeBitmapIndexCountType = keyType(likeBitmapIndexCountKey)
+            local favBitmapIndexCountType = keyType(favBitmapIndexCountKey)
             if (cntType ~= 'none' and cntType ~= 'string')
                   or (aggType ~= 'none' and aggType ~= 'hash')
                   or (aggIndexType ~= 'none' and aggIndexType ~= 'set')
                   or fenceType ~= 'string'
-                  or (epochType ~= 'none' and epochType ~= 'string') then
+                  or (epochType ~= 'none' and epochType ~= 'string')
+                  or (candidatesType ~= 'none' and candidatesType ~= 'zset')
+                  or (likeBitmapIndexType ~= 'none' and likeBitmapIndexType ~= 'set')
+                  or (favBitmapIndexType ~= 'none' and favBitmapIndexType ~= 'set')
+                  or (likeBitmapIndexCountType ~= 'none' and likeBitmapIndexCountType ~= 'string')
+                  or (favBitmapIndexCountType ~= 'none' and favBitmapIndexCountType ~= 'string') then
               return redis.error_reply('counter core key has an invalid Redis type')
             end
             if redis.call('GET', fenceKey) ~= expectedToken then
@@ -555,12 +580,13 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
               return redis.error_reply('counter fact epoch is invalid')
             end
             if expectedLength ~= 20 or fieldSize ~= 4
-                  or likeIndex ~= 1 or favIndex ~= 2 then
+                  or likeIndex ~= 1 or favIndex ~= 2
+                  or indexSentinel ~= '@v1' or not candidateMember or candidateMember == '' then
               return redis.error_reply('counter schema arguments are invalid')
             end
             if not bitmapKeyCount or bitmapKeyCount < 0
                   or bitmapKeyCount ~= math.floor(bitmapKeyCount)
-                  or bitmapKeyCount ~= (#KEYS - bitmapKeyOffset) then
+                  or bitmapKeyCount * 2 ~= (#KEYS - bitmapKeyOffset) then
               return redis.error_reply('counter bitmap key count is invalid')
             end
             local raw = redis.call('GET', cntKey)
@@ -568,12 +594,22 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
               raw = string.rep(string.char(0), expectedLength)
             end
             local bitmapMetrics = {}
+            local bitmapIndexKeys = {}
             for bitmapIndex = 1, bitmapKeyCount do
               local metric = ARGV[argumentIndex]
               if metric ~= 'like' and metric ~= 'fav' then
                 return redis.error_reply('counter bitmap metric is invalid')
               end
+              local bitmapKey = KEYS[bitmapKeyOffset + bitmapIndex]
+              local bitmapIndexKey = KEYS[bitmapKeyOffset + bitmapKeyCount + bitmapIndex]
+              local bitmapType = keyType(bitmapKey)
+              local bitmapIndexType = keyType(bitmapIndexKey)
+              if (bitmapType ~= 'none' and bitmapType ~= 'string')
+                    or (bitmapIndexType ~= 'none' and bitmapIndexType ~= 'set') then
+                return redis.error_reply('counter bitmap index key has an invalid Redis type')
+              end
               bitmapMetrics[bitmapIndex] = metric
+              bitmapIndexKeys[bitmapIndex] = bitmapIndexKey
               argumentIndex = argumentIndex + 1
             end
 
@@ -581,7 +617,7 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             argumentIndex = argumentIndex + 1
             if not mutationCount or mutationCount < 0
                   or mutationCount ~= math.floor(mutationCount)
-                  or #ARGV ~= 7 + bitmapKeyCount + mutationCount * 4 then
+                  or #ARGV ~= 9 + bitmapKeyCount + mutationCount * 4 then
               return redis.error_reply('counter bitmap mutation count is invalid')
             end
             local changes = {}
@@ -595,7 +631,8 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
               local target = tonumber(ARGV[argumentIndex + 2])
               local kind = ARGV[argumentIndex + 3]
               argumentIndex = argumentIndex + 4
-              if not keyIndex or keyIndex <= bitmapKeyOffset or keyIndex > #KEYS
+              if not keyIndex or keyIndex <= bitmapKeyOffset
+                    or keyIndex > bitmapKeyOffset + bitmapKeyCount
                     or keyIndex ~= math.floor(keyIndex)
                     or not bitOffset or bitOffset < 0 or bitOffset >= 32768
                     or bitOffset ~= math.floor(bitOffset)
@@ -641,6 +678,9 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             if nextEpoch ~= currentEpoch + 1 then
               return redis.error_reply('counter fact epoch changed unexpectedly')
             end
+            redis.call('SADD', likeBitmapIndexKey, indexSentinel)
+            redis.call('SADD', favBitmapIndexKey, indexSentinel)
+            redis.call('ZADD', candidatesKey, 'NX', 0, candidateMember)
             for _, change in ipairs(changes) do
               redis.call('SETBIT', KEYS[change[1]], change[2], change[3])
             end
@@ -649,8 +689,15 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
               local bitmapKey = KEYS[keyIndex]
               if projectedCountByKey[keyIndex] == 0 then
                 redis.call('DEL', bitmapKey)
+                redis.call('SREM', bitmapIndexKeys[bitmapIndex], bitmapKey)
+              else
+                redis.call('SADD', bitmapIndexKeys[bitmapIndex], bitmapKey)
               end
             end
+            redis.call('SET', likeBitmapIndexCountKey,
+                  tostring(redis.call('SCARD', likeBitmapIndexKey) - 1))
+            redis.call('SET', favBitmapIndexCountKey,
+                  tostring(redis.call('SCARD', favBitmapIndexKey) - 1))
 
             local function encodeUnsignedInt32(value)
               local b1 = math.floor(value / 16777216) % 256
@@ -676,32 +723,4 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             return {managedSet, managedClear, orphanClear, likeTotal, favTotal}
             """;
 
-    private static final String ACQUIRE_FENCE_LUA = """
-            local fenceKey = KEYS[1]
-            local token = ARGV[1]
-            local leaseMillis = tonumber(ARGV[2])
-            local typeReply = redis.call('TYPE', fenceKey)
-            local fenceType = type(typeReply) == 'table' and typeReply['ok'] or typeReply
-            if fenceType ~= 'none' and fenceType ~= 'string' then
-              return redis.error_reply('counter fact maintenance fence has an invalid Redis type')
-            end
-            if not token or token == '' or not leaseMillis or leaseMillis <= 0 then
-              return redis.error_reply('counter fact maintenance fence arguments are invalid')
-            end
-            if not redis.call('SET', fenceKey, token, 'NX', 'PX', leaseMillis) then return 0 end
-            return 1
-            """;
-
-    private static final String RELEASE_FENCE_LUA = """
-            local fenceKey = KEYS[1]
-            local token = ARGV[1]
-            local typeReply = redis.call('TYPE', fenceKey)
-            local fenceType = type(typeReply) == 'table' and typeReply['ok'] or typeReply
-            if fenceType == 'none' then return 0 end
-            if fenceType ~= 'string' then
-              return redis.error_reply('counter fact maintenance fence has an invalid Redis type')
-            end
-            if redis.call('GET', fenceKey) ~= token then return 0 end
-            return redis.call('DEL', fenceKey)
-            """;
 }

@@ -1,5 +1,6 @@
 package com.chtholly.agent.observability;
 
+import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.trace.TraceStatus;
 import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,6 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -16,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.TreeMap;
 
 /** 单次 Agent 执行的可观测性追踪（轻量，无 OTel）。 */
 @Slf4j
@@ -38,6 +43,22 @@ public class AgentExecutionTrace {
     private int finalAnswerLength;
     private int eventSequence;
     private String terminatedBy = "error";
+    private String modelVersion = "unknown";
+    private String runMode = "candidate";
+    private String questionFingerprint = "";
+    private String pageContextFingerprint = "";
+    private String inputFingerprint = "";
+    private String skillSelectionStatus = "NOT_EVALUATED";
+    private String skillId = "";
+    private String skillVersion = "";
+    private String skillValidationStatus = "NOT_RUN";
+    private Map<String, String> retrievalStatuses = Map.of();
+    private int evidenceCount;
+    private String evidenceSnapshotHash = "";
+    private List<Map<String, String>> evidenceMetadata = List.of();
+    private String citationValidationStatus = "NOT_RUN";
+    private Map<String, String> toolVersions = Map.of();
+    private FailureType failureType = FailureType.NONE;
 
     @Setter
     private String errorMessage;
@@ -137,8 +158,8 @@ public class AgentExecutionTrace {
                 nextEventSequence(),
                 stepIndex,
                 toolName,
-                TracePayloadSanitizer.sanitizeAndTruncate(inputSummary, 256),
-                TracePayloadSanitizer.sanitizeAndTruncate(observation, 512),
+                fingerprintSummary(inputSummary),
+                fingerprintSummary(observation),
                 durationMs,
                 success));
     }
@@ -149,6 +170,79 @@ public class AgentExecutionTrace {
         steps.add(new TraceStepInfo(stepIndex, action, stepLlmMs, stepToolMs));
         log.info("[Agent] Step {}/{}: action={}, llm_ms={}, tool_ms={}",
                 stepIndex + 1, maxSteps, action, stepLlmMs, stepToolMs);
+    }
+
+    /** Records bounded replay input plus stable component mode without placing it on OTel spans. */
+    public void recordTurnContext(
+            String question,
+            String pageContext,
+            String modelVersion,
+            String runMode) {
+        String normalizedQuestion = question == null ? "" : question.strip();
+        String normalizedPage = pageContext == null ? "" : pageContext.strip();
+        this.questionFingerprint = sha256(normalizedQuestion);
+        this.pageContextFingerprint = sha256(normalizedPage);
+        this.inputFingerprint = sha256(normalizedQuestion + "\n--page--\n" + normalizedPage);
+        this.modelVersion = safe(modelVersion, "unknown");
+        String normalizedRunMode = safe(runMode, "candidate")
+                .toLowerCase(java.util.Locale.ROOT);
+        this.runMode = switch (normalizedRunMode) {
+            case "baseline", "replay" -> normalizedRunMode;
+            default -> "candidate";
+        };
+    }
+
+    public void recordSkillSelection(String status, String id, String version) {
+        skillSelectionStatus = safe(status, "NOT_EVALUATED");
+        skillId = safe(id, "");
+        skillVersion = safe(version, "");
+    }
+
+    public void recordSkillValidation(String status) {
+        skillValidationStatus = safe(status, "NOT_RUN");
+    }
+
+    /** Records retrieval metadata and version-bound Evidence without persisting titles or excerpts. */
+    public void recordRetrieval(Map<String, String> statuses, EvidenceSet evidenceSet) {
+        TreeMap<String, String> sortedStatuses = new TreeMap<>();
+        if (statuses != null) {
+            statuses.forEach((key, value) -> {
+                if (key != null && !key.isBlank()) {
+                    sortedStatuses.put(key, safe(value, "UNKNOWN"));
+                }
+            });
+        }
+        retrievalStatuses = Map.copyOf(sortedStatuses);
+        EvidenceSet evidence = evidenceSet == null ? EvidenceSet.empty() : evidenceSet;
+        evidenceCount = evidence.items().size();
+        evidenceSnapshotHash = evidence.contentHash();
+        evidenceMetadata = evidence.items().stream().map(item -> {
+            Map<String, String> metadata = new LinkedHashMap<>();
+            metadata.put("citationId", item.citationId());
+            metadata.put("documentId", item.documentId());
+            metadata.put("source", item.retrievalSource());
+            metadata.put("sourceVersion", item.sourceVersion());
+            metadata.put("sourceHash", item.sourceHash());
+            return Map.copyOf(metadata);
+        }).toList();
+    }
+
+    public void recordCitationValidation(String status) {
+        citationValidationStatus = safe(status, "NOT_RUN");
+    }
+
+    public void recordTools(Set<String> toolNames) {
+        TreeMap<String, String> versions = new TreeMap<>();
+        if (toolNames != null) {
+            toolNames.stream()
+                    .filter(name -> name != null && !name.isBlank())
+                    .forEach(name -> versions.put(name, AgentComponentVersions.TOOLS));
+        }
+        toolVersions = Map.copyOf(versions);
+    }
+
+    public void markFailure(FailureType type) {
+        failureType = type == null ? FailureType.INTERNAL_ERROR : type;
     }
 
     public void terminateFinalAnswer(String answer) {
@@ -183,15 +277,17 @@ public class AgentExecutionTrace {
         if (finishedAtMs == null) {
             finish();
         }
-        Map<String, Object> summary = buildSummaryMap();
+        Map<String, Object> summary = new LinkedHashMap<>(buildSummaryMap());
+        summary.remove("userId");
+        summary.remove("sessionId");
         summary.put("correlationId", correlationId);
         summary.put("status", status == null ? null : status.name());
 
         try {
             log.info("{}", objectMapper.writeValueAsString(summary));
         } catch (Exception e) {
-            log.info("agent_execution_complete correlationId={} userId={} sessionId={} terminatedBy={} durationMs={}",
-                    correlationId, userId, sessionId, terminatedBy, durationMs);
+            log.info("agent_execution_complete correlationId={} terminatedBy={} durationMs={}",
+                    correlationId, terminatedBy, durationMs);
         }
 
         if (metrics != null) {
@@ -225,7 +321,56 @@ public class AgentExecutionTrace {
         payload.put("steps", steps.stream().map(TraceStepInfo::toMap).toList());
         payload.put("toolCalls", toolCallDetails.stream().map(TraceToolCallInfo::toMap).toList());
         payload.put("llmCalls", llmCallDetails.stream().map(TraceLlmCallInfo::toMap).toList());
+        payload.put("components", componentVersions());
+        payload.put("skill", skillMetadata());
+        payload.put("retrieval", retrievalMetadata());
+        payload.put("toolVersions", toolVersions);
+        payload.put("failureType", failureType.name());
+        payload.put("runMode", runMode);
+        payload.put("input", inputMetadata());
         return payload;
+    }
+
+    private Map<String, String> componentVersions() {
+        Map<String, String> components = new LinkedHashMap<>();
+        components.put("prompt", AgentComponentVersions.PROMPT);
+        components.put("skillSelector", AgentComponentVersions.SKILL_SELECTOR);
+        components.put("model", modelVersion);
+        components.put("retrieval", AgentComponentVersions.RETRIEVAL);
+        components.put("citationValidator", AgentComponentVersions.CITATION_VALIDATOR);
+        components.put("tools", AgentComponentVersions.TOOLS);
+        components.put("traceSchema", AgentComponentVersions.TRACE_SCHEMA);
+        return Map.copyOf(components);
+    }
+
+    private Map<String, String> skillMetadata() {
+        Map<String, String> skill = new LinkedHashMap<>();
+        skill.put("selectionStatus", skillSelectionStatus);
+        skill.put("id", skillId);
+        skill.put("version", skillVersion);
+        skill.put("validationStatus", skillValidationStatus);
+        return Map.copyOf(skill);
+    }
+
+    private Map<String, Object> retrievalMetadata() {
+        Map<String, Object> retrieval = new LinkedHashMap<>();
+        retrieval.put("strategy", AgentComponentVersions.RETRIEVAL);
+        retrieval.put("statuses", retrievalStatuses);
+        retrieval.put("evidenceCount", evidenceCount);
+        retrieval.put("evidenceSnapshotHash", evidenceSnapshotHash);
+        retrieval.put("evidence", evidenceMetadata);
+        retrieval.put("degraded", retrievalStatuses.containsValue("FAILED")
+                || retrievalStatuses.containsValue("TIMEOUT"));
+        retrieval.put("citationValidationStatus", citationValidationStatus);
+        return Map.copyOf(retrieval);
+    }
+
+    private Map<String, String> inputMetadata() {
+        Map<String, String> input = new LinkedHashMap<>();
+        input.put("fingerprint", inputFingerprint);
+        input.put("questionFingerprint", questionFingerprint);
+        input.put("pageContextFingerprint", pageContextFingerprint);
+        return Map.copyOf(input);
     }
 
     private Map<String, Object> buildSummaryMap() {
@@ -237,7 +382,7 @@ public class AgentExecutionTrace {
         }
         summary.put("totalSteps", totalSteps);
         summary.put("toolsCalled", new ArrayList<>(toolsCalled));
-        summary.put("llmCalls", llmCalls);
+        summary.put("llmCallCount", llmCalls);
         summary.put("totalDurationMs", durationMs == null ? System.currentTimeMillis() - startedAtMs : durationMs);
         summary.put("llmDurationMs", llmDurationMs);
         summary.put("toolDurationMs", toolDurationMs);
@@ -262,6 +407,25 @@ public class AgentExecutionTrace {
             return 0;
         }
         return Math.max(1, chars / 4L);
+    }
+
+    private static String safe(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.strip();
+    }
+
+    private static String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private static String fingerprintSummary(String value) {
+        String normalized = value == null ? "" : value;
+        return "sha256=" + sha256(normalized) + ";chars=" + normalized.length();
     }
 
     private int nextEventSequence() {
@@ -323,5 +487,20 @@ public class AgentExecutionTrace {
             }
             return map;
         }
+    }
+
+    public enum FailureType {
+        NONE,
+        INVALID_INPUT,
+        RETRIEVAL_EMPTY,
+        RETRIEVAL_TIMEOUT,
+        SKILL_NO_MATCH,
+        SKILL_VALIDATION_FAILED,
+        TOOL_FAILED,
+        LLM_TIMEOUT,
+        CITATION_INVALID,
+        DRAFT_VERSION_CONFLICT,
+        PERMISSION_DENIED,
+        INTERNAL_ERROR
     }
 }

@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.function.Consumer;
 
 /** Agent WebSocket：客户端发送 chat，服务端推送 ReAct 事件流。 */
 @Slf4j
@@ -158,7 +159,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         executor.execute(() -> {
-            String correlationId = (String) session.getAttributes().get(CorrelationIdSupport.MDC_CORRELATION_ID);
+            String correlationId = CorrelationIdSupport.generate();
             String path = session.getUri() == null ? "/api/v1/agent/ws" : session.getUri().getPath();
             CorrelationIdSupport.runWithContext(
                     CorrelationIdSupport.context(correlationId, "WS", path),
@@ -235,8 +236,9 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
 
             AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId, chatSessionId);
             String pageContext = formatPageContext(root.path("context"));
+            String taskType = root.path("taskType").asText("").strip();
             try {
-                agent.run(text, userId, memory, session.getId(), pageContext, event -> {
+                Consumer<AgentEvent> eventSink = event -> {
                     try {
                         if (safe.isOpen()) {
                             sendJson(safe, event.type(), event.data());
@@ -244,7 +246,12 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                     } catch (Exception e) {
                         log.warn("WebSocket 发送失败: {}", e.getMessage());
                     }
-                });
+                };
+                if (taskType.isBlank()) {
+                    agent.run(text, userId, memory, session.getId(), pageContext, eventSink);
+                } else {
+                    agent.run(text, userId, memory, session.getId(), pageContext, taskType, eventSink);
+                }
             } finally {
                 characterStateService.updateEmotion(userId, text);
                 characterStateService.recordInteraction(userId);

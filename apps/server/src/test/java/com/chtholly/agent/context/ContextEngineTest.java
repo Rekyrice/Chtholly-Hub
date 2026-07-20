@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -206,23 +207,71 @@ class ContextEngineTest {
     void injectsHybridSearchResultsForQueryIntent() {
         HybridSearchService hybridSearchService = mock(HybridSearchService.class);
         ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
-        when(hybridSearchService.hybridSearch("帮我查一下芙莉莲的时间主题", 5)).thenReturn(List.of(
-                new SearchResult("post:9", "时间的重量", "芙莉莲文章片段", "hybrid", 0.2)
-        ));
+        when(hybridSearchService.hybridSearch("帮我查一下芙莉莲的时间主题", 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(List.of(
+                        authorizedSearchResult("post:9", "时间的重量", "芙莉莲文章片段")
+                ), java.util.Map.of(
+                        "semantic", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                        "keyword", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                        "entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)));
 
-        String prompt = engine.buildSystemPrompt(
+        AgentContextSnapshot snapshot = engine.buildSnapshot(
                 7L,
                 "ws-1",
                 "",
                 List.of(),
                 "",
-                "帮我查一下芙莉莲的时间主题");
+                "帮我查一下芙莉莲的时间主题",
+                false);
 
-        assertThat(prompt)
+        assertThat(snapshot.systemPrompt())
                 .contains("## 相关知识")
                 .contains("- 站内有一篇关于芙莉莲时间主题的文章")
-                .contains("- 时间的重量：芙莉莲文章片段");
+                .contains("title=时间的重量", "sources=semantic+keyword")
+                .contains("<evidence_data>芙莉莲文章片段</evidence_data>")
+                .doesNotContain("- 时间的重量：芙莉莲文章片段");
+        assertThat(snapshot.evidenceRequired()).isTrue();
+        assertThat(snapshot.evidenceSet().items()).hasSize(1);
+        assertThat(snapshot.evidenceSet().items().getFirst().documentId()).isEqualTo("post:9");
+        assertThat(snapshot.retrievalStatuses()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "semantic", "SUCCESS_RESULTS",
+                "keyword", "SUCCESS_RESULTS",
+                "entity", "SUCCESS_EMPTY"));
         verify(hybridSearchService).hybridSearch("帮我查一下芙莉莲的时间主题", 5);
+    }
+
+    @Test
+    void groundedQueryWithoutDocumentsStillFreezesEvidenceRequirement() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
+        when(hybridSearchService.hybridSearch("帮我查站内资料", 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(List.of(), Map.of(
+                        "semantic", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY,
+                        "keyword", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY,
+                        "entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)));
+
+        AgentContextSnapshot snapshot = engine.buildSnapshot(
+                7L, "ws-1", "", List.of(), "", "帮我查站内资料", false);
+
+        assertThat(snapshot.evidenceRequired()).isTrue();
+        assertThat(snapshot.evidenceSet().isEmpty()).isTrue();
+        assertThat(snapshot.retrievalStatuses()).containsEntry("semantic", "SUCCESS_EMPTY");
+    }
+
+    @Test
+    void selectedEvidenceSkillForcesRetrievalWithoutKeywordHeuristic() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
+        when(hybridSearchService.hybridSearch("解释这个页面", 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(List.of(
+                        authorizedSearchResult("post:7", "页面依据", "当前页面事实")), Map.of()));
+
+        AgentContextSnapshot snapshot = engine.buildSnapshot(
+                7L, "ws-1", "", List.of(), "", "解释这个页面", true);
+
+        assertThat(snapshot.evidenceRequired()).isTrue();
+        assertThat(snapshot.evidenceSet().items()).hasSize(1);
+        verify(hybridSearchService).hybridSearch("解释这个页面", 5);
     }
 
     @Test
@@ -411,5 +460,11 @@ class ContextEngineTest {
                 new Needs(0.0, 0.0, 0.0),
                 new BehaviorProb(0.5, 0.3, 0.3)
         );
+    }
+
+    private SearchResult authorizedSearchResult(String id, String title, String snippet) {
+        return new SearchResult(
+                id, title, snippet, "semantic+keyword", 0.2,
+                id, id + "#0", "v1", "sha-256", Set.of("PUBLIC"));
     }
 }

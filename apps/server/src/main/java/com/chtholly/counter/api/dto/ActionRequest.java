@@ -1,15 +1,20 @@
 package com.chtholly.counter.api.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/**
- * 行为请求体：用于点赞/收藏等操作的实体标识。
- */
+/** Identifies the entity targeted by a like or favorite mutation. */
 @Data
 public class ActionRequest {
     @NotBlank
-    private String entityType; // 如: post
+    @Size(max = 32)
+    @Pattern(regexp = "[A-Za-z0-9._-]+")
+    private String entityType;
+
     @NotBlank
-    private String entityId;   // 内容ID
+    @Size(max = 64)
+    @Pattern(regexp = "[A-Za-z0-9._-]+")
+    private String entityId;
 }

@@ -166,7 +166,7 @@ public class LocalFileStorageService implements StorageService {
             if (expectedSha256 != null && !staged.sha256().equalsIgnoreCase(expectedSha256)) {
                 throw new IOException("upload sha256 mismatch for " + objectKey);
             }
-            if (StorageObjectKeyValidator.isContentPackObjectKey(objectKey)) {
+            if (StorageObjectKeyValidator.isImmutableObjectKey(objectKey)) {
                 installImmutableObject(target, temporary, staged);
             } else {
                 moveReplacing(target, temporary);
@@ -182,15 +182,18 @@ public class LocalFileStorageService implements StorageService {
         Path current = basePath;
         for (Path segment : relativeParent) {
             current = current.resolve(segment);
-            if (Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
-                if (Files.isSymbolicLink(current)) {
-                    throw new IllegalArgumentException("storage path contains symbolic link: " + objectKey);
+            if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+                try {
+                    Files.createDirectory(current);
+                } catch (FileAlreadyExistsException ignored) {
+                    // A concurrent upload may have created the same safe parent directory.
                 }
-                if (!Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)) {
-                    throw new IOException("storage path component is not a directory: " + current);
-                }
-            } else {
-                Files.createDirectory(current);
+            }
+            if (Files.isSymbolicLink(current)) {
+                throw new IllegalArgumentException("storage path contains symbolic link: " + objectKey);
+            }
+            if (!Files.isDirectory(current, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("storage path component is not a directory: " + current);
             }
             Path realCurrent = current.toRealPath();
             if (!realCurrent.startsWith(basePath)) {
@@ -223,10 +226,6 @@ public class LocalFileStorageService implements StorageService {
     }
 
     private void installImmutableObject(Path target, Path temporary, FileIdentity staged) throws IOException {
-        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-            assertExistingMatches(target, staged);
-            return;
-        }
         try {
             // 同目录硬链接原子创建最终名称，并且在目标已存在时不会覆盖不可变对象。
             Files.createLink(target, temporary);

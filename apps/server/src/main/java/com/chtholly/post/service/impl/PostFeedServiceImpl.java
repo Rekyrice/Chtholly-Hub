@@ -1,5 +1,7 @@
 package com.chtholly.post.service.impl;
 
+import com.chtholly.cache.config.CacheProperties;
+import com.chtholly.cache.observability.CacheMetrics;
 import com.chtholly.post.service.PostFeedService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 import org.springframework.data.redis.connection.DataType;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
@@ -64,6 +67,8 @@ public class PostFeedServiceImpl implements PostFeedService {
     private final HotKeyDetector hotKey;
     private final PersonalPostFeedService personalFeedService;
     private final PublicAuthorQueryService publicAuthorQueryService;
+    private final CacheProperties.ReadMode readMode;
+    private final CacheMetrics cacheMetrics;
     private static final Logger log = LoggerFactory.getLogger(PostFeedServiceImpl.class);
     private static final String FEED_PUBLIC_PAGES_KEY = "feed:public:pages";
     private static final int LAYOUT_VER = 3;
@@ -89,7 +94,9 @@ public class PostFeedServiceImpl implements PostFeedService {
             @Qualifier("feedPublicCache") Cache<String, PageResponse<FeedItemResponse>> feedPublicCache,
             HotKeyDetector hotKey,
             PersonalPostFeedService personalFeedService,
-            PublicAuthorQueryService publicAuthorQueryService
+            PublicAuthorQueryService publicAuthorQueryService,
+            CacheProperties cacheProperties,
+            CacheMetrics cacheMetrics
     ) {
         this.mapper = mapper;
         this.redis = redis;
@@ -100,6 +107,8 @@ public class PostFeedServiceImpl implements PostFeedService {
         this.hotKey = hotKey;
         this.personalFeedService = personalFeedService;
         this.publicAuthorQueryService = publicAuthorQueryService;
+        this.readMode = cacheProperties.getReadMode();
+        this.cacheMetrics = cacheMetrics;
     }
 
     /**
@@ -169,6 +178,11 @@ public class PostFeedServiceImpl implements PostFeedService {
         String idsKey = "feed:public:ids:" + safeSize + ":" + hourSlot + ":" + safePage;
         String hasMoreKey = idsKey + ":hasMore";
 
+        if (!readMode.usesCache()) {
+            return loadOffsetFromDatabase(
+                    localPageKey, idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable, false);
+        }
+
         PageResponse<FeedItemResponse> local = feedPublicCache.getIfPresent(localPageKey);
         if (local != null && local.items() != null) {
             for (FeedItemResponse item : local.items()) {
@@ -191,7 +205,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             return fromCache;
         }
 
-        return singleFlight.runExclusive(idsKey, () -> {
+        Supplier<PageResponse<FeedItemResponse>> loader = () -> {
             PageResponse<FeedItemResponse> again = assembleFromCache(idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable);
             if (again != null) {
                 feedPublicCache.put(localPageKey, again);
@@ -204,28 +218,46 @@ public class PostFeedServiceImpl implements PostFeedService {
                 return again;
             }
 
-            int offset = (safePage - 1) * safeSize;
-            List<PostFeedRow> rows = mapper.listFeedPublic(safeSize + 1, offset);
-            boolean hasMore = rows.size() > safeSize;
-            if (hasMore) {
-                rows = rows.subList(0, safeSize);
-            }
+            return loadOffsetFromDatabase(
+                    localPageKey, idsKey, hasMoreKey, safePage, safeSize, currentUserIdNullable, true);
+        };
+        return readMode.usesSingleFlight()
+                ? singleFlight.runExclusive(idsKey, loader)
+                : loader.get();
+    }
 
-            List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
-            String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
+    private PageResponse<FeedItemResponse> loadOffsetFromDatabase(
+            String localPageKey,
+            String idsKey,
+            String hasMoreKey,
+            int safePage,
+            int safeSize,
+            Long currentUserIdNullable,
+            boolean populateCache
+    ) {
+        cacheMetrics.recordSameKeyLoad();
+        cacheMetrics.recordMysqlQuery();
+        int offset = (safePage - 1) * safeSize;
+        List<PostFeedRow> rows = mapper.listFeedPublic(safeSize + 1, offset);
+        boolean hasMore = rows.size() > safeSize;
+        if (hasMore) {
+            rows = rows.subList(0, safeSize);
+        }
 
-            PageResponse<FeedItemResponse> respForCache = PageResponse.offset(items, safePage, safeSize, 0L, hasMore, nextCursor);
-            int baseTtl = 60;
-            int jitter = ThreadLocalRandom.current().nextInt(30);
-            Duration frTtl = Duration.ofSeconds(baseTtl + jitter);
+        List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
+        String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
+        if (populateCache) {
+            PageResponse<FeedItemResponse> cachePage =
+                    PageResponse.offset(items, safePage, safeSize, 0L, hasMore, nextCursor);
+            Duration fragmentTtl = Duration.ofSeconds(60 + ThreadLocalRandom.current().nextInt(30));
+            writeCaches(localPageKey, idsKey, hasMoreKey, safeSize, rows, items, hasMore, nextCursor, fragmentTtl);
+            feedPublicCache.put(localPageKey, cachePage);
+        }
 
-            writeCaches(localPageKey, idsKey, hasMoreKey, safeSize, rows, items, hasMore, nextCursor, frTtl);
-            feedPublicCache.put(localPageKey, respForCache);
-
-            List<FeedItemResponse> enriched = enrich(items, currentUserIdNullable);
-            log.info("feed.public source=db localPageKey={} page={} size={} hasMore={}", localPageKey, safePage, safeSize, hasMore);
-            return buildResponse(enriched, safePage, safeSize, hasMore, nextCursor);
-        });
+        List<FeedItemResponse> enriched = enrich(items, currentUserIdNullable);
+        log.info("feed.public source=db localPageKey={} page={} size={} hasMore={}",
+                localPageKey, safePage, safeSize, hasMore);
+        return buildResponse(enriched, safePage, safeSize, hasMore, nextCursor);
     }
 
     /**
@@ -239,6 +271,11 @@ public class PostFeedServiceImpl implements PostFeedService {
         long hourSlot = System.currentTimeMillis() / 3600000L;
         String idsKey = "feed:public:ids:" + safeSize + ":" + hourSlot + ":" + cursorSlot;
         String hasMoreKey = idsKey + ":hasMore";
+
+        if (!readMode.usesCache()) {
+            return loadCursorFromDatabase(
+                    cursor, cursorSlot, localPageKey, idsKey, hasMoreKey, safeSize, currentUserIdNullable, false);
+        }
 
         PageResponse<FeedItemResponse> local = feedPublicCache.getIfPresent(localPageKey);
         if (local != null && local.items() != null) {
@@ -262,7 +299,7 @@ public class PostFeedServiceImpl implements PostFeedService {
             return fromCache;
         }
 
-        return singleFlight.runExclusive(idsKey, () -> {
+        Supplier<PageResponse<FeedItemResponse>> loader = () -> {
             PageResponse<FeedItemResponse> again = assembleFromCache(idsKey, hasMoreKey, 0, safeSize, currentUserIdNullable);
             if (again != null) {
                 feedPublicCache.put(localPageKey, stripUserFlags(again));
@@ -274,34 +311,51 @@ public class PostFeedServiceImpl implements PostFeedService {
                 return again;
             }
 
-            List<PostFeedRow> rows;
-            if (cursor == null || cursor.isBlank()) {
-                rows = mapper.listFeedPublic(safeSize + 1, 0);
-            } else {
-                FeedCursor.FeedCursorPoint point = FeedCursor.require(cursor);
-                rows = mapper.listFeedPublicByCursor(point.publishTime(), point.postId(), safeSize + 1);
-            }
+            return loadCursorFromDatabase(
+                    cursor, cursorSlot, localPageKey, idsKey, hasMoreKey, safeSize, currentUserIdNullable, true);
+        };
+        return readMode.usesSingleFlight()
+                ? singleFlight.runExclusive(idsKey, loader)
+                : loader.get();
+    }
 
-            boolean hasMore = rows.size() > safeSize;
-            if (hasMore) {
-                rows = rows.subList(0, safeSize);
-            }
+    private PageResponse<FeedItemResponse> loadCursorFromDatabase(
+            String cursor,
+            String cursorSlot,
+            String localPageKey,
+            String idsKey,
+            String hasMoreKey,
+            int safeSize,
+            Long currentUserIdNullable,
+            boolean populateCache
+    ) {
+        cacheMetrics.recordSameKeyLoad();
+        cacheMetrics.recordMysqlQuery();
+        List<PostFeedRow> rows;
+        if (cursor == null || cursor.isBlank()) {
+            rows = mapper.listFeedPublic(safeSize + 1, 0);
+        } else {
+            FeedCursor.FeedCursorPoint point = FeedCursor.require(cursor);
+            rows = mapper.listFeedPublicByCursor(point.publishTime(), point.postId(), safeSize + 1);
+        }
 
-            List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
-            String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
+        boolean hasMore = rows.size() > safeSize;
+        if (hasMore) {
+            rows = rows.subList(0, safeSize);
+        }
+        List<FeedItemResponse> items = mapRowsToItems(rows, null, false);
+        String nextCursor = hasMore ? nextCursorFromRows(rows) : null;
+        if (populateCache) {
+            PageResponse<FeedItemResponse> cachePage =
+                    PageResponse.offset(items, 0, safeSize, 0L, hasMore, nextCursor);
+            Duration fragmentTtl = Duration.ofSeconds(60 + ThreadLocalRandom.current().nextInt(30));
+            writeCaches(localPageKey, idsKey, hasMoreKey, safeSize, rows, items, hasMore, nextCursor, fragmentTtl);
+            feedPublicCache.put(localPageKey, cachePage);
+        }
 
-            PageResponse<FeedItemResponse> respForCache = PageResponse.offset(items, 0, safeSize, 0L, hasMore, nextCursor);
-            int baseTtl = 60;
-            int jitter = ThreadLocalRandom.current().nextInt(30);
-            Duration frTtl = Duration.ofSeconds(baseTtl + jitter);
-
-            writeCaches(localPageKey, idsKey, hasMoreKey, safeSize, rows, items, hasMore, nextCursor, frTtl);
-            feedPublicCache.put(localPageKey, respForCache);
-
-            List<FeedItemResponse> enriched = enrich(items, currentUserIdNullable);
-            log.info("feed.public source=db cursor={} size={} hasMore={}", cursorSlot, safeSize, hasMore);
-            return buildResponse(enriched, 0, safeSize, hasMore, nextCursor);
-        });
+        List<FeedItemResponse> enriched = enrich(items, currentUserIdNullable);
+        log.info("feed.public source=db cursor={} size={} hasMore={}", cursorSlot, safeSize, hasMore);
+        return buildResponse(enriched, 0, safeSize, hasMore, nextCursor);
     }
 
     private PageResponse<FeedItemResponse> buildResponse(List<FeedItemResponse> items, int page, int size,
@@ -551,6 +605,7 @@ public class PostFeedServiceImpl implements PostFeedService {
         }
 
         if (!idVals.isEmpty()) {
+            redis.delete(List.of(idsKey, hasMoreKey, idsKey + ":nextCursor"));
             redis.opsForList().leftPushAll(idsKey, idVals);
             redis.expire(idsKey, frTtl);
             if (idVals.size() == size && hasMore) {

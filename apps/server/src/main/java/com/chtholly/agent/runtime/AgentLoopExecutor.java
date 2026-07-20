@@ -64,8 +64,11 @@ public class AgentLoopExecutor {
             } catch (InterruptedException e) {
                 long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
                 Thread.currentThread().interrupt();
-                agentObservationService.finishSpanError(llmSpan, "llm_interrupted",
-                        AgentSpanAttributes.llm(stepLlmMs, inputChars, 0, "interrupted"));
+                agentObservationService.finishSpanError(
+                        llmSpan,
+                        "llm_interrupted",
+                        AgentSpanAttributes.llm("interrupted"),
+                        Map.of());
                 log.warn("Agent LLM call interrupted", e);
                 return terminate(
                         AgentLoopResult.Status.LLM_INTERRUPTED,
@@ -76,8 +79,11 @@ public class AgentLoopExecutor {
                         trace::terminateError);
             } catch (TimeoutException e) {
                 long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
-                agentObservationService.finishSpanError(llmSpan, "llm_timeout",
-                        AgentSpanAttributes.llm(stepLlmMs, inputChars, 0, "timeout"));
+                agentObservationService.finishSpanError(
+                        llmSpan,
+                        "llm_timeout",
+                        AgentSpanAttributes.llm("timeout"),
+                        Map.of());
                 log.warn("Agent LLM call timed out (>{}s)", llmInvoker.timeoutSeconds());
                 return terminate(
                         AgentLoopResult.Status.LLM_TIMEOUT,
@@ -88,8 +94,11 @@ public class AgentLoopExecutor {
                         trace::terminateTimeout);
             } catch (Exception e) {
                 long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
-                agentObservationService.finishSpanError(llmSpan, "llm_error",
-                        AgentSpanAttributes.llm(stepLlmMs, inputChars, 0, "error"));
+                agentObservationService.finishSpanError(
+                        llmSpan,
+                        "llm_error",
+                        AgentSpanAttributes.llm("error"),
+                        Map.of());
                 log.warn("Agent LLM call failed: {}", e.getMessage());
                 return terminate(
                         AgentLoopResult.Status.LLM_ERROR,
@@ -102,8 +111,10 @@ public class AgentLoopExecutor {
 
             long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
             trace.recordLlmCall(step, stepLlmMs, inputChars, llmOut.length(), null);
-            agentObservationService.finishSpan(llmSpan,
-                    AgentSpanAttributes.llm(stepLlmMs, inputChars, llmOut.length(), "ok"));
+            agentObservationService.finishSpan(
+                    llmSpan,
+                    AgentSpanAttributes.llm("ok"),
+                    Map.of());
 
             AgentAction action;
             try {
@@ -133,7 +144,7 @@ public class AgentLoopExecutor {
                 emitAct(sink, action.action(), action.input());
                 emitObserve(sink, observation);
                 appendExchange(transcript, llmOut, observation);
-                trace.recordStep(step, action.action(), stepLlmMs, 0);
+                trace.recordStep(step, "unknown_tool", stepLlmMs, 0);
                 continue;
             }
 
@@ -145,10 +156,20 @@ public class AgentLoopExecutor {
             emitAct(sink, tool.name(), action.input());
             Observation toolSpan = agentObservationService.startToolSpan(agentSpan, tool.name());
             long toolStart = System.currentTimeMillis();
-            AgentToolResult toolResult = agentToolExecutor.execute(tool, inputMap, request.userId());
+            AgentToolResult toolResult;
+            try {
+                toolResult = agentToolExecutor.execute(tool, inputMap, request.userId());
+            } catch (RuntimeException e) {
+                agentObservationService.finishSpanError(
+                        toolSpan,
+                        "tool_executor_error",
+                        Map.of("status", "error", "error.type", "INTERNAL_ERROR"),
+                        Map.of());
+                throw e;
+            }
             String observation = toolResult.observation();
             long stepToolMs = System.currentTimeMillis() - toolStart;
-            finishToolSpan(toolSpan, tool.name(), stepToolMs, toolResult.status());
+            finishToolSpan(toolSpan, toolResult.status());
             trace.recordToolCall(
                     step,
                     tool.name(),
@@ -310,15 +331,16 @@ public class AgentLoopExecutor {
 
     private void finishToolSpan(
             Observation toolSpan,
-            String toolName,
-            long durationMs,
             AgentToolResult.Status status) {
-        Map<String, String> attributes = AgentSpanAttributes.tool(toolName, durationMs, status);
+        Map<String, String> attributes = AgentSpanAttributes.tool(status);
         switch (status) {
-            case TIMEOUT -> agentObservationService.finishSpanError(toolSpan, "tool_timeout", attributes);
-            case ERROR -> agentObservationService.finishSpanError(toolSpan, "tool_error", attributes);
-            case INTERRUPTED -> agentObservationService.finishSpanError(toolSpan, "tool_interrupted", attributes);
-            default -> agentObservationService.finishSpan(toolSpan, attributes);
+            case TIMEOUT -> agentObservationService.finishSpanError(
+                    toolSpan, "tool_timeout", attributes, Map.of());
+            case ERROR -> agentObservationService.finishSpanError(
+                    toolSpan, "tool_error", attributes, Map.of());
+            case INTERRUPTED -> agentObservationService.finishSpanError(
+                    toolSpan, "tool_interrupted", attributes, Map.of());
+            default -> agentObservationService.finishSpan(toolSpan, attributes, Map.of());
         }
     }
 

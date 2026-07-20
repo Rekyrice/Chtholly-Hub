@@ -6,6 +6,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -29,6 +30,20 @@ class RelationCacheInvalidatorTest {
     void givenEmptyUsers_whenInvalidate_thenDoesNotCallRedis() {
         invalidator.invalidateUsers(List.of());
 
+        verifyNoInteractions(redis);
+    }
+
+    @Test
+    void givenRelationProjectionChange_whenInvalidateLocal_thenOnlyAffectedListsAreRemoved() {
+        invalidator.putFollowingTop(42L, List.of(7L));
+        invalidator.putFollowerTop(7L, List.of(42L));
+        invalidator.putFollowingTop(99L, List.of(100L));
+
+        invalidator.invalidateLocalProjection(42L, 7L);
+
+        assertThat(invalidator.getFollowingTop(42L)).isNull();
+        assertThat(invalidator.getFollowerTop(7L)).isNull();
+        assertThat(invalidator.getFollowingTop(99L)).containsExactly(100L);
         verifyNoInteractions(redis);
     }
 

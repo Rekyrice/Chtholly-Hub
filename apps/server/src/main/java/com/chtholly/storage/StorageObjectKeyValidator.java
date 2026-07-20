@@ -15,6 +15,8 @@ public final class StorageObjectKeyValidator {
     private static final Pattern CONTENT_PACK_VERSION = Pattern.compile("content-v[1-9][0-9]*");
     private static final Pattern CONTENT_PACK_OBJECT_KEY =
             Pattern.compile("seed/content-v[1-9][0-9]*/.+");
+    private static final Pattern DRAFT_EDIT_OBJECT_KEY =
+            Pattern.compile("posts/[1-9][0-9]*/content-edits/[0-9a-f]{64}\\.md");
 
     private StorageObjectKeyValidator() {
     }
@@ -64,5 +66,16 @@ public final class StorageObjectKeyValidator {
      */
     public static boolean isContentPackObjectKey(String objectKey) {
         return objectKey != null && CONTENT_PACK_OBJECT_KEY.matcher(objectKey).matches();
+    }
+
+    /**
+     * Identifies content-addressed object keys that must never replace different bytes.
+     *
+     * @param objectKey safe storage object key
+     * @return whether the key requires immutable installation semantics
+     */
+    public static boolean isImmutableObjectKey(String objectKey) {
+        return isContentPackObjectKey(objectKey)
+                || objectKey != null && DRAFT_EDIT_OBJECT_KEY.matcher(objectKey).matches();
     }
 }

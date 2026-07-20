@@ -1,6 +1,7 @@
 package com.chtholly.agent.ws;
 
 import com.chtholly.agent.ChthollyAgent;
+import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.cognitive.CognitiveEngine;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentConversationMemory;
@@ -11,6 +12,7 @@ import com.chtholly.agent.notification.NotificationChannel;
 import com.chtholly.agent.notification.NotificationService;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.state.CharacterStateService;
+import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -192,6 +195,38 @@ class AgentWebSocketHandlerTest {
     }
 
     @Test
+    void sameConnectionTwoChatTurnsUseDistinctCorrelationIds() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-two-turns");
+        when(rawSession.getAttributes()).thenReturn(new java.util.concurrent.ConcurrentHashMap<>());
+        when(rawSession.getUri()).thenReturn(
+                URI.create("ws://localhost/api/v1/agent/ws?ticket=two-turns"));
+        when(ticketStore.consume("two-turns")).thenReturn(67L);
+        when(memoryStore.getOrCreateMemory(67L, "sess-chat-two")).thenReturn(memory);
+        List<String> correlationIds = new CopyOnWriteArrayList<>();
+        List<String> traceCorrelationIds = new CopyOnWriteArrayList<>();
+        doAnswer(invocation -> {
+            correlationIds.add(MDC.get(CorrelationIdSupport.MDC_CORRELATION_ID));
+            traceCorrelationIds.add(new AgentExecutionTrace(67L, "sess-chat-two", 3).getCorrelationId());
+            return null;
+        }).when(agent).run(any(), anyLong(), any(), any(), any(), any());
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.handleTextMessage(rawSession, new TextMessage(
+                "{\"type\":\"chat\",\"sessionId\":\"sess-chat-two\",\"message\":\"first\"}"));
+        handler.handleTextMessage(rawSession, new TextMessage(
+                "{\"type\":\"chat\",\"sessionId\":\"sess-chat-two\",\"message\":\"second\"}"));
+
+        assertThat(correlationIds)
+                .hasSize(2)
+                .allMatch(id -> id != null && !id.isBlank());
+        assertThat(correlationIds.get(0)).isNotEqualTo(correlationIds.get(1));
+        assertThat(traceCorrelationIds).containsExactly(
+                correlationIds.get(0).replace("-", ""),
+                correlationIds.get(1).replace("-", ""));
+        assertThat(traceCorrelationIds.get(0)).isNotEqualTo(traceCorrelationIds.get(1));
+    }
+
+    @Test
     void pushesPendingProactiveNotificationsAfterConnectionEstablished() throws Exception {
         when(rawSession.getId()).thenReturn("sess-proactive");
         when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=t-pro"));
@@ -260,6 +295,36 @@ class AgentWebSocketHandlerTest {
                 .contains("来源：post:frieren-review")
                 .contains("postSlug：frieren-review")
                 .contains("标签：芙莉莲、治愈、日常系");
+    }
+
+    @Test
+    void passesExplicitTaskTypeToSkillAwareAgentBoundary() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-skill");
+        when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=skill"));
+        when(ticketStore.consume("skill")).thenReturn(89L);
+        when(memoryStore.getOrCreateMemory(89L, "sess-chat-skill")).thenReturn(memory);
+        doNothing().when(agent).run(
+                any(), anyLong(), any(), any(), any(), any(), any());
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.handleTextMessage(rawSession, new TextMessage("""
+                {
+                  "type": "chat",
+                  "sessionId": "sess-chat-skill",
+                  "message": "解释这个页面",
+                  "taskType": "page-explain",
+                  "context": {"page": "/post/1"}
+                }
+                """));
+
+        verify(agent).run(
+                eq("解释这个页面"),
+                eq(89L),
+                eq(memory),
+                eq("sess-skill"),
+                any(),
+                eq("page-explain"),
+                any());
     }
 
     @Test

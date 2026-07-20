@@ -31,8 +31,6 @@ import java.sql.Timestamp;
 import java.util.Date;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.IntFunction;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import java.nio.charset.StandardCharsets;
 import org.springframework.data.redis.core.RedisCallback;
 import org.slf4j.Logger;
@@ -55,8 +53,7 @@ public class RelationServiceImpl implements RelationService {
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> tokenScript;
     private final ObjectMapper objectMapper;
-    private final Cache<Long, List<Long>> flwsTopCache;
-    private final Cache<Long, List<Long>> fansTopCache;
+    private final RelationCacheInvalidator relationCacheInvalidator;
     private final UserMapper userMapper;
     private final ApplicationEventPublisher eventPublisher;
     
@@ -73,7 +70,8 @@ public class RelationServiceImpl implements RelationService {
                                StringRedisTemplate redis,
                                ObjectMapper objectMapper,
                                UserMapper userMapper,
-                               ApplicationEventPublisher eventPublisher) {
+                               ApplicationEventPublisher eventPublisher,
+                               RelationCacheInvalidator relationCacheInvalidator) {
         this.mapper = mapper;
         this.outboxMapper = outboxMapper;
         this.redis = redis;
@@ -81,10 +79,9 @@ public class RelationServiceImpl implements RelationService {
         this.tokenScript = new DefaultRedisScript<>();
         this.tokenScript.setResultType(Long.class);
         this.tokenScript.setScriptText(TOKEN_BUCKET_LUA);
-        this.flwsTopCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(10)).build();
-        this.fansTopCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(10)).build();
         this.userMapper = userMapper;
         this.eventPublisher = eventPublisher;
+        this.relationCacheInvalidator = relationCacheInvalidator;
     }
 
     /**
@@ -186,7 +183,7 @@ public class RelationServiceImpl implements RelationService {
                 need -> mapper.listFollowingRows(userId, need, 0),
                 "toUserId",
                 "createdAt",
-                flwsTopCache,
+                true,
                 userId
         );
     }
@@ -208,7 +205,7 @@ public class RelationServiceImpl implements RelationService {
                 need -> mapper.listFollowerRows(userId, need, 0),
                 "fromUserId",
                 "createdAt",
-                fansTopCache,
+                false,
                 userId
         );
     }
@@ -385,11 +382,13 @@ public class RelationServiceImpl implements RelationService {
             IntFunction<Map<Long, Map<String, Object>>> rowsFetcher,
             String idField,
             String tsField,
-            Cache<Long, List<Long>> localCache,
+            boolean followingList,
             long userId
     ) {
         // 1. 先查本地缓存 (L1)
-        List<Long> top = localCache != null ? localCache.getIfPresent(userId) : null;
+        List<Long> top = followingList
+                ? relationCacheInvalidator.getFollowingTop(userId)
+                : relationCacheInvalidator.getFollowerTop(userId);
         if (top != null && !top.isEmpty()) {
             // 本地缓存通常只存 Top N (例如前500)，如果 offset 在范围内则直接返回
             if (offset < top.size()) {
@@ -413,8 +412,8 @@ public class RelationServiceImpl implements RelationService {
             redis.expire(key, Duration.ofHours(2));
 
             // 回填后尝试更新本地缓存（仅针对大V）
-            if (localCache != null && isBigV(userId)) {
-                maybeUpdateTopCache(userId, key, localCache);
+            if (isBigV(userId)) {
+                maybeUpdateTopCache(userId, key, followingList);
             }
 
             Set<String> filled = redis.opsForZSet().reverseRange(key, offset, offset + limit - 1L);
@@ -496,12 +495,16 @@ public class RelationServiceImpl implements RelationService {
     /**
      * 更新本地 Top 缓存：大V 用户仅缓存前 500 名，减少频繁回源与排序成本。
      */
-    private void maybeUpdateTopCache(long userId, String key, Cache<Long, List<Long>> cache) {
+    private void maybeUpdateTopCache(long userId, String key, boolean followingList) {
         Set<String> allSet = redis.opsForZSet().reverseRange(key, 0, 499);
         if (allSet == null || allSet.isEmpty()) return;
         List<Long> all = new ArrayList<>(allSet.size());
         for (String s : allSet) all.add(Long.valueOf(s));
-        cache.put(userId, all);
+        if (followingList) {
+            relationCacheInvalidator.putFollowingTop(userId, all);
+        } else {
+            relationCacheInvalidator.putFollowerTop(userId, all);
+        }
     }
 
     private static final String TOKEN_BUCKET_LUA = """

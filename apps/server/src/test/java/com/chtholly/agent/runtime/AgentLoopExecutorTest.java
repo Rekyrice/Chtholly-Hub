@@ -23,9 +23,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -168,7 +170,7 @@ class AgentLoopExecutorTest {
         assertThat(eventTypes()).containsExactly("think", "act", "observe", "think");
         assertThat(events.get(2).data().path("content").asText()).isEqualTo("Unknown tool: missing");
         verify(toolExecutor, never()).execute(any(), anyMap(), anyLong());
-        assertThat(trace.getStepActions()).containsExactly("missing");
+        assertThat(trace.getStepActions()).containsExactly("unknown_tool");
     }
 
     @Test
@@ -208,7 +210,8 @@ class AgentLoopExecutorTest {
         assertThat(events.getFirst().data().path("message").asText()).isEqualTo("MODEL_TIMEOUT");
         assertThat(trace.getTerminatedBy()).isEqualTo("timeout");
         assertThat(trace.getErrorMessage()).isEqualTo("MODEL_TIMEOUT");
-        verify(observationService).finishSpanError(eq(childSpan), eq("llm_timeout"), anyMap());
+        verify(observationService).finishSpanError(
+                eq(childSpan), eq("llm_timeout"), anyMap(), anyMap());
     }
 
     @Test
@@ -225,7 +228,8 @@ class AgentLoopExecutorTest {
         assertThat(eventTypes()).containsExactly("error");
         assertThat(trace.getTerminatedBy()).isEqualTo("error");
         assertThat(trace.getErrorMessage()).isEqualTo("MODEL_FAILED");
-        verify(observationService).finishSpanError(eq(childSpan), eq("llm_error"), anyMap());
+        verify(observationService).finishSpanError(
+                eq(childSpan), eq("llm_error"), anyMap(), anyMap());
     }
 
     @Test
@@ -246,7 +250,8 @@ class AgentLoopExecutorTest {
             assertThat(trace.getErrorMessage()).isEqualTo("MODEL_INTERRUPTED");
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
             verify(llmInvoker, times(1)).call(anyString(), anyString(), anyDouble(), anyInt());
-            verify(observationService).finishSpanError(eq(childSpan), eq("llm_interrupted"), anyMap());
+            verify(observationService).finishSpanError(
+                    eq(childSpan), eq("llm_interrupted"), anyMap(), anyMap());
         } finally {
             Thread.interrupted();
         }
@@ -273,7 +278,8 @@ class AgentLoopExecutorTest {
         assertThat(trace.getErrorMessage()).isEqualTo("TOOL_INTERRUPTED");
         assertThat(Thread.currentThread().isInterrupted()).isTrue();
         verify(llmInvoker, times(1)).call(anyString(), anyString(), anyDouble(), anyInt());
-        verify(observationService).finishSpanError(eq(childSpan), eq("tool_interrupted"), anyMap());
+        verify(observationService).finishSpanError(
+                eq(childSpan), eq("tool_interrupted"), anyMap(), anyMap());
     }
 
     @Test
@@ -294,7 +300,8 @@ class AgentLoopExecutorTest {
                 .filter(event -> "observe".equals(event.type()))
                 .findFirst().orElseThrow().data().path("content").asText())
                 .isEqualTo("timed out\n\nbangumi guidance");
-        verify(observationService).finishSpanError(eq(childSpan), eq("tool_timeout"), anyMap());
+        verify(observationService).finishSpanError(
+                eq(childSpan), eq("tool_timeout"), anyMap(), anyMap());
         assertThat(objectMapper.valueToTree(trace.toPayloadMap().get("toolCalls"))
                 .path(0).path("success").asBoolean()).isFalse();
     }
@@ -313,9 +320,31 @@ class AgentLoopExecutorTest {
                 request(Map.of(tool.name(), tool), 3), trace, agentSpan, events::add);
 
         assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
-        verify(observationService).finishSpanError(eq(childSpan), eq("tool_error"), anyMap());
+        verify(observationService).finishSpanError(
+                eq(childSpan), eq("tool_error"), anyMap(), anyMap());
         assertThat(objectMapper.valueToTree(trace.toPayloadMap().get("toolCalls"))
                 .path(0).path("success").asBoolean()).isFalse();
+    }
+
+    @Test
+    void rejectedToolExecutionFinishesStartedSpanBeforePropagating() throws Exception {
+        AgentTool tool = tool("search");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"search\",\"input\":{}}");
+        when(toolExecutor.execute(any(), anyMap(), anyLong()))
+                .thenThrow(new RejectedExecutionException("executor saturated"));
+        AgentExecutionTrace trace = trace(3);
+
+        assertThatThrownBy(() -> executor.execute(
+                request(Map.of(tool.name(), tool), 3), trace, agentSpan, events::add))
+                .isInstanceOf(RejectedExecutionException.class)
+                .hasMessage("executor saturated");
+
+        verify(observationService).finishSpanError(
+                childSpan,
+                "tool_executor_error",
+                Map.of("status", "error", "error.type", "INTERNAL_ERROR"),
+                Map.of());
     }
 
     private AgentLoopRequest request(Map<String, AgentTool> tools, int maxSteps) {

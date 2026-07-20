@@ -17,6 +17,8 @@ import java.util.Set;
 @Slf4j
 public class PostCacheInvalidator {
 
+    private static final String PUBLIC_PAGES_KEY = "feed:public:pages";
+
     private final StringRedisTemplate redis;
     private final Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     private final Cache<String, PostDetailResponse> postDetailCache;
@@ -44,7 +46,31 @@ public class PostCacheInvalidator {
         } catch (Exception e) {
             log.warn("Local detail cache invalidation failed, key={}", detailKey, e);
         }
+        try {
+            redis.delete("feed:item:" + postId);
+        } catch (Exception e) {
+            log.warn("Redis Feed item invalidation failed, postId={}", postId, e);
+        }
         invalidatePublicFeedPages(postId);
+    }
+
+    /** Clears every currently indexed public Feed page after publishing a new post. */
+    public void invalidateAllPublicFeedPages() {
+        long hourSlot = System.currentTimeMillis() / 3_600_000L;
+        try {
+            Set<String> pageKeys = redis.opsForZSet().range(PUBLIC_PAGES_KEY, 0, -1);
+            if (pageKeys != null) {
+                for (String pageKey : pageKeys) {
+                    if (pageKey == null || pageKey.isBlank()) continue;
+                    feedPublicCache.invalidate(pageKey);
+                    deletePageFragments(pageKey, hourSlot);
+                    deletePageFragments(pageKey, hourSlot - 1);
+                }
+            }
+            redis.delete(PUBLIC_PAGES_KEY);
+        } catch (Exception e) {
+            log.warn("Public Feed cache reset failed", e);
+        }
     }
 
     private void invalidatePublicFeedPages(long postId) {
@@ -57,11 +83,25 @@ public class PostCacheInvalidator {
                 for (String pageKey : pageKeys) {
                     if (pageKey == null || pageKey.isBlank()) continue;
                     feedPublicCache.invalidate(pageKey);
+                    deletePageFragments(pageKey, slot);
                     redis.opsForSet().remove(indexKey, pageKey);
                 }
             } catch (Exception e) {
                 log.warn("Public Feed cache invalidation failed, indexKey={}", indexKey, e);
             }
         }
+    }
+
+    private void deletePageFragments(String pageKey, long hourSlot) {
+        String[] parts = pageKey.split(":", 5);
+        if (parts.length != 5
+                || !"feed".equals(parts[0])
+                || !"public".equals(parts[1])
+                || !parts[4].startsWith("v")) {
+            log.warn("Skip invalid public Feed page key during invalidation, key={}", pageKey);
+            return;
+        }
+        String idsKey = "feed:public:ids:" + parts[2] + ":" + hourSlot + ":" + parts[3];
+        redis.delete(List.of(idsKey, idsKey + ":hasMore", idsKey + ":nextCursor"));
     }
 }

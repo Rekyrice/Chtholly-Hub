@@ -22,6 +22,8 @@ public final class CounterSchema {
     public static final int IDX_VIEW = 0;
     public static final int IDX_LIKE = 1;
     public static final int IDX_FAV = 2;
+    public static final int MAX_ENTITY_TYPE_LENGTH = 32;
+    public static final int MAX_ENTITY_ID_LENGTH = 64;
 
     public static final Map<String, Integer> NAME_TO_IDX = Map.of(
             "view", IDX_VIEW,
@@ -30,6 +32,27 @@ public final class CounterSchema {
     );
 
     public static final Set<String> SUPPORTED_METRICS = NAME_TO_IDX.keySet(); // 对外可请求的指标集合
+
+    /** Enforces the identity bounds shared by Redis mutation and MySQL recovery. */
+    public static void requirePersistableIdentity(String entityType, String entityId) {
+        if (entityType == null || entityType.isBlank() || entityId == null || entityId.isBlank()) {
+            throw new IllegalArgumentException("Counter entity identity is required");
+        }
+        if (entityType.length() > MAX_ENTITY_TYPE_LENGTH || entityId.length() > MAX_ENTITY_ID_LENGTH) {
+            throw new IllegalArgumentException("Counter entity identity exceeds persistence limits");
+        }
+        if (!isRedisKeySafe(entityType) || !isRedisKeySafe(entityId)) {
+            throw new IllegalArgumentException("Counter entity identity contains unsupported characters");
+        }
+    }
+
+    private static boolean isRedisKeySafe(String value) {
+        return value.chars().allMatch(character ->
+                (character >= 'a' && character <= 'z')
+                        || (character >= 'A' && character <= 'Z')
+                        || (character >= '0' && character <= '9')
+                        || character == '.' || character == '_' || character == '-');
+    }
 
     private CounterSchema() {}
 }

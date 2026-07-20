@@ -16,7 +16,7 @@ class CanalOutboxRowMapperTest {
     private final CanalOutboxRowMapper mapper = new CanalOutboxRowMapper(new ObjectMapper());
 
     @Test
-    void mapsEventIdAndPayloadFromAfterColumns() {
+    void mapsStableOutboxContractFromAfterColumns() {
         String payload = "{\"entity\":\"post\",\"op\":\"upsert\",\"id\":7}";
         CanalEntry.RowData rowData = CanalEntry.RowData.newBuilder()
                 .addAfterColumns(column("id", "42"))
@@ -28,8 +28,9 @@ class CanalOutboxRowMapperTest {
         JsonNode row = mapper.toJson(rowData);
 
         assertThat(OutboxMessageUtil.extractEventId(row)).isEqualTo(42L);
+        assertThat(row.path("aggregate_type").asText()).isEqualTo("post");
+        assertThat(row.path("type").asText()).isEqualTo("PostPublished");
         assertThat(row.path("payload").asText()).isEqualTo(payload);
-        assertThat(row.has("aggregate_type")).isFalse();
     }
 
     private CanalEntry.Column column(String name, String value) {
