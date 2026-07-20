@@ -2,6 +2,8 @@ package com.chtholly.integration;
 
 import com.chtholly.relation.service.RelationService;
 import com.chtholly.relation.outbox.OutboxTopics;
+import com.chtholly.relation.outbox.RelationOutboxReplayService;
+import com.chtholly.relation.service.RelationCalibrationService;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +32,12 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
 
     @Autowired
     private KafkaTemplate<String, String> kafka;
+
+    @Autowired
+    private RelationOutboxReplayService replayService;
+
+    @Autowired
+    private RelationCalibrationService calibrationService;
 
     @BeforeEach
     void setUpData() {
@@ -78,14 +86,16 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
                     SELECT COUNT(*) FROM follower
                     WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
                     """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne();
-            assertThat(redis.opsForZSet().score(
-                    "uf:flws:" + FROM_USER_ID, String.valueOf(TO_USER_ID))).isNotNull();
-            assertThat(redis.opsForZSet().score(
-                    "uf:fans:" + TO_USER_ID, String.valueOf(FROM_USER_ID))).isNotNull();
             assertThat(userCounter(FROM_USER_ID, 0)).isEqualTo(1L);
             assertThat(userCounter(TO_USER_ID, 1)).isEqualTo(1L);
             assertThat(redis.hasKey("consumed:outbox:relation:" + createdEventId)).isTrue();
         });
+        assertThat(relationService.following(FROM_USER_ID, 10, 0)).containsExactly(TO_USER_ID);
+        assertThat(relationService.followers(TO_USER_ID, 10, 0)).containsExactly(FROM_USER_ID);
+        assertThat(redis.opsForZSet().score(
+                "uf:flws:" + FROM_USER_ID, String.valueOf(TO_USER_ID))).isNotNull();
+        assertThat(redis.opsForZSet().score(
+                "uf:fans:" + TO_USER_ID, String.valueOf(FROM_USER_ID))).isNotNull();
 
         assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
         Map<String, Object> canceled = outboxEvent("FollowCanceled");
@@ -107,9 +117,137 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
         });
     }
 
+    @Test
+    void staleCreatedEventConvergesToCanceledFollowingAuthority() throws Exception {
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        Map<String, Object> firstCreated = outboxEvent("FollowCreated");
+        assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
+
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        Map<String, Object> secondCreated = outboxEvent("FollowCreated");
+        publishTwice(secondCreated);
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM follower
+                        WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
+                        """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne());
+        assertThat(relationService.following(FROM_USER_ID, 10, 0)).containsExactly(TO_USER_ID);
+        assertThat(relationService.followers(TO_USER_ID, 10, 0)).containsExactly(FROM_USER_ID);
+
+        assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        publishTwice(firstCreated);
+
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM follower
+                    WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
+                    """, Long.class, FROM_USER_ID, TO_USER_ID)).isZero();
+            assertThat(redis.opsForZSet().score(
+                    "uf:flws:" + FROM_USER_ID, String.valueOf(TO_USER_ID))).isNull();
+            assertThat(redis.opsForZSet().score(
+                    "uf:fans:" + TO_USER_ID, String.valueOf(FROM_USER_ID))).isNull();
+            assertThat(userCounter(FROM_USER_ID, 0)).isZero();
+            assertThat(userCounter(TO_USER_ID, 1)).isZero();
+        });
+    }
+
+    @Test
+    void staleCanceledEventConvergesToRecreatedFollowingAuthority() throws Exception {
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        publishTwice(outboxEvent("FollowCreated"));
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM follower
+                        WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
+                        """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne());
+
+        assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        Map<String, Object> staleCanceled = outboxEvent("FollowCanceled");
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        publishTwice(staleCanceled);
+
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM follower
+                    WHERE from_user_id = ? AND to_user_id = ? AND rel_status = 1
+                    """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne();
+            assertThat(userCounter(FROM_USER_ID, 0)).isEqualTo(1L);
+            assertThat(userCounter(TO_USER_ID, 1)).isEqualTo(1L);
+        });
+        assertThat(relationService.following(FROM_USER_ID, 10, 0)).containsExactly(TO_USER_ID);
+        assertThat(relationService.followers(TO_USER_ID, 10, 0)).containsExactly(FROM_USER_ID);
+    }
+
+    @Test
+    void explicitReplayRepairsProjectionEvenWhenConsumerGuardAlreadyExists() throws Exception {
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        Map<String, Object> created = outboxEvent("FollowCreated");
+        long outboxId = ((Number) created.get("id")).longValue();
+        publishTwice(created);
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(redis.hasKey("consumed:outbox:relation:" + outboxId)).isTrue());
+
+        jdbc.update("""
+                UPDATE follower SET rel_status=0
+                WHERE from_user_id=? AND to_user_id=?
+                """, FROM_USER_ID, TO_USER_ID);
+        redis.delete("uf:flws:" + FROM_USER_ID);
+        redis.delete("uf:fans:" + TO_USER_ID);
+        redis.delete("ucnt:" + FROM_USER_ID);
+        redis.delete("ucnt:" + TO_USER_ID);
+
+        assertThat(replayService.replayId(outboxId)).isOne();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM follower
+                WHERE from_user_id=? AND to_user_id=? AND rel_status=1
+                """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne();
+        assertThat(relationService.following(FROM_USER_ID, 10, 0)).containsExactly(TO_USER_ID);
+        assertThat(relationService.followers(TO_USER_ID, 10, 0)).containsExactly(FROM_USER_ID);
+        assertThat(userCounter(FROM_USER_ID, 0)).isEqualTo(1L);
+        assertThat(userCounter(TO_USER_ID, 1)).isEqualTo(1L);
+        assertThat(redis.hasKey("consumed:outbox:relation:" + outboxId)).isTrue();
+    }
+
+    @Test
+    void scheduledCalibrationRepairsCanceledRelationProjectionsFromFollowingAuthority() throws Exception {
+        assertThat(relationService.follow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        publishTwice(outboxEvent("FollowCreated"));
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM follower
+                        WHERE from_user_id=? AND to_user_id=? AND rel_status=1
+                        """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne());
+        assertThat(relationService.following(FROM_USER_ID, 10, 0)).containsExactly(TO_USER_ID);
+        assertThat(relationService.followers(TO_USER_ID, 10, 0)).containsExactly(FROM_USER_ID);
+
+        assertThat(relationService.unfollow(FROM_USER_ID, TO_USER_ID)).isTrue();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM following
+                WHERE from_user_id=? AND to_user_id=? AND rel_status=1
+                """, Long.class, FROM_USER_ID, TO_USER_ID)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM follower
+                WHERE from_user_id=? AND to_user_id=? AND rel_status=1
+                """, Long.class, FROM_USER_ID, TO_USER_ID)).isOne();
+
+        calibrationService.reconcileScheduled();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM follower
+                WHERE from_user_id=? AND to_user_id=? AND rel_status=1
+                """, Long.class, FROM_USER_ID, TO_USER_ID)).isZero();
+        assertThat(redis.opsForZSet().score(
+                "uf:flws:" + FROM_USER_ID, String.valueOf(TO_USER_ID))).isNull();
+        assertThat(redis.opsForZSet().score(
+                "uf:fans:" + TO_USER_ID, String.valueOf(FROM_USER_ID))).isNull();
+        assertThat(userCounter(FROM_USER_ID, 0)).isZero();
+        assertThat(userCounter(TO_USER_ID, 1)).isZero();
+    }
+
     private Map<String, Object> outboxEvent(String type) {
         return jdbc.queryForMap("""
-                SELECT id, payload FROM outbox
+                SELECT id, aggregate_type, type, payload FROM outbox
                 WHERE aggregate_type = 'following' AND type = ?
                 ORDER BY created_at DESC LIMIT 1
                 """, type);
@@ -117,7 +255,11 @@ class RelationGoldenPathIT extends AbstractGoldenPathIT {
 
     private void publishTwice(Map<String, Object> outbox) throws Exception {
         long eventId = ((Number) outbox.get("id")).longValue();
-        String envelope = canalEnvelope(eventId, String.valueOf(outbox.get("payload")));
+        String envelope = canalEnvelope(
+                eventId,
+                String.valueOf(outbox.get("aggregate_type")),
+                String.valueOf(outbox.get("type")),
+                String.valueOf(outbox.get("payload")));
         kafka.send(OutboxTopics.CANAL_OUTBOX, envelope).get(10, TimeUnit.SECONDS);
         kafka.send(OutboxTopics.CANAL_OUTBOX, envelope).get(10, TimeUnit.SECONDS);
     }

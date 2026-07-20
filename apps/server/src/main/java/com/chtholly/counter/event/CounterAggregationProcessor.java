@@ -2,15 +2,21 @@ package com.chtholly.counter.event;
 
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
+import com.chtholly.counter.mapper.CounterPersistenceMapper;
+import com.chtholly.counter.mapper.CounterSnapshotDelta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -24,12 +30,16 @@ public class CounterAggregationProcessor {
     private static final String EVENT_DEDUP_TTL_SECONDS = "604800";
 
     private final StringRedisTemplate redis;
+    private final CounterPersistenceMapper persistenceMapper;
     private final DefaultRedisScript<Long> aggIncrScript;
     private final DefaultRedisScript<Long> transferFieldScript;
     private final DefaultRedisScript<Long> cleanupEmptyAggScript;
 
-    public CounterAggregationProcessor(StringRedisTemplate redis) {
+    public CounterAggregationProcessor(
+            StringRedisTemplate redis,
+            CounterPersistenceMapper persistenceMapper) {
         this.redis = redis;
+        this.persistenceMapper = persistenceMapper;
         this.aggIncrScript = new DefaultRedisScript<>();
         this.aggIncrScript.setResultType(Long.class);
         this.aggIncrScript.setScriptText(AGG_INCR_LUA);
@@ -42,19 +52,49 @@ public class CounterAggregationProcessor {
         this.cleanupEmptyAggScript.setScriptText(CLEANUP_EMPTY_AGG_LUA);
     }
 
-    /** 将单条计数增量写入 Redis 聚合桶。 */
-    public boolean applyEvent(CounterEvent evt) {
-        if (evt.getEventId() == null || evt.getEventId().isBlank()) {
-            throw new IllegalArgumentException("Counter event ID is required");
+    /** Applies one Kafka batch using the MySQL inbox and snapshot in one transaction. */
+    @Transactional
+    public int applyBatch(List<CounterEvent> events) {
+        if (events == null || events.isEmpty()) { return 0; }
+        List<CounterEvent> copy = List.copyOf(events);
+        copy.forEach(CounterAggregationProcessor::validateEvent);
+
+        Map<SnapshotKey, Long> grouped = new LinkedHashMap<>();
+        List<CounterEvent> newViewEvents = new ArrayList<>();
+        int applied = 0;
+        for (CounterEvent event : copy) {
+            int inserted = persistenceMapper.insertInbox(event);
+            if (inserted == 0) {
+                if (persistenceMapper.countMatchingInbox(event) != 1) {
+                    throw new IllegalStateException("Counter event ID collision detected");
+                }
+                continue;
+            }
+            if (inserted != 1) {
+                throw new IllegalStateException("Counter inbox insert returned an invalid row count");
+            }
+            applied++;
+            SnapshotKey key = new SnapshotKey(
+                    event.getEntityType(), event.getEntityId(), event.getMetric(), event.getFactEpoch());
+            grouped.merge(key, (long) event.getDelta(), Math::addExact);
+            if ("view".equals(event.getMetric())) { newViewEvents.add(event); }
         }
+        if (grouped.isEmpty()) { return 0; }
+        List<CounterSnapshotDelta> deltas = grouped.entrySet().stream()
+                .map(entry -> new CounterSnapshotDelta(
+                        entry.getKey().entityType(), entry.getKey().entityId(),
+                        entry.getKey().metric(), entry.getValue(), entry.getKey().factEpoch()))
+                .toList();
+        persistenceMapper.incrementSnapshots(deltas);
+        newViewEvents.forEach(this::applyViewEvent);
+        return applied;
+    }
+
+    private boolean applyViewEvent(CounterEvent evt) {
         String aggKey = CounterKeys.aggKey(evt.getEntityType(), evt.getEntityId());
         String indexKey = CounterKeys.aggIndexKey();
         String eventKey = EVENT_KEY_PREFIX + evt.getEventId();
         String field = String.valueOf(evt.getIdx());
-        boolean epochFenced = isPostReaction(evt);
-        if (evt.getFactEpoch() < 0L) {
-            throw new IllegalArgumentException("Counter event fact epoch must not be negative");
-        }
         Long applied = redis.execute(
                 aggIncrScript,
                 List.of(aggKey, indexKey, eventKey,
@@ -62,26 +102,31 @@ public class CounterAggregationProcessor {
                 field,
                 String.valueOf(evt.getDelta()),
                 EVENT_DEDUP_TTL_SECONDS,
-                epochFenced ? "1" : "0",
+                "0",
                 String.valueOf(evt.getFactEpoch()));
         return applied != null && applied == 1L;
     }
 
-    private static boolean isPostReaction(CounterEvent evt) {
-        if (!"post".equals(evt.getEntityType())) {
-            return false;
+    private static void validateEvent(CounterEvent event) {
+        Objects.requireNonNull(event, "event");
+        if (event.getEventId() == null || event.getEventId().isBlank() || event.getEventId().length() > 128) {
+            throw new IllegalArgumentException("Counter event ID is required and must fit the inbox key");
         }
-        if (evt.getIdx() == CounterSchema.IDX_LIKE && "like".equals(evt.getMetric())) {
-            return true;
+        if (!event.getEventId().chars().allMatch(value -> value <= 0x7f)) {
+            throw new IllegalArgumentException("Counter event ID must contain US-ASCII characters only");
         }
-        if (evt.getIdx() == CounterSchema.IDX_FAV && "fav".equals(evt.getMetric())) {
-            return true;
+        CounterSchema.requirePersistableIdentity(event.getEntityType(), event.getEntityId());
+        Integer expectedIndex = CounterSchema.NAME_TO_IDX.get(event.getMetric());
+        if (expectedIndex == null || expectedIndex != event.getIdx()) {
+            throw new IllegalArgumentException("Counter event metric and index do not match");
         }
-        if (evt.getIdx() == CounterSchema.IDX_LIKE || evt.getIdx() == CounterSchema.IDX_FAV
-                || "like".equals(evt.getMetric()) || "fav".equals(evt.getMetric())) {
-            throw new IllegalArgumentException("Reaction counter event metric and index do not match");
+        if (event.getDelta() == 0 || event.getFactEpoch() < 0L) {
+            throw new IllegalArgumentException("Counter event delta and fact epoch are invalid");
         }
-        return false;
+        if (("like".equals(event.getMetric()) || "fav".equals(event.getMetric()))
+                && (Math.abs(event.getDelta()) != 1 || event.getUserId() <= 0L)) {
+            throw new IllegalArgumentException("Reaction counter event mutation is invalid");
+        }
     }
 
     /** 将聚合增量刷写到 SDS 固定结构计数，固定延迟 1s。 */
@@ -118,6 +163,10 @@ public class CounterAggregationProcessor {
 
         for (Map.Entry<Object, Object> e : entries.entrySet()) {
             String field = String.valueOf(e.getKey());
+            if (!String.valueOf(CounterSchema.IDX_VIEW).equals(field)) {
+                redis.opsForHash().delete(aggKey, field);
+                continue;
+            }
             try {
                 Integer.parseInt(field);
             } catch (NumberFormatException nfe) {
@@ -135,6 +184,8 @@ public class CounterAggregationProcessor {
             }
         }
     }
+
+    private record SnapshotKey(String entityType, String entityId, String metric, long factEpoch) {}
 
     private static final String AGG_INCR_LUA = """
             local aggKey = KEYS[1]

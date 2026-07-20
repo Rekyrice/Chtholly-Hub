@@ -16,6 +16,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -185,6 +187,53 @@ class LocalFileStorageServiceTest {
         service.uploadVerifiedObject(key, new ByteArrayInputStream(data), "text/markdown", data.length, sha256(data));
 
         assertThat(service.objectMatches(key, sha256(data), data.length)).isTrue();
+        assertThat(findUploadTemps()).isEmpty();
+    }
+
+    @Test
+    void uploadVerifiedObject_whenDraftEditTargetDiffers_thenKeepsOriginalAndFails() throws Exception {
+        byte[] original = "draft-edit-original".getBytes(StandardCharsets.UTF_8);
+        byte[] replacement = "draft-edit-replacement".getBytes(StandardCharsets.UTF_8);
+        String key = "posts/42/content-edits/" + sha256(original) + ".md";
+        service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(original), "text/markdown", original.length, sha256(original));
+
+        assertThatThrownBy(() -> service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(replacement), "text/markdown", replacement.length, sha256(replacement)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("immutable object already exists with different content");
+
+        assertThat(Files.readAllBytes(service.resolveObjectPath(key))).containsExactly(original);
+        assertThat(findUploadTemps()).isEmpty();
+    }
+
+    @Test
+    void uploadVerifiedObject_whenDraftEditWritesRace_thenAllCallsConverge() throws Exception {
+        byte[] data = "concurrent-draft-edit".getBytes(StandardCharsets.UTF_8);
+        String digest = sha256(data);
+        String key = "posts/42/content-edits/" + digest + ".md";
+        int writers = 8;
+        CountDownLatch ready = new CountDownLatch(writers);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(writers)) {
+            var futures = java.util.stream.IntStream.range(0, writers)
+                    .mapToObj(ignored -> executor.submit(() -> {
+                        ready.countDown();
+                        start.await();
+                        service.uploadVerifiedObject(
+                                key, new ByteArrayInputStream(data), "text/markdown", data.length, digest);
+                        return null;
+                    }))
+                    .toList();
+            ready.await();
+            start.countDown();
+            for (var future : futures) {
+                future.get();
+            }
+        }
+
+        assertThat(service.objectMatches(key, digest, data.length)).isTrue();
         assertThat(findUploadTemps()).isEmpty();
     }
 

@@ -3,12 +3,16 @@ package com.chtholly.integration;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.counter.event.CounterAggregationProcessor;
 import com.chtholly.counter.event.CounterEvent;
+import com.chtholly.counter.mapper.CounterEntityIdentity;
+import com.chtholly.counter.mapper.CounterPersistenceMapper;
 import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterFactMaintenanceService;
 import com.chtholly.counter.service.CounterFactMaintenanceService.ManagedPostReactionState;
 import com.chtholly.counter.service.CounterFactMaintenanceService.PostReactionReconciliationResult;
+import com.chtholly.counter.service.impl.CounterBitmapIndexService;
+import com.chtholly.counter.service.impl.CounterCalibrationService;
 import com.chtholly.counter.service.impl.CounterFactMaintenanceServiceImpl;
 import com.chtholly.counter.service.impl.CounterServiceImpl;
 import com.chtholly.post.mapper.PostMapper;
@@ -35,19 +39,28 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -65,6 +78,8 @@ class CounterFactMaintenanceLuaIT {
     private static RedissonClient redisson;
 
     private UserMapper userMapper;
+    private CounterPersistenceMapper counterPersistenceMapper;
+    private CounterBitmapIndexService bitmapIndex;
     private CounterFactMaintenanceService service;
 
     @BeforeAll
@@ -99,7 +114,9 @@ class CounterFactMaintenanceLuaIT {
             connection.serverCommands().flushAll();
         }
         userMapper = mock(UserMapper.class);
-        service = new CounterFactMaintenanceServiceImpl(redis, redisson, userMapper);
+        counterPersistenceMapper = mock(CounterPersistenceMapper.class);
+        bitmapIndex = new CounterBitmapIndexService(redis, 500);
+        service = new CounterFactMaintenanceServiceImpl(redis, redisson, userMapper, bitmapIndex);
     }
 
     @Test
@@ -205,18 +222,16 @@ class CounterFactMaintenanceLuaIT {
         long userId = 42L;
         AtomicReference<CounterEvent> delayed = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, delayed::set, redisson, mock(PostMapper.class), userMapper);
-        CounterAggregationProcessor processor = new CounterAggregationProcessor(redis);
-
+                redis, delayed::set, mock(PostMapper.class), userMapper,
+                new CounterCalibrationService(
+                        redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
-        assertThat(delayed.get().getFactEpoch()).isZero();
+        assertThat(delayed.get().getFactEpoch()).isEqualTo(1L);
 
         service.reconcileManagedPostReactions(
                 Set.of(userId), Set.of(postId),
                 Map.of(postId, new ManagedPostReactionState(Set.of(userId), Set.of())));
 
-        assertThat(processor.applyEvent(delayed.get())).isFalse();
-        processor.flush();
         assertThat(bitCount("like", postId)).isEqualTo(1L);
         assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
                 CounterSchema.IDX_LIKE)).containsExactly(unsignedInt32(1L));
@@ -224,18 +239,24 @@ class CounterFactMaintenanceLuaIT {
                 CounterKeys.aggKey("post", String.valueOf(postId)),
                 String.valueOf(CounterSchema.IDX_LIKE))).isNull();
         assertThat(redis.opsForValue().get(CounterKeys.factEpochKey("post", String.valueOf(postId))))
-                .isEqualTo("1");
+                .isEqualTo("2");
     }
 
     @Test
     void pendingOldReactionAggregationIsClearedByMaintenanceBeforeFlush() {
         long postId = 90_002L;
         long userId = 43L;
-        CounterAggregationProcessor processor = new CounterAggregationProcessor(redis);
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, processor::applyEvent, redisson, mock(PostMapper.class), userMapper);
+                redis, ignored -> {}, mock(PostMapper.class), userMapper,
+                new CounterCalibrationService(
+                        redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
 
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
+        redis.opsForHash().put(
+                CounterKeys.aggKey("post", String.valueOf(postId)),
+                String.valueOf(CounterSchema.IDX_LIKE), "1");
+        redis.opsForSet().add(
+                CounterKeys.aggIndexKey(), CounterKeys.aggKey("post", String.valueOf(postId)));
         assertThat(redis.opsForHash().get(
                 CounterKeys.aggKey("post", String.valueOf(postId)),
                 String.valueOf(CounterSchema.IDX_LIKE))).isEqualTo("1");
@@ -243,8 +264,6 @@ class CounterFactMaintenanceLuaIT {
         service.reconcileManagedPostReactions(
                 Set.of(userId), Set.of(postId),
                 Map.of(postId, new ManagedPostReactionState(Set.of(userId), Set.of())));
-        processor.flush();
-
         assertThat(bitCount("like", postId)).isEqualTo(1L);
         assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
                 CounterSchema.IDX_LIKE)).containsExactly(unsignedInt32(1L));
@@ -259,21 +278,346 @@ class CounterFactMaintenanceLuaIT {
         long userId = 44L;
         AtomicReference<CounterEvent> published = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, published::set, redisson, mock(PostMapper.class), userMapper);
+                redis, published::set, mock(PostMapper.class), userMapper,
+                new CounterCalibrationService(
+                        redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
         String fenceKey = CounterKeys.factMaintenanceFenceKey("post", String.valueOf(postId));
         String epochKey = CounterKeys.factEpochKey("post", String.valueOf(postId));
-        redis.opsForValue().set(fenceKey, "maintenance-owner");
-
-        assertThatThrownBy(() -> counterService.like("post", String.valueOf(postId), userId))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(error -> assertThat(((BusinessException) error).getHttpStatus()).isEqualTo(503));
-        assertThat(getBit("like", postId, userId)).isFalse();
-        assertThat(published.get()).isNull();
+        String lockKey = CounterKeys.factMaintenanceLockKey("post", String.valueOf(postId));
+        CountDownLatch lockHeld = new CountDownLatch(1);
+        CountDownLatch releaseLock = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<?> holder = executor.submit(() -> {
+            org.redisson.api.RLock activeLock = redisson.getLock(lockKey);
+            activeLock.lock();
+            try {
+                redis.opsForValue().set(fenceKey, "maintenance-owner");
+                lockHeld.countDown();
+                releaseLock.await();
+            } finally {
+                activeLock.unlock();
+            }
+            return null;
+        });
+        try {
+            assertThat(lockHeld.await(5L, TimeUnit.SECONDS)).isTrue();
+            assertThatThrownBy(() -> counterService.like("post", String.valueOf(postId), userId))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(error -> assertThat(((BusinessException) error).getHttpStatus()).isEqualTo(503));
+            assertThat(getBit("like", postId, userId)).isFalse();
+            assertThat(published.get()).isNull();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        } finally {
+            releaseLock.countDown();
+            try {
+                holder.get(5L, TimeUnit.SECONDS);
+            } catch (Exception exception) {
+                throw new IllegalStateException(exception);
+            } finally {
+                executor.shutdownNow();
+            }
+        }
 
         redis.delete(fenceKey);
         redis.opsForValue().set(epochKey, "7");
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
-        assertThat(published.get().getFactEpoch()).isEqualTo(7L);
+        assertThat(published.get().getFactEpoch()).isEqualTo(8L);
+    }
+
+    @Test
+    void calibrationTakesOverAStaleFenceWithoutExpiryUntilMysqlPersistenceCompletes() {
+        String entityId = "90006";
+        String fenceKey = CounterKeys.factMaintenanceFenceKey("post", entityId);
+        redis.opsForValue().set(fenceKey, "stale-owner", 10L, TimeUnit.SECONDS);
+        AtomicLong ttlDuringPersistence = new AtomicLong(Long.MIN_VALUE);
+        doAnswer(invocation -> {
+            Long ttl = redis.getExpire(fenceKey, TimeUnit.MILLISECONDS);
+            ttlDuringPersistence.set(ttl == null ? Long.MIN_VALUE : ttl);
+            return null;
+        }).when(counterPersistenceMapper).replaceReactionSnapshots("post", entityId, 0L, 0L, 1L);
+        CounterCalibrationService calibration =
+                new CounterCalibrationService(
+                        redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50);
+
+        CounterCalibrationService.ReconciliationResult result =
+                calibration.reconcileEntity("post", entityId);
+
+        assertThat(result).isEqualTo(new CounterCalibrationService.ReconciliationResult(0L, 0L, 1L));
+        assertThat(ttlDuringPersistence.get()).isEqualTo(-1L);
+        assertThat(redis.hasKey(fenceKey)).isFalse();
+    }
+
+    @Test
+    void toggleTakesOverAStaleFenceEvenWithoutAnExistingBitmapOrSnapshotCandidate() {
+        String entityId = "90008";
+        long userId = 48L;
+        String fenceKey = CounterKeys.factMaintenanceFenceKey("post", entityId);
+        redis.opsForValue().set(fenceKey, "crashed-owner");
+        AtomicReference<CounterEvent> published = new AtomicReference<>();
+        CounterServiceImpl counterService = new CounterServiceImpl(
+                redis, published::set, mock(PostMapper.class), userMapper,
+                new CounterCalibrationService(
+                        redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
+
+        assertThat(counterService.like("post", entityId, userId)).isTrue();
+
+        assertThat(redis.hasKey(fenceKey)).isFalse();
+        assertThat(getBit("like", Long.parseLong(entityId), userId)).isTrue();
+        assertThat(field(rawString(CounterKeys.sdsKey("post", entityId)), CounterSchema.IDX_LIKE))
+                .containsExactly(unsignedInt32(1L));
+        assertThat(published.get()).isNotNull();
+    }
+
+    @Test
+    void missingDerivedShardIndexNeverOverwritesAStillPresentBitmapAuthority() {
+        String entityId = "90009";
+        long userId = 49L;
+        String bitmapKey = CounterKeys.bitmapKey(
+                "like", "post", entityId, BitmapShard.chunkOf(userId));
+        redis.opsForValue().setBit(bitmapKey, BitmapShard.bitOf(userId), true);
+        assertThat(bitmapIndex.discoverCandidates(1))
+                .contains(new CounterEntityIdentity("post", entityId));
+        redis.delete(CounterKeys.bitmapShardIndexKey("like", "post", entityId));
+        CounterCalibrationService calibration = new CounterCalibrationService(
+                redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50);
+
+        assertThatThrownBy(() -> calibration.reconcileEntity("post", entityId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("shard index");
+
+        assertThat(redis.opsForValue().getBit(bitmapKey, BitmapShard.bitOf(userId))).isTrue();
+        assertThat(redis.hasKey(CounterKeys.sdsKey("post", entityId))).isFalse();
+        org.mockito.Mockito.verify(counterPersistenceMapper, org.mockito.Mockito.never())
+                .replaceReactionSnapshots(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    void missingShardIndexAndCandidateStillCannotEraseBitmapAuthority() {
+        String entityId = "90010";
+        long userId = 50L;
+        String bitmapKey = CounterKeys.bitmapKey(
+                "like", "post", entityId, BitmapShard.chunkOf(userId));
+        redis.opsForValue().setBit(bitmapKey, BitmapShard.bitOf(userId), true);
+        assertThat(bitmapIndex.discoverCandidates(1))
+                .contains(new CounterEntityIdentity("post", entityId));
+        redis.delete(CounterKeys.bitmapShardIndexKey("like", "post", entityId));
+        redis.opsForZSet().remove(
+                CounterKeys.bitmapCalibrationCandidatesKey(), "post:" + entityId);
+        CounterCalibrationService calibration = new CounterCalibrationService(
+                redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50);
+
+        assertThatThrownBy(() -> calibration.reconcileEntity("post", entityId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("shard index");
+
+        assertThat(redis.opsForValue().getBit(bitmapKey, BitmapShard.bitOf(userId))).isTrue();
+        assertThat(redis.hasKey(CounterKeys.sdsKey("post", entityId))).isFalse();
+    }
+
+    @Test
+    void missingSingleShardMemberCannotSilentlyReduceAuthoritativeCount() {
+        String entityId = "90011";
+        long firstUser = 51L;
+        long secondUser = BitmapShard.CHUNK_SIZE + 52L;
+        String firstKey = CounterKeys.bitmapKey(
+                "like", "post", entityId, BitmapShard.chunkOf(firstUser));
+        String secondKey = CounterKeys.bitmapKey(
+                "like", "post", entityId, BitmapShard.chunkOf(secondUser));
+        redis.opsForValue().setBit(firstKey, BitmapShard.bitOf(firstUser), true);
+        redis.opsForValue().setBit(secondKey, BitmapShard.bitOf(secondUser), true);
+        assertThat(bitmapIndex.discoverCandidates(1))
+                .contains(new CounterEntityIdentity("post", entityId));
+        redis.opsForSet().remove(
+                CounterKeys.bitmapShardIndexKey("like", "post", entityId), secondKey);
+        CounterCalibrationService calibration = new CounterCalibrationService(
+                redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50);
+
+        assertThatThrownBy(() -> calibration.reconcileEntity("post", entityId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("shard index");
+
+        assertThat(redis.opsForValue().getBit(firstKey, BitmapShard.bitOf(firstUser))).isTrue();
+        assertThat(redis.opsForValue().getBit(secondKey, BitmapShard.bitOf(secondUser))).isTrue();
+        assertThat(redis.hasKey(CounterKeys.sdsKey("post", entityId))).isFalse();
+    }
+
+    @Test
+    void managedMaintenanceTakesOverAStaleFenceWithoutExpiryUntilReconciliationCompletes() {
+        long postId = 90_007L;
+        long managedUser = 1L;
+        long naturalUser = 5L;
+        String fenceKey = CounterKeys.factMaintenanceFenceKey("post", String.valueOf(postId));
+        redis.opsForValue().set(fenceKey, "stale-owner", 10L, TimeUnit.SECONDS);
+        setBit("like", postId, naturalUser, true);
+        AtomicLong ttlDuringReconciliation = new AtomicLong(Long.MIN_VALUE);
+        when(userMapper.listExistingIds(anyList())).thenAnswer(invocation -> {
+            Long ttl = redis.getExpire(fenceKey, TimeUnit.MILLISECONDS);
+            ttlDuringReconciliation.set(ttl == null ? Long.MIN_VALUE : ttl);
+            return List.of(naturalUser);
+        });
+
+        PostReactionReconciliationResult result = service.reconcileManagedPostReactions(
+                Set.of(managedUser),
+                Set.of(postId),
+                Map.of(postId, new ManagedPostReactionState(Set.of(), Set.of())))
+                .posts().get(postId);
+
+        assertThat(result.likeTotal()).isEqualTo(1L);
+        assertThat(result.favTotal()).isZero();
+        assertThat(ttlDuringReconciliation.get()).isEqualTo(-1L);
+        assertThat(redis.hasKey(fenceKey)).isFalse();
+    }
+
+    @Test
+    void bitmapDiscoveryPersistsTheWholePageAndRotatesAcrossServiceInstances() {
+        List<String> entityIds = List.of("91001", "91002", "91003");
+        for (int index = 0; index < entityIds.size(); index++) {
+            redis.opsForValue().setBit(
+                    CounterKeys.bitmapKey("like", "post", entityIds.get(index), 0L),
+                    index,
+                    true);
+        }
+
+        List<CounterEntityIdentity> first = bitmapIndex.discoverCandidates(1);
+
+        assertThat(first).hasSize(1);
+        assertThat(redis.opsForZSet().zCard(CounterKeys.bitmapCalibrationCandidatesKey()))
+                .isEqualTo(3L);
+        assertThat(redis.opsForValue().get(CounterKeys.bitmapIndexBackfillCompleteKey()))
+                .isEqualTo("v1");
+        bitmapIndex.rotateCandidate(first.get(0));
+
+        CounterBitmapIndexService restarted = new CounterBitmapIndexService(redis, 500);
+        List<CounterEntityIdentity> second = restarted.discoverCandidates(1);
+
+        assertThat(second).hasSize(1).doesNotContain(first.get(0));
+        for (String entityId : entityIds) {
+            assertThat(restarted.requireShardKeys("like", "post", entityId))
+                    .containsExactly(CounterKeys.bitmapKey("like", "post", entityId, 0L));
+        }
+    }
+
+    @Test
+    void bitmapDiscoveryResumesANonZeroCursorAcrossServiceInstances() {
+        for (int index = 0; index < 1_000; index++) {
+            redis.opsForValue().set("discovery-filler:" + index, "1");
+        }
+        String entityId = "91004";
+        String bitmapKey = CounterKeys.bitmapKey("like", "post", entityId, 0L);
+        redis.opsForValue().setBit(bitmapKey, 7L, true);
+        CounterBitmapIndexService firstInstance = new CounterBitmapIndexService(redis, 1);
+
+        assertThat(firstInstance.discoverCandidates(1)).isEmpty();
+        String firstCursor = redis.opsForValue().get(CounterKeys.bitmapIndexBackfillCursorKey());
+        assertThat(firstCursor).isNotBlank().isNotEqualTo("0");
+        assertThat(firstInstance.isBackfillComplete()).isFalse();
+
+        CounterBitmapIndexService restarted = new CounterBitmapIndexService(redis, 1);
+        restarted.discoverCandidates(1);
+        assertThat(redis.opsForValue().get(CounterKeys.bitmapIndexBackfillCursorKey()))
+                .isNotEqualTo(firstCursor);
+        for (int page = 0; page < 5_000 && !restarted.isBackfillComplete(); page++) {
+            restarted.discoverCandidates(1);
+        }
+
+        assertThat(restarted.isBackfillComplete()).isTrue();
+        assertThat(restarted.requireShardKeys("like", "post", entityId))
+                .containsExactly(bitmapKey);
+    }
+
+    @Test
+    void repeatedReactionTargetsOnlyChangeBitmapSdsAndPublishOncePerTransition() {
+        long postId = 90_005L;
+        long userId = 45L;
+        setRawString(CounterKeys.sdsKey("post", String.valueOf(postId)),
+                new byte[CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE]);
+        ConcurrentLinkedQueue<CounterEvent> events = new ConcurrentLinkedQueue<>();
+        CounterServiceImpl counterService = new CounterServiceImpl(
+                redis, events::add, mock(PostMapper.class), userMapper,
+                new CounterCalibrationService(
+                        redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
+
+        assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
+        assertThat(counterService.like("post", String.valueOf(postId), userId)).isFalse();
+        assertThat(counterService.fav("post", String.valueOf(postId), userId)).isTrue();
+        assertThat(counterService.fav("post", String.valueOf(postId), userId)).isFalse();
+        assertThat(events).hasSize(2);
+        assertThat(bitCount("like", postId)).isEqualTo(1L);
+        assertThat(bitCount("fav", postId)).isEqualTo(1L);
+        assertThat(redis.opsForSet().members("bmidx:like:post:" + postId))
+                .containsExactlyInAnyOrder("@v1", CounterKeys.bitmapKey(
+                        "like", "post", String.valueOf(postId), BitmapShard.chunkOf(userId)));
+        assertThat(redis.opsForSet().members("bmidx:fav:post:" + postId))
+                .containsExactlyInAnyOrder("@v1", CounterKeys.bitmapKey(
+                        "fav", "post", String.valueOf(postId), BitmapShard.chunkOf(userId)));
+        assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
+                CounterSchema.IDX_LIKE)).containsExactly(unsignedInt32(1L));
+        assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
+                CounterSchema.IDX_FAV)).containsExactly(unsignedInt32(1L));
+
+        assertThat(counterService.unlike("post", String.valueOf(postId), userId)).isTrue();
+        assertThat(counterService.unlike("post", String.valueOf(postId), userId)).isFalse();
+        assertThat(counterService.unfav("post", String.valueOf(postId), userId)).isTrue();
+        assertThat(counterService.unfav("post", String.valueOf(postId), userId)).isFalse();
+        assertThat(events).hasSize(4);
+        assertThat(bitCount("like", postId)).isZero();
+        assertThat(bitCount("fav", postId)).isZero();
+        assertThat(redis.opsForSet().members("bmidx:like:post:" + postId)).containsExactly("@v1");
+        assertThat(redis.opsForSet().members("bmidx:fav:post:" + postId)).containsExactly("@v1");
+        assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
+                CounterSchema.IDX_LIKE)).containsExactly(unsignedInt32(0L));
+        assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
+                CounterSchema.IDX_FAV)).containsExactly(unsignedInt32(0L));
+    }
+
+    @Test
+    void concurrentMixedReactionTargetsKeepBitmapSdsAndPublishedDeltasConsistent() throws Exception {
+        long postId = 90_006L;
+        long userId = 46L;
+        setRawString(CounterKeys.sdsKey("post", String.valueOf(postId)),
+                new byte[CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE]);
+        ConcurrentLinkedQueue<CounterEvent> events = new ConcurrentLinkedQueue<>();
+        CounterServiceImpl counterService = new CounterServiceImpl(
+                redis, events::add, mock(PostMapper.class), userMapper,
+                new CounterCalibrationService(
+                        redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
+        int operationCount = 40;
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        List<Future<Boolean>> futures = new ArrayList<>(operationCount);
+        try {
+            for (int index = 0; index < operationCount; index++) {
+                boolean add = index % 2 == 0;
+                futures.add(executor.submit(() -> {
+                    start.await();
+                    return add
+                            ? counterService.like("post", String.valueOf(postId), userId)
+                            : counterService.unlike("post", String.valueOf(postId), userId);
+                }));
+            }
+            start.countDown();
+            long changed = 0L;
+            for (Future<Boolean> future : futures) {
+                if (future.get()) { changed++; }
+            }
+
+            long bitmapCount = bitCount("like", postId);
+            long deltaSum = events.stream().mapToLong(CounterEvent::getDelta).sum();
+            assertThat(bitmapCount).isIn(0L, 1L);
+            assertThat(changed).isEqualTo(events.size());
+            assertThat(deltaSum).isEqualTo(bitmapCount);
+            assertThat(field(rawString(CounterKeys.sdsKey("post", String.valueOf(postId))),
+                    CounterSchema.IDX_LIKE)).containsExactly(unsignedInt32(bitmapCount));
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

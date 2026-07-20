@@ -1,9 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.chtholly.relation.outbox.OutboxMapper">
+    <resultMap id="RelationReplayRowMap" type="com.chtholly.relation.outbox.OutboxMapper$RelationReplayRow">
+        <constructor>
+            <arg column="id" javaType="_long"/>
+            <arg column="type" javaType="java.lang.String"/>
+            <arg column="payload" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
     <insert id="insert">
         INSERT INTO outbox (id, aggregate_type, aggregate_id, type, payload, created_at)
         VALUES (#{id}, #{aggregateType}, #{aggregateId}, #{type}, #{payload}, NOW(3))
     </insert>
-</mapper>
 
+    <select id="findRelationReplayRow" resultMap="RelationReplayRowMap">
+        SELECT id, type, payload
+        FROM outbox
+        WHERE id=#{id}
+          AND aggregate_type='following'
+          AND type IN ('FollowCreated', 'FollowCanceled')
+        LIMIT 1
+    </select>
+
+    <select id="listRelationReplayRows" resultMap="RelationReplayRowMap">
+        SELECT id, type, payload
+        FROM outbox
+        WHERE id BETWEEN #{fromId} AND #{toId}
+          AND aggregate_type='following'
+          AND type IN ('FollowCreated', 'FollowCanceled')
+        ORDER BY id ASC
+        LIMIT #{limit}
+    </select>
+</mapper>

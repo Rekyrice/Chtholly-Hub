@@ -22,6 +22,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * Spring Security 安全配置。
@@ -41,11 +44,18 @@ public class SecurityConfig {
     @Value("${cors.allowed-origins}")
     private String[] allowedOrigins;
 
+    @Value("${storage.local.public-url-prefix:/uploads}")
+    private String localStoragePublicUrlPrefix;
+
+    @Value("${storage.type:local}")
+    private String storageType;
+
     private final ObjectMapper objectMapper;
     private final BannedUserFilter bannedUserFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        Optional<String> localStoragePattern = localStoragePattern(storageType, localStoragePublicUrlPrefix);
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
@@ -58,16 +68,18 @@ public class SecurityConfig {
                             objectMapper.writeValue(response.getOutputStream(),
                                     ApiErrorBody.of("FORBIDDEN", "权限不足"));
                         }))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                        .requestMatchers(
+                .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                            .requestMatchers(
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
                                 "/api-docs",
                                 "/api-docs/**",
                                 "/v3/api-docs/**"
-                        ).permitAll()
-                        .requestMatchers("/api/v1/posts/feed").permitAll()
+                            ).permitAll();
+                    localStoragePattern.ifPresent(pattern -> auth
+                            .requestMatchers(org.springframework.http.HttpMethod.GET, pattern).permitAll());
+                    auth.requestMatchers("/api/v1/posts/feed").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/tags").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/search/hub-feed").permitAll()
@@ -96,10 +108,30 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/password/reset"
                         ).permitAll()
-                        .anyRequest().authenticated()
-                )
+                            .anyRequest().authenticated();
+                })
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
         return http.build();
+    }
+
+    static Optional<String> localStoragePattern(String storageType, String publicUrlPrefix) {
+        if (!"local".equalsIgnoreCase(storageType) || publicUrlPrefix == null) {
+            return Optional.empty();
+        }
+        String prefix = publicUrlPrefix.trim().replaceAll("/+$", "");
+        if (!prefix.matches("/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*")) {
+            return Optional.empty();
+        }
+        String[] segments = prefix.substring(1).split("/");
+        if (Arrays.stream(segments).anyMatch(segment -> ".".equals(segment) || "..".equals(segment))) {
+            return Optional.empty();
+        }
+        String firstSegment = segments[0].toLowerCase(Locale.ROOT);
+        if (Set.of("api", "actuator", "swagger-ui", "api-docs", "v3", "error")
+                .contains(firstSegment)) {
+            return Optional.empty();
+        }
+        return Optional.of(prefix + "/**");
     }
 
     @Bean

@@ -150,6 +150,15 @@ agent:
   memory-ttl-minutes: ${AGENT_MEMORY_TTL_MINUTES:120}
   stream-char-delay-ms: ${AGENT_STREAM_CHAR_DELAY_MS:50}
   tool-timeout-seconds: ${AGENT_TOOL_TIMEOUT_SECONDS:30}
+  skills:
+    page-explain:
+      enabled: ${AGENT_SKILL_PAGE_EXPLAIN_ENABLED:true}
+    evidence-outline:
+      enabled: ${AGENT_SKILL_EVIDENCE_OUTLINE_ENABLED:true}
+    draft-fact-check:
+      enabled: ${AGENT_SKILL_DRAFT_FACT_CHECK_ENABLED:true}
+    draft-edit:
+      enabled: ${AGENT_SKILL_DRAFT_EDIT_ENABLED:true}
 
 bangumi:
   enabled: ${BANGUMI_ENABLED:true}
@@ -164,17 +173,23 @@ bangumi:
     cron: "0 0 4 * * *"
 
 counter:
+  calibration:
+    enabled: ${COUNTER_CALIBRATION_ENABLED:true}
+    fixed-delay: ${COUNTER_CALIBRATION_FIXED_DELAY:PT5M}
+    batch-size: ${COUNTER_CALIBRATION_BATCH_SIZE:50}
+    scan-count: ${COUNTER_CALIBRATION_SCAN_COUNT:500}
+  kafka:
+    publish:
+      max-attempts: ${COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS:3}
+      ack-timeout: ${COUNTER_KAFKA_PUBLISH_ACK_TIMEOUT:PT3S}
+    consumer:
+      max-attempts: ${COUNTER_KAFKA_CONSUMER_MAX_ATTEMPTS:3}
+      retry-backoff: ${COUNTER_KAFKA_CONSUMER_RETRY_BACKOFF:PT1S}
+      dlt-ack-timeout: ${COUNTER_KAFKA_CONSUMER_DLT_ACK_TIMEOUT:PT3S}
   rebuild:
     enabled: false
     lock:
-      ttl-ms: 5000
       watchdog-ms: 30000
-    rate:
-      permits: 3
-      window-seconds: 10
-    backoff:
-      base-ms: 500
-      max-ms: 30000
 
 mybatis:
   mapper-locations: classpath*:mapper/*.xml
@@ -247,6 +262,7 @@ storage:
     public-url-prefix: /uploads
 
 cache:
+  read-mode: ${CACHE_READ_MODE:full}
   l2:
     public-cfg:
       ttl-seconds: 15

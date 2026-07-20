@@ -22,6 +22,7 @@ scripts/oss/node_modules/
 .superpowers/
 content/seed/**/.media-prepare.lock/
 content/seed/**/.media-staging-*/
+.benchmark-results/
 
 # --- 本地运行日志 ---
 logs/*.log

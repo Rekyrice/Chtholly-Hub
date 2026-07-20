@@ -35,14 +35,20 @@ public abstract class AbstractGoldenPathIT {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractGoldenPathIT.class);
 
-    private static final Network NETWORK = Network.newNetwork();
+    protected static final Network NETWORK = Network.newNetwork();
 
     protected static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("chtholly")
             .withUsername("chtholly")
             .withPassword("chtholly")
-            .withCommand("--log-bin-trust-function-creators=1")
-            .withNetwork(NETWORK);
+            .withCommand(
+                    "--server-id=1",
+                    "--log-bin=mysql-bin",
+                    "--binlog-format=ROW",
+                    "--binlog-row-image=FULL",
+                    "--log-bin-trust-function-creators=1")
+            .withNetwork(NETWORK)
+            .withNetworkAliases("mysql");
 
     protected static final GenericContainer<?> REDIS = new GenericContainer<>("redis:7-alpine")
             .withExposedPorts(6379)
@@ -108,15 +114,19 @@ public abstract class AbstractGoldenPathIT {
 
     protected void cleanDatabase() {
         jdbc.execute("SET FOREIGN_KEY_CHECKS = 0");
-        for (String table : new String[]{"outbox", "follower", "following", "posts", "users"}) {
+        for (String table : new String[]{
+                "draft_edit_preview", "counter_event_inbox", "counter_snapshot", "outbox",
+                "follower", "following", "posts", "users"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
         }
         jdbc.execute("SET FOREIGN_KEY_CHECKS = 1");
     }
 
-    protected String canalEnvelope(long eventId, String payload) {
+    protected String canalEnvelope(long eventId, String aggregateType, String eventType, String payload) {
         ObjectNode row = objectMapper.createObjectNode();
         row.put("id", eventId);
+        row.put("aggregate_type", aggregateType);
+        row.put("type", eventType);
         row.put("payload", payload);
         ArrayNode data = objectMapper.createArrayNode().add(row);
         ObjectNode envelope = objectMapper.createObjectNode();

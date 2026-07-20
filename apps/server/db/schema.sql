@@ -100,6 +100,29 @@ CREATE TABLE IF NOT EXISTS posts (
     CONSTRAINT fk_posts_creator FOREIGN KEY (creator_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Explicitly approved, synchronous draft-edit previews.
+CREATE TABLE IF NOT EXISTS draft_edit_preview (
+    id BIGINT UNSIGNED NOT NULL,
+    owner_id BIGINT UNSIGNED NOT NULL,
+    draft_id BIGINT UNSIGNED NOT NULL,
+    skill_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    skill_version VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    base_content_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    candidate_content MEDIUMTEXT NOT NULL,
+    candidate_content_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    preview_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    status VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    created_at DATETIME(3) NOT NULL,
+    expires_at DATETIME(3) NOT NULL,
+    decided_at DATETIME(3) NULL,
+    PRIMARY KEY (id),
+    KEY ix_draft_edit_owner_draft (owner_id, draft_id, created_at),
+    KEY ix_draft_edit_expiry (status, expires_at),
+    CONSTRAINT fk_draft_edit_owner FOREIGN KEY (owner_id) REFERENCES users(id),
+    CONSTRAINT fk_draft_edit_draft FOREIGN KEY (draft_id) REFERENCES posts(id),
+    CONSTRAINT ck_draft_edit_status CHECK (status IN ('PENDING', 'APPLIED', 'REJECTED', 'EXPIRED'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Base outbox table for CDC-style asynchronous work.
 CREATE TABLE IF NOT EXISTS outbox (
     id BIGINT UNSIGNED NOT NULL,
@@ -111,6 +134,31 @@ CREATE TABLE IF NOT EXISTS outbox (
     PRIMARY KEY (id),
     KEY ix_outbox_agg (aggregate_type, aggregate_id),
     KEY ix_outbox_ct (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Durable idempotency for counter events and their convergent MySQL snapshots.
+CREATE TABLE IF NOT EXISTS counter_event_inbox (
+    event_id VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    entity_type VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    entity_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    metric VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    delta INT NOT NULL,
+    user_id BIGINT NOT NULL,
+    fact_epoch BIGINT UNSIGNED NOT NULL,
+    applied_at DATETIME(3) NOT NULL,
+    PRIMARY KEY (event_id),
+    KEY ix_counter_inbox_entity (entity_type, entity_id, metric, applied_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS counter_snapshot (
+    entity_type VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    entity_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    metric VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    count_value BIGINT NOT NULL,
+    fact_epoch BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    updated_at DATETIME(3) NOT NULL,
+    PRIMARY KEY (entity_type, entity_id, metric),
+    KEY ix_counter_snapshot_updated (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Relation write/read models.

@@ -106,6 +106,12 @@ public class RagIndexService implements PostRagIndexer {
             log.error("VectorStore add failed: {}", e.getMessage());
             return 0;
         }
+        try {
+            // QA 和 Agent 检索会在本方法返回后立即查询，必须等待新切片可见。
+            es.indices().refresh(refresh -> refresh.index(esProps.getIndex()));
+        } catch (Exception e) {
+            throw new IllegalStateException("Vector index refresh failed for post " + postId, e);
+        }
         // 返回本次写入的切片数量
         return docs.size();
     }

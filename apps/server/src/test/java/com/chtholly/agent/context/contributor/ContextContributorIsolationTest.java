@@ -15,6 +15,7 @@ import com.chtholly.content.ContentIntelligenceReader;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -75,8 +76,12 @@ class ContextContributorIsolationTest {
         when(graphService.contextForQuestion(question, 5))
                 .thenThrow(new IllegalStateException("graph unavailable"));
         when(knowledgeService.searchRelevantKnowledge(question, 3)).thenReturn(List.of("known fact"));
-        when(hybridSearchService.hybridSearch(question, 5)).thenReturn(List.of(
-                new SearchResult("post:1", "result title", "result snippet", "hybrid", 0.8)));
+        when(hybridSearchService.hybridSearch(question, 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(List.of(
+                        new SearchResult(
+                                "post:1", "result title", "result snippet", "semantic+keyword", 0.8,
+                                "post:1", "post:1#0", "v1", "hash-1", Set.of("PUBLIC"))),
+                        java.util.Map.of()));
         AnchorContext anchors = AnchorContext.builder().semantic(List.of("anchor semantic")).build();
 
         ContextContribution graph = new GraphContextContributor(graphService)
@@ -88,8 +93,56 @@ class ContextContributorIsolationTest {
         assertThat(graph.degraded()).isTrue();
         assertThat(knowledge.content())
                 .contains("## 你知道的事", "known fact")
-                .contains("## 相关知识", "anchor semantic", "result title：result snippet");
+                .contains("## 相关知识", "anchor semantic")
+                .doesNotContain("result title", "result snippet");
+        assertThat(knowledge.evidence()).hasSize(1);
+        assertThat(knowledge.evidence().getFirst().title()).isEqualTo("result title");
+        assertThat(knowledge.evidenceRequired()).isTrue();
         assertThat(knowledge.degraded()).isFalse();
+    }
+
+    @Test
+    void hybridRouteFailureMarksKnowledgeContributionDegraded() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        String question = "帮我查资料";
+        when(hybridSearchService.hybridSearch(question, 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(
+                        List.of(),
+                        java.util.Map.of(
+                                "semantic", HybridSearchService.RetrievalStatus.FAILED,
+                                "keyword", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY,
+                                "entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)));
+
+        ContextContribution contribution = new KnowledgeContextContributor(hybridSearchService, null)
+                .contribute(request("", question, AnchorContext.builder().build()));
+
+        assertThat(contribution.degraded()).isTrue();
+        assertThat(contribution.retrievalStatuses()).containsEntry("semantic", "FAILED");
+    }
+
+    @Test
+    void rejectedEvidenceMarksItsSuccessfulRoutesDegraded() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        String question = "帮我查资料";
+        when(hybridSearchService.hybridSearch(question, 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(
+                        List.of(new SearchResult(
+                                "post:1", "title", "snippet", "semantic+keyword", 0.8,
+                                "post:1", "post:1#0", "v1", null, Set.of("PUBLIC"))),
+                        java.util.Map.of(
+                                "semantic", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                                "keyword", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                                "entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)));
+
+        ContextContribution contribution = new KnowledgeContextContributor(hybridSearchService, null)
+                .contribute(request("", question, AnchorContext.builder().build()));
+
+        assertThat(contribution.evidence()).isEmpty();
+        assertThat(contribution.degraded()).isTrue();
+        assertThat(contribution.retrievalStatuses())
+                .containsEntry("semantic", "FAILED")
+                .containsEntry("keyword", "FAILED")
+                .containsEntry("entity", "SUCCESS_EMPTY");
     }
 
     private ContextRequest request(String pageContext, String question, AnchorContext anchors) {

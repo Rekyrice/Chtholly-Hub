@@ -1,0 +1,26 @@
+{
+    "schemaVersion":  1,
+    "datasetVersion":  "agent-evaluation-v1",
+    "labelStatus":  "CANDIDATE_REQUIRES_OWNER_REVIEW",
+    "counts":  {
+                   "skills":  27,
+                   "retrieval":  45,
+                   "draftFlows":  5,
+                   "traceReplays":  2
+               },
+    "metrics":  {
+                    "retrieval":  [
+                                      "Recall@5",
+                                      "MRR",
+                                      "citationValidityRate",
+                                      "noAnswerAccuracy"
+                                  ],
+                    "cache":  [
+                                  "p95",
+                                  "errorRate",
+                                  "mysqlQueryCount",
+                                  "sameKeyLoadCount"
+                              ]
+                },
+    "ownerReviewRequired":  true
+}

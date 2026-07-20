@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chtholly.local/benchmark-manifest.schema.json",
+  "title": "Chtholly Hub cache benchmark manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "profile",
+    "scenario",
+    "variant",
+    "repetition",
+    "subjectCommit",
+    "executionCommit",
+    "harnessCommit",
+    "datasetCommit",
+    "environmentId",
+    "workload",
+    "status",
+    "startedAt",
+    "endedAt",
+    "effectiveReadMode",
+    "singleFlightEnabled",
+    "cacheMetricsAvailable",
+    "cacheInvalidatedAt",
+    "coldStartVerified"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "profile": { "enum": ["smoke", "standard"] },
+    "scenario": { "enum": ["stable-hot", "expiry-spike"] },
+    "variant": { "enum": ["db-only", "full-no-singleflight", "full"] },
+    "repetition": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "subjectCommit": { "type": "string", "minLength": 7 },
+    "executionCommit": { "type": "string", "minLength": 7 },
+    "harnessCommit": { "type": "string", "minLength": 7 },
+    "datasetCommit": { "type": "string", "minLength": 7 },
+    "environmentId": { "type": "string", "minLength": 1 },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seed", "concurrency", "warmupSeconds", "durationSeconds"],
+      "properties": {
+        "seed": { "type": "integer" },
+        "concurrency": { "type": "integer", "minimum": 1 },
+        "warmupSeconds": { "type": "integer", "minimum": 0 },
+        "durationSeconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "status": { "enum": ["VALIDATED", "RUNNING", "COMPLETED", "FAILED", "INCOMPLETE"] },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": ["string", "null"], "format": "date-time" },
+    "effectiveReadMode": { "enum": [null, "db-only", "full-no-singleflight", "full"] },
+    "singleFlightEnabled": { "type": ["boolean", "null"] },
+    "cacheMetricsAvailable": { "type": ["boolean", "null"] },
+    "cacheInvalidatedAt": { "type": ["string", "null"], "format": "date-time" },
+    "coldStartVerified": { "type": ["boolean", "null"] }
+  }
+}

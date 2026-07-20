@@ -1,0 +1,25 @@
+id: draft-fact-check
+version: v1
+enabled: true
+description: 对用户提供的草稿主张进行只读事实核查。
+supportedIntents: [draft_fact_check, claim_verification]
+requiredContext: [QUESTION]
+allowedTools: [article_rag, fulltext_search, bangumi_search, bangumi_characters, bangumi_person_works]
+instructionTemplate: |
+  将草稿拆成可核查主张，并用 Markdown 表格输出“主张、判定、证据、说明”。
+  判定只允许 SUPPORTED、CONFLICTED、INSUFFICIENT；每条 SUPPORTED 必须带本轮 citationId。
+  模型常识不能当作站内证据，缺少证据时必须标记 INSUFFICIENT。
+inputSchema:
+  draft: string
+  sourceScope: string
+outputSchema:
+  type: DRAFT_FACT_CHECK
+  requiresEvidence: true
+  allowedStatuses: [SUPPORTED, CONFLICTED, INSUFFICIENT]
+  maxChars: 5000
+validators: [citation, fact-status, length]
+riskLevel: READ_ONLY
+approvalPolicy: NONE
+timeoutBudgetMs: 45000
+maxSteps: 5
+evaluationDatasetVersion: skill-readonly-seed-v1

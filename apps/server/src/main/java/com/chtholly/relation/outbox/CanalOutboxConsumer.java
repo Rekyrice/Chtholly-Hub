@@ -17,6 +17,7 @@ import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Canal Outbox 消费者。
@@ -29,6 +30,7 @@ public class CanalOutboxConsumer extends AbstractKafkaConsumer {
 
     private static final String CONSUMER_GROUP = "relation-outbox-consumer";
     private static final String IDEMPOTENCY_SCOPE = "relation";
+    private static final Set<String> SUPPORTED_EVENT_TYPES = Set.of("FollowCreated", "FollowCanceled");
 
     private final RelationEventProcessor processor;
     private final OutboxIdempotencyGuard idempotencyGuard;
@@ -57,26 +59,37 @@ public class CanalOutboxConsumer extends AbstractKafkaConsumer {
     protected void process(String sourceTopic, String messageKey, String payload, int retryCount) throws Exception {
         List<JsonNode> rows = OutboxMessageUtil.extractRows(objectMapper, payload);
         for (JsonNode row : rows) {
-            Long eventId = OutboxMessageUtil.extractEventId(row);
-            if (eventId != null && idempotencyGuard.isAlreadyConsumed(IDEMPOTENCY_SCOPE, eventId)) {
+            if (!"following".equals(row.path("aggregate_type").asText())) {
+                continue;
+            }
+            String eventType = row.path("type").asText();
+            if (!SUPPORTED_EVENT_TYPES.contains(eventType)) {
                 continue;
             }
 
+            Long eventId = OutboxMessageUtil.extractEventId(row);
+            if (eventId == null) {
+                throw new IllegalArgumentException("Relation Outbox event ID is required");
+            }
             JsonNode payloadNode = row.get("payload");
-            if (payloadNode == null) {
+            if (payloadNode == null || !payloadNode.isTextual() || payloadNode.asText().isBlank()) {
+                throw new IllegalArgumentException("Relation Outbox payload is required");
+            }
+            if (idempotencyGuard.isAlreadyConsumed(IDEMPOTENCY_SCOPE, eventId)) {
                 continue;
             }
 
             RelationEvent evt = objectMapper.readValue(payloadNode.asText(), RelationEvent.class);
+            if (!eventType.equals(evt.type())) {
+                throw new IllegalArgumentException("Relation Outbox type does not match payload type");
+            }
             try {
                 processor.process(evt);
             } catch (Exception e) {
                 log.error("Canal outbox processing failed", e);
                 throw e;
             }
-            if (eventId != null) {
-                idempotencyGuard.markConsumed(IDEMPOTENCY_SCOPE, eventId);
-            }
+            idempotencyGuard.markConsumed(IDEMPOTENCY_SCOPE, eventId);
         }
     }
 

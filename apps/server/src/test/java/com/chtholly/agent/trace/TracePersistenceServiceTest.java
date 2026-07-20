@@ -97,6 +97,16 @@ class TracePersistenceServiceTest {
     }
 
     @Test
+    void extractPatternKeyUsesFixedFailureTypeWithoutFreeText() {
+        ExecutionTraceRow row = new ExecutionTraceRow();
+        row.setErrorMessage("用户正文和任意异常不应成为模式键");
+        row.setToolCalls("[{\"tool\":\"unbounded-user-value\",\"success\":false}]");
+        row.setTracePayload("{\"failureType\":\"CITATION_INVALID\"}");
+
+        assertThat(service.extractPatternKey(row)).isEqualTo("failure:citation_invalid");
+    }
+
+    @Test
     void mineFailurePatternsSkipsWhenEmpty() {
         when(traceMapper.findUnanalyzedByStatus(anyString(), anyInt())).thenReturn(List.of());
 

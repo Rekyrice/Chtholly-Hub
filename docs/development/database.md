@@ -4,18 +4,20 @@
 
 | 入口 | 当前职责 | 适用场景 |
 |------|----------|----------|
-| [`schema.sql`](../../apps/server/db/schema.sql) | 合并 V0–V19 历史并保留当前最终表形的全量开发入口；已包含知识图谱表与专用珂朵莉账号的最终状态 | 新建或重建空数据库 |
-| [`migration/`](../../apps/server/db/migration/README.md) | 现存增量：`V20__knowledge_graph.sql`、`V21__chtholly_bot_user.sql` | 已有数据库向前演进，以及脚本登记 |
+| [`schema.sql`](../../apps/server/db/schema.sql) | 合并 V0–V19 历史并保留当前最终表形的全量开发入口；已包含 V20–V23 的最终结构与种子账号状态 | 新建或重建空数据库 |
+| [`migration/`](../../apps/server/db/migration/README.md) | 现存增量：`V20__knowledge_graph.sql` 至 `V23__counter_event_inbox_and_snapshot.sql` | 已有数据库向前演进，以及脚本登记 |
 | [`phase_a_seed.sql`](../../apps/server/db/seed/phase_a_seed.sql) | 幂等写入 Rekyrice 用户与 3 篇已发布帖子元数据 | 需要 Phase A 演示数据的环境 |
 
 `schema.sql` 与 `migration/` 不是一套完整的 Flyway 历史。仓库当前没有声明由应用启动自动执行 Flyway；本地用 [`apply-migrations.ps1`](../../scripts/dev/apply-migrations.ps1) 读取 `schema_migrations` 并执行未登记脚本，生产初始化脚本则显式导入 SQL。不要把“目录名符合 Flyway 命名”写成“已启用 Flyway 自动迁移”。
 
-## schema 与 V20/V21 的关系
+## schema 与 V20–V23 的关系
 
 - `V20__knowledge_graph.sql` 创建 `knowledge_entities` 与 `knowledge_relations`。
 - `V21__chtholly_bot_user.sql` 清理冲突的 `chtholly` handle，并确保 ID `888888888888888888` 的专用账号存在。
-- 当前 `schema.sql` 已折叠两者的最终结构/数据形态，便于空库一次初始化；已有库仍依赖 V20/V21 增量前进。
-- 本地增量脚本会在检测到目标表或账号已存在时补登记 V20/V21，避免对由全量 schema 建出的库重复执行。
+- `V22__seed_content_identity.sql` 创建种子内容到实体 ID 的稳定映射表。
+- `V23__counter_event_inbox_and_snapshot.sql` 创建按 `event_id` 幂等的计数收件箱，以及按实体和指标聚合的持久化快照。
+- 当前 `schema.sql` 已折叠这些版本的最终结构/数据形态，便于空库一次初始化；已有库仍依赖对应增量脚本前进。
+- 本地增量脚本会为部分可可靠识别的历史结构补登记版本；其余 `CREATE ... IF NOT EXISTS` 脚本会安全执行并登记，避免重复建表。
 
 ## 开发初始化
 

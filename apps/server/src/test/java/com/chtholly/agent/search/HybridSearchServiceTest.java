@@ -4,14 +4,18 @@ import com.chtholly.agent.anchor.KnowledgeService;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.llm.rag.RagQueryService;
 import com.chtholly.post.api.dto.FeedItemResponse;
+import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.Post;
 import com.chtholly.search.service.SearchService;
 import com.chtholly.search.service.SearchSort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -21,6 +25,7 @@ class HybridSearchServiceTest {
     private RagQueryService ragService;
     private SearchService searchService;
     private KnowledgeService knowledgeService;
+    private PostMapper postMapper;
     private HybridSearchService hybridSearchService;
 
     @BeforeEach
@@ -28,46 +33,192 @@ class HybridSearchServiceTest {
         ragService = mock(RagQueryService.class);
         searchService = mock(SearchService.class);
         knowledgeService = mock(KnowledgeService.class);
-        hybridSearchService = new HybridSearchService(ragService, searchService, knowledgeService);
+        postMapper = mock(PostMapper.class);
+        hybridSearchService = new HybridSearchService(
+                ragService, searchService, knowledgeService, postMapper);
     }
 
     @Test
-    void hybridSearchCombinesDeduplicatesAndRanksWithRrf() {
-        SearchResult semanticOnly = result("post:1", "Semantic only", "from vector", "semantic");
-        SearchResult sharedFromSemantic = result("post:2", "Shared", "semantic snippet", "semantic");
-        SearchResult keywordOnly = result("post:3", "Keyword only", "from bm25", "keyword");
-        SearchResult entityOnly = result("bangumi:99", "Entity only", "from bangumi", "entity");
+    void fusesThreeArticleRoutesAndLetsEachArticleVoteOncePerRoute() {
+        when(ragService.search("frieren time", 8)).thenReturn(List.of(
+                semantic(2, "2#0", "sha-2"),
+                semantic(2, "2#1", "sha-2"),
+                semantic(1, "1#0", "sha-1")));
+        when(searchService.search(
+                "frieren time", 8, null, null, SearchSort.RELEVANCE, null))
+                .thenReturn(page(
+                        feed("2", "Shared"),
+                        feed("3", "Keyword only")));
+        when(knowledgeService.searchEntities("frieren time", 4)).thenReturn(List.of(
+                new SearchResult("bangumi:99", "葬送的芙莉莲", "entity", "entity", 0.0)));
+        when(searchService.searchByEntityNames(
+                List.of("葬送的芙莉莲"), 8, null))
+                .thenReturn(page(
+                        feed("2", "Shared"),
+                        feed("4", "Entity only")));
+        when(postMapper.findByIds(anyList())).thenReturn(List.of(
+                post(1, "Semantic only", "sha-1", "public"),
+                post(2, "Shared", "sha-2", "public"),
+                post(3, "Keyword only", "sha-3", "public"),
+                post(4, "Entity only", "sha-4", "public")));
 
-        when(ragService.search("frieren time", 6)).thenReturn(List.of(semanticOnly, sharedFromSemantic));
-        when(searchService.search("frieren time", 6, null, null, SearchSort.RELEVANCE, null)).thenReturn(PageResponse.cursor(List.of(
-                feed("post:3", "keyword-only", "Keyword only", "from bm25"),
-                feed("post:2", "shared", "Shared", "keyword snippet")
-        ), 6, false, null));
-        when(knowledgeService.searchEntities("frieren time", 3)).thenReturn(List.of(entityOnly));
+        HybridSearchService.RetrievalSnapshot snapshot =
+                hybridSearchService.retrievalSnapshot("frieren time", 4);
+        HybridSearchService.HybridSearchResponse response = snapshot.response();
 
-        List<SearchResult> results = hybridSearchService.hybridSearch("frieren time", 3);
-
-        assertThat(results).extracting(SearchResult::getId)
-                .containsExactly("post:2", "post:1", "post:3");
-        assertThat(results).hasSize(3);
-        assertThat(results.getFirst().getScore())
-                .isEqualTo(1.0 / 62 + 1.0 / 62);
-        assertThat(results.getFirst().getSnippet()).isEqualTo("semantic snippet");
-        verify(ragService).search("frieren time", 6);
-        verify(searchService).search("frieren time", 6, null, null, SearchSort.RELEVANCE, null);
-        verify(knowledgeService).searchEntities("frieren time", 3);
+        assertThat(snapshot.semanticDocuments()).extracting(SearchResult::getId)
+                .containsExactly("post:2", "post:1");
+        assertThat(snapshot.keywordDocuments()).extracting(SearchResult::getId)
+                .containsExactly("post:2", "post:3");
+        assertThat(snapshot.entityDocuments()).extracting(SearchResult::getId)
+                .containsExactly("post:2", "post:4");
+        assertThat(snapshot.semanticDocuments()).extracting(SearchResult::getSource)
+                .containsOnly("semantic");
+        assertThat(snapshot.keywordDocuments()).extracting(SearchResult::getSource)
+                .containsOnly("keyword");
+        assertThat(snapshot.entityDocuments()).extracting(SearchResult::getSource)
+                .containsOnly("entity");
+        assertThat(response.documents()).extracting(SearchResult::getId)
+                .containsExactly("post:2", "post:1", "post:3", "post:4");
+        assertThat(response.documents().getFirst().getScore()).isEqualTo(3.0 / 61.0);
+        assertThat(response.documents().getFirst().getSource())
+                .isEqualTo("semantic+keyword+entity");
+        assertThat(response.statuses()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
+                "semantic", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                "keyword", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS,
+                "entity", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS));
+        verify(knowledgeService).searchEntities("frieren time", 4);
+        verify(ragService).search("frieren time", 8);
+        verify(searchService).search(
+                "frieren time", 8, null, null, SearchSort.RELEVANCE, null);
+        verify(searchService).searchByEntityNames(
+                List.of("葬送的芙莉莲"), 8, null);
     }
 
-    private SearchResult result(String id, String title, String snippet, String source) {
-        return new SearchResult(id, title, snippet, source, 0.0);
+    @Test
+    void dropsPrivateMissingAndStaleCandidatesAgainstMysqlAuthority() {
+        when(ragService.search("authority", 6)).thenReturn(List.of(
+                semantic(1, "1#0", "old-sha"),
+                semantic(2, "2#0", "sha-2"),
+                semantic(9, "9#0", "sha-9")));
+        when(searchService.search(
+                "authority", 6, null, null, SearchSort.RELEVANCE, null))
+                .thenReturn(page(feed("3", "Current public")));
+        when(knowledgeService.searchEntities("authority", 3)).thenReturn(List.of());
+        when(postMapper.findByIds(anyList())).thenReturn(List.of(
+                post(1, "Stale", "new-sha", "public"),
+                post(2, "Private", "sha-2", "private"),
+                post(3, "Current public", "sha-3", "public")));
+
+        HybridSearchService.RetrievalSnapshot snapshot =
+                hybridSearchService.retrievalSnapshot("authority", 3);
+        HybridSearchService.HybridSearchResponse response = snapshot.response();
+
+        assertThat(snapshot.semanticDocuments()).isEmpty();
+        assertThat(snapshot.keywordDocuments()).extracting(SearchResult::getId)
+                .containsExactly("post:3");
+        assertThat(response.documents()).extracting(SearchResult::getId)
+                .containsExactly("post:3");
+        assertThat(response.statuses())
+                .containsEntry("semantic", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)
+                .containsEntry("keyword", HybridSearchService.RetrievalStatus.SUCCESS_RESULTS)
+                .containsEntry("entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY);
+        SearchResult result = response.documents().getFirst();
+        assertThat(result.getSourceHash()).isEqualTo("sha-3");
+        assertThat(result.getPermissions()).containsExactly("PUBLIC");
     }
 
-    private FeedItemResponse feed(String id, String slug, String title, String description) {
+    @Test
+    void reportsFailedEmptyAndSuccessfulRoutesWithoutHidingDegradation() {
+        when(ragService.search("degraded", 4)).thenThrow(new IllegalStateException("vector down"));
+        when(searchService.search(
+                "degraded", 4, null, null, SearchSort.RELEVANCE, null))
+                .thenReturn(new PageResponse<>(List.of(), 0, 4, 0, false, null, true));
+        when(knowledgeService.searchEntities("degraded", 2)).thenReturn(List.of());
+
+        HybridSearchService.HybridSearchResponse response =
+                hybridSearchService.hybridSearch("degraded", 2);
+
+        assertThat(response.documents()).isEmpty();
+        assertThat(response.degraded()).isTrue();
+        assertThat(response.statuses())
+                .containsEntry("semantic", HybridSearchService.RetrievalStatus.FAILED)
+                .containsEntry("keyword", HybridSearchService.RetrievalStatus.FAILED)
+                .containsEntry("entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY);
+    }
+
+    @Test
+    void preservesTimeoutAsAStableRouteStatus() {
+        when(ragService.search("timeout", 4))
+                .thenThrow(new RuntimeException(new java.util.concurrent.TimeoutException("slow")));
+        when(searchService.search("timeout", 4, null, null, SearchSort.RELEVANCE, null))
+                .thenReturn(page());
+        when(knowledgeService.searchEntities("timeout", 2)).thenReturn(List.of());
+
+        HybridSearchService.HybridSearchResponse response =
+                hybridSearchService.hybridSearch("timeout", 2);
+
+        assertThat(response.statuses().get("semantic").name()).isEqualTo("TIMEOUT");
+        assertThat(response.degraded()).isTrue();
+    }
+
+    @Test
+    void equalRrfScoresUseStableArticleIdTieBreak() {
+        when(ragService.search("tie", 4)).thenReturn(List.of(semantic(10, "10#0", "sha-10")));
+        when(searchService.search("tie", 4, null, null, SearchSort.RELEVANCE, null))
+                .thenReturn(page(feed("2", "First by numeric id")));
+        when(knowledgeService.searchEntities("tie", 2)).thenReturn(List.of());
+        when(postMapper.findByIds(anyList())).thenReturn(List.of(
+                post(2, "First by numeric id", "sha-2", "public"),
+                post(10, "Second by numeric id", "sha-10", "public")));
+
+        assertThat(hybridSearchService.hybridSearch("tie", 2).documents())
+                .extracting(SearchResult::getId)
+                .containsExactly("post:2", "post:10");
+    }
+
+    @Test
+    void authorityLookupFailureMarksCandidateRoutesFailed() {
+        when(ragService.search("db down", 4)).thenReturn(List.of(semantic(1, "1#0", "sha-1")));
+        when(searchService.search("db down", 4, null, null, SearchSort.RELEVANCE, null))
+                .thenReturn(page());
+        when(knowledgeService.searchEntities("db down", 2)).thenReturn(List.of());
+        when(postMapper.findByIds(anyList())).thenThrow(new IllegalStateException("mysql down"));
+
+        HybridSearchService.HybridSearchResponse response =
+                hybridSearchService.hybridSearch("db down", 2);
+
+        assertThat(response.documents()).isEmpty();
+        assertThat(response.statuses())
+                .containsEntry("semantic", HybridSearchService.RetrievalStatus.FAILED)
+                .containsEntry("keyword", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)
+                .containsEntry("entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY);
+    }
+
+    private SearchResult semantic(long id, String chunkId, String hash) {
+        return new SearchResult(
+                "post:" + id,
+                "Post " + id,
+                "semantic snippet " + chunkId,
+                "semantic",
+                0.0,
+                "post:" + id,
+                chunkId,
+                "current",
+                hash,
+                Set.of("PUBLIC"));
+    }
+
+    private PageResponse<FeedItemResponse> page(FeedItemResponse... items) {
+        return new PageResponse<>(List.of(items), 0, items.length, 0, false, null, false);
+    }
+
+    private FeedItemResponse feed(String id, String title) {
         return new FeedItemResponse(
                 id,
-                slug,
+                "post-" + id,
                 title,
-                description,
+                "description-" + id,
                 null,
                 List.of(),
                 null,
@@ -78,5 +229,16 @@ class HybridSearchServiceTest {
                 false,
                 false,
                 false);
+    }
+
+    private Post post(long id, String title, String hash, String visible) {
+        return Post.builder()
+                .id(id)
+                .title(title)
+                .description("authoritative-" + id)
+                .status("published")
+                .visible(visible)
+                .contentSha256(hash)
+                .build();
     }
 }

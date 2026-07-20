@@ -1,5 +1,12 @@
 import { apiFetch } from "./apiClient";
-import type { FeedResponse, PostDetailResponse, RelatedPostSummary } from "@/lib/types/post";
+import type {
+  DraftEditDecisionResponse,
+  DraftEditPreviewRequest,
+  DraftEditPreviewResponse,
+  FeedResponse,
+  PostDetailResponse,
+  RelatedPostSummary,
+} from "@/lib/types/post";
 
 const POST_PREFIX = "/api/v1/posts";
 
@@ -53,6 +60,24 @@ export const postService = {
       method: "POST",
       body,
     }),
+
+  createDraftEditPreview: (draftId: string, body: DraftEditPreviewRequest) =>
+    apiFetch<DraftEditPreviewResponse>(
+      `${POST_PREFIX}/${encodeURIComponent(draftId)}/draft-edit/previews`,
+      { method: "POST", body },
+    ),
+
+  confirmDraftEditPreview: (draftId: string, previewId: string, previewHash: string) =>
+    apiFetch<DraftEditDecisionResponse>(
+      `${POST_PREFIX}/${encodeURIComponent(draftId)}/draft-edit/previews/${encodeURIComponent(previewId)}/confirm`,
+      { method: "POST", body: { previewHash } },
+    ),
+
+  rejectDraftEditPreview: (draftId: string, previewId: string, previewHash: string) =>
+    apiFetch<DraftEditDecisionResponse>(
+      `${POST_PREFIX}/${encodeURIComponent(draftId)}/draft-edit/previews/${encodeURIComponent(previewId)}/reject`,
+      { method: "POST", body: { previewHash } },
+    ),
 
   patchMetadata: (id: string, body: PostPatchRequest) =>
     apiFetch<void>(`${POST_PREFIX}/${id}`, {

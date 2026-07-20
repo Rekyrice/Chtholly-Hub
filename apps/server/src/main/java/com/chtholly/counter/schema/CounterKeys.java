@@ -20,6 +20,31 @@ public final class CounterKeys {
         return String.format("bm:%s:%s:%s:%d", metric, entityType, entityId, chunk); // 位图事实层（分片）
     }
 
+    /** Set of non-empty Bitmap shard keys for one reaction metric and entity. */
+    public static String bitmapShardIndexKey(String metric, String entityType, String entityId) {
+        return String.format("bmidx:%s:%s:%s", metric, entityType, entityId);
+    }
+
+    /** Expected non-sentinel member count used to detect a partial shard-index loss. */
+    public static String bitmapShardIndexCountKey(String metric, String entityType, String entityId) {
+        return String.format("bmidxcnt:%s:%s:%s", metric, entityType, entityId);
+    }
+
+    /** Persistent cursor for the bounded legacy Bitmap index backfill. */
+    public static String bitmapIndexBackfillCursorKey() {
+        return "counter:calibration:reaction-bitmap:cursor";
+    }
+
+    /** Marks that every Bitmap present at deployment has completed one index pass. */
+    public static String bitmapIndexBackfillCompleteKey() {
+        return "counter:calibration:reaction-bitmap:complete";
+    }
+
+    /** Persistent round-robin entity registry populated by the bounded Bitmap scan. */
+    public static String bitmapCalibrationCandidatesKey() {
+        return "counter:calibration:reaction-bitmap:candidates";
+    }
+
     // 聚合增量持久化桶（Hash）：agg:{schema}:{etype}:{eid}
     public static String aggKey(String entityType, String entityId) {
         return String.format("agg:%s:%s:%s", CounterSchema.SCHEMA_ID, entityType, entityId); // 刷写前的增量存储桶
