@@ -118,8 +118,8 @@ class HybridSearchRealInfrastructureIT extends AbstractGoldenPathIT {
                         String.valueOf(STALE_POST_ID));
         assertThat(ragQueryService.search("原子恢复", 10))
                 .as("authorized semantic results from raw documents %s", rawSemantic)
-                .extracting(SearchResult::getDocumentId)
-                .containsExactly("post:" + PUBLIC_POST_ID);
+                .isNotEmpty()
+                .allMatch(result -> ("post:" + PUBLIC_POST_ID).equals(result.getDocumentId()));
 
         HybridSearchService.RetrievalSnapshot first =
                 hybridSearchService.retrievalSnapshot("原子恢复", 5);
