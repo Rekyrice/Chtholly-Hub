@@ -147,18 +147,29 @@ class CounterServiceImplBatchTest {
         when(reactionProjectionStore.readBatch(keys)).thenReturn(projection);
         when(reactionMapper.findExistingEntityIds(
                 eq("post"), eq("fav"), eq(42L), anyList()))
-                .thenReturn(List.of());
+                .thenAnswer(invocation -> {
+                    List<String> chunk = invocation.getArgument(3);
+                    return chunk.size() == 1
+                            ? List.copyOf(chunk)
+                            : List.of(chunk.getFirst(), chunk.getLast());
+                });
 
         Map<Long, Boolean> result = counterService.batchIsFaved(42L, ids);
 
         assertThat(result).hasSize(501);
-        assertThat(result.values()).containsOnly(false);
+        assertThat(result)
+                .containsEntry(1L, true)
+                .containsEntry(2L, false)
+                .containsEntry(499L, false)
+                .containsEntry(500L, true)
+                .containsEntry(501L, true);
         ArgumentCaptor<List<String>> chunks = ArgumentCaptor.forClass(List.class);
         verify(reactionMapper, times(2)).findExistingEntityIds(
                 eq("post"), eq("fav"), eq(42L), chunks.capture());
-        assertThat(chunks.getAllValues()).extracting(List::size).containsExactly(500, 1);
-        assertThat(chunks.getAllValues().getFirst()).startsWith("1").endsWith("500");
-        assertThat(chunks.getAllValues().getLast()).containsExactly("501");
+        List<String> expectedEntityIds = ids.stream().map(String::valueOf).toList();
+        assertThat(chunks.getAllValues()).containsExactly(
+                expectedEntityIds.subList(0, 500),
+                expectedEntityIds.subList(500, 501));
     }
 
     @Test

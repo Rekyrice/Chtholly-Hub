@@ -139,7 +139,19 @@ class CounterReactionEventProcessorTest {
                         10_000L + index,
                         1))
                 .toList();
-        when(reactionMapper.findExisting(anyList())).thenReturn(List.of());
+        List<CounterReactionKey> expectedKeys = events.stream()
+                .map(event -> new CounterReactionKey(
+                        event.getEntityType(),
+                        event.getEntityId(),
+                        event.getMetric(),
+                        event.getUserId()))
+                .toList();
+        when(reactionMapper.findExisting(anyList())).thenAnswer(invocation -> {
+            List<CounterReactionKey> chunk = invocation.getArgument(0);
+            return chunk.size() == 1
+                    ? List.of(chunk.getFirst())
+                    : List.of(chunk.getFirst(), chunk.getLast());
+        });
         when(aggregationProcessor.applyBatchWithResult(events))
                 .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(501, List.of()));
 
@@ -147,11 +159,15 @@ class CounterReactionEventProcessorTest {
 
         ArgumentCaptor<List<CounterReactionKey>> chunks = ArgumentCaptor.forClass(List.class);
         verify(reactionMapper, times(2)).findExisting(chunks.capture());
-        assertThat(chunks.getAllValues()).extracting(List::size).containsExactly(500, 1);
-        assertThat(chunks.getAllValues().getFirst().getFirst().entityId()).isEqualTo("1");
-        assertThat(chunks.getAllValues().getLast().getFirst().entityId()).isEqualTo("501");
+        assertThat(chunks.getAllValues()).containsExactly(
+                expectedKeys.subList(0, 500),
+                expectedKeys.subList(500, 501));
         verify(projectionStore).project(org.mockito.ArgumentMatchers.argThat(
-                targets -> targets.size() == 501 && targets.values().stream().noneMatch(Boolean::booleanValue)));
+                targets -> targets.size() == 501
+                        && targets.get(expectedKeys.get(0))
+                        && !targets.get(expectedKeys.get(1))
+                        && targets.get(expectedKeys.get(499))
+                        && targets.get(expectedKeys.get(500))));
     }
 
     @Test
