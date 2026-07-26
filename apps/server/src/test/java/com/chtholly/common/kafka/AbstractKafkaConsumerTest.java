@@ -7,6 +7,7 @@ import org.apache.kafka.common.header.internals.RecordHeader;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -22,6 +23,7 @@ import java.time.Duration;
 import org.awaitility.Awaitility;
 import org.springframework.kafka.support.SendResult;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -148,16 +150,16 @@ class AbstractKafkaConsumerTest {
     }
 
     @Test
-    void deferredRetryPublishFailureLeavesRetryOffsetUnacknowledged() throws Exception {
+    void deferredRetryNacksTheSameRecordWithoutRepublishingOrAcknowledging() throws Exception {
         String envelope = new ObjectMapper().writeValueAsString(new KafkaRetryEnvelope(
                 "counter-events", "event-1", "{}", 1, System.currentTimeMillis() + 60_000));
-        CompletableFuture<SendResult<String, String>> failed = new CompletableFuture<>();
-        failed.completeExceptionally(new IllegalStateException("broker unavailable"));
-        when(kafkaTemplate.send("counter-events-retry", "event-1", envelope)).thenReturn(failed);
 
-        assertThatThrownBy(() -> consumer.consumeRetryEnvelope(envelope, ack))
-                .hasRootCauseMessage("broker unavailable");
+        consumer.consumeRetryEnvelope(envelope, ack);
 
+        ArgumentCaptor<Duration> delay = ArgumentCaptor.forClass(Duration.class);
+        verify(ack).nack(delay.capture());
+        assertThat(delay.getValue()).isBetween(Duration.ofSeconds(55), Duration.ofSeconds(60));
+        verify(kafkaTemplate, never()).send(anyString(), any(), anyString());
         verify(ack, never()).acknowledge();
     }
 

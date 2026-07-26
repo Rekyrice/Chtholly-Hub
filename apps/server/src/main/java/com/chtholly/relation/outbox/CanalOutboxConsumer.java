@@ -50,7 +50,7 @@ public class CanalOutboxConsumer extends AbstractKafkaConsumer {
         consumeRecord(record, ack);
     }
 
-    @KafkaListener(topics = OutboxTopics.CANAL_OUTBOX + "-retry", groupId = CONSUMER_GROUP + "-retry")
+    @KafkaListener(topics = OutboxTopics.CANAL_OUTBOX_RETRY, groupId = CONSUMER_GROUP + "-retry")
     public void onRetryMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
         consumeRetryRecord(record, ack);
     }

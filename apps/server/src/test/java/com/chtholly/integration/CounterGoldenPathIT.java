@@ -119,6 +119,97 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
     }
 
     @Test
+    void redisProjectionFailureIsRetriedFromCanalOutboxAndConverges() throws Exception {
+        String entityId = "7013";
+        long userId = 45L;
+        assertThat(calibrationService.reconcileEntity("post", entityId))
+                .isEqualTo(new CounterCalibrationService.ReconciliationResult(0L, 0L, 1L));
+        assertThat(counterService.like("post", entityId, userId)).isTrue();
+        ReactionOutbox outbox = reactionOutboxes().getFirst();
+
+        try {
+            REDIS_PROXY.setConnectionCut(true);
+            send(outbox);
+            Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+                assertThat(initialRetryFailureCount(outbox.id())).isEqualTo(1L);
+                assertThat(inboxCount(outbox.id())).isZero();
+                assertThat(snapshotCount(entityId, "like")).isZero();
+            });
+        } finally {
+            REDIS_PROXY.setConnectionCut(false);
+        }
+
+        Awaitility.await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
+            assertThat(inboxCount(outbox.id())).isEqualTo(1L);
+            assertThat(snapshotCount(entityId, "like")).isEqualTo(1L);
+            assertThat(bitCount("like", entityId, userId)).isEqualTo(1L);
+            assertThat(counterService.getCounts("post", entityId, List.of("like")))
+                    .containsEntry("like", 1L);
+            assertThat(redis.opsForValue().get(
+                    CounterKeys.reactionProjectionCompleteKey("post", entityId)))
+                    .isEqualTo(CounterReactionProjectionStore.COMPLETE_VERSION);
+        });
+        assertThat(counterService.isLiked("post", entityId, userId)).isTrue();
+        assertThat(initialRetryFailureCount(outbox.id())).isEqualTo(1L);
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox-retry");
+    }
+
+    @Test
+    void mysqlAggregationFailureAfterProjectionRetriesWithoutRedisDoubleCount() throws Exception {
+        String entityId = "7014";
+        long userId = 46L;
+        String trigger = "fail_counter_reaction_snapshot_update";
+        assertThat(calibrationService.reconcileEntity("post", entityId))
+                .isEqualTo(new CounterCalibrationService.ReconciliationResult(0L, 0L, 1L));
+        assertThat(counterService.like("post", entityId, userId)).isTrue();
+        ReactionOutbox outbox = reactionOutboxes().getFirst();
+        jdbc.execute("""
+                CREATE TRIGGER fail_counter_reaction_snapshot_update
+                BEFORE UPDATE ON counter_snapshot
+                FOR EACH ROW
+                BEGIN
+                    IF NEW.entity_type = 'post'
+                       AND NEW.entity_id = '7014'
+                       AND NEW.metric = 'like'
+                       AND NEW.count_value <> OLD.count_value THEN
+                        SIGNAL SQLSTATE '45000'
+                            SET MESSAGE_TEXT = 'forced snapshot failure';
+                    END IF;
+                END
+                """);
+        try {
+            send(outbox);
+            Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+                assertThat(initialRetryFailureCount(outbox.id())).isEqualTo(1L);
+                assertThat(inboxCount(outbox.id())).isZero();
+                assertThat(snapshotCount(entityId, "like")).isZero();
+                assertThat(bitCount("like", entityId, userId)).isEqualTo(1L);
+                assertThat(counterService.getCounts("post", entityId, List.of("like")))
+                        .containsEntry("like", 1L);
+                assertThat(failureMessages(outbox.id()))
+                        .anyMatch(message -> message.contains("forced snapshot failure"));
+            });
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS " + trigger);
+        }
+
+        Awaitility.await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
+            assertThat(inboxCount(outbox.id())).isEqualTo(1L);
+            assertThat(snapshotCount(entityId, "like")).isEqualTo(1L);
+            assertThat(bitCount("like", entityId, userId)).isEqualTo(1L);
+            assertThat(counterService.getCounts("post", entityId, List.of("like")))
+                    .containsEntry("like", 1L);
+            assertThat(redis.opsForValue().get(
+                    CounterKeys.reactionProjectionCompleteKey("post", entityId)))
+                    .isEqualTo(CounterReactionProjectionStore.COMPLETE_VERSION);
+        });
+        assertThat(initialRetryFailureCount(outbox.id())).isEqualTo(1L);
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox-retry");
+    }
+
+    @Test
     void snapshotFailureRollsBackInboxSoTheSameBatchCanBeRetried() {
         String entityId = "7002";
         jdbc.update(
@@ -402,6 +493,73 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
         awaitKafkaConsumerCaughtUp(AGGREGATION_GROUP);
     }
 
+    private List<ReactionOutbox> reactionOutboxes() {
+        return jdbc.query("""
+                        SELECT id, aggregate_type, type, payload
+                        FROM outbox
+                        WHERE aggregate_type = ?
+                        ORDER BY id
+                        """,
+                (resultSet, rowNumber) -> new ReactionOutbox(
+                        resultSet.getLong("id"),
+                        resultSet.getString("aggregate_type"),
+                        resultSet.getString("type"),
+                        resultSet.getString("payload")),
+                CounterReactionCommandService.OUTBOX_AGGREGATE_TYPE);
+    }
+
+    private void send(ReactionOutbox outbox) throws Exception {
+        String envelope = canalEnvelope(
+                outbox.id(),
+                outbox.aggregateType(),
+                outbox.eventType(),
+                outbox.payload());
+        kafka.send(OutboxTopics.CANAL_OUTBOX, Long.toString(outbox.id()), envelope)
+                .get(10, TimeUnit.SECONDS);
+    }
+
+    private long initialRetryFailureCount(long outboxId) {
+        return jdbc.queryForObject("""
+                        SELECT COUNT(*)
+                        FROM dead_letter_messages
+                        WHERE source_topic = ? AND message_key = ?
+                          AND retry_count = 0 AND status = 'RETRYING'
+                        """,
+                Long.class,
+                OutboxTopics.CANAL_OUTBOX,
+                Long.toString(outboxId));
+    }
+
+    private List<String> failureMessages(long outboxId) {
+        return jdbc.queryForList("""
+                        SELECT exception_message
+                        FROM dead_letter_messages
+                        WHERE source_topic = ? AND message_key = ?
+                        ORDER BY created_at
+                        """,
+                String.class,
+                OutboxTopics.CANAL_OUTBOX,
+                Long.toString(outboxId));
+    }
+
+    private long inboxCount(long outboxId) {
+        return jdbc.queryForObject(
+                "SELECT COUNT(*) FROM counter_event_inbox WHERE event_id = ?",
+                Long.class,
+                Long.toString(outboxId));
+    }
+
+    private long snapshotCount(String entityId, String metric) {
+        return jdbc.queryForObject("""
+                        SELECT count_value
+                        FROM counter_snapshot
+                        WHERE entity_type = 'post' AND entity_id = ? AND metric = ?
+                        """,
+                Long.class,
+                entityId,
+                metric);
+    }
+
     private long bitCount(String metric, String entityId, long userId) {
         String bitmapKey = CounterKeys.bitmapKey(
                 metric, "post", entityId, BitmapShard.chunkOf(userId));
@@ -410,4 +568,10 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
                         bitmapKey.getBytes(StandardCharsets.UTF_8)));
         return count == null ? 0L : count;
     }
+
+    private record ReactionOutbox(
+            long id,
+            String aggregateType,
+            String eventType,
+            String payload) {}
 }

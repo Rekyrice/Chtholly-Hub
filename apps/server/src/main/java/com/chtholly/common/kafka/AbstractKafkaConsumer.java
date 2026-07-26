@@ -9,6 +9,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -79,11 +80,8 @@ public abstract class AbstractKafkaConsumer {
         }
 
         if (envelope.deliverAfterEpochMs() > System.currentTimeMillis()) {
-            awaitKafkaBroker(
-                    KafkaTopicNames.retryTopic(envelope.sourceTopic()),
-                    envelope.messageKey(),
-                    envelopeJson);
-            ack.acknowledge();
+            long remainingDelayMs = envelope.deliverAfterEpochMs() - System.currentTimeMillis();
+            ack.nack(Duration.ofMillis(Math.max(1L, remainingDelayMs)));
             return;
         }
 

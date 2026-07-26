@@ -43,7 +43,7 @@ public class CounterReactionOutboxConsumer extends AbstractKafkaConsumer {
 
     /** Consumes a durable retry envelope through the same processing core. */
     @KafkaListener(
-            topics = OutboxTopics.CANAL_OUTBOX + "-retry",
+            topics = OutboxTopics.CANAL_OUTBOX_RETRY,
             groupId = CONSUMER_GROUP + "-retry")
     public void onRetryMessage(ConsumerRecord<String, String> record, Acknowledgment acknowledgment) {
         consumeRetryRecord(record, acknowledgment);
