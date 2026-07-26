@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -29,6 +30,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -109,6 +111,54 @@ class CounterServiceImplBatchTest {
         verify(reactionProjectionStore).readBatch(List.of(first, second, third));
         verify(reactionMapper).findExistingEntityIds(
                 "post", "like", 42L, List.of("2"));
+    }
+
+    @Test
+    void multipleUnknownMembershipsUseOneMysqlFallbackQuery() {
+        List<Long> ids = List.of(1L, 2L, 3L);
+        List<CounterReactionKey> keys = ids.stream()
+                .map(id -> new CounterReactionKey("post", id.toString(), "like", 42L))
+                .toList();
+        Map<CounterReactionKey, Optional<Boolean>> projection = new LinkedHashMap<>();
+        keys.forEach(key -> projection.put(key, Optional.empty()));
+        when(reactionProjectionStore.readBatch(keys)).thenReturn(projection);
+        when(reactionMapper.findExistingEntityIds(
+                "post", "like", 42L, List.of("1", "2", "3")))
+                .thenReturn(List.of("1", "3"));
+
+        Map<Long, Boolean> result = counterService.batchIsLiked(42L, ids);
+
+        assertThat(result).containsExactly(
+                Map.entry(1L, true),
+                Map.entry(2L, false),
+                Map.entry(3L, true));
+        verify(reactionMapper).findExistingEntityIds(
+                "post", "like", 42L, List.of("1", "2", "3"));
+    }
+
+    @Test
+    void fiveHundredAndOneUnknownMembershipsUseTwoBoundedMysqlQueries() {
+        List<Long> ids = LongStream.rangeClosed(1L, 501L).boxed().toList();
+        List<CounterReactionKey> keys = ids.stream()
+                .map(id -> new CounterReactionKey("post", id.toString(), "fav", 42L))
+                .toList();
+        Map<CounterReactionKey, Optional<Boolean>> projection = new LinkedHashMap<>();
+        keys.forEach(key -> projection.put(key, Optional.empty()));
+        when(reactionProjectionStore.readBatch(keys)).thenReturn(projection);
+        when(reactionMapper.findExistingEntityIds(
+                eq("post"), eq("fav"), eq(42L), anyList()))
+                .thenReturn(List.of());
+
+        Map<Long, Boolean> result = counterService.batchIsFaved(42L, ids);
+
+        assertThat(result).hasSize(501);
+        assertThat(result.values()).containsOnly(false);
+        ArgumentCaptor<List<String>> chunks = ArgumentCaptor.forClass(List.class);
+        verify(reactionMapper, times(2)).findExistingEntityIds(
+                eq("post"), eq("fav"), eq(42L), chunks.capture());
+        assertThat(chunks.getAllValues()).extracting(List::size).containsExactly(500, 1);
+        assertThat(chunks.getAllValues().getFirst()).startsWith("1").endsWith("500");
+        assertThat(chunks.getAllValues().getLast()).containsExactly("501");
     }
 
     @Test
