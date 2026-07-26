@@ -176,8 +176,16 @@ try {
 
     $seedPath = Join-Path $repoRoot 'scripts/benchmark/seed.ps1'
     if (Test-Path -LiteralPath $seedPath -PathType Leaf) {
+        $seedSource = Get-Content -Raw -LiteralPath $seedPath -Encoding UTF8
         $seedPlan = & $seedPath -Profile smoke -ValidateOnly | Out-String | ConvertFrom-Json
         Assert-True -Condition ($seedPlan.posts -eq 1000 -and $seedPlan.users -eq 200) -Message 'Smoke seed must remain deterministic'
+        foreach ($token in @('SETBIT', 'redis-cli --pipe', 'redis-authoritative.pipe')) {
+            Assert-True -Condition (-not $seedSource.Contains($token)) -Message "Benchmark seed must not write Redis reaction facts with $token"
+        }
+        $seedSql = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'benchmarks/seed/standard.sql') -Encoding UTF8
+        foreach ($token in @('@benchmark_interactions', 'counter_reaction')) {
+            Assert-True -Condition ($seedSql.Contains($token)) -Message "Benchmark SQL seed must contain $token"
+        }
     }
 
     if ($runSource.Contains('stable-hot') -and $summarizeSource.Contains('sameKeyLoadCount')) {
