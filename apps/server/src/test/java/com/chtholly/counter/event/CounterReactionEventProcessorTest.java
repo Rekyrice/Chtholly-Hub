@@ -71,9 +71,9 @@ class CounterReactionEventProcessorTest {
         order.verify(reactionMapper).findExisting(List.of(key));
         order.verify(projectionStore).project(Map.of(key, false));
         order.verify(aggregationProcessor).applyBatchWithResult(List.of(oldLike, unlike));
-        verify(eventPublisher).publishEvent(oldLike);
+        verify(eventPublisher, never()).publishEvent(oldLike);
         verify(eventPublisher).publishEvent(unlike);
-        verify(idempotencyGuard).markConsumed("counter-reaction-side-effects", 11L);
+        verify(idempotencyGuard, never()).markConsumed("counter-reaction-side-effects", 11L);
         verify(idempotencyGuard).markConsumed("counter-reaction-side-effects", 12L);
     }
 
@@ -88,6 +88,7 @@ class CounterReactionEventProcessorTest {
         processor.process(List.of(oldUnlike));
 
         verify(projectionStore).project(Map.of(key, true));
+        verifyNoInteractions(eventPublisher, idempotencyGuard);
     }
 
     @Test
@@ -96,12 +97,33 @@ class CounterReactionEventProcessorTest {
         CounterReactionKey key = new CounterReactionKey("post", "7", "like", 42L);
         when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of());
         when(aggregationProcessor.applyBatchWithResult(List.of(oldLike)))
-                .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(0, List.of()));
+                .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(0, List.of(oldLike)));
 
         processor.process(List.of(oldLike));
 
         verify(projectionStore).project(Map.of(key, false));
         verifyNoInteractions(eventPublisher, idempotencyGuard);
+    }
+
+    @Test
+    void publishesOnlyTheNewestTransitionMatchingTheMysqlTerminalState() {
+        CounterEvent firstLike = event("22", "7", "like", 42L, 1);
+        CounterEvent unlike = event("23", "7", "like", 42L, -1);
+        CounterEvent finalLike = event("24", "7", "like", 42L, 1);
+        CounterReactionKey key = new CounterReactionKey("post", "7", "like", 42L);
+        List<CounterEvent> events = List.of(firstLike, unlike, finalLike);
+        when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of(key));
+        when(aggregationProcessor.applyBatchWithResult(events))
+                .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(3, events));
+
+        processor.process(events);
+
+        verify(eventPublisher, never()).publishEvent(firstLike);
+        verify(eventPublisher, never()).publishEvent(unlike);
+        verify(eventPublisher).publishEvent(finalLike);
+        verify(idempotencyGuard, never()).markConsumed("counter-reaction-side-effects", 22L);
+        verify(idempotencyGuard, never()).markConsumed("counter-reaction-side-effects", 23L);
+        verify(idempotencyGuard).markConsumed("counter-reaction-side-effects", 24L);
     }
 
     @Test
