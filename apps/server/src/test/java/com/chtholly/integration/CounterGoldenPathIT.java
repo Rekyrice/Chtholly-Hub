@@ -124,6 +124,61 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
     }
 
     @Test
+    void replayedOldLikeKeepsTheMysqlTerminalUnlikeProjection() throws Exception {
+        String entityId = "7015";
+        long userId = 47L;
+        assertThat(calibrationService.reconcileEntity("post", entityId))
+                .isEqualTo(new CounterCalibrationService.ReconciliationResult(0L, 0L, 1L));
+        assertThat(counterService.like("post", entityId, userId)).isTrue();
+        assertThat(counterService.unlike("post", entityId, userId)).isTrue();
+        List<ReactionOutbox> outboxes = reactionOutboxes();
+        assertThat(outboxes).hasSize(2);
+        send(outboxes.get(0));
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
+        send(outboxes.get(1));
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
+        send(outboxes.get(0));
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
+
+        assertThat(reactionCount(entityId, "like", userId)).isZero();
+        assertThat(bitCount("like", entityId, userId)).isZero();
+        assertThat(readSds(entityId).get(CounterSchema.IDX_LIKE)).isZero();
+        assertThat(snapshotCount(entityId, "like")).isZero();
+        assertThat(inboxCount(outboxes.get(0).id())).isEqualTo(1L);
+        assertThat(inboxCount(outboxes.get(1).id())).isEqualTo(1L);
+    }
+
+    @Test
+    void replayedOldUnlikeKeepsTheMysqlTerminalLikeProjection() throws Exception {
+        String entityId = "7016";
+        long userId = 48L;
+        jdbc.update("""
+                INSERT INTO counter_reaction
+                    (entity_type, entity_id, metric, user_id, created_at)
+                VALUES ('post', ?, 'like', ?, NOW(3))
+                """, entityId, userId);
+        assertThat(calibrationService.reconcileEntity("post", entityId))
+                .isEqualTo(new CounterCalibrationService.ReconciliationResult(1L, 0L, 1L));
+        assertThat(counterService.unlike("post", entityId, userId)).isTrue();
+        assertThat(counterService.like("post", entityId, userId)).isTrue();
+        List<ReactionOutbox> outboxes = reactionOutboxes();
+        assertThat(outboxes).hasSize(2);
+        send(outboxes.get(0));
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
+        send(outboxes.get(1));
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
+        send(outboxes.get(0));
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
+
+        assertThat(reactionCount(entityId, "like", userId)).isEqualTo(1L);
+        assertThat(bitCount("like", entityId, userId)).isEqualTo(1L);
+        assertThat(readSds(entityId).get(CounterSchema.IDX_LIKE)).isEqualTo(1L);
+        assertThat(snapshotCount(entityId, "like")).isEqualTo(1L);
+        assertThat(inboxCount(outboxes.get(0).id())).isEqualTo(1L);
+        assertThat(inboxCount(outboxes.get(1).id())).isEqualTo(1L);
+    }
+
+    @Test
     void redisProjectionFailureIsRetriedFromCanalOutboxAndConverges() throws Exception {
         String entityId = "7013";
         long userId = 45L;
@@ -582,6 +637,21 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
                 Long.class,
                 entityId,
                 metric);
+    }
+
+    private long reactionCount(String entityId, String metric, long userId) {
+        return jdbc.queryForObject("""
+                        SELECT COUNT(*)
+                        FROM counter_reaction
+                        WHERE entity_type = 'post'
+                          AND entity_id = ?
+                          AND metric = ?
+                          AND user_id = ?
+                        """,
+                Long.class,
+                entityId,
+                metric,
+                userId);
     }
 
     private long bitCount(String metric, String entityId, long userId) {
