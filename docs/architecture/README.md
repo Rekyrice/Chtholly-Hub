@@ -16,7 +16,7 @@
 
 Chtholly Hub 仓库负责 Web 体验、业务 API、后台任务与容器化配置。浏览器只直接访问 Next.js 或同域代理；Spring Boot 承担业务规则，访问 MySQL、Redis，并按启用功能连接 Elasticsearch、Kafka 等基础设施。正文与媒体默认写入本地文件系统，也可切换到 OSS。外部 LLM、Embedding 与 Bangumi 等服务通过可选集成接入，不是主站阅读与基础互动的启动前提。
 
-MySQL 保存大多数业务最终事实；点赞/收藏成员关系没有 MySQL 落点，无论 Kafka 是否启用，Redis bitmap 都是当前成员关系唯一的状态源，可靠性依赖 Redis 持久化与备份。Kafka 启用时只额外保存可回放的计数增量，用于重建 SDS，不能恢复 bitmap；关闭时 Spring 计数事件只在进程内传播且不可重放。Redis 还保存可重建缓存和其他高频状态；Elasticsearch 保存可重建搜索索引。`STORAGE_TYPE` 默认 `local`，使用本地文件系统保存 Markdown 正文与媒体；生产环境可选切换为 OSS。当前操作入口见[数据与存储](data-and-storage.md)、[数据库](../development/database.md)与[生产部署](../operations/deployment.md)。
+MySQL 保存业务最终事实，其中 `counter_reaction` 是点赞/收藏成员关系的唯一业务事实；关系真实变化与 Outbox 在同一事务提交。Redis Bitmap 是带完整性标记、可从 MySQL 重建的在线成员读投影，SDS 与 `counter_snapshot` 是派生计数。Kafka 只承载异步传输和重放，不是事实来源；Kafka 关闭时，互动 Outbox 事件在事务提交后经本地适配器进入同一投影处理核心。Redis 还保存可重建缓存和其他高频状态；Elasticsearch 保存可重建搜索索引。`STORAGE_TYPE` 默认 `local`，使用本地文件系统保存 Markdown 正文与媒体；生产环境可选切换为 OSS。当前操作入口见[数据与存储](data-and-storage.md)、[数据库](../development/database.md)与[生产部署](../operations/deployment.md)。
 
 ## 组件关系
 
@@ -28,8 +28,8 @@ Next.js（页面渲染、交互、同域 API 代理）
   │
   ▼
 Spring Boot（认证、内容、社区、搜索、后台任务）
-  ├──▶ MySQL（大多数业务权威数据）
-  ├──▶ Redis（缓存、Token、限流、位图状态）
+  ├──▶ MySQL（业务权威数据，含互动成员关系）
+  ├──▶ Redis（缓存、Token、限流、Bitmap/SDS 读投影）
   ├──▶ Elasticsearch（可降级全文检索）
   ├──▶ Kafka（异步聚合与 Outbox）
   └──▶ 本地文件系统（默认）或 OSS（正文与媒体）
@@ -45,7 +45,8 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
 - 页面渲染、认证、文章与评论读写等用户需要立即确认结果的操作，经 Next.js 到 Spring Boot 同步完成。
 - MySQL 写入定义业务提交边界；缓存失效、搜索索引或计数汇总不得反向成为业务事实来源。
 - Redis 命中可缩短读链路，未命中时回源 MySQL；缓存不可用时由具体领域决定降级或失败策略。
-- 计数聚合由 `KAFKA_ENABLED` 选择通道：`true` 时投递 Kafka，`false` 时通过 Spring ApplicationEvent 在进程内聚合且不可重放；Kafka 模式也会同步发布本地计数事件，供通知等本地监听器消费。Spring 属性缺省值是 `false`，但仓库示例 `.env` 显式启用 `true`，推荐本地启动流程因此按 Kafka 模式运行，除非维护者改回 `false`。
+- 点赞/收藏命令同步提交 MySQL 目标关系与 Outbox，并直接返回事务确定的目标状态，不等待异步投影。`KAFKA_ENABLED=true` 时，Canal-compatible Outbox 消息经 `canal-outbox` 交给互动消费者；`false` 时，`AFTER_COMMIT` 本地适配器调用同一处理核心。两条路径都回查 MySQL 终态，再维护 Bitmap、SDS、Inbox 与快照；投影允许短暂延迟。
+- 浏览量等通用计数仍由 `KAFKA_ENABLED` 选择旧 `counter-events` 或进程内 Spring Event 通道。Spring 属性缺省值是 `false`，但仓库示例 `.env` 显式启用 `true`；Kafka 模式需要对应 broker，互动投影还需要 Outbox CDC/转发链路。
 - 通知继续使用 Spring ApplicationEvent 做进程内轻量协作；它与 Kafka 的可靠性和跨进程边界不同。
 - Agent 的 WebSocket/API 调用在会话内流式返回，LLM、RAG 与工具调用属于可选分支；关闭相关特性不应阻断博客与社区主链路。
 

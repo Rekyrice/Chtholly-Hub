@@ -13,24 +13,24 @@
 
 ## MySQL
 
-- **权威数据**：用户、文章元数据、标签、评论、关注写模型、通知、管理员审计、Outbox、Seed marker，以及可重建索引所需的源数据。`counter_event_inbox` 是计数事件持久幂等记录，`counter_snapshot` 是可由 Bitmap 校准的计数快照；点赞/收藏成员关系仍没有 MySQL 落点。
+- **权威数据**：用户、文章元数据、标签、评论、关注写模型、点赞/收藏成员关系、通知、管理员审计、Outbox、Seed marker，以及可重建索引所需的源数据。`counter_reaction` 是点赞/收藏成员关系的唯一业务事实；`counter_event_inbox` 是事件幂等记录，`counter_snapshot` 是派生计数快照。
 - **用途与入口**：MyBatis Mapper 接口分散在各领域，例如 [PostMapper](../../apps/server/src/main/java/com/chtholly/post/mapper/PostMapper.java)、[RelationMapper](../../apps/server/src/main/java/com/chtholly/relation/mapper/RelationMapper.java)、[NotificationMapper](../../apps/server/src/main/java/com/chtholly/notification/mapper/NotificationMapper.java)；XML 位于 [`src/main/resources/mapper`](../../apps/server/src/main/resources/mapper)。Schema、migration 与 seed 位于 [`apps/server/db`](../../apps/server/db/README.md)。
 - **配置来源**：[`application.yml`](../../apps/server/src/main/resources/application.yml) 的 `spring.datasource`，值由根目录 `.env` 对应环境变量注入；本文不记录实际凭据。
-- **一致性与降级**：领域写入与 Outbox 使用本地事务；Redis/ES/Kafka 不能覆盖已经落在 MySQL 的事实。数据库不可用时核心写入失败，不提供把缓存当权威的降级；点赞/收藏是下述 Redis 例外。
+- **一致性与降级**：点赞/收藏只在目标关系真实变化时把关系与一条 Outbox 同事务提交；重复目标状态不产生 Outbox。Redis/ES/Kafka 不能覆盖已经落在 MySQL 的事实。数据库不可用时核心写入失败，不提供把缓存当权威的降级。
 
 ## Redis
 
-- **权威数据**：大多数业务最终事实在 MySQL；但点赞/收藏成员关系没有 MySQL 落点。无论 Kafka 是否启用，分片 Bitmap 都是当前成员关系唯一状态源。SDS 只保存即时派生计数；Lua 在 bit 真实变化时原子维护二者及每实体分片索引。每个实体的 like/fav 索引都保留版本哨兵和独立的期望 shard 数，实体同时进入持久 ZSet；哨兵缺失或 `SCARD - 1` 与期望数不一致时校准失败关闭，不能把未知分片解释成零。旧 Bitmap 由持久 SCAN cursor 逐页回填索引；[CounterCalibrationService](../../apps/server/src/main/java/com/chtholly/counter/service/impl/CounterCalibrationService.java) 只枚举已验证索引内的分片做 `BITCOUNT`，绝对覆盖 SDS 并推进 fact epoch。
+- **权威数据**：Redis 不保存点赞/收藏业务事实。分片 Bitmap 是在线成员读投影，SDS 是计数投影；每个实体的完整性标记只在一次 MySQL 全量重建完成后发布。标记缺失、版本不符或投影结构异常时，单条与批量成员读取回退 `counter_reaction`，不能把缺失 bit 解释成“未互动”。
 - **用途与入口**：[AuthService](../../apps/server/src/main/java/com/chtholly/auth/service/AuthService.java) 与 auth store 管理验证码/Token；[PostFeedServiceImpl](../../apps/server/src/main/java/com/chtholly/post/service/impl/PostFeedServiceImpl.java) 使用 Feed 缓存；[CounterServiceImpl](../../apps/server/src/main/java/com/chtholly/counter/service/impl/CounterServiceImpl.java) 使用分片位图和 SDS；[RelationServiceImpl](../../apps/server/src/main/java/com/chtholly/relation/service/impl/RelationServiceImpl.java) 使用关系 ZSet；[AgentMemoryStore](../../apps/server/src/main/java/com/chtholly/agent/memory/AgentMemoryStore.java) 以 Redis List 配合 Caffeine 保存会话 turn。
 - **配置来源**：[`application.yml`](../../apps/server/src/main/resources/application.yml) 的 `spring.data.redis`，Redisson Bean 见 [RedissonConfig](../../apps/server/src/main/java/com/chtholly/config/RedissonConfig.java)，缓存 TTL/热 key/feed 参数也在同一配置文件。
-- **一致性与降级**：缓存未命中通常回源 MySQL并回填；文章写入主动失效相关缓存。点赞/收藏 Bitmap 无其他业务源，可靠性依赖 Redis 持久化与备份；丢失 Bitmap 不能从 MySQL、Kafka 增量或进程内事件恢复。SDS 或 MySQL 快照漂移可从 Bitmap 校准；读路径校准后仍缺 SDS 时失败关闭。正式数据维护前使用 [`backup-redis.ps1`](../../scripts/backup/backup-redis.ps1) 在仓库外生成带 SHA-256 元数据的 RDB，并与 MySQL 备份保持同一维护窗口。
+- **一致性与降级**：缓存未命中通常回源 MySQL并回填；文章写入主动失效相关缓存。互动事件处理器先回查 MySQL 终态，再用 Lua 幂等设置目标 bit 并维护 SDS；投影可能短暂落后于已提交关系。完整重建以 Redisson 锁和 token fence 隔离并发恢复，按 MySQL 关系分页构造 staging shard，只在全部批次成功后有界切换索引、SDS、epoch 与完整性标记；失败时保持标记不完整，读侧继续回源 MySQL。Redis 数据丢失可由 [CounterCalibrationService](../../apps/server/src/main/java/com/chtholly/counter/service/impl/CounterCalibrationService.java) 从 MySQL 恢复。
 
 ## Kafka 与进程内事件
 
 - **权威数据**：Kafka 消息不是业务权威；Outbox 行保存在 MySQL。仅 Kafka 模式保留可供消费组回放的计数事件。`application.yml` 中 `kafka.enabled` 的 Spring 属性缺省值是 `false`；仓库推荐从 [`.env.example`](../../.env.example) 复制 `.env`，示例显式设置 `KAFKA_ENABLED=true`，因此按推荐本地启动流程运行时需要 Kafka，除非维护者将其改为 `false`。
-- **用途与入口**：启用 Kafka 时，[KafkaCounterPublisher](../../apps/server/src/main/java/com/chtholly/counter/event/KafkaCounterPublisher.java) 投递计数事件，[CounterAggregationKafkaConsumer](../../apps/server/src/main/java/com/chtholly/counter/event/CounterAggregationKafkaConsumer.java) 聚合；[CanalKafkaBridge](../../apps/server/src/main/java/com/chtholly/relation/outbox/CanalKafkaBridge.java) 将 Outbox CDC 结果转发到 Kafka，[CanalOutboxConsumer](../../apps/server/src/main/java/com/chtholly/relation/outbox/CanalOutboxConsumer.java) 更新关系 fan 侧，[CanalOutboxConsumerSearch](../../apps/server/src/main/java/com/chtholly/search/outbox/CanalOutboxConsumerSearch.java) 更新搜索索引。
+- **用途与入口**：点赞/收藏关系变化总是写 MySQL Outbox。启用 Kafka/Canal 时，[CanalKafkaBridge](../../apps/server/src/main/java/com/chtholly/relation/outbox/CanalKafkaBridge.java) 将 CDC 结果转发到 `canal-outbox`，[CounterReactionOutboxConsumer](../../apps/server/src/main/java/com/chtholly/counter/event/CounterReactionOutboxConsumer.java) 处理互动行；关闭 Kafka 时，[CounterReactionLocalAdapter](../../apps/server/src/main/java/com/chtholly/counter/event/CounterReactionLocalAdapter.java) 在事务提交后调用同一处理核心。浏览量等通用计数仍由 [KafkaCounterPublisher](../../apps/server/src/main/java/com/chtholly/counter/event/KafkaCounterPublisher.java) 与 [CounterAggregationKafkaConsumer](../../apps/server/src/main/java/com/chtholly/counter/event/CounterAggregationKafkaConsumer.java) 处理；关系 fan 侧和搜索索引继续使用各自 Outbox 消费者。
 - **配置来源**：[`application.yml`](../../apps/server/src/main/resources/application.yml) 的 `kafka.enabled`、`spring.kafka`、`counter.kafka.*`、`counter.calibration.*` 与 `canal`。计数消费者使用专用批量容器、有限重试和 DLT 确认，不复用会在 `finally` 中确认的通用消费者基类。
-- **一致性与降级**：`kafka.enabled=false` 时，计数切到 [SpringEventCounterPublisher](../../apps/server/src/main/java/com/chtholly/counter/event/SpringEventCounterPublisher.java) 与 [CounterAggregationSpringConsumer](../../apps/server/src/main/java/com/chtholly/counter/event/CounterAggregationSpringConsumer.java)，仍在进程内处理但不可重放；`true` 时由 Kafka 批量消费者在同一个 MySQL 事务内完成 inbox 去重和快照更新。生产重试复用 event ID，消费重复只形成一个逻辑增量。Redis 与 Kafka 间的遗漏由 Bitmap 校准收敛，而不是 Redis Stream、双写或 exactly-once。浏览量的可选旧回放仍与 reaction 成员事实恢复严格分离。
+- **一致性与降级**：互动的 Kafka 与本地路径共用 MySQL 终态查询、Bitmap 投影和聚合组件；相同 `eventId` 由 `counter_event_inbox` 幂等，但这不等于 Kafka exactly-once。旧 epoch 的延迟事件可登记 Inbox，却不能修改新 epoch 快照；投影失败不回滚已提交关系，Outbox 重放或 MySQL 全量校准负责恢复。`kafka.enabled=false` 时，浏览量等通用计数仍切到 [SpringEventCounterPublisher](../../apps/server/src/main/java/com/chtholly/counter/event/SpringEventCounterPublisher.java) 与 [CounterAggregationSpringConsumer](../../apps/server/src/main/java/com/chtholly/counter/event/CounterAggregationSpringConsumer.java)。浏览量的可选旧回放与 reaction 成员事实恢复严格分离。
 
 ## Elasticsearch
 
@@ -56,7 +56,7 @@
 ## 修改联动
 
 - 表或字段：同步 schema/migration、Mapper 接口/XML、模型、Seed 与集成测试。
-- 缓存键或事件契约：同步所有生产者、两种计数消费者、失效/回填和幂等逻辑。
+- 缓存键或事件契约：同步互动 Outbox 的 Kafka/本地路径、通用计数消费者、投影完整性、恢复与幂等逻辑。
 - ES mapping：同步初始化、写文档、查询字段、回填与降级响应测试。
 - 存储接口：同时验证本地与 OSS 条件实现、控制器、对象键校验和公开 URL。
 

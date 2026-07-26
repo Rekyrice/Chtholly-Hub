@@ -40,14 +40,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harn
 
 缓存正式数据仅运行 12 次固定对照：`stable-hot` 下 `db-only/full` 各 3 次，`expiry-spike` 下 `full-no-singleflight/full` 各 3 次。每次使用独立环境并保留 p95、错误率、MySQL 查询次数和同 key 真实加载次数；缺少任一原始指标的结果为 `INCOMPLETE`，不得用于比较。环境和命令详见 [`benchmarks/README.md`](../../benchmarks/README.md)。
 
-## 互动计数恢复验证
+## 互动关系与投影恢复验证
 
-以下两组集成测试分别固定 Redis 5 Lua 语义，以及 Redis/Kafka/MySQL 的批次重试、重启幂等、消息遗漏和周期校准。它们必须使用 `integration-test` profile；普通 `mvn test` 不会执行。
+以下集成测试分别固定 Redis 5 重建语义、MySQL 事务事实，以及 Outbox/Kafka/Redis 的重复、乱序、故障与校准边界。它们必须使用 `integration-test` profile；普通 `mvn test` 不会执行。
 
 ```powershell
 cd apps/server
 mvn -q -Pintegration-test '-Dit.test=CounterFactMaintenanceLuaIT' verify
+mvn -q -Pintegration-test '-Dit.test=CounterReactionFactsIT' verify
 mvn -q -Pintegration-test '-Dit.test=CounterGoldenPathIT' verify
+mvn -q -Pintegration-test '-Dit.test=DegradationGoldenPathIT' verify
 ```
 
-`CounterFactMaintenanceLuaIT` 覆盖重复与并发状态切换、无过期维护 fence 的活跃拒绝与崩溃接管、epoch、索引与候选同时丢失、单个 shard 成员丢失、非零 cursor 跨实例续扫、持久候选轮转和 Redis 5 兼容性。`CounterGoldenPathIT` 分别验证 MySQL 快照失败会回滚 inbox 并允许同 event ID 重试、Kafka listener 对瞬时处理失败执行整批自动重试、消费者重启、DLT broker 确认，以及“Lua 已更新 Bitmap/SDS 但事件未投递”后由周期校准恢复 Bitmap、Redis SDS 与 MySQL 快照一致；前两项是独立故障路径，不将其合并宣称为一次端到端故障。该链路只承诺最终收敛，不宣称 Redis 与 Kafka 原子提交或 exactly-once。
+`CounterFactMaintenanceLuaIT` 使用 Redis 5 覆盖 MySQL 关系分页重建、跨 shard、空关系、缺失物理 shard、token 所有权丢失、失败不发布完整标记和有界切换。`CounterReactionFactsIT` 使用真实 MySQL 验证首次/重复目标状态、fav/unfav、关系或 Outbox 失败全事务回滚，以及同目标并发只有一次真实变化。
+
+`CounterGoldenPathIT` 使用 Canal-compatible envelope 验证 Outbox 重放幂等、MySQL 终态覆盖乱序事件、旧 epoch 事件隔离、Inbox/快照失败重试与从 MySQL 恢复 Redis 投影；`DegradationGoldenPathIT` 验证 Redis 故障不阻断 MySQL 关系与 Outbox 提交，恢复后可重放收敛。完整投影的 Bitmap 快路径、结构不完整时的 MySQL 批量回源由 `CounterServiceImplBatchTest` 固定。该链路允许异步延迟，只承诺最终收敛，不宣称 Redis、MySQL 与 Kafka 原子提交或 exactly-once。
+
+互动正确性证据使用独立、干净 worktree 执行：
+
+```powershell
+cd ../..
+./scripts/benchmark/collect-counter-evidence.ps1 -RunId counter-correctness-001
+```
+
+结果写入被忽略的 `.benchmark-results/<runId>/counter-evidence.json`，并强制 `subjectCommit`、`harnessCommit`、`datasetCommit` 等于实际执行提交。它验证 8 个固定正确性指标，不生成或推断性能数字。

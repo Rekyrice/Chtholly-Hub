@@ -10,7 +10,7 @@
 
 1. 安装 Docker Engine 与 Compose 插件，准备可持久化的宿主机磁盘和备份策略。
 2. 将 [`.env.prod.example`](../../.env.prod.example) 复制为不会提交的 `.env`，替换数据库密码、站点域名与实际启用功能的凭据。
-3. 确认 80/443、安全组、DNS 与 TLS 方案；确认 MySQL 数据、Redis bitmap 状态、上传卷/OSS 的备份边界。
+3. 确认 80/443、安全组、DNS 与 TLS 方案；确认 MySQL 业务事实、Redis 运行态、上传卷/OSS 的备份边界。
 4. 在隔离环境验证镜像构建、数据库脚本和健康检查，再操作已有生产数据。
 
 不要把 `.env`、证书私钥、OSS/LLM/Bangumi 密钥提交到仓库或粘贴进日志与文档。
@@ -34,6 +34,8 @@ bash scripts/deploy/ecs-bootstrap.sh
 ```
 
 脚本构建并启动服务，调用 `ecs-init-db.sh`，重启后端以触发索引回灌，再检查首页与 Feed。数据库脚本的真实顺序是 `schema.sql` → 当前 `migration/V*.sql` → `phase_a_seed.sql`，不是应用内 Flyway 自动迁移。详细关系与已有库边界见[数据库](../development/database.md)。OSS seed 正文需另行执行 `node scripts/oss/upload-seed-markdown.mjs`。
+
+`V25__counter_reaction.sql` 按干净迁移设计，不会读取旧 Redis Bitmap。需要保留 Redis-only 互动的已有环境不得直接切换：先停止互动写入、生成同一维护窗口的 MySQL/Redis 备份，完成单独评审的一次性有界导入并核对 `counter_reaction`，再启动新应用并从 MySQL 重建 Redis 投影。新链路稳定后不保留双写兼容层。
 
 ## Caddy 参考模板的限制
 
@@ -59,7 +61,8 @@ curl -fsS 'http://127.0.0.1/api/v1/posts/feed?page=1&size=1'
 
 ## 发布与回滚边界
 
-- 发布前备份 MySQL、Redis 持久化数据和 `uploads_data`/OSS。Redis bitmap 保存点赞/收藏成员关系，不是全部可重建缓存。
+- 发布前备份 MySQL、Redis 持久化数据和 `uploads_data`/OSS。MySQL `counter_reaction` 保存点赞/收藏成员事实；Redis Bitmap/SDS 可以从 MySQL 重建，RDB 仍用于缩短其他缓存、安全状态和运行态的恢复时间。
 - 应用镜像回滚可通过部署上一已验证版本完成；配置也必须与该版本兼容。
 - 数据库 DDL/数据迁移不会随容器回滚。已应用 migration 不可修改；对不可逆变更使用前向修复，或在演练过的条件下恢复备份。
+- 恢复 Redis RDB 后，以 MySQL 关系重新校准互动投影；不得让旧 RDB 反向覆盖更新的 `counter_reaction`。
 - 不要在不确认数据卷归属时执行 `down -v`。回滚后重新运行健康、Feed、登录、详情和启用功能检查。

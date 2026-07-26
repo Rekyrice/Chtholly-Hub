@@ -2,9 +2,9 @@
 
 内容包源码、文章 Markdown 和使用到的媒体文件由 Git 保存；MySQL 与 Redis 中的运行时状态需要另行备份。Elasticsearch 索引可以从权威数据重建，不作为权威备份。
 
-点赞/收藏成员关系只保存在 Redis bitmap 中，不能从 MySQL 重建。正式导入内容包或执行数据维护前，必须在同一维护窗口分别生成 MySQL 与 Redis 的仓库外备份。
+点赞/收藏成员关系以 MySQL `counter_reaction` 为唯一事实，Redis Bitmap/SDS 是可重建投影。正式导入内容包或执行数据维护前，仍应在同一维护窗口分别生成 MySQL 与 Redis 的仓库外备份：MySQL 负责业务恢复点，Redis RDB 用于缩短安全状态、缓存和其他运行态的恢复时间。
 
-维护前备份用于整批回滚；正式导入完成并通过幂等审计后，应在主后端仍停机时再生成一组 MySQL 与 Redis 配对备份，作为包含新互动事实的恢复基线。恢复完整 Redis RDB 后，不要再对点赞/收藏执行 Kafka earliest 回放；SDS 缺失时由 bitmap 重建即可。
+维护前备份用于整批回滚；正式导入完成并通过幂等审计后，应在主后端仍停机时再生成一组 MySQL 与 Redis 配对备份，作为包含新互动事实的恢复基线。恢复时先确认 MySQL 事实版本，再恢复所需 Redis 运行态，并对互动实体执行 MySQL→Bitmap/SDS/snapshot 校准；旧 RDB 不得反向覆盖更新的 MySQL 关系。升级自 V25 之前且必须保留 Redis-only 互动时，先按[数据库迁移边界](../../docs/development/database.md#v25-迁移边界)完成停写的一次性导入。
 
 ## MySQL 备份
 

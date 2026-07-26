@@ -7,7 +7,7 @@ Chtholly Hub 使用 MySQL。稳定的 schema、增量、seed 关系与生产边�
 ```text
 db/
 ├── schema.sql          # 开发阶段全量建表脚本
-├── migration/          # 已有数据库的增量脚本（当前 V20–V23）
+├── migration/          # 已有数据库的增量脚本（当前 V20–V25）
 └── seed/               # 开发/演示用种子数据
     └── phase_a_seed.sql
 ```
@@ -35,8 +35,12 @@ db/
 - [`V21__chtholly_bot_user.sql`](migration/V21__chtholly_bot_user.sql)：确保专用珂朵莉账号使用高 ID。
 - [`V22__seed_content_identity.sql`](migration/V22__seed_content_identity.sql)：种子内容到实体 ID 的稳定映射。
 - [`V23__counter_event_inbox_and_snapshot.sql`](migration/V23__counter_event_inbox_and_snapshot.sql)：计数事件幂等收件箱与持久化快照。
+- [`V24__draft_edit_preview.sql`](migration/V24__draft_edit_preview.sql)：受控草稿编辑预览。
+- [`V25__counter_reaction.sql`](migration/V25__counter_reaction.sql)：点赞/收藏成员关系事实。
 
 `schema.sql` 已包含当前最终表形，空库无需为 V0–V19 逐个找历史脚本。本地已有库可从根目录运行 `.\scripts\dev\apply-migrations.ps1`；它使用 `schema_migrations` 登记，不代表应用启用了 Flyway。新增变更只追加更高版本的 `V*.sql`，已应用脚本不得修改。
+
+`V25` 不从旧 Redis Bitmap 回填关系。新环境按空表启动；必须保留既有 Redis-only 互动时，先停止写入并完成经单独评审的一次性有界导入，再由 MySQL 重建 Redis 投影。详细边界见[数据库章节](../../../docs/development/database.md#v25-迁移边界)。
 
 ## 数据库与 OSS 的分工
 

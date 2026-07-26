@@ -42,9 +42,9 @@
 ### 社区互动
 
 - **关键入口**：[ActionController](../../apps/server/src/main/java/com/chtholly/counter/api/ActionController.java) → [CounterServiceImpl](../../apps/server/src/main/java/com/chtholly/counter/service/impl/CounterServiceImpl.java)；[RelationController](../../apps/server/src/main/java/com/chtholly/relation/api/RelationController.java) → [RelationServiceImpl](../../apps/server/src/main/java/com/chtholly/relation/service/impl/RelationServiceImpl.java)；[NotificationController](../../apps/server/src/main/java/com/chtholly/notification/api/NotificationController.java) 查询通知；[RecommendationController](../../apps/server/src/main/java/com/chtholly/recommendation/api/RecommendationController.java) → [RecommendationService](../../apps/server/src/main/java/com/chtholly/recommendation/RecommendationService.java)。
-- **依赖与状态**：点赞/收藏幂等位图、SDS 计数、关系读缓存与兴趣画像主要在 Redis；关注写模型、通知和 Outbox 在 MySQL。计数通过 Kafka 或本地 Spring 事件聚合；关注 fan 侧在 Kafka/Canal 启用时最终一致更新；通知监听器使用异步 Spring 事件。
-- **代表性测试**：[CounterAggregationProcessorTest](../../apps/server/src/test/java/com/chtholly/counter/event/CounterAggregationProcessorTest.java)、[RelationServiceImplTest](../../apps/server/src/test/java/com/chtholly/relation/service/impl/RelationServiceImplTest.java)、[NotificationEventListenerTest](../../apps/server/src/test/java/com/chtholly/notification/listener/NotificationEventListenerTest.java)、[RecommendationServiceTest](../../apps/server/src/test/java/com/chtholly/recommendation/RecommendationServiceTest.java)。
-- **修改联动**：计数事件契约要同步两种消费者；关系写路径要检查 Outbox、Redis ZSet、粉丝表、Feed timeline 与通知；推荐策略要保留无画像和依赖失败时的热门降级。
+- **依赖与状态**：点赞/收藏由 [CounterReactionCommandService](../../apps/server/src/main/java/com/chtholly/counter/service/CounterReactionCommandService.java) 在同一 MySQL 事务写 `counter_reaction` 与 Outbox；Bitmap、SDS 和 `counter_snapshot` 都是派生投影。Kafka 模式由 [CounterReactionOutboxConsumer](../../apps/server/src/main/java/com/chtholly/counter/event/CounterReactionOutboxConsumer.java) 消费 Canal-compatible Outbox，非 Kafka 模式由 [CounterReactionLocalAdapter](../../apps/server/src/main/java/com/chtholly/counter/event/CounterReactionLocalAdapter.java) 在提交后处理，两者共用终态回查和投影核心。关系读缓存与兴趣画像主要在 Redis；关注写模型、通知和 Outbox 在 MySQL。
+- **代表性测试**：[CounterReactionCommandServiceTest](../../apps/server/src/test/java/com/chtholly/counter/service/CounterReactionCommandServiceTest.java)、[CounterReactionEventProcessorTest](../../apps/server/src/test/java/com/chtholly/counter/event/CounterReactionEventProcessorTest.java)、[CounterReactionFactsIT](../../apps/server/src/test/java/com/chtholly/integration/CounterReactionFactsIT.java)、[CounterGoldenPathIT](../../apps/server/src/test/java/com/chtholly/integration/CounterGoldenPathIT.java)、[RelationServiceImplTest](../../apps/server/src/test/java/com/chtholly/relation/service/impl/RelationServiceImplTest.java)、[RecommendationServiceTest](../../apps/server/src/test/java/com/chtholly/recommendation/RecommendationServiceTest.java)。
+- **修改联动**：互动关系、Outbox payload、Kafka 与本地消费者、投影完整性、校准和通知副作用必须成组检查；关注关系写路径仍要检查 Outbox、Redis ZSet、粉丝表、Feed timeline 与通知；推荐策略要保留无画像和依赖失败时的热门降级。
 
 ### 内容发现
 
@@ -63,7 +63,7 @@
 ### 内容初始化
 
 - **关键入口**：命令行 [SeedRunner](../../apps/server/src/main/java/com/chtholly/seed/SeedRunner.java) 解析 mode/dry-run，[SeedOrchestrator](../../apps/server/src/main/java/com/chtholly/seed/SeedOrchestrator.java) 构建并持久化计划；[AdminSeedAuditController](../../apps/server/src/main/java/com/chtholly/admin/api/AdminSeedAuditController.java) 只暴露审计结果。
-- **依赖与状态**：幂等 marker、账号、文章、评论、关注和推荐数据写入 MySQL；正文可经 `SeedContentPublisher` 写存储；可选互动使用 Redis 状态与异步调度；已发布种子文章在 ES 可用时立即索引。
+- **依赖与状态**：幂等 marker、账号、文章、评论、关注、推荐数据及可选点赞/收藏关系写入 MySQL；正文可经 `SeedContentPublisher` 写存储；互动在线投影由正式校准链路从 MySQL 重建；已发布种子文章在 ES 可用时立即索引。
 - **代表性测试**：[SeedRunModeTest](../../apps/server/src/test/java/com/chtholly/seed/SeedRunModeTest.java)、[SeedOrchestratorTest](../../apps/server/src/test/java/com/chtholly/seed/SeedOrchestratorTest.java)、[SeedContentAuditorTest](../../apps/server/src/test/java/com/chtholly/seed/SeedContentAuditorTest.java)。
 - **修改联动**：新增模式或字段要同步 `SeedMapper` SQL、幂等 marker、dry-run 摘要和审计；生成内容不得绕过正式发布所依赖的数据约束。
 

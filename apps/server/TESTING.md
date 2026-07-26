@@ -1,52 +1,42 @@
 # 后端测试套件维护指南
 
-## 当前基线
+## 执行边界
 
-- 普通单元与 Spring MVC 切片测试由 Maven Surefire 执行。
-- `*IT.java` 集成测试由 `integration-test` Profile 下的 Maven Failsafe 执行。
-- Testcontainers 集成测试与快速单测在 CI 中使用独立 Job，避免日常单测启动容器。
-- 2026-07-12 的本地基线为 439 个测试、0 失败、0 错误、1 跳过。
+- 普通单元、Spring MVC 切片和应用上下文测试由 Maven Surefire 执行：`mvn test -Dspring.profiles.active=test`。
+- `*IT.java` 只由 `integration-test` Profile 下的 Maven Failsafe 执行：`mvn verify -Pintegration-test`。
+- Surefire 通过不能替代 MySQL、Redis、Kafka、Elasticsearch 或 Toxiproxy 的真实集成验证；两类报告分别位于 `target/surefire-reports` 与 `target/failsafe-reports`。
+- 测试数量会随功能增长，不在文档中固化容易漂移的总数；验收以命令退出码和报告中的失败/错误数为准。
 
-## 本轮优化目标
+## 测试设计约束
 
-本轮只改善测试代码的确定性、可读性和维护成本，不修改生产行为，也不以缩短执行时间为主要目标。
+1. 功能或修复先写能够因目标行为缺失而失败的测试，再做最小实现。
+2. 并发、重试和异步链路使用 latch、Awaitility、消费组 offset 或业务终态等待，不以固定 `sleep` 证明正确性。
+3. 只有三个及以上测试共享稳定构造时才提取夹具；优先使用业务语义命名的局部 helper。
+4. Testcontainers 用例验证真实基础设施边界，不用全 Mock 结果替代事务、Lua、broker ACK 或网络故障证据。
+5. 测试主动制造的预期异常可以定向降噪，但非预期 WARN/ERROR 必须保留可见。
 
-1. 保留现有业务场景和四条黄金链路，不通过删除断言或合并不同语义的用例减少数量。
-2. 将依赖固定时长的测试等待替换为明确的并发信号或状态条件，避免机器负载变化造成偶发失败。
-3. 仅在三个及以上测试存在相同且稳定的构造逻辑时提取测试夹具，避免形成难以理解的通用测试框架。
-4. 收敛由测试主动制造的预期异常日志，同时保留非预期 WARN/ERROR 的可见性。
-5. 每项重构保持行为等价，并通过定向测试和后端全量单测验证。
+## 互动关系验证地图
 
-## 方案选择
+- `CounterReactionCommandServiceTest`：目标状态幂等、同事务 Outbox、输入与行数约束。
+- `CounterReactionEventProcessorTest`：MySQL 终态回查、投影顺序、Inbox/快照与副作用边界。
+- `CounterServiceImplBatchTest`：完整投影快路径和不完整投影的 MySQL 批量回源。
+- `CounterReactionFactsIT`：真实 MySQL 关系/Outbox 原子性与并发。
+- `CounterFactMaintenanceLuaIT`：Redis 5 staging shard、token fence、完整性与跨 shard 重建。
+- `CounterGoldenPathIT`：Canal-compatible Outbox、Kafka 重放/乱序、epoch 与最终收敛。
+- `DegradationGoldenPathIT`：Redis 网络故障下 MySQL 提交边界与恢复。
 
-### 采用：最小化、测试侧重构
+定向命令示例：
 
-- 只修改 `src/test` 下的测试代码和测试资源。
-- 使用 `CountDownLatch`、受控 `Executor`、Mockito 验证或 Awaitility 状态条件替代固定 `sleep`。
-- 夹具提取以业务语义命名，优先局部私有方法，不创建跨模块的万能基类。
-- 日志仅对已确认由测试主动触发的类做定向降噪。
+```powershell
+mvn -q '-Dtest=CounterReactionCommandServiceTest,CounterReactionEventProcessorTest,CounterServiceImplBatchTest' test
+mvn -q -Pintegration-test '-Dit.test=CounterReactionFactsIT,CounterFactMaintenanceLuaIT,CounterGoldenPathIT,DegradationGoldenPathIT' verify
+```
 
-该方案不会改变线上依赖图或运行路径，回滚和评审成本最低。
+完整命令与证据采集入口见[测试与验证](../../docs/development/testing.md)。
 
-### 不采用：为速度增加生产代码测试缝
+## 提交前验收
 
-不为 Bangumi 重试等待等逻辑引入仅服务测试的 `Sleeper`、虚拟时钟或额外配置。执行时间不是本轮目标，这类生产抽象会增加系统复杂度。
-
-### 不采用：激进合并与裁剪测试
-
-不按覆盖率数字删除重复路径，也不把多个不同职责的测试类合并成大型测试类。当前测试规模相对生产代码合理，测试名称和故障定位价值高于文件数量下降。
-
-## 明确不在范围内
-
-- 不移除 Testcontainers 黄金链路。
-- 不调整 `@DirtiesContext`、容器生命周期或 Spring Context 缓存策略。
-- 不启用 JUnit 并行执行。
-- 不修改 Surefire/Failsafe 的职责划分。
-- 不修改生产代码、生产配置或接口行为。
-
-## 验收标准
-
-1. 修改涉及的测试类定向执行通过。
-2. `mvn test -Dspring.profiles.active=test` 保持 439 个测试、0 失败、0 错误、1 跳过。
-3. Testcontainers 集成测试的源码、数量和 Maven/CI 隔离策略不发生变化。
-4. `git diff --check` 通过，且改动范围仅包含测试代码、测试资源和本文档。
+1. 先运行改动职责对应的定向测试，再运行 `mvn test`。
+2. 触及数据库、Redis、Kafka、Outbox、恢复或网络故障时运行 `mvn verify -Pintegration-test`。
+3. 检查 Surefire/Failsafe 报告、`git diff --check`、`git status --short` 和新增文件忽略审计。
+4. 不以未运行、跳过或只有 Mock 的结果宣称真实链路完成。
