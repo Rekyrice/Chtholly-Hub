@@ -16,7 +16,7 @@
 
 Chtholly Hub 仓库负责 Web 体验、业务 API、后台任务与容器化配置。浏览器只直接访问 Next.js 或同域代理；Spring Boot 承担业务规则，访问 MySQL、Redis，并按启用功能连接 Elasticsearch、Kafka 等基础设施。正文与媒体默认写入本地文件系统，也可切换到 OSS。外部 LLM、Embedding 与 Bangumi 等服务通过可选集成接入，不是主站阅读与基础互动的启动前提。
 
-MySQL 保存业务最终事实，其中 `counter_reaction` 是点赞/收藏成员关系的唯一业务事实；关系真实变化与 Outbox 在同一事务提交。Redis Bitmap 是带完整性标记、可从 MySQL 重建的在线成员读投影，SDS 与 `counter_snapshot` 是派生计数。Kafka 只承载异步传输和重放，不是事实来源；Kafka 关闭时，互动 Outbox 事件在事务提交后经本地适配器进入同一投影处理核心。Redis 还保存可重建缓存和其他高频状态；Elasticsearch 保存可重建搜索索引。`STORAGE_TYPE` 默认 `local`，使用本地文件系统保存 Markdown 正文与媒体；生产环境可选切换为 OSS。当前操作入口见[数据与存储](data-and-storage.md)、[数据库](../development/database.md)与[生产部署](../operations/deployment.md)。
+MySQL 保存业务最终事实，其中 `counter_reaction` 是点赞/收藏成员关系的唯一业务事实；关系真实变化与 Outbox 在同一事务提交。Redis Bitmap 是带完整性标记、可从 MySQL 重建的在线成员读投影，SDS 与 `counter_snapshot` 是派生计数。Kafka 只承载异步传输和重放，不是事实来源；Kafka 或 Canal 任一关闭时，互动 Outbox 事件在事务提交后经本地适配器进入同一投影处理核心。Redis 还保存可重建缓存和其他高频状态；Elasticsearch 保存可重建搜索索引。`STORAGE_TYPE` 默认 `local`，使用本地文件系统保存 Markdown 正文与媒体；生产环境可选切换为 OSS。当前操作入口见[数据与存储](data-and-storage.md)、[数据库](../development/database.md)与[生产部署](../operations/deployment.md)。
 
 ## 组件关系
 
