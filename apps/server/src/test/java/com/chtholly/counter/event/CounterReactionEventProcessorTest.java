@@ -1,0 +1,157 @@
+package com.chtholly.counter.event;
+
+import com.chtholly.common.kafka.idempotency.OutboxIdempotencyGuard;
+import com.chtholly.counter.mapper.CounterReactionKey;
+import com.chtholly.counter.mapper.CounterReactionMapper;
+import com.chtholly.counter.service.impl.CounterReactionProjectionStore;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class CounterReactionEventProcessorTest {
+
+    @Mock
+    private CounterReactionMapper reactionMapper;
+    @Mock
+    private CounterReactionProjectionStore projectionStore;
+    @Mock
+    private CounterAggregationProcessor aggregationProcessor;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private OutboxIdempotencyGuard idempotencyGuard;
+
+    private CounterReactionEventProcessor processor;
+
+    @BeforeEach
+    void setUp() {
+        processor = new CounterReactionEventProcessor(
+                reactionMapper,
+                projectionStore,
+                aggregationProcessor,
+                eventPublisher,
+                idempotencyGuard);
+    }
+
+    @Test
+    void deduplicatesRelationLookupAndProjectsMysqlTerminalStateBeforeAggregation() {
+        CounterEvent oldLike = event("11", "7", "like", 42L, 1);
+        CounterEvent unlike = event("12", "7", "like", 42L, -1);
+        CounterReactionKey key = new CounterReactionKey("post", "7", "like", 42L);
+        when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of());
+        when(aggregationProcessor.applyBatchWithResult(List.of(oldLike, unlike)))
+                .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(
+                        2, List.of(oldLike, unlike)));
+
+        processor.process(List.of(oldLike, unlike));
+
+        InOrder order = inOrder(reactionMapper, projectionStore, aggregationProcessor);
+        order.verify(reactionMapper).findExisting(List.of(key));
+        order.verify(projectionStore).project(Map.of(key, false));
+        order.verify(aggregationProcessor).applyBatchWithResult(List.of(oldLike, unlike));
+        verify(eventPublisher).publishEvent(oldLike);
+        verify(eventPublisher).publishEvent(unlike);
+        verify(idempotencyGuard).markConsumed("counter-reaction-side-effects", 11L);
+        verify(idempotencyGuard).markConsumed("counter-reaction-side-effects", 12L);
+    }
+
+    @Test
+    void currentMysqlPresenceWinsOverReplayedOldUnlikeEvent() {
+        CounterEvent oldUnlike = event("13", "7", "like", 42L, -1);
+        CounterReactionKey key = new CounterReactionKey("post", "7", "like", 42L);
+        when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of(key));
+        when(aggregationProcessor.applyBatchWithResult(List.of(oldUnlike)))
+                .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(0, List.of(oldUnlike)));
+
+        processor.process(List.of(oldUnlike));
+
+        verify(projectionStore).project(Map.of(key, true));
+    }
+
+    @Test
+    void redisProjectionFailurePreventsInboxCommitAndSideEffects() {
+        CounterEvent event = event("14", "7", "fav", 42L, 1);
+        CounterReactionKey key = new CounterReactionKey("post", "7", "fav", 42L);
+        when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of(key));
+        doThrow(new IllegalStateException("redis down"))
+                .when(projectionStore).project(Map.of(key, true));
+
+        assertThatThrownBy(() -> processor.process(List.of(event)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("redis down");
+
+        verifyNoInteractions(aggregationProcessor, eventPublisher, idempotencyGuard);
+    }
+
+    @Test
+    void mysqlAggregationFailureAfterRedisProjectionDoesNotPublishSideEffects() {
+        CounterEvent event = event("15", "7", "like", 42L, 1);
+        CounterReactionKey key = new CounterReactionKey("post", "7", "like", 42L);
+        when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of(key));
+        when(aggregationProcessor.applyBatchWithResult(List.of(event)))
+                .thenThrow(new IllegalStateException("mysql down"));
+
+        assertThatThrownBy(() -> processor.process(List.of(event)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("mysql down");
+
+        verify(projectionStore).project(Map.of(key, true));
+        verifyNoInteractions(eventPublisher, idempotencyGuard);
+    }
+
+    @Test
+    void ordinaryBrokerReplaySkipsAlreadyPublishedLocalSideEffects() {
+        CounterEvent event = event("16", "7", "like", 42L, 1);
+        CounterReactionKey key = new CounterReactionKey("post", "7", "like", 42L);
+        when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of(key));
+        when(aggregationProcessor.applyBatchWithResult(List.of(event)))
+                .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(0, List.of(event)));
+        when(idempotencyGuard.isAlreadyConsumed("counter-reaction-side-effects", 16L))
+                .thenReturn(true);
+
+        processor.process(List.of(event));
+
+        verify(eventPublisher, never()).publishEvent(event);
+        verify(idempotencyGuard, never()).markConsumed("counter-reaction-side-effects", 16L);
+    }
+
+    @Test
+    void invalidReactionIsRejectedBeforeAnyExternalCall() {
+        CounterEvent invalid = event("17", "7", "like", 42L, 1);
+        invalid.setIdx(2);
+
+        assertThatThrownBy(() -> processor.process(List.of(invalid)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("metric");
+
+        verify(reactionMapper, never()).findExisting(anyList());
+        verifyNoInteractions(projectionStore, aggregationProcessor, eventPublisher, idempotencyGuard);
+    }
+
+    private static CounterEvent event(
+            String eventId,
+            String entityId,
+            String metric,
+            long userId,
+            int delta) {
+        int index = "like".equals(metric) ? 1 : 2;
+        return CounterEvent.of(eventId, "post", entityId, metric, index, userId, delta);
+    }
+}

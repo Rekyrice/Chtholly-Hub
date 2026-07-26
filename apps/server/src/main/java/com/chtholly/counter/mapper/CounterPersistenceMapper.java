@@ -20,6 +20,14 @@ public interface CounterPersistenceMapper {
             @Param("entityType") String entityType,
             @Param("entityId") String entityId);
 
+    /** Ensures reaction snapshot rows for a bounded entity batch. */
+    int ensureReactionSnapshotsBatch(
+            @Param("identities") List<CounterEntityIdentity> identities);
+
+    /** Locks a bounded entity batch in deterministic identity and metric order. */
+    List<CounterSnapshotEpoch> lockReactionSnapshotEpochs(
+            @Param("identities") List<CounterEntityIdentity> identities);
+
     /** Inserts an event ID if it has not been applied before. */
     int insertInbox(CounterEvent event);
 

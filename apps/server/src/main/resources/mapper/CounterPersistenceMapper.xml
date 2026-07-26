@@ -19,6 +19,29 @@
         FOR UPDATE
     </select>
 
+    <insert id="ensureReactionSnapshotsBatch">
+        INSERT IGNORE INTO counter_snapshot
+            (entity_type, entity_id, metric, count_value, fact_epoch, updated_at)
+        VALUES
+        <foreach collection="identities" item="identity" separator=",">
+            (#{identity.entityType}, #{identity.entityId}, 'like', 0, 0, NOW(3)),
+            (#{identity.entityType}, #{identity.entityId}, 'fav', 0, 0, NOW(3))
+        </foreach>
+    </insert>
+
+    <select id="lockReactionSnapshotEpochs"
+            resultType="com.chtholly.counter.mapper.CounterSnapshotEpoch">
+        SELECT entity_type, entity_id, metric, fact_epoch
+        FROM counter_snapshot
+        WHERE metric IN ('fav', 'like')
+          AND (entity_type, entity_id) IN
+        <foreach collection="identities" item="identity" open="(" separator="," close=")">
+            (#{identity.entityType}, #{identity.entityId})
+        </foreach>
+        ORDER BY entity_type, entity_id, metric
+        FOR UPDATE
+    </select>
+
     <insert id="insertInbox">
         INSERT IGNORE INTO counter_event_inbox
             (event_id, entity_type, entity_id, metric, delta, user_id, fact_epoch, applied_at)

@@ -3,7 +3,9 @@ package com.chtholly.counter.event;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.mapper.CounterPersistenceMapper;
+import com.chtholly.counter.mapper.CounterEntityIdentity;
 import com.chtholly.counter.mapper.CounterSnapshotDelta;
+import com.chtholly.counter.mapper.CounterSnapshotEpoch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.Comparator;
 
 /**
  * 计数事件聚合与刷写核心逻辑（Kafka / Spring Event 共用）。
@@ -55,39 +58,116 @@ public class CounterAggregationProcessor {
     /** Applies one Kafka batch using the MySQL inbox and snapshot in one transaction. */
     @Transactional
     public int applyBatch(List<CounterEvent> events) {
-        if (events == null || events.isEmpty()) { return 0; }
+        return applyBatchWithResult(events).insertedEvents();
+    }
+
+    /**
+     * Applies one batch and reports reaction events that still belong to the current absolute epoch.
+     *
+     * @param events counter events
+     * @return durable insert count and current reaction events, including safe broker replays
+     */
+    @Transactional
+    public ApplyBatchResult applyBatchWithResult(List<CounterEvent> events) {
+        if (events == null || events.isEmpty()) { return new ApplyBatchResult(0, List.of()); }
         List<CounterEvent> copy = List.copyOf(events);
         copy.forEach(CounterAggregationProcessor::validateEvent);
 
+        Map<CounterEntityIdentity, Long> reactionEpochs = lockReactionEpochs(copy);
         Map<SnapshotKey, Long> grouped = new LinkedHashMap<>();
         List<CounterEvent> newViewEvents = new ArrayList<>();
+        Map<String, CounterEvent> currentReactionEvents = new LinkedHashMap<>();
         int applied = 0;
         for (CounterEvent event : copy) {
             int inserted = persistenceMapper.insertInbox(event);
+            boolean newlyInserted;
             if (inserted == 0) {
                 if (persistenceMapper.countMatchingInbox(event) != 1) {
                     throw new IllegalStateException("Counter event ID collision detected");
                 }
-                continue;
-            }
-            if (inserted != 1) {
+                newlyInserted = false;
+            } else if (inserted == 1) {
+                newlyInserted = true;
+                applied++;
+            } else {
                 throw new IllegalStateException("Counter inbox insert returned an invalid row count");
             }
-            applied++;
+            boolean current = isCurrent(event, reactionEpochs);
+            if (isReaction(event) && current) {
+                currentReactionEvents.putIfAbsent(event.getEventId(), event);
+            }
+            if (!newlyInserted || !current) {
+                continue;
+            }
             SnapshotKey key = new SnapshotKey(
                     event.getEntityType(), event.getEntityId(), event.getMetric(), event.getFactEpoch());
             grouped.merge(key, (long) event.getDelta(), Math::addExact);
             if ("view".equals(event.getMetric())) { newViewEvents.add(event); }
         }
-        if (grouped.isEmpty()) { return 0; }
-        List<CounterSnapshotDelta> deltas = grouped.entrySet().stream()
-                .map(entry -> new CounterSnapshotDelta(
-                        entry.getKey().entityType(), entry.getKey().entityId(),
-                        entry.getKey().metric(), entry.getValue(), entry.getKey().factEpoch()))
+        if (!grouped.isEmpty()) {
+            List<CounterSnapshotDelta> deltas = grouped.entrySet().stream()
+                    .map(entry -> new CounterSnapshotDelta(
+                            entry.getKey().entityType(), entry.getKey().entityId(),
+                            entry.getKey().metric(), entry.getValue(), entry.getKey().factEpoch()))
+                    .toList();
+            persistenceMapper.incrementSnapshots(deltas);
+            newViewEvents.forEach(this::applyViewEvent);
+        }
+        return new ApplyBatchResult(applied, List.copyOf(currentReactionEvents.values()));
+    }
+
+    private Map<CounterEntityIdentity, Long> lockReactionEpochs(List<CounterEvent> events) {
+        List<CounterEntityIdentity> identities = events.stream()
+                .filter(CounterAggregationProcessor::isReaction)
+                .map(event -> new CounterEntityIdentity(event.getEntityType(), event.getEntityId()))
+                .distinct()
+                .sorted(Comparator.comparing(CounterEntityIdentity::entityType)
+                        .thenComparing(CounterEntityIdentity::entityId))
                 .toList();
-        persistenceMapper.incrementSnapshots(deltas);
-        newViewEvents.forEach(this::applyViewEvent);
-        return applied;
+        if (identities.isEmpty()) {
+            return Map.of();
+        }
+        persistenceMapper.ensureReactionSnapshotsBatch(identities);
+        List<CounterSnapshotEpoch> rows = persistenceMapper.lockReactionSnapshotEpochs(identities);
+        if (rows == null || rows.size() != identities.size() * 2) {
+            throw new IllegalStateException("Counter reaction snapshot lock is incomplete");
+        }
+        Map<CounterEntityIdentity, Long> epochs = new LinkedHashMap<>();
+        Map<CounterEntityIdentity, Integer> counts = new LinkedHashMap<>();
+        for (CounterSnapshotEpoch row : rows) {
+            if (row == null || row.factEpoch() < 0L
+                    || (!"like".equals(row.metric()) && !"fav".equals(row.metric()))) {
+                throw new IllegalStateException("Counter reaction snapshot epoch row is invalid");
+            }
+            CounterEntityIdentity identity =
+                    new CounterEntityIdentity(row.entityType(), row.entityId());
+            Long previous = epochs.putIfAbsent(identity, row.factEpoch());
+            if (previous != null && previous != row.factEpoch()) {
+                throw new IllegalStateException("Counter reaction snapshot epoch is inconsistent");
+            }
+            counts.merge(identity, 1, Integer::sum);
+        }
+        for (CounterEntityIdentity identity : identities) {
+            if (counts.getOrDefault(identity, 0) != 2 || !epochs.containsKey(identity)) {
+                throw new IllegalStateException("Counter reaction snapshot lock is incomplete");
+            }
+        }
+        return Map.copyOf(epochs);
+    }
+
+    private static boolean isCurrent(
+            CounterEvent event,
+            Map<CounterEntityIdentity, Long> reactionEpochs) {
+        if (!isReaction(event)) {
+            return true;
+        }
+        Long current = reactionEpochs.get(
+                new CounterEntityIdentity(event.getEntityType(), event.getEntityId()));
+        return current != null && current == event.getFactEpoch();
+    }
+
+    private static boolean isReaction(CounterEvent event) {
+        return "like".equals(event.getMetric()) || "fav".equals(event.getMetric());
     }
 
     private boolean applyViewEvent(CounterEvent evt) {
@@ -186,6 +266,13 @@ public class CounterAggregationProcessor {
     }
 
     private record SnapshotKey(String entityType, String entityId, String metric, long factEpoch) {}
+
+    /** Detailed durable application result used by the reaction Outbox projection. */
+    public record ApplyBatchResult(int insertedEvents, List<CounterEvent> currentReactionEvents) {
+        public ApplyBatchResult {
+            currentReactionEvents = List.copyOf(currentReactionEvents);
+        }
+    }
 
     private static final String AGG_INCR_LUA = """
             local aggKey = KEYS[1]

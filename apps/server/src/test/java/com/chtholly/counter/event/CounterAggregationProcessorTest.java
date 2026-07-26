@@ -2,6 +2,7 @@ package com.chtholly.counter.event;
 
 import com.chtholly.counter.mapper.CounterPersistenceMapper;
 import com.chtholly.counter.mapper.CounterSnapshotDelta;
+import com.chtholly.counter.mapper.CounterSnapshotEpoch;
 import com.chtholly.counter.schema.CounterKeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,9 @@ class CounterAggregationProcessorTest {
         processor = new CounterAggregationProcessor(redis, persistenceMapper);
         lenient().when(redis.opsForSet()).thenReturn(setOps);
         lenient().when(redis.opsForHash()).thenReturn(hashOps);
+        lenient().when(persistenceMapper.lockReactionSnapshotEpochs(anyList())).thenReturn(List.of(
+                new CounterSnapshotEpoch("post", "7", "fav", 0L),
+                new CounterSnapshotEpoch("post", "7", "like", 0L)));
     }
 
     @Test
@@ -64,6 +68,20 @@ class CounterAggregationProcessorTest {
     }
 
     @Test
+    void committedInboxReplayStillReturnsCurrentReactionForPostCoreSideEffectRecovery() {
+        CounterEvent event = CounterEvent.of("evt-1", "post", "7", "like", 1, 100L, 1);
+        when(persistenceMapper.insertInbox(event)).thenReturn(0);
+        when(persistenceMapper.countMatchingInbox(event)).thenReturn(1);
+
+        CounterAggregationProcessor.ApplyBatchResult result =
+                processor.applyBatchWithResult(List.of(event));
+
+        assertThat(result.insertedEvents()).isZero();
+        assertThat(result.currentReactionEvents()).containsExactly(event);
+        verify(persistenceMapper, never()).incrementSnapshots(anyList());
+    }
+
+    @Test
     void differentEventIdsForSameCounterAreGroupedIntoOneSnapshotDelta() {
         CounterEvent first = CounterEvent.of("evt-1", "post", "7", "fav", 2, 100L, 1);
         CounterEvent second = CounterEvent.of("evt-2", "post", "7", "fav", 2, 101L, 1);
@@ -77,21 +95,26 @@ class CounterAggregationProcessorTest {
     }
 
     @Test
-    void eventsFromDifferentFactEpochsAreNotMergedIntoOneSnapshotDelta() {
+    void staleReactionEpochIsPersistentlyDeduplicatedButNotAppliedOrPublished() {
         CounterEvent stale = CounterEvent.of("evt-old", "post", "7", "like", 1, 100L, 1);
         stale.setFactEpoch(2L);
         CounterEvent current = CounterEvent.of("evt-new", "post", "7", "like", 1, 101L, 1);
         current.setFactEpoch(3L);
+        when(persistenceMapper.lockReactionSnapshotEpochs(anyList())).thenReturn(List.of(
+                new CounterSnapshotEpoch("post", "7", "fav", 3L),
+                new CounterSnapshotEpoch("post", "7", "like", 3L)));
         when(persistenceMapper.insertInbox(stale)).thenReturn(1);
         when(persistenceMapper.insertInbox(current)).thenReturn(1);
 
-        processor.applyBatch(List.of(stale, current));
+        CounterAggregationProcessor.ApplyBatchResult result =
+                processor.applyBatchWithResult(List.of(stale, current));
 
         ArgumentCaptor<List<CounterSnapshotDelta>> deltas = ArgumentCaptor.forClass(List.class);
         verify(persistenceMapper).incrementSnapshots(deltas.capture());
         assertThat(deltas.getValue()).containsExactly(
-                new CounterSnapshotDelta("post", "7", "like", 1L, 2L),
                 new CounterSnapshotDelta("post", "7", "like", 1L, 3L));
+        assertThat(result.insertedEvents()).isEqualTo(2);
+        assertThat(result.currentReactionEvents()).containsExactly(current);
     }
 
     @Test

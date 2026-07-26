@@ -1,0 +1,252 @@
+package com.chtholly.counter.service.impl;
+
+import com.chtholly.counter.mapper.CounterEntityIdentity;
+import com.chtholly.counter.mapper.CounterReactionKey;
+import com.chtholly.counter.schema.BitmapShard;
+import com.chtholly.counter.schema.CounterKeys;
+import com.chtholly.counter.schema.CounterSchema;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.SessionCallback;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+
+/** Maintains and reads the rebuildable Redis reaction projection. */
+@Component
+public class CounterReactionProjectionStore {
+
+    static final String COMPLETE_VERSION = "@mysql-v1";
+    static final String SHARD_INDEX_SENTINEL = "@mysql-v1";
+
+    private final StringRedisTemplate redis;
+    private final DefaultRedisScript<List> projectScript;
+    private final DefaultRedisScript<Long> readScript;
+    private final DefaultRedisScript<Long> restoreCompleteScript;
+
+    public CounterReactionProjectionStore(StringRedisTemplate redis) {
+        this.redis = Objects.requireNonNull(redis, "redis");
+        this.projectScript = new DefaultRedisScript<>();
+        this.projectScript.setResultType(List.class);
+        this.projectScript.setLocation(
+                new ClassPathResource("lua/counter/project-reaction-state.lua"));
+        this.readScript = new DefaultRedisScript<>();
+        this.readScript.setResultType(Long.class);
+        this.readScript.setLocation(
+                new ClassPathResource("lua/counter/read-reaction-state.lua"));
+        this.restoreCompleteScript = new DefaultRedisScript<>();
+        this.restoreCompleteScript.setResultType(Long.class);
+        this.restoreCompleteScript.setLocation(
+                new ClassPathResource("lua/counter/restore-reaction-complete.lua"));
+    }
+
+    /**
+     * Projects current MySQL states in bounded Redis pipelines.
+     *
+     * <p>Complete markers are cleared before any bit mutation. They are restored only when the
+     * entity was complete before this batch, every SDS mutation remained valid, and no maintenance
+     * fence became active.</p>
+     *
+     * @param targetStates current authoritative state by relation key
+     */
+    public void project(Map<CounterReactionKey, Boolean> targetStates) {
+        if (targetStates == null || targetStates.isEmpty()) {
+            return;
+        }
+        LinkedHashMap<CounterReactionKey, Boolean> targets = new LinkedHashMap<>();
+        targetStates.forEach((key, value) ->
+                targets.put(Objects.requireNonNull(key, "reaction key"), Boolean.TRUE.equals(value)));
+
+        List<CounterEntityIdentity> identities = targets.keySet().stream()
+                .map(key -> new CounterEntityIdentity(key.entityType(), key.entityId()))
+                .distinct()
+                .toList();
+        List<String> markers = identities.stream()
+                .map(identity -> CounterKeys.reactionProjectionCompleteKey(
+                        identity.entityType(), identity.entityId()))
+                .toList();
+        ValueOperations<String, String> values = redis.opsForValue();
+        List<String> previousMarkers = values.multiGet(markers);
+        Set<CounterEntityIdentity> previouslyComplete = new LinkedHashSet<>();
+        for (int index = 0; index < identities.size(); index++) {
+            String value = previousMarkers != null && index < previousMarkers.size()
+                    ? previousMarkers.get(index) : null;
+            if (COMPLETE_VERSION.equals(value)) {
+                previouslyComplete.add(identities.get(index));
+            }
+        }
+
+        redis.delete(markers);
+        List<Object> results = executeProjectionPipeline(targets);
+        if (results.size() != targets.size()) {
+            throw new IllegalStateException("Counter reaction projection returned an incomplete batch");
+        }
+
+        Set<CounterEntityIdentity> structurallyIncomplete = new LinkedHashSet<>();
+        int index = 0;
+        for (CounterReactionKey key : targets.keySet()) {
+            ProjectionResult result = mapProjectionResult(results.get(index++));
+            if (result.status() == -1L) {
+                throw new IllegalStateException("Counter reaction projection is blocked by maintenance");
+            }
+            if (result.status() == 2L) {
+                structurallyIncomplete.add(new CounterEntityIdentity(key.entityType(), key.entityId()));
+            }
+        }
+        previouslyComplete.removeAll(structurallyIncomplete);
+        restoreComplete(previouslyComplete);
+    }
+
+    /**
+     * Reads a bounded relation batch, returning empty optionals for structurally incomplete entities.
+     *
+     * @param keys relation keys
+     * @return one result per distinct input key
+     */
+    public Map<CounterReactionKey, Optional<Boolean>> readBatch(List<CounterReactionKey> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return Map.of();
+        }
+        List<CounterReactionKey> distinct = keys.stream().filter(Objects::nonNull).distinct().toList();
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        List<Object> raw = redis.executePipelined(new SessionCallback<>() {
+            @Override
+            @SuppressWarnings({"rawtypes", "unchecked"})
+            public Object execute(RedisOperations operations) {
+                for (CounterReactionKey key : distinct) {
+                    operations.execute(
+                            readScript,
+                            readKeys(key),
+                            COMPLETE_VERSION,
+                            SHARD_INDEX_SENTINEL,
+                            bitmapPrefix(key),
+                            Long.toString(BitmapShard.bitOf(key.userId())));
+                }
+                return null;
+            }
+        });
+        if (raw.size() != distinct.size()) {
+            throw new IllegalStateException("Counter reaction read projection returned an incomplete batch");
+        }
+        Map<CounterReactionKey, Optional<Boolean>> result = new LinkedHashMap<>();
+        for (int index = 0; index < distinct.size(); index++) {
+            Object value = raw.get(index);
+            if (!(value instanceof Number number)
+                    || (number.longValue() != -1L
+                    && number.longValue() != 0L
+                    && number.longValue() != 1L)) {
+                throw new IllegalStateException("Counter reaction read projection returned an invalid state");
+            }
+            result.put(distinct.get(index), number.longValue() < 0L
+                    ? Optional.empty()
+                    : Optional.of(number.longValue() == 1L));
+        }
+        return Map.copyOf(result);
+    }
+
+    /** Reads one relation from the projection when it is structurally complete. */
+    public Optional<Boolean> read(CounterReactionKey key) {
+        return readBatch(List.of(Objects.requireNonNull(key, "key"))).get(key);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private List<Object> executeProjectionPipeline(Map<CounterReactionKey, Boolean> targets) {
+        return redis.executePipelined(new SessionCallback<>() {
+            @Override
+            public Object execute(RedisOperations operations) {
+                for (Map.Entry<CounterReactionKey, Boolean> entry : targets.entrySet()) {
+                    CounterReactionKey key = entry.getKey();
+                    operations.execute(
+                            projectScript,
+                            projectKeys(key),
+                            Long.toString(BitmapShard.bitOf(key.userId())),
+                            entry.getValue() ? "1" : "0",
+                            Integer.toString(CounterSchema.NAME_TO_IDX.get(key.metric())),
+                            Integer.toString(CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE),
+                            Integer.toString(CounterSchema.FIELD_SIZE),
+                            SHARD_INDEX_SENTINEL);
+                }
+                return null;
+            }
+        });
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private void restoreComplete(Set<CounterEntityIdentity> identities) {
+        if (identities.isEmpty()) {
+            return;
+        }
+        List<Object> results = redis.executePipelined(new SessionCallback<>() {
+            @Override
+            public Object execute(RedisOperations operations) {
+                for (CounterEntityIdentity identity : identities) {
+                    operations.execute(
+                            restoreCompleteScript,
+                            List.of(
+                                    CounterKeys.reactionProjectionCompleteKey(
+                                            identity.entityType(), identity.entityId()),
+                                    CounterKeys.factMaintenanceFenceKey(
+                                            identity.entityType(), identity.entityId())),
+                            COMPLETE_VERSION);
+                }
+                return null;
+            }
+        });
+        if (results.size() != identities.size()
+                || results.stream().anyMatch(value -> !(value instanceof Number number)
+                || (number.longValue() != 0L && number.longValue() != 1L))) {
+            throw new IllegalStateException("Counter reaction completeness restoration failed");
+        }
+    }
+
+    private static List<String> projectKeys(CounterReactionKey key) {
+        return List.of(
+                CounterKeys.bitmapKey(
+                        key.metric(), key.entityType(), key.entityId(),
+                        BitmapShard.chunkOf(key.userId())),
+                CounterKeys.sdsKey(key.entityType(), key.entityId()),
+                CounterKeys.factMaintenanceFenceKey(key.entityType(), key.entityId()),
+                CounterKeys.bitmapShardIndexKey(key.metric(), key.entityType(), key.entityId()),
+                CounterKeys.bitmapShardIndexCountKey(key.metric(), key.entityType(), key.entityId()));
+    }
+
+    private static List<String> readKeys(CounterReactionKey key) {
+        return List.of(
+                CounterKeys.reactionProjectionCompleteKey(key.entityType(), key.entityId()),
+                CounterKeys.bitmapShardIndexKey(key.metric(), key.entityType(), key.entityId()),
+                CounterKeys.bitmapShardIndexCountKey(key.metric(), key.entityType(), key.entityId()),
+                CounterKeys.bitmapKey(
+                        key.metric(), key.entityType(), key.entityId(),
+                        BitmapShard.chunkOf(key.userId())));
+    }
+
+    private static String bitmapPrefix(CounterReactionKey key) {
+        return "bm:" + key.metric() + ":" + key.entityType() + ":" + key.entityId() + ":";
+    }
+
+    private static ProjectionResult mapProjectionResult(Object value) {
+        if (!(value instanceof List<?> values) || values.size() != 2
+                || !(values.get(0) instanceof Number status)
+                || !(values.get(1) instanceof Number delta)
+                || (status.longValue() != -1L && status.longValue() != 0L
+                && status.longValue() != 1L && status.longValue() != 2L)
+                || (delta.longValue() < -1L || delta.longValue() > 1L)) {
+            throw new IllegalStateException("Counter reaction projection returned an invalid result");
+        }
+        return new ProjectionResult(status.longValue(), delta.longValue());
+    }
+
+    private record ProjectionResult(long status, long delta) {}
+}

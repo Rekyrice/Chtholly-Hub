@@ -30,6 +30,11 @@ public final class CounterKeys {
         return String.format("bmidxcnt:%s:%s:%s", metric, entityType, entityId);
     }
 
+    /** Marks a fully rebuilt MySQL-backed reaction projection for one entity. */
+    public static String reactionProjectionCompleteKey(String entityType, String entityId) {
+        return String.format("counter:reaction-projection:complete:%s:%s", entityType, entityId);
+    }
+
     /** Persistent cursor for the bounded legacy Bitmap index backfill. */
     public static String bitmapIndexBackfillCursorKey() {
         return "counter:calibration:reaction-bitmap:cursor";
