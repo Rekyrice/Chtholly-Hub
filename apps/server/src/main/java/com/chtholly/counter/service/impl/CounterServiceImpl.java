@@ -247,7 +247,14 @@ public class CounterServiceImpl implements CounterService {
             if (existing == null) {
                 throw new IllegalStateException("Counter reaction MySQL fallback returned no result");
             }
-            mysqlExisting.addAll(existing);
+            Set<String> requestedEntityIds = new HashSet<>(entityIds);
+            for (String existingEntityId : existing) {
+                if (!requestedEntityIds.contains(existingEntityId)) {
+                    throw new IllegalStateException(
+                            "Counter reaction MySQL fallback returned an unexpected entity");
+                }
+                mysqlExisting.add(existingEntityId);
+            }
         }
         Map<Long, Boolean> out = new LinkedHashMap<>(ids.size());
         for (int i = 0; i < ids.size(); i++) {

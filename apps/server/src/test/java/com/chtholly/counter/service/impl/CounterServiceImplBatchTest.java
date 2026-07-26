@@ -202,6 +202,20 @@ class CounterServiceImplBatchTest {
     }
 
     @Test
+    void batchMembershipRejectsMysqlRowsOutsideTheRequestedChunk() {
+        CounterReactionKey key = new CounterReactionKey("post", "10", "like", 7L);
+        when(reactionProjectionStore.readBatch(List.of(key)))
+                .thenReturn(Map.of(key, Optional.empty()));
+        when(reactionMapper.findExistingEntityIds(
+                "post", "like", 7L, List.of("10")))
+                .thenReturn(List.of("999"));
+
+        assertThatThrownBy(() -> counterService.batchIsLiked(7L, List.of(10L)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unexpected");
+    }
+
+    @Test
     void batchReturnsEmptyForEmptyInput() {
         assertThat(counterService.batchIsLiked(1L, List.of())).isEmpty();
         assertThat(counterService.batchIsFaved(1L, null)).isEmpty();
