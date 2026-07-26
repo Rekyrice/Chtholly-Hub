@@ -2,7 +2,7 @@ package com.chtholly.counter.event;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -10,9 +10,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.util.List;
 import java.util.Objects;
 
-/** Dispatches committed reaction Outbox payloads when Kafka is disabled. */
+/** Dispatches committed reaction Outbox payloads unless the complete Canal/Kafka transport is enabled. */
 @Component
-@ConditionalOnProperty(name = "kafka.enabled", havingValue = "false", matchIfMissing = true)
+@ConditionalOnExpression("!${kafka.enabled:false} || !${canal.enabled:false}")
 public class CounterReactionLocalAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(CounterReactionLocalAdapter.class);

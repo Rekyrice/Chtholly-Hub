@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -50,5 +51,33 @@ class CounterReactionLocalAdapterTest {
 
         assertThat(annotation).isNotNull();
         assertThat(annotation.phase()).isEqualTo(TransactionPhase.AFTER_COMMIT);
+    }
+
+    @Test
+    void registersLocalAdapterWhenKafkaIsDisabled() {
+        transportContext("kafka.enabled=false", "canal.enabled=true")
+                .run(context -> assertThat(context)
+                        .hasSingleBean(CounterReactionLocalAdapter.class));
+    }
+
+    @Test
+    void registersLocalAdapterWhenCanalIsDisabledEvenWithKafkaEnabled() {
+        transportContext("kafka.enabled=true", "canal.enabled=false")
+                .run(context -> assertThat(context)
+                        .hasSingleBean(CounterReactionLocalAdapter.class));
+    }
+
+    @Test
+    void omitsLocalAdapterOnlyWhenTheCompleteKafkaTransportIsEnabled() {
+        transportContext("kafka.enabled=true", "canal.enabled=true")
+                .run(context -> assertThat(context)
+                        .doesNotHaveBean(CounterReactionLocalAdapter.class));
+    }
+
+    private ApplicationContextRunner transportContext(String... properties) {
+        return new ApplicationContextRunner()
+                .withBean(CounterReactionEventProcessor.class, () -> processor)
+                .withUserConfiguration(CounterReactionLocalAdapter.class)
+                .withPropertyValues(properties);
     }
 }

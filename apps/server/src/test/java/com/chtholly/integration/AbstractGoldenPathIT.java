@@ -106,6 +106,9 @@ public abstract class AbstractGoldenPathIT {
         registry.add("spring.data.redis.host", REDIS_PROXY::getContainerIpAddress);
         registry.add("spring.data.redis.port", REDIS_PROXY::getProxyPort);
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        // These tests inject Canal-compatible envelopes directly, so they model the complete
+        // Kafka transport without enabling the local reaction fallback.
+        registry.add("canal.enabled", () -> true);
         registry.add("spring.elasticsearch.uris", () -> "http://"
                 + ELASTICSEARCH_PROXY.getContainerIpAddress() + ":" + ELASTICSEARCH_PROXY.getProxyPort());
     }
