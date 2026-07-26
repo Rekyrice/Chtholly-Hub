@@ -9,6 +9,7 @@ import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterFactMaintenanceService;
+import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.counter.service.CounterFactMaintenanceService.ManagedPostReactionState;
 import com.chtholly.counter.service.CounterFactMaintenanceService.PostReactionReconciliationResult;
 import com.chtholly.counter.service.impl.CounterBitmapIndexService;
@@ -222,7 +223,7 @@ class CounterFactMaintenanceLuaIT {
         long userId = 42L;
         AtomicReference<CounterEvent> delayed = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, delayed::set, mock(PostMapper.class), userMapper,
+                redis, mock(CounterReactionCommandService.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
@@ -247,7 +248,7 @@ class CounterFactMaintenanceLuaIT {
         long postId = 90_002L;
         long userId = 43L;
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, ignored -> {}, mock(PostMapper.class), userMapper,
+                redis, mock(CounterReactionCommandService.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
 
@@ -278,7 +279,7 @@ class CounterFactMaintenanceLuaIT {
         long userId = 44L;
         AtomicReference<CounterEvent> published = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, published::set, mock(PostMapper.class), userMapper,
+                redis, mock(CounterReactionCommandService.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
         String fenceKey = CounterKeys.factMaintenanceFenceKey("post", String.valueOf(postId));
@@ -357,7 +358,7 @@ class CounterFactMaintenanceLuaIT {
         redis.opsForValue().set(fenceKey, "crashed-owner");
         AtomicReference<CounterEvent> published = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, published::set, mock(PostMapper.class), userMapper,
+                redis, mock(CounterReactionCommandService.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
 
@@ -540,7 +541,7 @@ class CounterFactMaintenanceLuaIT {
                 new byte[CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE]);
         ConcurrentLinkedQueue<CounterEvent> events = new ConcurrentLinkedQueue<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, events::add, mock(PostMapper.class), userMapper,
+                redis, mock(CounterReactionCommandService.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
 
@@ -585,7 +586,7 @@ class CounterFactMaintenanceLuaIT {
                 new byte[CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE]);
         ConcurrentLinkedQueue<CounterEvent> events = new ConcurrentLinkedQueue<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
-                redis, events::add, mock(PostMapper.class), userMapper,
+                redis, mock(CounterReactionCommandService.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
         int operationCount = 40;

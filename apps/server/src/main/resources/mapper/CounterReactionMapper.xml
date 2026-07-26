@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.counter.mapper.CounterReactionMapper">
+    <insert id="insertIgnore">
+        INSERT IGNORE INTO counter_reaction
+            (entity_type, entity_id, metric, user_id, created_at)
+        VALUES
+            (#{entityType}, #{entityId}, #{metric}, #{userId}, NOW(3))
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM counter_reaction
+        WHERE entity_type = #{entityType}
+          AND entity_id = #{entityId}
+          AND metric = #{metric}
+          AND user_id = #{userId}
+    </delete>
+
+    <select id="exists" resultType="int">
+        SELECT EXISTS(
+            SELECT 1
+            FROM counter_reaction
+            WHERE entity_type = #{entityType}
+              AND entity_id = #{entityId}
+              AND metric = #{metric}
+              AND user_id = #{userId}
+        )
+    </select>
+
+    <select id="findExisting" resultType="com.chtholly.counter.mapper.CounterReactionKey">
+        SELECT entity_type, entity_id, metric, user_id
+        FROM counter_reaction
+        WHERE (entity_type, entity_id, metric, user_id) IN
+        <foreach collection="keys" item="key" open="(" separator="," close=")">
+            (#{key.entityType}, #{key.entityId}, #{key.metric}, #{key.userId})
+        </foreach>
+    </select>
+
+    <select id="findExistingEntityIds" resultType="java.lang.String">
+        SELECT entity_id
+        FROM counter_reaction
+        WHERE entity_type = #{entityType}
+          AND metric = #{metric}
+          AND user_id = #{userId}
+          AND entity_id IN
+        <foreach collection="entityIds" item="entityId" open="(" separator="," close=")">
+            #{entityId}
+        </foreach>
+    </select>
+
+    <select id="listUserIdsAfter" resultType="java.lang.Long">
+        SELECT user_id
+        FROM counter_reaction
+        WHERE entity_type = #{entityType}
+          AND entity_id = #{entityId}
+          AND metric = #{metric}
+          AND user_id &gt; #{afterUserId}
+        ORDER BY user_id
+        LIMIT #{limit}
+    </select>
+
+    <insert id="insertAllIgnore">
+        INSERT IGNORE INTO counter_reaction
+            (entity_type, entity_id, metric, user_id, created_at)
+        VALUES
+        <foreach collection="keys" item="key" separator=",">
+            (#{key.entityType}, #{key.entityId}, #{key.metric}, #{key.userId}, NOW(3))
+        </foreach>
+    </insert>
+
+    <delete id="deleteAll">
+        DELETE FROM counter_reaction
+        WHERE (entity_type, entity_id, metric, user_id) IN
+        <foreach collection="keys" item="key" open="(" separator="," close=")">
+            (#{key.entityType}, #{key.entityId}, #{key.metric}, #{key.userId})
+        </foreach>
+    </delete>
+</mapper>

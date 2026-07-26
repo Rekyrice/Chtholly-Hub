@@ -4,6 +4,7 @@ import com.chtholly.common.exception.BusinessException;
 import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.event.CounterEventPublisher;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.user.mapper.UserMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,13 +48,15 @@ class CounterServiceImplBatchTest {
     private UserMapper userMapper;
     @Mock
     private CounterCalibrationService calibrationService;
+    @Mock
+    private CounterReactionCommandService reactionCommandService;
 
     private CounterService counterService;
 
     @BeforeEach
     void setUp() {
         counterService = new CounterServiceImpl(
-                redis, counterEventPublisher, postMapper, userMapper, calibrationService);
+                redis, reactionCommandService, calibrationService);
     }
 
     @Test
@@ -109,102 +112,23 @@ class CounterServiceImplBatchTest {
     }
 
     @Test
-    void reactionWriteRejectedByMaintenanceFenceReturnsServiceUnavailableWithoutPublishing() {
-        doReturn(List.of(-1L, 0L)).when(redis)
-                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
-        doThrow(new IllegalStateException("Counter reconciliation lock is busy"))
-                .when(calibrationService).reconcileEntity("post", "99");
-
-        assertThatThrownBy(() -> counterService.like("post", "99", 42L))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(error -> assertThat(((BusinessException) error).getHttpStatus()).isEqualTo(503));
-
-        verify(counterEventPublisher, never()).publish(any());
-        verify(calibrationService).reconcileEntity("post", "99");
-    }
-
-    @Test
-    void staleMaintenanceFenceIsTakenOverBeforeTheToggleRetries() {
-        doReturn(List.of(-1L, 0L), List.of(1L, 1L)).when(redis)
-                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+    void reactionWritesDelegateToTheMysqlCommandService() {
+        when(reactionCommandService.setReaction("post", "99", "like", 42L, true))
+                .thenReturn(true);
+        when(reactionCommandService.setReaction("post", "99", "like", 42L, false))
+                .thenReturn(false);
+        when(reactionCommandService.setReaction("post", "99", "fav", 42L, true))
+                .thenReturn(true);
+        when(reactionCommandService.setReaction("post", "99", "fav", 42L, false))
+                .thenReturn(false);
 
         assertThat(counterService.like("post", "99", 42L)).isTrue();
-
-        verify(calibrationService).reconcileEntity("post", "99");
-        verify(redis, times(2)).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
-        verify(counterEventPublisher).publish(any());
-    }
-
-    @Test
-    void oversizedEntityIdentityFailsBeforeRedisMutationOrEventPublication() {
-        assertThatThrownBy(() -> counterService.like("x".repeat(33), "7".repeat(65), 42L))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("identity");
-        assertThatThrownBy(() -> counterService.like("post", "bad:*", 42L))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("identity");
+        assertThat(counterService.unlike("post", "99", 42L)).isFalse();
+        assertThat(counterService.fav("post", "99", 42L)).isTrue();
+        assertThat(counterService.unfav("post", "99", 42L)).isFalse();
 
         verify(redis, never()).execute(
                 any(DefaultRedisScript.class), anyList(), any(Object[].class));
-        verify(counterEventPublisher, never()).publish(any());
-    }
-
-    @Test
-    void changedReactionCarriesCurrentFactEpochAndChecksFenceBeforeBitmapMutation() {
-        doReturn(List.of(1L, 7L)).when(redis)
-                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
-
-        assertThat(counterService.like("post", "99", 42L)).isTrue();
-
-        ArgumentCaptor<CounterEvent> event = ArgumentCaptor.forClass(CounterEvent.class);
-        verify(counterEventPublisher).publish(event.capture());
-        assertThat(event.getValue().getFactEpoch()).isEqualTo(7L);
-
-        ArgumentCaptor<DefaultRedisScript<List>> script = ArgumentCaptor.forClass(DefaultRedisScript.class);
-        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
-        verify(redis).execute(script.capture(), keys.capture(), any(Object[].class));
-        assertThat(keys.getValue()).containsExactly(
-                "bm:like:post:99:0",
-                "cnt:v1:post:99",
-                "counter:fact-maintenance:post:99",
-                "counter:fact-epoch:post:99",
-                "bmidx:like:post:99",
-                "bmidx:fav:post:99",
-                "counter:calibration:reaction-bitmap:candidates",
-                "bmidxcnt:like:post:99",
-                "bmidxcnt:fav:post:99");
-        assertThat(script.getValue().getScriptAsString()).contains(
-                "string.len(raw)", "SET', cntKey", "SADD', bitmapIndexKey",
-                "SADD', peerBitmapIndexKey", "SREM', bitmapIndexKey");
-        assertThat(script.getValue().getScriptAsString().indexOf("EXISTS', fenceKey"))
-                .isLessThan(script.getValue().getScriptAsString().indexOf("SETBIT', bmKey"));
-    }
-
-    @Test
-    void missingSdsCalibratesAndRetriesOnlyOnceBeforePublishing() {
-        doReturn(List.of(2L, 4L), List.of(1L, 5L)).when(redis)
-                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
-
-        assertThat(counterService.like("post", "99", 42L)).isTrue();
-
-        verify(calibrationService).reconcileEntity("post", "99");
-        verify(redis, times(2)).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
-        ArgumentCaptor<CounterEvent> event = ArgumentCaptor.forClass(CounterEvent.class);
-        verify(counterEventPublisher).publish(event.capture());
-        assertThat(event.getValue().getFactEpoch()).isEqualTo(5L);
-    }
-
-    @Test
-    void repeatedMissingSdsFailsClosedWithoutPublishing() {
-        doReturn(List.of(2L, 4L), List.of(2L, 5L)).when(redis)
-                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
-
-        assertThatThrownBy(() -> counterService.like("post", "99", 42L))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("reconciliation");
-
-        verify(calibrationService).reconcileEntity("post", "99");
-        verify(counterEventPublisher, never()).publish(any());
     }
 
     @Test

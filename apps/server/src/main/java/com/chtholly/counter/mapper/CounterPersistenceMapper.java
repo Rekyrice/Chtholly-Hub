@@ -10,6 +10,16 @@ import java.util.List;
 @Mapper
 public interface CounterPersistenceMapper {
 
+    /** Ensures both reaction snapshot rows exist before an entity-level lock is acquired. */
+    int ensureReactionSnapshots(
+            @Param("entityType") String entityType,
+            @Param("entityId") String entityId);
+
+    /** Locks both reaction snapshot rows in metric order and returns their epochs. */
+    List<Long> lockReactionEpochs(
+            @Param("entityType") String entityType,
+            @Param("entityId") String entityId);
+
     /** Inserts an event ID if it has not been applied before. */
     int insertInbox(CounterEvent event);
 

@@ -7,6 +7,7 @@ import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterService;
+import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.counter.service.impl.CounterCalibrationService;
 import com.chtholly.counter.service.impl.CounterServiceImpl;
 import com.chtholly.post.mapper.PostMapper;
@@ -345,9 +346,7 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
         });
         CounterService droppedPublisherService = new CounterServiceImpl(
                 redis,
-                ignored -> { },
-                mock(PostMapper.class),
-                mock(UserMapper.class),
+                mock(CounterReactionCommandService.class),
                 calibrationService);
 
         assertThat(droppedPublisherService.like("post", entityId, userId)).isTrue();
