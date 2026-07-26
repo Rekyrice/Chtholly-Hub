@@ -5,6 +5,7 @@ import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.event.CounterTopics;
 import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
+import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.counter.service.impl.CounterCalibrationService;
@@ -25,6 +26,7 @@ import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.listener.MessageListenerContainer;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +73,8 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
         String entityId = "7001";
         long userId = 42L;
 
+        assertThat(calibrationService.reconcileEntity("post", entityId))
+                .isEqualTo(new CounterCalibrationService.ReconciliationResult(0L, 0L, 1L));
         assertThat(counterService.like("post", entityId, userId)).isTrue();
         assertThat(counterService.like("post", entityId, userId)).isFalse();
         Map<String, Object> outbox = jdbc.queryForMap("""
@@ -95,6 +99,7 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
 
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
                 assertThat(bitCount("like", entityId, userId)).isEqualTo(1L));
+        assertThat(readSds(entityId).get(CounterSchema.IDX_LIKE)).isEqualTo(1L);
         assertThat(counterService.isLiked("post", entityId, userId)).isTrue();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM counter_reaction WHERE entity_type = 'post' "
@@ -247,6 +252,10 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
                         + "WHERE entity_type = 'post' AND entity_id = ? AND metric = 'view'",
                 Long.class,
                 entityId)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM counter_reaction WHERE entity_id = ?",
+                Long.class,
+                entityId)).isZero();
     }
 
     @Test
@@ -415,16 +424,31 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
 
         calibrationService.reconcileScheduled();
 
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM counter_reaction WHERE entity_type = 'post' AND entity_id = ?",
+                Long.class,
+                mysqlBackedId)).isEqualTo(3L);
         assertThat(counterService.getCounts("post", mysqlBackedId, List.of("like", "fav")))
                 .containsEntry("like", 2L)
                 .containsEntry("fav", 1L);
+        assertThat(readSds(mysqlBackedId))
+                .containsExactly(0L, 2L, 1L, 0L, 0L);
         assertThat(counterService.isLiked("post", mysqlBackedId, firstUserId)).isTrue();
         assertThat(counterService.isLiked("post", mysqlBackedId, secondUserId)).isTrue();
         assertThat(counterService.isFaved("post", mysqlBackedId, secondUserId)).isTrue();
+        assertThat(bitCount("like", mysqlBackedId, firstUserId)).isEqualTo(1L);
+        assertThat(bitCount("like", mysqlBackedId, secondUserId)).isEqualTo(1L);
+        assertThat(bitCount("fav", mysqlBackedId, secondUserId)).isEqualTo(1L);
+        assertThat(snapshotCount(mysqlBackedId, "like")).isEqualTo(2L);
+        assertThat(snapshotCount(mysqlBackedId, "fav")).isEqualTo(1L);
         assertThat(counterService.getCounts("post", redisOnlyId, List.of("like", "fav")))
                 .containsEntry("like", 0L)
                 .containsEntry("fav", 0L);
+        assertThat(readSds(redisOnlyId))
+                .containsExactly(0L, 0L, 0L, 0L, 0L);
         assertThat(bitCount("like", redisOnlyId, staleUserId)).isZero();
+        assertThat(snapshotCount(redisOnlyId, "like")).isZero();
+        assertThat(snapshotCount(redisOnlyId, "fav")).isZero();
         assertThat(redis.opsForValue().get(
                 CounterKeys.reactionProjectionCompleteKey("post", mysqlBackedId)))
                 .isEqualTo(CounterReactionProjectionStore.COMPLETE_VERSION);
@@ -567,6 +591,23 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
                 connection.stringCommands().bitCount(
                         bitmapKey.getBytes(StandardCharsets.UTF_8)));
         return count == null ? 0L : count;
+    }
+
+    private List<Long> readSds(String entityId) {
+        byte[] key = CounterKeys.sdsKey("post", entityId)
+                .getBytes(StandardCharsets.UTF_8);
+        byte[] raw = redis.execute((RedisCallback<byte[]>) connection ->
+                connection.stringCommands().get(key));
+        assertThat(raw)
+                .isNotNull()
+                .hasSize(CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE);
+        ByteBuffer buffer = ByteBuffer.wrap(raw);
+        return List.of(
+                Integer.toUnsignedLong(buffer.getInt()),
+                Integer.toUnsignedLong(buffer.getInt()),
+                Integer.toUnsignedLong(buffer.getInt()),
+                Integer.toUnsignedLong(buffer.getInt()),
+                Integer.toUnsignedLong(buffer.getInt()));
     }
 
     private record ReactionOutbox(
