@@ -154,27 +154,26 @@ public class CounterReactionCommandService {
         if (!"post".equals(event.getEntityType())) {
             return;
         }
-        try {
-            long postId = Long.parseLong(event.getEntityId());
-            Post post = postMapper.findById(postId);
-            if (post != null && post.getCreatorId() != null) {
-                event.setPostCreatorId(post.getCreatorId());
-                event.setPostTitle(post.getTitle());
-                event.setPostSlug(post.getSlug());
-            }
-            if ("like".equals(event.getMetric()) && event.getDelta() == 1) {
+        long postId = Long.parseLong(event.getEntityId());
+        Post post = postMapper.findById(postId);
+        if (post != null && post.getCreatorId() != null) {
+            event.setPostCreatorId(post.getCreatorId());
+            event.setPostTitle(post.getTitle());
+            event.setPostSlug(post.getSlug());
+        }
+        if ("like".equals(event.getMetric()) && event.getDelta() == 1) {
+            try {
                 User actor = userMapper.findById(event.getUserId());
                 if (actor != null) {
                     event.setActorNickname(actor.getNickname());
                     event.setActorAvatar(actor.getAvatar());
                 }
+            } catch (RuntimeException exception) {
+                log.debug(
+                        "Counter reaction actor context enrichment failed userId={}: {}",
+                        event.getUserId(),
+                        exception.getMessage());
             }
-        } catch (RuntimeException exception) {
-            log.debug(
-                    "Counter reaction context enrichment failed entityType={} entityId={}: {}",
-                    event.getEntityType(),
-                    event.getEntityId(),
-                    exception.getMessage());
         }
     }
 }

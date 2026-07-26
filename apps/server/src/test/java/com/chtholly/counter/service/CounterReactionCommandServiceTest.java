@@ -6,7 +6,9 @@ import com.chtholly.counter.mapper.CounterPersistenceMapper;
 import com.chtholly.counter.mapper.CounterReactionMapper;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.Post;
 import com.chtholly.relation.outbox.OutboxMapper;
+import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,6 +70,15 @@ class CounterReactionCommandServiceTest {
         when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(4L, 4L));
         when(reactionMapper.insertIgnore("post", "7", "like", 42L)).thenReturn(1);
         when(idGenerator.nextId()).thenReturn(123L);
+        when(postMapper.findById(7L)).thenReturn(Post.builder()
+                .creatorId(99L)
+                .title("Durable context")
+                .slug("durable-context")
+                .build());
+        when(userMapper.findById(42L)).thenReturn(User.builder()
+                .nickname("Actor")
+                .avatar("actor.png")
+                .build());
         when(outboxMapper.insert(
                 eq(123L), eq("counter_reaction"), eq(42L),
                 eq("CounterReactionChanged"), anyString())).thenReturn(1);
@@ -89,6 +100,11 @@ class CounterReactionCommandServiceTest {
         assertThat(event.getUserId()).isEqualTo(42L);
         assertThat(event.getDelta()).isEqualTo(1);
         assertThat(event.getFactEpoch()).isEqualTo(4L);
+        assertThat(event.getPostCreatorId()).isEqualTo(99L);
+        assertThat(event.getPostTitle()).isEqualTo("Durable context");
+        assertThat(event.getPostSlug()).isEqualTo("durable-context");
+        assertThat(event.getActorNickname()).isEqualTo("Actor");
+        assertThat(event.getActorAvatar()).isEqualTo("actor.png");
         verify(eventPublisher).publishEvent(any(CounterReactionCommittedEvent.class));
     }
 
@@ -171,6 +187,23 @@ class CounterReactionCommandServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("outbox down");
 
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void postContextLookupFailureStopsDurableEventCreation() {
+        RuntimeException failure = new RuntimeException("post lookup down");
+        when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(0L, 0L));
+        when(reactionMapper.insertIgnore("post", "7", "like", 42L)).thenReturn(1);
+        when(idGenerator.nextId()).thenReturn(123L);
+        when(postMapper.findById(7L)).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.setReaction("post", "7", "like", 42L, true))
+                .isSameAs(failure);
+
+        verify(outboxMapper, never()).insert(
+                anyLong(), anyString(), any(), anyString(), anyString());
+        verify(userMapper, never()).findById(anyLong());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
