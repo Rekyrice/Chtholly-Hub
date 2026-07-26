@@ -92,7 +92,9 @@ class CounterReactionLocalModeIT extends AbstractGoldenPathIT {
         assertThat(redis.opsForValue().get(
                 CounterKeys.reactionProjectionCompleteKey("post", entityId)))
                 .isEqualTo(CounterReactionProjectionStore.COMPLETE_VERSION);
-        assertListenerDeliveryCount(entityId, userId, 1);
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertListenerDeliveryCount(entityId, userId, 1));
 
         CounterEvent event = objectMapper.readValue(jdbc.queryForObject(
                 "SELECT payload FROM outbox WHERE aggregate_type = ?",
