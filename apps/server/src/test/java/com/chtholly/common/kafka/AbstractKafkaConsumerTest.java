@@ -163,6 +163,27 @@ class AbstractKafkaConsumerTest {
         verify(ack, never()).acknowledge();
     }
 
+    @Test
+    void malformedRetryRecordUsesTheOriginalTopicDlq() {
+        ConsumerRecord<String, String> record =
+                new ConsumerRecord<>("canal-outbox-retry", 0, 0L, "event-1", "{broken");
+        when(kafkaTemplate.send(eq("canal-outbox-dlq"), eq("event-1"), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        consumer.consumeRetryRecord(record, ack);
+
+        verify(deadLetterMessageService).recordFailure(
+                eq("canal-outbox"),
+                eq("event-1"),
+                eq("{broken"),
+                any(Exception.class),
+                eq(AbstractKafkaConsumer.MAX_RETRY_COUNT),
+                eq(DeadLetterStatus.DEAD));
+        verify(kafkaTemplate).send(eq("canal-outbox-dlq"), eq("event-1"), anyString());
+        verify(kafkaTemplate, never()).send(eq("unknown-dlq"), any(), anyString());
+        verify(ack).acknowledge();
+    }
+
     private static class TestConsumer extends AbstractKafkaConsumer {
         private boolean failNext;
         private boolean captureMdc;
