@@ -14,7 +14,10 @@ import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -79,6 +82,16 @@ class CounterAggregationProcessorTest {
         assertThat(result.insertedEvents()).isZero();
         assertThat(result.currentReactionEvents()).containsExactly(event);
         verify(persistenceMapper, never()).incrementSnapshots(anyList());
+    }
+
+    @Test
+    void reactionBatchUsesAnIndependentTransactionForAfterCommitDispatch() throws Exception {
+        Method method = CounterAggregationProcessor.class.getMethod(
+                "applyBatchWithResult", List.class);
+        Transactional transactional = method.getAnnotation(Transactional.class);
+
+        assertThat(transactional).isNotNull();
+        assertThat(transactional.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
     }
 
     @Test

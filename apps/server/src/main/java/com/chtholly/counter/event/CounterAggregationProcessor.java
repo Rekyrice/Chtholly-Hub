@@ -12,6 +12,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
@@ -67,7 +68,7 @@ public class CounterAggregationProcessor {
      * @param events counter events
      * @return durable insert count and current reaction events, including safe broker replays
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ApplyBatchResult applyBatchWithResult(List<CounterEvent> events) {
         if (events == null || events.isEmpty()) { return new ApplyBatchResult(0, List.of()); }
         List<CounterEvent> copy = List.copyOf(events);
