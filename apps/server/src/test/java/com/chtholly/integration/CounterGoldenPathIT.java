@@ -3,6 +3,7 @@ package com.chtholly.integration;
 import com.chtholly.counter.event.CounterAggregationProcessor;
 import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.event.CounterTopics;
+import com.chtholly.counter.mapper.CounterReactionKey;
 import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
@@ -24,23 +25,27 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry;
 import org.springframework.kafka.listener.MessageListenerContainer;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.Mockito.doAnswer;
 
 /** Verifies the counter path against real Redis, Kafka, and MySQL instances. */
 class CounterGoldenPathIT extends AbstractGoldenPathIT {
@@ -52,6 +57,9 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
 
     @SpyBean
     private CounterAggregationProcessor aggregationProcessor;
+
+    @SpyBean
+    private CounterReactionProjectionStore projectionStore;
 
     @Autowired
     private CounterCalibrationService calibrationService;
@@ -216,28 +224,35 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
     }
 
     @Test
-    void mysqlAggregationFailureAfterProjectionRetriesWithoutRedisDoubleCount() throws Exception {
+    void mysqlTransactionCommitFailureAfterProjectionRetriesWithoutRedisDoubleCount()
+            throws Exception {
         String entityId = "7014";
         long userId = 46L;
-        String trigger = "fail_counter_reaction_snapshot_update";
+        AtomicBoolean failCommit = new AtomicBoolean(true);
         assertThat(calibrationService.reconcileEntity("post", entityId))
                 .isEqualTo(new CounterCalibrationService.ReconciliationResult(0L, 0L, 1L));
         assertThat(counterService.like("post", entityId, userId)).isTrue();
         ReactionOutbox outbox = reactionOutboxes().getFirst();
-        jdbc.execute("""
-                CREATE TRIGGER fail_counter_reaction_snapshot_update
-                BEFORE UPDATE ON counter_snapshot
-                FOR EACH ROW
-                BEGIN
-                    IF NEW.entity_type = 'post'
-                       AND NEW.entity_id = '7014'
-                       AND NEW.metric = 'like'
-                       AND NEW.count_value <> OLD.count_value THEN
-                        SIGNAL SQLSTATE '45000'
-                            SET MESSAGE_TEXT = 'forced snapshot failure';
-                    END IF;
-                END
-                """);
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Map<CounterReactionKey, Boolean> targets = invocation.getArgument(0);
+            invocation.callRealMethod();
+            boolean includesTarget = targets.keySet().stream()
+                    .anyMatch(key -> entityId.equals(key.entityId()));
+            if (failCommit.get() && includesTarget) {
+                assertThat(TransactionSynchronizationManager.isSynchronizationActive())
+                        .isTrue();
+                TransactionSynchronizationManager.registerSynchronization(
+                        new TransactionSynchronization() {
+                            @Override
+                            public void beforeCommit(boolean readOnly) {
+                                throw new TransientDataAccessResourceException(
+                                        "forced transaction commit failure");
+                            }
+                        });
+            }
+            return null;
+        }).when(projectionStore).project(anyMap());
         try {
             send(outbox);
             Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
@@ -248,10 +263,11 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
                 assertThat(counterService.getCounts("post", entityId, List.of("like")))
                         .containsEntry("like", 1L);
                 assertThat(failureMessages(outbox.id()))
-                        .anyMatch(message -> message.contains("forced snapshot failure"));
+                        .anyMatch(message -> message.contains(
+                                "forced transaction commit failure"));
             });
         } finally {
-            jdbc.execute("DROP TRIGGER IF EXISTS " + trigger);
+            failCommit.set(false);
         }
 
         Awaitility.await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
