@@ -11,7 +11,9 @@
 1. 安装 Docker Engine 与 Compose 插件，准备可持久化的宿主机磁盘和备份策略。
 2. 将 [`.env.prod.example`](../../.env.prod.example) 复制为不会提交的 `.env`，替换数据库密码、站点域名与实际启用功能的凭据。
 3. 确认 80/443、安全组、DNS 与 TLS 方案；确认 MySQL 业务事实、Redis 运行态、上传卷/OSS 的备份边界。
-4. 在隔离环境验证镜像构建、数据库脚本和健康检查，再操作已有生产数据。
+4. 确认互动传输配置成对：当前一键 Compose 固定 `CANAL_ENABLED=false`，因此点赞/收藏使用本地 `AFTER_COMMIT` 路径；另行设置 `KAFKA_ENABLED=true`、`CANAL_ENABLED=true` 时，代码会选择 Kafka 路径。开关不探测 CDC 健康，也不会在运行中自动回退，启用前必须部署并验证可达 CDC。
+5. 完整 Kafka 互动模式需预检 `canal-outbox`、`canal-outbox-retry`、`canal-outbox-dlq`，为应用 Kafka 身份配置 CREATE（如需自动建主题）、DESCRIBE、READ、WRITE 与消费组权限，并单独核验 Canal 的 MySQL 复制账号权限。
+6. 在隔离环境验证镜像构建、数据库脚本和健康检查，再操作已有生产数据。
 
 不要把 `.env`、证书私钥、OSS/LLM/Bangumi 密钥提交到仓库或粘贴进日志与文档。
 
@@ -57,7 +59,7 @@ curl -fsS http://127.0.0.1/health
 curl -fsS 'http://127.0.0.1/api/v1/posts/feed?page=1&size=1'
 ```
 
-还应验证登录、详情正文/上传文件、搜索与 Agent 等实际启用功能。首页 502 优先检查依赖健康和 server 日志；搜索无结果检查 Elasticsearch 健康与后端回灌；正文 404 检查 `STORAGE_TYPE`、共享卷或 OSS object key。更多可执行命令见 [Docker 操作入口](../../docker/README.md)。
+还应验证登录、详情正文/上传文件、搜索与 Agent 等实际启用功能。执行一次点赞后，确认 `counter_reaction` 与 Outbox 已提交，随后 `counter_event_inbox`、`counter_snapshot` 和 Redis 投影收敛；完整 CDC/Kafka 模式还要确认 `counter-reaction-outbox` 及 retry consumer group 没有持续 lag，`dead_letter_messages` 没有新增 `DEAD`。broker 健康不代表 Outbox CDC 已接通。首页 502 优先检查依赖健康和 server 日志；搜索无结果检查 Elasticsearch 健康与后端回灌；正文 404 检查 `STORAGE_TYPE`、共享卷或 OSS object key。更多可执行命令见 [Docker 操作入口](../../docker/README.md)。
 
 ## 发布与回滚边界
 

@@ -21,18 +21,22 @@
 - `CounterReactionEventProcessorTest`：MySQL 终态回查、投影顺序、Inbox/快照与副作用边界。
 - `CounterServiceImplBatchTest`：完整投影快路径和不完整投影的 MySQL 批量回源。
 - `CounterReactionFactsIT`：真实 MySQL 关系/Outbox 原子性与并发。
+- `CounterReactionLocalModeIT`：真实 Spring 多播、提交/回滚边界与同进程重放时三个下游各触发一次。
+- `CounterReactionRebuildConcurrencyIT`：MySQL 行锁、epoch fence 与重建期间并发写收敛。
 - `CounterFactMaintenanceLuaIT`：Redis 5 staging shard、token fence、完整性与跨 shard 重建。
-- `CounterGoldenPathIT`：Canal-compatible Outbox、Kafka 重放/乱序、epoch 与最终收敛。
+- `CounterGoldenPathIT`：Canal-compatible Outbox、真实 Kafka old→new→old 重放/乱序、epoch 与最终收敛。
 - `DegradationGoldenPathIT`：Redis 网络故障下 MySQL 提交边界与恢复。
+- `AbstractKafkaConsumerTest` / `OutboxKafkaTopicConfigTest`：broker 确认前不 ACK、retry `nack`、来源 DLQ 与主题分区合同。
+- `NotificationEventListenerTest` / `FeedCacheInvalidationListenerTest` / `UserInterestProfileListenerTest`：三个下游监听器的独立行为。
 
 定向命令示例：
 
 ```powershell
-mvn -q '-Dtest=CounterReactionCommandServiceTest,CounterReactionEventProcessorTest,CounterServiceImplBatchTest' test
-mvn -q -Pintegration-test '-Dit.test=CounterReactionFactsIT,CounterFactMaintenanceLuaIT,CounterGoldenPathIT,DegradationGoldenPathIT' verify
+mvn -q '-Dtest=CounterReactionCommandServiceTest,CounterReactionEventProcessorTest,CounterServiceImplBatchTest,AbstractKafkaConsumerTest,OutboxKafkaTopicConfigTest' test
+mvn -q -Pintegration-test '-Dit.test=CounterReactionFactsIT,CounterReactionLocalModeIT,CounterReactionRebuildConcurrencyIT,CounterFactMaintenanceLuaIT,CounterGoldenPathIT,DegradationGoldenPathIT' verify
 ```
 
-完整命令与证据采集入口见[测试与验证](../../docs/development/testing.md)。
+`CounterReactionLocalModeIT` 只证明同一进程内真实 Spring 多播和普通重放；进程崩溃、异步执行失败或部分监听器失败仍没有逐监听器持久回执。完整命令与证据采集入口见[测试与验证](../../docs/development/testing.md)。
 
 ## 提交前验收
 

@@ -48,13 +48,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harn
 cd apps/server
 mvn -q -Pintegration-test '-Dit.test=CounterFactMaintenanceLuaIT' verify
 mvn -q -Pintegration-test '-Dit.test=CounterReactionFactsIT' verify
+mvn -q -Pintegration-test '-Dit.test=CounterReactionLocalModeIT,CounterReactionRebuildConcurrencyIT' verify
 mvn -q -Pintegration-test '-Dit.test=CounterGoldenPathIT' verify
 mvn -q -Pintegration-test '-Dit.test=DegradationGoldenPathIT' verify
 ```
 
 `CounterFactMaintenanceLuaIT` 使用 Redis 5 覆盖 MySQL 关系分页重建、跨 shard、空关系、缺失物理 shard、token 所有权丢失、失败不发布完整标记和有界切换。`CounterReactionFactsIT` 使用真实 MySQL 验证首次/重复目标状态、fav/unfav、关系或 Outbox 失败全事务回滚，以及同目标并发只有一次真实变化。
 
-`CounterGoldenPathIT` 使用 Canal-compatible envelope 验证 Outbox 重放幂等、MySQL 终态覆盖乱序事件、旧 epoch 事件隔离、Inbox/快照失败重试与从 MySQL 恢复 Redis 投影；`DegradationGoldenPathIT` 验证 Redis 故障不阻断 MySQL 关系与 Outbox 提交，恢复后可重放收敛。完整投影的 Bitmap 快路径、结构不完整时的 MySQL 批量回源由 `CounterServiceImplBatchTest` 固定。该链路允许异步延迟，只承诺最终收敛，不宣称 Redis、MySQL 与 Kafka 原子提交或 exactly-once。
+`CounterReactionLocalModeIT` 经真实 Spring 多播固定提交后处理、回滚不触发，以及同一进程内相同 `eventId` 重放时通知、Feed 与兴趣画像各触发一次；`CounterReactionRebuildConcurrencyIT` 使用真实 MySQL/Redis 固定重建锁、epoch fence 与并发写最终收敛。`CounterGoldenPathIT` 使用 Canal-compatible envelope 验证 Outbox 重放幂等、old→new→old 的真实 Kafka 终态收敛、旧 epoch 事件隔离、Inbox/快照失败重试与从 MySQL 恢复 Redis 投影；`DegradationGoldenPathIT` 验证 Redis 故障不阻断 MySQL 关系与 Outbox 提交，恢复后可重放收敛。
+
+快速测试中的 `AbstractKafkaConsumerTest` 固定 broker 确认前不 ACK、未到期 envelope 使用 `nack` 与损坏 retry 信封回到来源 DLQ；`OutboxKafkaTopicConfigTest` 固定 retry topic 的 3 分区合同。完整投影的 Bitmap 快路径、结构不完整时的 MySQL 批量回源由 `CounterServiceImplBatchTest` 固定。核心投影允许异步延迟并可最终收敛，但不宣称 Redis、MySQL 与 Kafka 原子提交或 exactly-once；进程崩溃、异步监听器失败和部分监听器失败也不在本地副作用测试的持久恢复承诺内。
 
 互动正确性证据使用独立、干净 worktree 执行：
 
