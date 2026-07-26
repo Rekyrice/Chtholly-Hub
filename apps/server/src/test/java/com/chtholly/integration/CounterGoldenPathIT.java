@@ -3,12 +3,14 @@ package com.chtholly.integration;
 import com.chtholly.counter.event.CounterAggregationProcessor;
 import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.event.CounterTopics;
+import com.chtholly.counter.mapper.CounterReactionMapper;
 import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.counter.service.impl.CounterCalibrationService;
+import com.chtholly.counter.service.impl.CounterReactionProjectionStore;
 import com.chtholly.counter.service.impl.CounterServiceImpl;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.user.mapper.UserMapper;
@@ -347,6 +349,8 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
         CounterService droppedPublisherService = new CounterServiceImpl(
                 redis,
                 mock(CounterReactionCommandService.class),
+                mock(CounterReactionMapper.class),
+                mock(CounterReactionProjectionStore.class),
                 calibrationService);
 
         assertThat(droppedPublisherService.like("post", entityId, userId)).isTrue();

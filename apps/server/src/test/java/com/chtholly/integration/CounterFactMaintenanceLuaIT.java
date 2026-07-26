@@ -5,6 +5,7 @@ import com.chtholly.counter.event.CounterAggregationProcessor;
 import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.mapper.CounterEntityIdentity;
 import com.chtholly.counter.mapper.CounterPersistenceMapper;
+import com.chtholly.counter.mapper.CounterReactionMapper;
 import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
@@ -15,6 +16,7 @@ import com.chtholly.counter.service.CounterFactMaintenanceService.PostReactionRe
 import com.chtholly.counter.service.impl.CounterBitmapIndexService;
 import com.chtholly.counter.service.impl.CounterCalibrationService;
 import com.chtholly.counter.service.impl.CounterFactMaintenanceServiceImpl;
+import com.chtholly.counter.service.impl.CounterReactionProjectionStore;
 import com.chtholly.counter.service.impl.CounterServiceImpl;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.user.mapper.UserMapper;
@@ -224,6 +226,7 @@ class CounterFactMaintenanceLuaIT {
         AtomicReference<CounterEvent> delayed = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
                 redis, mock(CounterReactionCommandService.class),
+                mock(CounterReactionMapper.class), mock(CounterReactionProjectionStore.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
         assertThat(counterService.like("post", String.valueOf(postId), userId)).isTrue();
@@ -249,6 +252,7 @@ class CounterFactMaintenanceLuaIT {
         long userId = 43L;
         CounterServiceImpl counterService = new CounterServiceImpl(
                 redis, mock(CounterReactionCommandService.class),
+                mock(CounterReactionMapper.class), mock(CounterReactionProjectionStore.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
 
@@ -280,6 +284,7 @@ class CounterFactMaintenanceLuaIT {
         AtomicReference<CounterEvent> published = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
                 redis, mock(CounterReactionCommandService.class),
+                mock(CounterReactionMapper.class), mock(CounterReactionProjectionStore.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
         String fenceKey = CounterKeys.factMaintenanceFenceKey("post", String.valueOf(postId));
@@ -359,6 +364,7 @@ class CounterFactMaintenanceLuaIT {
         AtomicReference<CounterEvent> published = new AtomicReference<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
                 redis, mock(CounterReactionCommandService.class),
+                mock(CounterReactionMapper.class), mock(CounterReactionProjectionStore.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
 
@@ -542,6 +548,7 @@ class CounterFactMaintenanceLuaIT {
         ConcurrentLinkedQueue<CounterEvent> events = new ConcurrentLinkedQueue<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
                 redis, mock(CounterReactionCommandService.class),
+                mock(CounterReactionMapper.class), mock(CounterReactionProjectionStore.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
 
@@ -587,6 +594,7 @@ class CounterFactMaintenanceLuaIT {
         ConcurrentLinkedQueue<CounterEvent> events = new ConcurrentLinkedQueue<>();
         CounterServiceImpl counterService = new CounterServiceImpl(
                 redis, mock(CounterReactionCommandService.class),
+                mock(CounterReactionMapper.class), mock(CounterReactionProjectionStore.class),
                 new CounterCalibrationService(
                         redis, redisson, counterPersistenceMapper, bitmapIndex, false, 50));
         int operationCount = 40;

@@ -2,9 +2,10 @@ package com.chtholly.counter.service.impl;
 
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
+import com.chtholly.counter.mapper.CounterReactionKey;
+import com.chtholly.counter.mapper.CounterReactionMapper;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
-import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.counter.service.CounterService;
 import lombok.extern.slf4j.Slf4j;
@@ -24,16 +25,24 @@ import java.util.*;
 @Service
 public class CounterServiceImpl implements CounterService {
 
+    private static final int MYSQL_MEMBERSHIP_BATCH_SIZE = 500;
+
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> effectiveCountScript;
     private final CounterReactionCommandService reactionCommandService;
+    private final CounterReactionMapper reactionMapper;
+    private final CounterReactionProjectionStore reactionProjectionStore;
     private final CounterCalibrationService calibrationService;
 
     public CounterServiceImpl(StringRedisTemplate redis,
                               CounterReactionCommandService reactionCommandService,
+                              CounterReactionMapper reactionMapper,
+                              CounterReactionProjectionStore reactionProjectionStore,
                               CounterCalibrationService calibrationService) {
         this.redis = redis;
         this.reactionCommandService = reactionCommandService;
+        this.reactionMapper = reactionMapper;
+        this.reactionProjectionStore = reactionProjectionStore;
         this.calibrationService = calibrationService;
         this.effectiveCountScript = new DefaultRedisScript<>();
         this.effectiveCountScript.setResultType(Long.class);
@@ -188,25 +197,16 @@ public class CounterServiceImpl implements CounterService {
         return out;
     }
 
-    /**
-     * 是否点赞判定：基于分片位图在分片内做位测试。
-     * 毫秒级读取，不依赖计数快照。
-     */
+    /** Reads the like projection and falls back to the MySQL fact when it is incomplete. */
     @Override
     public boolean isLiked(String entityType, String entityId, long userId) {
-        long chunk = BitmapShard.chunkOf(userId);
-        long bit = BitmapShard.bitOf(userId);
-        return getBit(CounterKeys.bitmapKey("like", entityType, entityId, chunk), bit);
+        return readReaction(entityType, entityId, "like", userId);
     }
 
-    /**
-     * 是否收藏判定：同点赞，基于分片位图位测试。
-     */
+    /** Reads the favorite projection and falls back to the MySQL fact when it is incomplete. */
     @Override
     public boolean isFaved(String entityType, String entityId, long userId) {
-        long chunk = BitmapShard.chunkOf(userId);
-        long bit = BitmapShard.bitOf(userId);
-        return getBit(CounterKeys.bitmapKey("fav", entityType, entityId, chunk), bit);
+        return readReaction(entityType, entityId, "fav", userId);
     }
 
     @Override
@@ -223,39 +223,46 @@ public class CounterServiceImpl implements CounterService {
         if (postIds == null || postIds.isEmpty()) {
             return Map.of();
         }
-        long chunk = BitmapShard.chunkOf(userId);
-        long bit = BitmapShard.bitOf(userId);
         List<Long> ids = postIds.stream().filter(Objects::nonNull).distinct().toList();
         if (ids.isEmpty()) {
             return Map.of();
         }
 
-        List<Object> pipelineResults = redis.executePipelined((RedisCallback<Object>) connection -> {
-            for (Long postId : ids) {
-                String key = CounterKeys.bitmapKey(metric, "post", String.valueOf(postId), chunk);
-                connection.stringCommands().getBit(key.getBytes(StandardCharsets.UTF_8), bit);
+        List<CounterReactionKey> keys = ids.stream()
+                .map(id -> new CounterReactionKey("post", String.valueOf(id), metric, userId))
+                .toList();
+        Map<CounterReactionKey, Optional<Boolean>> projected = reactionProjectionStore.readBatch(keys);
+        List<CounterReactionKey> unknown = keys.stream()
+                .filter(key -> projected.getOrDefault(key, Optional.empty()).isEmpty())
+                .toList();
+        Set<String> mysqlExisting = new HashSet<>();
+        for (int from = 0; from < unknown.size(); from += MYSQL_MEMBERSHIP_BATCH_SIZE) {
+            List<String> entityIds = unknown.subList(
+                            from, Math.min(from + MYSQL_MEMBERSHIP_BATCH_SIZE, unknown.size()))
+                    .stream()
+                    .map(CounterReactionKey::entityId)
+                    .toList();
+            List<String> existing =
+                    reactionMapper.findExistingEntityIds("post", metric, userId, entityIds);
+            if (existing == null) {
+                throw new IllegalStateException("Counter reaction MySQL fallback returned no result");
             }
-            return null;
-        });
-
+            mysqlExisting.addAll(existing);
+        }
         Map<Long, Boolean> out = new LinkedHashMap<>(ids.size());
         for (int i = 0; i < ids.size(); i++) {
-            Object raw = i < pipelineResults.size() ? pipelineResults.get(i) : null;
-            out.put(ids.get(i), Boolean.TRUE.equals(raw));
+            CounterReactionKey key = keys.get(i);
+            Optional<Boolean> value = projected.getOrDefault(key, Optional.empty());
+            out.put(ids.get(i), value.orElseGet(() -> mysqlExisting.contains(key.entityId())));
         }
         return out;
     }
 
-    /**
-     * 读取位图某偏移位（GETBIT）。
-     * @param key 位图分片键
-     * @param offset 分片内位偏移
-     * @return 位是否为 1
-     */
-    private boolean getBit(String key, long offset) {
-        Boolean bit = redis.execute((RedisCallback<Boolean>) connection ->
-                connection.stringCommands().getBit(key.getBytes(StandardCharsets.UTF_8), offset));
-        return Boolean.TRUE.equals(bit);
+    /** Returns a projection value when complete, otherwise the current MySQL relation. */
+    private boolean readReaction(String entityType, String entityId, String metric, long userId) {
+        CounterReactionKey key = new CounterReactionKey(entityType, entityId, metric, userId);
+        return reactionProjectionStore.read(key)
+                .orElseGet(() -> reactionMapper.exists(entityType, entityId, metric, userId) == 1);
     }
 
     /**

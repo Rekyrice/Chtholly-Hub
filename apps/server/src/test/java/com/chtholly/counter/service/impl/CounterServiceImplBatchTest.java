@@ -1,17 +1,15 @@
 package com.chtholly.counter.service.impl;
 
 import com.chtholly.common.exception.BusinessException;
-import com.chtholly.counter.event.CounterEvent;
-import com.chtholly.counter.event.CounterEventPublisher;
-import com.chtholly.counter.service.CounterService;
+import com.chtholly.counter.mapper.CounterReactionKey;
+import com.chtholly.counter.mapper.CounterReactionMapper;
 import com.chtholly.counter.service.CounterReactionCommandService;
-import com.chtholly.post.mapper.PostMapper;
-import com.chtholly.user.mapper.UserMapper;
+import com.chtholly.counter.service.CounterService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -19,20 +17,20 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.anyList;
 
 @SuppressWarnings("unchecked")
 @ExtendWith(MockitoExtension.class)
@@ -41,48 +39,115 @@ class CounterServiceImplBatchTest {
     @Mock
     private StringRedisTemplate redis;
     @Mock
-    private CounterEventPublisher counterEventPublisher;
-    @Mock
-    private PostMapper postMapper;
-    @Mock
-    private UserMapper userMapper;
-    @Mock
     private CounterCalibrationService calibrationService;
     @Mock
     private CounterReactionCommandService reactionCommandService;
+    @Mock
+    private CounterReactionMapper reactionMapper;
+    @Mock
+    private CounterReactionProjectionStore reactionProjectionStore;
 
     private CounterService counterService;
 
     @BeforeEach
     void setUp() {
         counterService = new CounterServiceImpl(
-                redis, reactionCommandService, calibrationService);
+                redis,
+                reactionCommandService,
+                reactionMapper,
+                reactionProjectionStore,
+                calibrationService);
     }
 
     @Test
-    void batchIsLikedUsesSinglePipeline() {
-        when(redis.executePipelined(any(RedisCallback.class))).thenReturn(List.of(true, false, true));
+    void singleMembershipUsesCompleteProjectionWithoutMysql() {
+        CounterReactionKey like = new CounterReactionKey("post", "1", "like", 42L);
+        CounterReactionKey favorite = new CounterReactionKey("post", "1", "fav", 42L);
+        when(reactionProjectionStore.read(like)).thenReturn(Optional.of(true));
+        when(reactionProjectionStore.read(favorite)).thenReturn(Optional.of(false));
 
-        Map<Long, Boolean> result = counterService.batchIsLiked(42L, List.of(1L, 2L, 3L));
+        assertThat(counterService.isLiked("post", "1", 42L)).isTrue();
+        assertThat(counterService.isFaved("post", "1", 42L)).isFalse();
 
-        verify(redis).executePipelined(any(RedisCallback.class));
-        assertThat(result).containsEntry(1L, true).containsEntry(2L, false).containsEntry(3L, true);
+        verify(reactionMapper, never()).exists(any(), any(), any(), any(Long.class));
     }
 
     @Test
-    void batchIsFavedUsesSinglePipeline() {
-        when(redis.executePipelined(any(RedisCallback.class))).thenReturn(List.of(false, true));
+    void singleMembershipFallsBackToMysqlWhenProjectionIsUnknown() {
+        CounterReactionKey key = new CounterReactionKey("post", "1", "like", 42L);
+        when(reactionProjectionStore.read(key)).thenReturn(Optional.empty());
+        when(reactionMapper.exists("post", "1", "like", 42L)).thenReturn(1);
+
+        assertThat(counterService.isLiked("post", "1", 42L)).isTrue();
+
+        verify(reactionMapper).exists("post", "1", "like", 42L);
+    }
+
+    @Test
+    void batchMembershipCombinesProjectionHitsWithOneMysqlFallbackQuery() {
+        CounterReactionKey first = new CounterReactionKey("post", "1", "like", 42L);
+        CounterReactionKey second = new CounterReactionKey("post", "2", "like", 42L);
+        CounterReactionKey third = new CounterReactionKey("post", "3", "like", 42L);
+        Map<CounterReactionKey, Optional<Boolean>> projection = new LinkedHashMap<>();
+        projection.put(first, Optional.of(true));
+        projection.put(second, Optional.empty());
+        projection.put(third, Optional.of(false));
+        when(reactionProjectionStore.readBatch(List.of(first, second, third)))
+                .thenReturn(projection);
+        when(reactionMapper.findExistingEntityIds(
+                "post", "like", 42L, List.of("2")))
+                .thenReturn(List.of("2"));
+
+        Map<Long, Boolean> result =
+                counterService.batchIsLiked(42L, List.of(1L, 2L, 3L, 2L));
+
+        assertThat(result)
+                .containsExactly(
+                        Map.entry(1L, true),
+                        Map.entry(2L, true),
+                        Map.entry(3L, false));
+        verify(reactionProjectionStore).readBatch(List.of(first, second, third));
+        verify(reactionMapper).findExistingEntityIds(
+                "post", "like", 42L, List.of("2"));
+    }
+
+    @Test
+    void batchMembershipTreatsMissingMysqlFactAsFalse() {
+        CounterReactionKey first = new CounterReactionKey("post", "10", "fav", 7L);
+        CounterReactionKey second = new CounterReactionKey("post", "20", "fav", 7L);
+        when(reactionProjectionStore.readBatch(List.of(first, second)))
+                .thenReturn(Map.of(first, Optional.empty(), second, Optional.of(true)));
+        when(reactionMapper.findExistingEntityIds(
+                "post", "fav", 7L, List.of("10")))
+                .thenReturn(List.of());
 
         Map<Long, Boolean> result = counterService.batchIsFaved(7L, List.of(10L, 20L));
 
-        verify(redis).executePipelined(any(RedisCallback.class));
-        assertThat(result).containsEntry(10L, false).containsEntry(20L, true);
+        assertThat(result).containsExactly(Map.entry(10L, false), Map.entry(20L, true));
+    }
+
+    @Test
+    void batchMembershipRejectsAnIncompleteMysqlResult() {
+        CounterReactionKey key = new CounterReactionKey("post", "10", "like", 7L);
+        when(reactionProjectionStore.readBatch(List.of(key)))
+                .thenReturn(Map.of(key, Optional.empty()));
+        when(reactionMapper.findExistingEntityIds(
+                "post", "like", 7L, List.of("10")))
+                .thenReturn(null);
+
+        assertThatThrownBy(() -> counterService.batchIsLiked(7L, List.of(10L)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MySQL");
     }
 
     @Test
     void batchReturnsEmptyForEmptyInput() {
         assertThat(counterService.batchIsLiked(1L, List.of())).isEmpty();
         assertThat(counterService.batchIsFaved(1L, null)).isEmpty();
+        assertThat(counterService.batchIsLiked(1L, java.util.Arrays.asList(null, null))).isEmpty();
+
+        verify(reactionProjectionStore, never()).readBatch(anyList());
+        verify(reactionMapper, never()).findExistingEntityIds(any(), any(), any(Long.class), anyList());
     }
 
     @Test
