@@ -1,6 +1,5 @@
 package com.chtholly.post.listener;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.chtholly.counter.event.CounterEvent;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.chtholly.post.api.dto.FeedItemResponse;
@@ -8,7 +7,6 @@ import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.model.Post;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.chtholly.common.job.CleanupProperties;
 import org.springframework.data.redis.connection.DataType;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,7 +15,6 @@ import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.util.*;
 
 /**
@@ -26,13 +23,11 @@ import java.util.*;
  * <p>职责：</p>
  * - 监听点赞/收藏等计数事件（仅处理实体类型为 "post"）；
  * - 根据“页面反向索引”（`feed:public:index:{eid}:{hour}`）定位受影响页面，
- *   同步更新本地 Caffeine 缓存与 Redis 页面 JSON（保持 TTL 不变）；
- * - 同步创作者收到的点赞/收藏用户维度计数（UserCounterService）。
+ *   幂等失效本地 Caffeine 与 Redis 页面缓存；
+ * - 失效创作者用户计数缓存，读侧从 MySQL 互动事实恢复 reaction 字段。
  *
  * <p>设计要点：</p>
- * - preserveUserFlags=true 时仅更新本地缓存并保留用户态标志 liked/faved，
- *   写回 Redis 页面 JSON 时不携带用户态标志，避免污染共享缓存；
- * - 页面 JSON 写回前读取并沿用剩余 TTL，防止覆盖过期策略；
+ * - 不在乱序重试事件上执行有下限的增量覆盖，避免永久计数漂移；
  * - 反向索引按小时维护，监听器会同时覆盖当前与上一个小时段的页面键。
  */
 @Component
@@ -44,20 +39,17 @@ public class FeedCacheInvalidationListener {
 
     private final Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     private final StringRedisTemplate redis;
-    private final ObjectMapper objectMapper;
     private final com.chtholly.counter.service.UserCounterService userCounterService;
     private final com.chtholly.post.mapper.PostMapper postMapper;
     private final CleanupProperties cleanupProperties;
 
     public FeedCacheInvalidationListener(@Qualifier("feedPublicCache") Cache<String, PageResponse<FeedItemResponse>> feedPublicCache,
                                          StringRedisTemplate redis,
-                                         ObjectMapper objectMapper,
                                          com.chtholly.counter.service.UserCounterService userCounterService,
                                          com.chtholly.post.mapper.PostMapper postMapper,
                                          CleanupProperties cleanupProperties) {
         this.feedPublicCache = feedPublicCache;
         this.redis = redis;
-        this.objectMapper = objectMapper;
         this.userCounterService = userCounterService;
         this.postMapper = postMapper;
         this.cleanupProperties = cleanupProperties;
@@ -68,11 +60,10 @@ public class FeedCacheInvalidationListener {
      *
      * <p>流程：</p>
      * - 仅处理实体类型为 "post" 的 like/fav 事件；
-     * - 若可解析到内容的创作者 ID，则同步其“收到的点赞/收藏”计数；
+     * - 若可解析到内容的创作者 ID，则失效其用户计数缓存；
      * - 通过最近两小时的反向索引集合定位受影响页面：
-     *   - 更新本地 Caffeine 页缓存（保留 liked/faved 标志）；
-     *   - 更新 Redis 页缓存（不携带用户态标志，保持 TTL）。
-     * - 若某页面键在 Redis 未命中，则清理其索引引用，降低键空间噪音。
+     *   - 失效本地 Caffeine 页缓存；
+     *   - 删除 Redis 页缓存并清理反向索引引用。
      */
     @EventListener
     public void onCounterChanged(CounterEvent event) {
@@ -83,7 +74,6 @@ public class FeedCacheInvalidationListener {
         String metric = event.getMetric();
         if ("like".equals(metric) || "fav".equals(metric)) {
             String eid = event.getEntityId();
-            int delta = event.getDelta();
 
             try {
                 Long owner = event.getPostCreatorId();
@@ -94,12 +84,7 @@ public class FeedCacheInvalidationListener {
                     }
                 }
                 if (owner != null) {
-                    if ("like".equals(metric)) {
-                        userCounterService.incrementLikesReceived(owner, delta);
-                    }
-                    if ("fav".equals(metric)) {
-                        userCounterService.incrementFavsReceived(owner, delta);
-                    }
+                    userCounterService.invalidateReactionCounters(owner);
                 }
             } catch (Exception e) {
                 log.warn("Feed cache counter side-effect failed, eid={}: {}", eid, e.getMessage());
@@ -121,81 +106,12 @@ public class FeedCacheInvalidationListener {
             }
 
             for (String key : keys) {
-                PageResponse<FeedItemResponse> local = feedPublicCache.getIfPresent(key);
-                if (local != null) {
-                    PageResponse<FeedItemResponse> updatedLocal = adjustPageCounts(local, eid, metric, delta, true);
-                    feedPublicCache.put(key, updatedLocal);
-                }
-
-                String cached = redis.opsForValue().get(key);
-                if (cached != null) {
-                    try {
-                        PageResponse<FeedItemResponse> resp = objectMapper.readValue(cached,
-                                new TypeReference<PageResponse<FeedItemResponse>>() {});
-                        PageResponse<FeedItemResponse> updated = adjustPageCounts(resp, eid, metric, delta, false);
-                        writePageJsonKeepingTtl(key, updated);
-                    } catch (Exception e) {
-                        log.warn("Feed page cache update failed, key={}: {}", key, e.getMessage());
-                    }
-                } else {
-                    redis.opsForSet().remove("feed:public:index:" + eid + ":" + hourSlot, key);
-                }
+                feedPublicCache.invalidate(key);
+                redis.delete(key);
+                redis.opsForSet().remove("feed:public:index:" + eid + ":" + hourSlot, key);
+                redis.opsForSet().remove(
+                        "feed:public:index:" + eid + ":" + (hourSlot - 1), key);
             }
-        }
-    }
-
-    /**
-     * 调整页面快照中的目标内容计数。
-     *
-     * <p>行为：</p>
-     * - 遍历页面 items，定位 id==eid 的项并更新 like/fav；
-     * - preserveUserFlags=true：保留 liked/faved 标志用于本地缓存；
-     * - preserveUserFlags=false：写回 Redis 页面 JSON 时不携带用户态标志；
-     * - 返回新的页面响应快照。
-     */
-    private PageResponse<FeedItemResponse> adjustPageCounts(PageResponse<FeedItemResponse> page, String eid, String metric, int delta, boolean preserveUserFlags) {
-        List<FeedItemResponse> items = new ArrayList<>(page.items().size());
-        for (FeedItemResponse it : page.items()) {
-                if (eid.equals(it.id())) {
-                    Long like = it.likeCount();
-                    Long fav = it.favoriteCount();
-
-                    if ("like".equals(metric)) {
-                        like = Math.max(0L, (like == null ? 0L : like) + delta);
-                    }
-                    if ("fav".equals(metric)) {
-                        fav = Math.max(0L, (fav == null ? 0L : fav) + delta);
-                    }
-
-                    Boolean liked = preserveUserFlags ? it.liked() : null;
-                    Boolean faved = preserveUserFlags ? it.faved() : null;
-
-                    it = it.withCounts(like, fav).withUserFlags(liked, faved);
-                }
-                items.add(it);
-            }
-
-        return PageResponse.offset(items, page.page(), page.size(), page.total(), page.hasMore(), page.nextCursor());
-    }
-
-    /**
-     * 写回页面 JSON 并保留原 TTL。
-     *
-     * <p>目的：</p>
-     * - 保持页面缓存的过期策略一致，避免因覆盖写导致 TTL 重置；
-     * - 若键未设置 TTL，则直接写入最新 JSON。
-     */
-    private void writePageJsonKeepingTtl(String key, PageResponse<FeedItemResponse> page) {
-        try {
-            String json = objectMapper.writeValueAsString(page);
-            long ttl = redis.getExpire(key);
-            if (ttl > 0) {
-                redis.opsForValue().set(key, json, java.time.Duration.ofSeconds(ttl));
-            } else {
-                redis.opsForValue().set(key, json);
-            }
-        } catch (Exception e) {
-            log.warn("Feed page JSON write failed, key={}: {}", key, e.getMessage());
         }
     }
 

@@ -48,9 +48,20 @@ public interface CounterReactionMapper {
             @Param("afterUserId") long afterUserId,
             @Param("limit") int limit);
 
+    /** Counts authoritative facts for one entity and reaction metric. */
+    long countByEntityMetric(
+            @Param("entityType") String entityType,
+            @Param("entityId") String entityId,
+            @Param("metric") String metric);
+
     /** Inserts a bounded batch of facts, ignoring facts that already exist. */
     int insertAllIgnore(@Param("keys") List<CounterReactionKey> keys);
 
     /** Deletes a bounded explicit batch of facts. */
     int deleteAll(@Param("keys") List<CounterReactionKey> keys);
+
+    /** Counts published-post reactions received by one creator directly from MySQL facts. */
+    long countPostReactionsReceived(
+            @Param("creatorId") long creatorId,
+            @Param("metric") String metric);
 }

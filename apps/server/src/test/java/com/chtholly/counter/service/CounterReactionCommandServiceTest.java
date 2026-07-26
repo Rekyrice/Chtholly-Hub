@@ -69,7 +69,7 @@ class CounterReactionCommandServiceTest {
         when(reactionMapper.insertIgnore("post", "7", "like", 42L)).thenReturn(1);
         when(idGenerator.nextId()).thenReturn(123L);
         when(outboxMapper.insert(
-                eq(123L), eq("counter_reaction"), eq(null),
+                eq(123L), eq("counter_reaction"), eq(42L),
                 eq("CounterReactionChanged"), anyString())).thenReturn(1);
 
         assertThat(service.setReaction("post", "7", "like", 42L, true)).isTrue();
@@ -78,7 +78,7 @@ class CounterReactionCommandServiceTest {
         verify(reactionMapper).insertIgnore("post", "7", "like", 42L);
         ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
         verify(outboxMapper).insert(
-                eq(123L), eq("counter_reaction"), eq(null),
+                eq(123L), eq("counter_reaction"), eq(42L),
                 eq("CounterReactionChanged"), payload.capture());
         CounterEvent event = new ObjectMapper().readValue(payload.getValue(), CounterEvent.class);
         assertThat(event.getEventId()).isEqualTo("123");
@@ -111,14 +111,14 @@ class CounterReactionCommandServiceTest {
         when(reactionMapper.delete("post", "7", "like", 42L)).thenReturn(1);
         when(idGenerator.nextId()).thenReturn(456L);
         when(outboxMapper.insert(
-                eq(456L), eq("counter_reaction"), eq(null),
+                eq(456L), eq("counter_reaction"), eq(42L),
                 eq("CounterReactionChanged"), anyString())).thenReturn(1);
 
         assertThat(service.setReaction("post", "7", "like", 42L, false)).isTrue();
 
         ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
         verify(outboxMapper).insert(
-                eq(456L), eq("counter_reaction"), eq(null),
+                eq(456L), eq("counter_reaction"), eq(42L),
                 eq("CounterReactionChanged"), payload.capture());
         CounterEvent event = new ObjectMapper().readValue(payload.getValue(), CounterEvent.class);
         assertThat(event.getDelta()).isEqualTo(-1);
@@ -143,14 +143,14 @@ class CounterReactionCommandServiceTest {
         when(reactionMapper.insertIgnore("post", "7", "fav", 42L)).thenReturn(1);
         when(idGenerator.nextId()).thenReturn(789L);
         when(outboxMapper.insert(
-                eq(789L), eq("counter_reaction"), eq(null),
+                eq(789L), eq("counter_reaction"), eq(42L),
                 eq("CounterReactionChanged"), anyString())).thenReturn(1);
 
         assertThat(service.setReaction("post", "7", "fav", 42L, true)).isTrue();
 
         ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
         verify(outboxMapper).insert(
-                eq(789L), eq("counter_reaction"), eq(null),
+                eq(789L), eq("counter_reaction"), eq(42L),
                 eq("CounterReactionChanged"), payload.capture());
         CounterEvent event = new ObjectMapper().readValue(payload.getValue(), CounterEvent.class);
         assertThat(event.getIdx()).isEqualTo(2);
@@ -164,7 +164,7 @@ class CounterReactionCommandServiceTest {
         when(idGenerator.nextId()).thenReturn(123L);
         doThrow(new IllegalStateException("outbox down"))
                 .when(outboxMapper)
-                .insert(eq(123L), eq("counter_reaction"), eq(null),
+                .insert(eq(123L), eq("counter_reaction"), eq(42L),
                         eq("CounterReactionChanged"), anyString());
 
         assertThatThrownBy(() -> service.setReaction("post", "7", "like", 42L, true))
@@ -180,7 +180,7 @@ class CounterReactionCommandServiceTest {
         when(reactionMapper.insertIgnore("post", "7", "like", 42L)).thenReturn(1);
         when(idGenerator.nextId()).thenReturn(123L);
         when(outboxMapper.insert(
-                eq(123L), eq("counter_reaction"), eq(null),
+                eq(123L), eq("counter_reaction"), eq(42L),
                 eq("CounterReactionChanged"), anyString()))
                 .thenReturn(0);
 

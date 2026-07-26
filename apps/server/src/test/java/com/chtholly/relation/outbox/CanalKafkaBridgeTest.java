@@ -67,20 +67,22 @@ class CanalKafkaBridgeTest {
     void acknowledgesBatchOnlyAfterKafkaPublishIsBrokerConfirmed() throws Exception {
         CompletableFuture<SendResult<String, String>> brokerConfirmation = new CompletableFuture<>();
         when(connector.getWithoutAck(100)).thenReturn(message(7L));
-        when(kafka.send(eq(OutboxTopics.CANAL_OUTBOX), eq("42"), anyString()))
+        when(kafka.send(eq(OutboxTopics.CANAL_OUTBOX), eq("following:101"), anyString()))
                 .thenReturn(brokerConfirmation);
 
         CompletableFuture<Boolean> processing = CompletableFuture.supplyAsync(() -> bridge.processNextBatch(connector));
 
         Awaitility.await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
-                verify(kafka).send(eq(OutboxTopics.CANAL_OUTBOX), eq("42"), anyString()));
+                verify(kafka).send(
+                        eq(OutboxTopics.CANAL_OUTBOX), eq("following:101"), anyString()));
         verify(connector, never()).ack(7L);
 
         brokerConfirmation.complete(null);
         assertThat(processing.get(2, TimeUnit.SECONDS)).isTrue();
 
         InOrder order = inOrder(kafka, connector);
-        order.verify(kafka).send(eq(OutboxTopics.CANAL_OUTBOX), eq("42"), anyString());
+        order.verify(kafka).send(
+                eq(OutboxTopics.CANAL_OUTBOX), eq("following:101"), anyString());
         order.verify(connector).ack(7L);
         verify(connector, never()).rollback(7L);
     }
@@ -90,7 +92,7 @@ class CanalKafkaBridgeTest {
         CompletableFuture<SendResult<String, String>> failed = new CompletableFuture<>();
         failed.completeExceptionally(new IllegalStateException("broker unavailable"));
         when(connector.getWithoutAck(100)).thenReturn(message(7L));
-        when(kafka.send(eq(OutboxTopics.CANAL_OUTBOX), eq("42"), anyString()))
+        when(kafka.send(eq(OutboxTopics.CANAL_OUTBOX), eq("following:101"), anyString()))
                 .thenReturn(failed);
 
         assertThatThrownBy(() -> bridge.processNextBatch(connector))
@@ -121,6 +123,7 @@ class CanalKafkaBridgeTest {
         CanalEntry.RowData rowData = CanalEntry.RowData.newBuilder()
                 .addAfterColumns(column("id", "42"))
                 .addAfterColumns(column("aggregate_type", "following"))
+                .addAfterColumns(column("aggregate_id", "101"))
                 .addAfterColumns(column("type", "FollowCreated"))
                 .addAfterColumns(column("payload", "{\"type\":\"FollowCreated\",\"fromUserId\":11,\"toUserId\":22,\"id\":101}"))
                 .build();

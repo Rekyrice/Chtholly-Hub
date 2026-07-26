@@ -59,6 +59,14 @@
         LIMIT #{limit}
     </select>
 
+    <select id="countByEntityMetric" resultType="long">
+        SELECT COUNT(*)
+        FROM counter_reaction
+        WHERE entity_type = #{entityType}
+          AND entity_id = #{entityId}
+          AND metric = #{metric}
+    </select>
+
     <insert id="insertAllIgnore">
         INSERT IGNORE INTO counter_reaction
             (entity_type, entity_id, metric, user_id, created_at)
@@ -75,4 +83,15 @@
             (#{key.entityType}, #{key.entityId}, #{key.metric}, #{key.userId})
         </foreach>
     </delete>
+
+    <select id="countPostReactionsReceived" resultType="long">
+        SELECT COUNT(*)
+        FROM posts p
+        JOIN counter_reaction cr
+          ON cr.entity_type = 'post'
+         AND cr.entity_id = CAST(p.id AS CHAR)
+         AND cr.metric = #{metric}
+        WHERE p.creator_id = #{creatorId}
+          AND p.status = 'published'
+    </select>
 </mapper>

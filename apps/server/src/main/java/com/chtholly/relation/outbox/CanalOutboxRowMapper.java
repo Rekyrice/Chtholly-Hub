@@ -29,6 +29,8 @@ public class CanalOutboxRowMapper {
                 row.put("id", column.getValue());
             } else if ("aggregate_type".equalsIgnoreCase(name)) {
                 row.put("aggregate_type", column.getValue());
+            } else if ("aggregate_id".equalsIgnoreCase(name)) {
+                row.put("aggregate_id", column.getValue());
             } else if ("type".equalsIgnoreCase(name)) {
                 row.put("type", column.getValue());
             } else if ("payload".equalsIgnoreCase(name)) {

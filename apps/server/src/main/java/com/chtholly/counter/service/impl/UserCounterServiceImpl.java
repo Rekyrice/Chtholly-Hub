@@ -1,5 +1,6 @@
 package com.chtholly.counter.service.impl;
 
+import com.chtholly.counter.mapper.CounterReactionMapper;
 import com.chtholly.counter.schema.UserCounterKeys;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.counter.service.UserCounterService;
@@ -30,15 +31,18 @@ public class UserCounterServiceImpl implements UserCounterService {
     private final PostMapper postMapper;
     private final CounterService counterService;
     private final RelationMapper relationMapper;
+    private final CounterReactionMapper reactionMapper;
 
     public UserCounterServiceImpl(StringRedisTemplate redis,
                                   PostMapper postMapper,
                                   CounterService counterService,
-                                  RelationMapper relationMapper) {
+                                  RelationMapper relationMapper,
+                                  CounterReactionMapper reactionMapper) {
         this.redis = redis;
         this.postMapper = postMapper;
         this.counterService = counterService;
         this.relationMapper = relationMapper;
+        this.reactionMapper = reactionMapper;
         this.incrScript = new DefaultRedisScript<>();
         this.incrScript.setResultType(Long.class);
         // 用户维度计数原子折叠（1 基坐标）
@@ -66,18 +70,22 @@ public class UserCounterServiceImpl implements UserCounterService {
         redis.execute(incrScript, List.of(key), "5", "4", "3", String.valueOf(delta));
     }
 
-    /** Atomically increments likes received across the user's posts (SDS segment 4). */
+    /** Removes order-sensitive user-counter cache state; subsequent reads rebuild from facts. */
     @Override
-    public void incrementLikesReceived(long userId, int delta) {
-        String key = UserCounterKeys.sdsKey(userId);
-        redis.execute(incrScript, List.of(key), "5", "4", "4", String.valueOf(delta));
+    public void invalidateReactionCounters(long userId) {
+        redis.delete(List.of(
+                UserCounterKeys.sdsKey(userId),
+                "ucnt:chk:" + userId));
     }
 
-    /** Atomically increments favorites received across the user's posts (SDS segment 5). */
     @Override
-    public void incrementFavsReceived(long userId, int delta) {
-        String key = UserCounterKeys.sdsKey(userId);
-        redis.execute(incrScript, List.of(key), "5", "4", "5", String.valueOf(delta));
+    public long countLikesReceived(long userId) {
+        return reactionMapper.countPostReactionsReceived(userId, "like");
+    }
+
+    @Override
+    public long countFavsReceived(long userId) {
+        return reactionMapper.countPostReactionsReceived(userId, "fav");
     }
 
     /**
@@ -178,4 +186,3 @@ public class UserCounterServiceImpl implements UserCounterService {
         buf[off + 3] = (byte) (n & 0xFF);
     }
 }
-

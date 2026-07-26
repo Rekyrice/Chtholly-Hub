@@ -1,6 +1,7 @@
 package com.chtholly.integration;
 
 import com.chtholly.counter.event.CounterEvent;
+import com.chtholly.counter.mapper.CounterReactionMapper;
 import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.relation.outbox.OutboxMapper;
@@ -30,6 +31,9 @@ class CounterReactionFactsIT extends AbstractGoldenPathIT {
 
     @Autowired
     private CounterService counterService;
+
+    @Autowired
+    private CounterReactionMapper reactionMapper;
 
     @SpyBean
     private OutboxMapper outboxMapper;
@@ -157,6 +161,35 @@ class CounterReactionFactsIT extends AbstractGoldenPathIT {
                 "SELECT COUNT(*) FROM outbox WHERE aggregate_type = ?",
                 Long.class,
                 CounterReactionCommandService.OUTBOX_AGGREGATE_TYPE)).isEqualTo(1L);
+    }
+
+    @Test
+    void authorReactionTotalsUsePublishedPostFactsOnly() {
+        long authorId = 7301L;
+        jdbc.update(
+                "INSERT INTO users (id, nickname, handle) VALUES (?, ?, ?)",
+                authorId,
+                "author",
+                "author-7301");
+        jdbc.update("""
+                INSERT INTO posts (id, creator_id, title, status, publish_time)
+                VALUES
+                    (7401, ?, 'published', 'published', NOW()),
+                    (7402, ?, 'draft', 'draft', NULL)
+                """, authorId, authorId);
+        jdbc.update("""
+                INSERT INTO counter_reaction
+                    (entity_type, entity_id, metric, user_id, created_at)
+                VALUES
+                    ('post', '7401', 'like', 51, NOW(3)),
+                    ('post', '7401', 'fav', 52, NOW(3)),
+                    ('post', '7402', 'like', 53, NOW(3))
+                """);
+
+        assertThat(reactionMapper.countPostReactionsReceived(authorId, "like"))
+                .isEqualTo(1L);
+        assertThat(reactionMapper.countPostReactionsReceived(authorId, "fav"))
+                .isEqualTo(1L);
     }
 
     private CounterEvent readEvent(String payload) {

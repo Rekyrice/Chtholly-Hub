@@ -110,7 +110,7 @@ public class CounterReactionCommandService {
         int outboxInserted = outboxMapper.insert(
                 outboxId,
                 OUTBOX_AGGREGATE_TYPE,
-                null,
+                userId,
                 OUTBOX_EVENT_TYPE,
                 serialize(event));
         if (outboxInserted != 1) {

@@ -154,7 +154,7 @@ public class RelationController {
                 m.put("posts", 0L);
                 m.put("likedPosts", 0L);
                 m.put("favedPosts", 0L);
-                return m;
+                return overlayAuthoritativeReactionCounters(m, userId);
             }
         }
 
@@ -223,7 +223,7 @@ public class RelationController {
                     m.put("posts", r2.apply(3));
                     m.put("likedPosts", r2.apply(4));
                     m.put("favedPosts", r2.apply(5));
-                    return m;
+                    return overlayAuthoritativeReactionCounters(m, userId);
                 }
             }
         }
@@ -234,6 +234,14 @@ public class RelationController {
         m.put("posts", read.apply(3));
         m.put("likedPosts", read.apply(4));
         m.put("favedPosts", read.apply(5));
-        return m;
+        return overlayAuthoritativeReactionCounters(m, userId);
+    }
+
+    private Map<String, Long> overlayAuthoritativeReactionCounters(
+            Map<String, Long> counters,
+            long userId) {
+        counters.put("likedPosts", userCounterService.countLikesReceived(userId));
+        counters.put("favedPosts", userCounterService.countFavsReceived(userId));
+        return counters;
     }
 }

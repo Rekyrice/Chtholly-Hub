@@ -65,7 +65,7 @@ public class CounterReactionEventProcessor {
         projectionStore.project(targets);
         CounterAggregationProcessor.ApplyBatchResult result =
                 aggregationProcessor.applyBatchWithResult(copy);
-        publishCurrentSideEffects(result.currentReactionEvents(), targets);
+        publishCurrentSideEffects(result.currentReactionEvents());
     }
 
     private Set<CounterReactionKey> loadCurrentFacts(List<CounterReactionKey> keys) {
@@ -87,23 +87,13 @@ public class CounterReactionEventProcessor {
         return Set.copyOf(existing);
     }
 
-    private void publishCurrentSideEffects(
-            List<CounterEvent> events,
-            Map<CounterReactionKey, Boolean> targets) {
-        Map<CounterReactionKey, CounterEvent> latestTerminalEvents = new LinkedHashMap<>();
+    private void publishCurrentSideEffects(List<CounterEvent> events) {
+        Map<Long, CounterEvent> uniqueEvents = new LinkedHashMap<>();
         for (CounterEvent event : events) {
-            CounterReactionKey key = validateAndMap(event);
-            Boolean target = targets.get(key);
-            if (target == null || target != (event.getDelta() > 0)) {
-                continue;
-            }
-            latestTerminalEvents.merge(key, event, (previous, candidate) ->
-                    parseOutboxId(candidate.getEventId())
-                                    > parseOutboxId(previous.getEventId())
-                            ? candidate
-                            : previous);
+            validateAndMap(event);
+            uniqueEvents.putIfAbsent(parseOutboxId(event.getEventId()), event);
         }
-        List<CounterEvent> ordered = latestTerminalEvents.values().stream()
+        List<CounterEvent> ordered = uniqueEvents.values().stream()
                 .sorted(Comparator.comparingLong(event -> parseOutboxId(event.getEventId())))
                 .toList();
         for (CounterEvent event : ordered) {

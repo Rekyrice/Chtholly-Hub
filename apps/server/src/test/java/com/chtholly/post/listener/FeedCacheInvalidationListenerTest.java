@@ -6,7 +6,6 @@ import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.mapper.PostMapper;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,7 +15,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.List;
 import java.util.Set;
@@ -34,8 +32,6 @@ class FeedCacheInvalidationListenerTest {
     @Mock
     private SetOperations<String, String> setOperations;
     @Mock
-    private ValueOperations<String, String> valueOperations;
-    @Mock
     private UserCounterService userCounterService;
     @Mock
     private PostMapper postMapper;
@@ -47,11 +43,9 @@ class FeedCacheInvalidationListenerTest {
     void setUp() {
         feedCache = Caffeine.newBuilder().build();
         when(redis.opsForSet()).thenReturn(setOperations);
-        when(redis.opsForValue()).thenReturn(valueOperations);
         listener = new FeedCacheInvalidationListener(
                 feedCache,
                 redis,
-                new ObjectMapper(),
                 userCounterService,
                 postMapper,
                 new CleanupProperties(null, null, null, null, null,
@@ -59,7 +53,7 @@ class FeedCacheInvalidationListenerTest {
     }
 
     @Test
-    void projectedLikeUpdatesLocalFeedAndAuthorCounterWithoutLosingUserFlags() {
+    void projectedLikeInvalidatesFeedPagesAndAuthorCounterCache() {
         String pageKey = "feed:public:page:1";
         FeedItemResponse item = new FeedItemResponse(
                 "42", "slug", "title", "description", null, List.of(),
@@ -70,18 +64,16 @@ class FeedCacheInvalidationListenerTest {
                 .thenReturn(Set.of(pageKey));
         when(setOperations.members("feed:public:index:42:" + (hourSlot - 1)))
                 .thenReturn(Set.of());
-        when(valueOperations.get(pageKey)).thenReturn(null);
         CounterEvent event = CounterEvent.of("201", "post", "42", "like", 1, 9L, 1);
         event.setPostCreatorId(10L);
 
         listener.onCounterChanged(event);
 
-        FeedItemResponse updated = feedCache.getIfPresent(pageKey).items().getFirst();
-        assertThat(updated.likeCount()).isEqualTo(5L);
-        assertThat(updated.favoriteCount()).isEqualTo(2L);
-        assertThat(updated.liked()).isTrue();
-        assertThat(updated.faved()).isTrue();
-        verify(userCounterService).incrementLikesReceived(10L, 1);
+        assertThat(feedCache.getIfPresent(pageKey)).isNull();
+        verify(redis).delete(pageKey);
+        verify(setOperations).remove("feed:public:index:42:" + hourSlot, pageKey);
+        verify(setOperations).remove("feed:public:index:42:" + (hourSlot - 1), pageKey);
+        verify(userCounterService).invalidateReactionCounters(10L);
         verify(postMapper, never()).findById(42L);
     }
 }

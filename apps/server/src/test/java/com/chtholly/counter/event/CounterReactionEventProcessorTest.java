@@ -71,42 +71,53 @@ class CounterReactionEventProcessorTest {
         order.verify(reactionMapper).findExisting(List.of(key));
         order.verify(projectionStore).project(Map.of(key, false));
         order.verify(aggregationProcessor).applyBatchWithResult(List.of(oldLike, unlike));
-        verify(eventPublisher, never()).publishEvent(oldLike);
-        verify(eventPublisher).publishEvent(unlike);
-        verify(idempotencyGuard, never()).markConsumed("counter-reaction-side-effects", 11L);
-        verify(idempotencyGuard).markConsumed("counter-reaction-side-effects", 12L);
+        InOrder sideEffects = inOrder(eventPublisher, idempotencyGuard);
+        sideEffects.verify(eventPublisher).publishEvent(oldLike);
+        sideEffects.verify(idempotencyGuard)
+                .markConsumed("counter-reaction-side-effects", 11L);
+        sideEffects.verify(eventPublisher).publishEvent(unlike);
+        sideEffects.verify(idempotencyGuard)
+                .markConsumed("counter-reaction-side-effects", 12L);
     }
 
     @Test
-    void currentMysqlPresenceWinsOverReplayedOldUnlikeEvent() {
+    void currentMysqlPresenceWinsOverReplayedOldUnlikeProjection() {
         CounterEvent oldUnlike = event("13", "7", "like", 42L, -1);
         CounterReactionKey key = new CounterReactionKey("post", "7", "like", 42L);
         when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of(key));
         when(aggregationProcessor.applyBatchWithResult(List.of(oldUnlike)))
                 .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(0, List.of(oldUnlike)));
+        when(idempotencyGuard.isAlreadyConsumed("counter-reaction-side-effects", 13L))
+                .thenReturn(true);
 
         processor.process(List.of(oldUnlike));
 
         verify(projectionStore).project(Map.of(key, true));
-        verifyNoInteractions(eventPublisher, idempotencyGuard);
+        verify(eventPublisher, never()).publishEvent(oldUnlike);
+        verify(idempotencyGuard, never())
+                .markConsumed("counter-reaction-side-effects", 13L);
     }
 
     @Test
-    void currentMysqlAbsenceWinsOverReplayedOldLikeEvent() {
+    void currentMysqlAbsenceWinsOverReplayedOldLikeProjection() {
         CounterEvent oldLike = event("18", "7", "like", 42L, 1);
         CounterReactionKey key = new CounterReactionKey("post", "7", "like", 42L);
         when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of());
         when(aggregationProcessor.applyBatchWithResult(List.of(oldLike)))
                 .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(0, List.of(oldLike)));
+        when(idempotencyGuard.isAlreadyConsumed("counter-reaction-side-effects", 18L))
+                .thenReturn(true);
 
         processor.process(List.of(oldLike));
 
         verify(projectionStore).project(Map.of(key, false));
-        verifyNoInteractions(eventPublisher, idempotencyGuard);
+        verify(eventPublisher, never()).publishEvent(oldLike);
+        verify(idempotencyGuard, never())
+                .markConsumed("counter-reaction-side-effects", 18L);
     }
 
     @Test
-    void publishesOnlyTheNewestTransitionMatchingTheMysqlTerminalState() {
+    void publishesEveryCommittedTransitionInOutboxOrder() {
         CounterEvent firstLike = event("22", "7", "like", 42L, 1);
         CounterEvent unlike = event("23", "7", "like", 42L, -1);
         CounterEvent finalLike = event("24", "7", "like", 42L, 1);
@@ -118,12 +129,49 @@ class CounterReactionEventProcessorTest {
 
         processor.process(events);
 
-        verify(eventPublisher, never()).publishEvent(firstLike);
-        verify(eventPublisher, never()).publishEvent(unlike);
-        verify(eventPublisher).publishEvent(finalLike);
-        verify(idempotencyGuard, never()).markConsumed("counter-reaction-side-effects", 22L);
-        verify(idempotencyGuard, never()).markConsumed("counter-reaction-side-effects", 23L);
-        verify(idempotencyGuard).markConsumed("counter-reaction-side-effects", 24L);
+        InOrder sideEffects = inOrder(eventPublisher, idempotencyGuard);
+        sideEffects.verify(eventPublisher).publishEvent(firstLike);
+        sideEffects.verify(idempotencyGuard)
+                .markConsumed("counter-reaction-side-effects", 22L);
+        sideEffects.verify(eventPublisher).publishEvent(unlike);
+        sideEffects.verify(idempotencyGuard)
+                .markConsumed("counter-reaction-side-effects", 23L);
+        sideEffects.verify(eventPublisher).publishEvent(finalLike);
+        sideEffects.verify(idempotencyGuard)
+                .markConsumed("counter-reaction-side-effects", 24L);
+    }
+
+    @Test
+    void preservesEveryCommittedTransitionWhenRapidChangesArriveInSeparateBatches() {
+        CounterEvent firstLike = event("25", "7", "like", 42L, 1);
+        CounterEvent unlike = event("26", "7", "like", 42L, -1);
+        CounterEvent finalLike = event("27", "7", "like", 42L, 1);
+        CounterReactionKey key = new CounterReactionKey("post", "7", "like", 42L);
+        when(reactionMapper.findExisting(List.of(key))).thenReturn(List.of(key));
+        when(aggregationProcessor.applyBatchWithResult(List.of(firstLike)))
+                .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(
+                        1, List.of(firstLike)));
+        when(aggregationProcessor.applyBatchWithResult(List.of(unlike)))
+                .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(
+                        1, List.of(unlike)));
+        when(aggregationProcessor.applyBatchWithResult(List.of(finalLike)))
+                .thenReturn(new CounterAggregationProcessor.ApplyBatchResult(
+                        1, List.of(finalLike)));
+
+        processor.process(List.of(firstLike));
+        processor.process(List.of(unlike));
+        processor.process(List.of(finalLike));
+
+        InOrder sideEffects = inOrder(eventPublisher, idempotencyGuard);
+        sideEffects.verify(eventPublisher).publishEvent(firstLike);
+        sideEffects.verify(idempotencyGuard)
+                .markConsumed("counter-reaction-side-effects", 25L);
+        sideEffects.verify(eventPublisher).publishEvent(unlike);
+        sideEffects.verify(idempotencyGuard)
+                .markConsumed("counter-reaction-side-effects", 26L);
+        sideEffects.verify(eventPublisher).publishEvent(finalLike);
+        sideEffects.verify(idempotencyGuard)
+                .markConsumed("counter-reaction-side-effects", 27L);
     }
 
     @Test
