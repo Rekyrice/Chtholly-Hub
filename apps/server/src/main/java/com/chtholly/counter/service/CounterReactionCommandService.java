@@ -107,12 +107,16 @@ public class CounterReactionCommandService {
                 active ? 1 : -1);
         event.setFactEpoch(factEpoch);
         enrichEvent(event);
-        outboxMapper.insert(
+        int outboxInserted = outboxMapper.insert(
                 outboxId,
                 OUTBOX_AGGREGATE_TYPE,
                 null,
                 OUTBOX_EVENT_TYPE,
                 serialize(event));
+        if (outboxInserted != 1) {
+            throw new IllegalStateException(
+                    "Counter reaction Outbox insert returned an invalid row count");
+        }
 
         // 监听器只登记 AFTER_COMMIT 回调；回滚事务不会触碰 Redis 投影。
         eventPublisher.publishEvent(new CounterReactionCommittedEvent(event));

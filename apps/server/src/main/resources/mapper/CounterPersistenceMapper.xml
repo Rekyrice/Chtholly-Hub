@@ -2,11 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.chtholly.counter.mapper.CounterPersistenceMapper">
     <insert id="ensureReactionSnapshots">
-        INSERT IGNORE INTO counter_snapshot
+        INSERT INTO counter_snapshot
             (entity_type, entity_id, metric, count_value, fact_epoch, updated_at)
         VALUES
-            (#{entityType}, #{entityId}, 'like', 0, 0, NOW(3)),
-            (#{entityType}, #{entityId}, 'fav', 0, 0, NOW(3))
+            (#{entityType}, #{entityId}, 'fav', 0, 0, NOW(3)),
+            (#{entityType}, #{entityId}, 'like', 0, 0, NOW(3))
+        ON DUPLICATE KEY UPDATE
+            fact_epoch = counter_snapshot.fact_epoch
     </insert>
 
     <select id="lockReactionEpochs" resultType="java.lang.Long">
@@ -20,13 +22,15 @@
     </select>
 
     <insert id="ensureReactionSnapshotsBatch">
-        INSERT IGNORE INTO counter_snapshot
+        INSERT INTO counter_snapshot
             (entity_type, entity_id, metric, count_value, fact_epoch, updated_at)
         VALUES
         <foreach collection="identities" item="identity" separator=",">
-            (#{identity.entityType}, #{identity.entityId}, 'like', 0, 0, NOW(3)),
-            (#{identity.entityType}, #{identity.entityId}, 'fav', 0, 0, NOW(3))
+            (#{identity.entityType}, #{identity.entityId}, 'fav', 0, 0, NOW(3)),
+            (#{identity.entityType}, #{identity.entityId}, 'like', 0, 0, NOW(3))
         </foreach>
+        ON DUPLICATE KEY UPDATE
+            fact_epoch = counter_snapshot.fact_epoch
     </insert>
 
     <select id="lockReactionSnapshotEpochs"

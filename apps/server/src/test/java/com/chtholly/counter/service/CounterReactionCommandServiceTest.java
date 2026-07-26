@@ -68,6 +68,9 @@ class CounterReactionCommandServiceTest {
         when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(4L, 4L));
         when(reactionMapper.insertIgnore("post", "7", "like", 42L)).thenReturn(1);
         when(idGenerator.nextId()).thenReturn(123L);
+        when(outboxMapper.insert(
+                eq(123L), eq("counter_reaction"), eq(null),
+                eq("CounterReactionChanged"), anyString())).thenReturn(1);
 
         assertThat(service.setReaction("post", "7", "like", 42L, true)).isTrue();
 
@@ -107,6 +110,9 @@ class CounterReactionCommandServiceTest {
         when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(9L, 9L));
         when(reactionMapper.delete("post", "7", "like", 42L)).thenReturn(1);
         when(idGenerator.nextId()).thenReturn(456L);
+        when(outboxMapper.insert(
+                eq(456L), eq("counter_reaction"), eq(null),
+                eq("CounterReactionChanged"), anyString())).thenReturn(1);
 
         assertThat(service.setReaction("post", "7", "like", 42L, false)).isTrue();
 
@@ -136,6 +142,9 @@ class CounterReactionCommandServiceTest {
         when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(2L, 2L));
         when(reactionMapper.insertIgnore("post", "7", "fav", 42L)).thenReturn(1);
         when(idGenerator.nextId()).thenReturn(789L);
+        when(outboxMapper.insert(
+                eq(789L), eq("counter_reaction"), eq(null),
+                eq("CounterReactionChanged"), anyString())).thenReturn(1);
 
         assertThat(service.setReaction("post", "7", "fav", 42L, true)).isTrue();
 
@@ -162,6 +171,39 @@ class CounterReactionCommandServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("outbox down");
 
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void missingOutboxInsertFailsBeforePublishingCommittedEvent() {
+        when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(0L, 0L));
+        when(reactionMapper.insertIgnore("post", "7", "like", 42L)).thenReturn(1);
+        when(idGenerator.nextId()).thenReturn(123L);
+        when(outboxMapper.insert(
+                eq(123L), eq("counter_reaction"), eq(null),
+                eq("CounterReactionChanged"), anyString()))
+                .thenReturn(0);
+
+        assertThatThrownBy(() -> service.setReaction("post", "7", "like", 42L, true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Outbox");
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void relationFailureCannotCreateAnOutboxEvent() {
+        when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(0L, 0L));
+        doThrow(new IllegalStateException("relation down"))
+                .when(reactionMapper)
+                .insertIgnore("post", "7", "like", 42L);
+
+        assertThatThrownBy(() -> service.setReaction("post", "7", "like", 42L, true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("relation down");
+
+        verify(outboxMapper, never()).insert(
+                anyLong(), anyString(), any(), anyString(), anyString());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
