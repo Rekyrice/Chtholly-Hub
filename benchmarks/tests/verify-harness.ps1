@@ -143,12 +143,12 @@ try {
     foreach ($token in @('DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY')) {
         Assert-True -Condition (-not $retrievalCollectorSource.Contains($token)) -Message "Retrieval evidence runner must not read paid model credential $token"
     }
-    foreach ($token in @('requestTotal', 'stateChangeCount', 'kafkaEventCount', 'dedupHitCount', 'aggregationBatchCount', 'mysqlUpdateCount', 'preCalibrationDiscrepancy', 'postCalibrationDiscrepancy')) {
+    foreach ($token in @('requestTotal', 'stateChangeCount', 'outboxRowCount', 'kafkaDeliveryCount', 'inboxDedupHitCount', 'snapshotWriteCount', 'preCalibrationDiscrepancy', 'postCalibrationDiscrepancy')) {
         Assert-True -Condition ($counterCollectorSource.Contains($token)) -Message "Counter evidence runner must validate $token"
         Assert-True -Condition ($counterCollectorTestSource.Contains($token)) -Message "Counter evidence collector must record $token"
     }
     $counterCollectorImplementation = $counterCollectorTestSource + $counterSqlProbeSource
-    foreach ($token in @('counter-aggregation-events', 'applyBatch', 'reconcileEntity', 'incrementSnapshots', 'replaceReactionSnapshots')) {
+    foreach ($token in @('OutboxTopics.CANAL_OUTBOX', 'counter_reaction', 'counter_event_inbox', 'reconcileEntity', 'incrementSnapshots', 'replaceReactionSnapshots')) {
         Assert-True -Condition ($counterCollectorImplementation.Contains($token)) -Message "Counter evidence collector must exercise $token"
     }
     foreach ($token in @('rejectPersistsDecisionWithoutMutatingDraft', 'expiredConfirmPersistsExpiryWithoutMutatingDraft', 'versionConflictPreservesNewerDraftAndPendingPreview')) {

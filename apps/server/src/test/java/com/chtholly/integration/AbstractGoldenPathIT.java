@@ -3,7 +3,11 @@ package com.chtholly.integration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterEach;
+import org.awaitility.Awaitility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +28,10 @@ import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.utility.DockerImageName;
 
 import java.util.stream.Stream;
+import java.time.Duration;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Shared real-infrastructure fixture for golden-path integration tests.
@@ -135,6 +143,33 @@ public abstract class AbstractGoldenPathIT {
         envelope.put("type", "INSERT");
         envelope.set("data", data);
         return envelope.toString();
+    }
+
+    protected void awaitKafkaConsumerCaughtUp(String consumerGroup) {
+        Properties properties = new Properties();
+        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers());
+        try (AdminClient admin = AdminClient.create(properties)) {
+            Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> {
+                Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> committed =
+                        admin.listConsumerGroupOffsets(consumerGroup)
+                                .partitionsToOffsetAndMetadata()
+                                .get(5, TimeUnit.SECONDS);
+                if (committed.isEmpty()) {
+                    return false;
+                }
+                Map<TopicPartition,
+                        org.apache.kafka.clients.admin.ListOffsetsResult.ListOffsetsResultInfo> ends =
+                        admin.listOffsets(committed.keySet().stream().collect(
+                                        java.util.stream.Collectors.toMap(
+                                                partition -> partition,
+                                                partition -> org.apache.kafka.clients.admin
+                                                        .OffsetSpec.latest())))
+                                .all()
+                                .get(5, TimeUnit.SECONDS);
+                return committed.entrySet().stream().allMatch(entry ->
+                        entry.getValue().offset() >= ends.get(entry.getKey()).offset());
+            });
+        }
     }
 
     private static void stopContainers() {

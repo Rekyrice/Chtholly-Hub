@@ -10,11 +10,8 @@ import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.counter.service.impl.CounterCalibrationService;
 import com.chtholly.counter.service.impl.CounterReactionProjectionStore;
 import com.chtholly.relation.outbox.OutboxTopics;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,7 +91,7 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
                 .get(10, TimeUnit.SECONDS);
         kafka.send(OutboxTopics.CANAL_OUTBOX, Long.toString(outboxId), envelope)
                 .get(10, TimeUnit.SECONDS);
-        awaitConsumerCaughtUp("counter-reaction-outbox");
+        awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
 
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
                 assertThat(bitCount("like", entityId, userId)).isEqualTo(1L));
@@ -402,31 +399,7 @@ class CounterGoldenPathIT extends AbstractGoldenPathIT {
     }
 
     private void awaitAggregationConsumerCaughtUp() {
-        awaitConsumerCaughtUp(AGGREGATION_GROUP);
-    }
-
-    private void awaitConsumerCaughtUp(String consumerGroup) {
-        Properties properties = new Properties();
-        properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA.getBootstrapServers());
-        try (AdminClient admin = AdminClient.create(properties)) {
-            Awaitility.await().atMost(Duration.ofSeconds(20)).until(() -> {
-                Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> committed = admin
-                        .listConsumerGroupOffsets(consumerGroup)
-                        .partitionsToOffsetAndMetadata()
-                        .get(5, TimeUnit.SECONDS);
-                if (committed.isEmpty()) {
-                    return false;
-                }
-                Map<TopicPartition, org.apache.kafka.clients.admin.ListOffsetsResult.ListOffsetsResultInfo> ends = admin
-                        .listOffsets(committed.keySet().stream().collect(java.util.stream.Collectors.toMap(
-                                partition -> partition,
-                                partition -> org.apache.kafka.clients.admin.OffsetSpec.latest())))
-                        .all()
-                        .get(5, TimeUnit.SECONDS);
-                return committed.entrySet().stream()
-                        .allMatch(entry -> entry.getValue().offset() >= ends.get(entry.getKey()).offset());
-            });
-        }
+        awaitKafkaConsumerCaughtUp(AGGREGATION_GROUP);
     }
 
     private long bitCount(String metric, String entityId, long userId) {

@@ -85,6 +85,9 @@ $result = Get-Content -Raw -LiteralPath $resultPath -Encoding UTF8 | ConvertFrom
 if ($result.status -ne 'COMPLETED' -or $result.runId -ne $RunId) {
     throw 'Counter evidence identity or completion status is invalid'
 }
+if ($result.schemaVersion -ne 2 -or $result.operationSequence -ne 'counter-interaction-v2') {
+    throw 'Counter evidence schema or operation sequence is invalid'
+}
 foreach ($identity in @(
         @{ name = 'subjectCommit'; expected = $subject },
         @{ name = 'harnessCommit'; expected = $harness },
@@ -97,10 +100,10 @@ foreach ($identity in @(
 $expectedMetrics = [ordered]@{
     requestTotal = 8L
     stateChangeCount = 4L
-    kafkaEventCount = 5L
-    dedupHitCount = 1L
-    aggregationBatchCount = 2L
-    mysqlUpdateCount = 2L
+    outboxRowCount = 4L
+    kafkaDeliveryCount = 5L
+    inboxDedupHitCount = 1L
+    snapshotWriteCount = 4L
     preCalibrationDiscrepancy = 1L
     postCalibrationDiscrepancy = 0L
 }

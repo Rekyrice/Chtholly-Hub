@@ -35,26 +35,31 @@ final class CounterEvidenceResultWriter {
         Files.createDirectory(runDirectory);
 
         ObjectNode result = objectMapper.createObjectNode();
-        result.put("schemaVersion", 1).put("runId", runId).put("status", "COMPLETED")
-                .put("operationSequence", "counter-interaction-v1")
+        result.put("schemaVersion", 2).put("runId", runId).put("status", "COMPLETED")
+                .put("operationSequence", "counter-interaction-v2")
                 .put("subjectCommit", commitProperty("counter.evidence.subject-commit"))
                 .put("harnessCommit", commitProperty("counter.evidence.harness-commit"))
                 .put("datasetCommit", commitProperty("counter.evidence.dataset-commit"))
                 .put("startedAt", startedAt.toString()).put("endedAt", Instant.now().toString());
         result.putObject("metrics").put("requestTotal", metrics.requestTotal())
                 .put("stateChangeCount", metrics.stateChangeCount())
-                .put("kafkaEventCount", metrics.kafkaEventCount()).put("dedupHitCount", metrics.dedupHitCount())
-                .put("aggregationBatchCount", metrics.aggregationBatchCount())
-                .put("mysqlUpdateCount", metrics.mysqlUpdateCount())
+                .put("outboxRowCount", metrics.outboxRowCount())
+                .put("kafkaDeliveryCount", metrics.kafkaDeliveryCount())
+                .put("inboxDedupHitCount", metrics.inboxDedupHitCount())
+                .put("snapshotWriteCount", metrics.snapshotWriteCount())
                 .put("preCalibrationDiscrepancy", metrics.preCalibrationDiscrepancy())
                 .put("postCalibrationDiscrepancy", metrics.postCalibrationDiscrepancy());
         result.putObject("environment").put("mysqlImage", mysqlImage).put("redisImage", redisImage)
                 .put("kafkaImage", kafkaImage).put("javaVersion", System.getProperty("java.version"))
                 .put("os", System.getProperty("os.name") + " " + System.getProperty("os.arch"));
         result.putObject("calibratedCounts").put("bitmapLike", counts.bitmapLike())
-                .put("redisLike", counts.redisLike()).put("mysqlLike", counts.mysqlLike())
+                .put("redisLike", counts.redisLike())
+                .put("snapshotLike", counts.snapshotLike())
+                .put("authoritativeLike", counts.authoritativeLike())
                 .put("bitmapFav", counts.bitmapFav()).put("redisFav", counts.redisFav())
-                .put("mysqlFav", counts.mysqlFav()).put("factEpoch", counts.factEpoch());
+                .put("snapshotFav", counts.snapshotFav())
+                .put("authoritativeFav", counts.authoritativeFav())
+                .put("factEpoch", counts.factEpoch());
 
         Path temporary = runDirectory.resolve("counter-evidence.json.tmp");
         Path output = runDirectory.resolve("counter-evidence.json");
@@ -80,10 +85,24 @@ final class CounterEvidenceResultWriter {
         return value;
     }
 
-    record Metrics(int requestTotal, long stateChangeCount, int kafkaEventCount, int dedupHitCount,
-                   int aggregationBatchCount, int mysqlUpdateCount, long preCalibrationDiscrepancy,
-                   long postCalibrationDiscrepancy) { }
+    record Metrics(
+            int requestTotal,
+            long stateChangeCount,
+            int outboxRowCount,
+            int kafkaDeliveryCount,
+            int inboxDedupHitCount,
+            int snapshotWriteCount,
+            long preCalibrationDiscrepancy,
+            long postCalibrationDiscrepancy) {}
 
-    record CalibratedCounts(long bitmapLike, long redisLike, long mysqlLike,
-                            long bitmapFav, long redisFav, long mysqlFav, long factEpoch) { }
+    record CalibratedCounts(
+            long bitmapLike,
+            long redisLike,
+            long snapshotLike,
+            long authoritativeLike,
+            long bitmapFav,
+            long redisFav,
+            long snapshotFav,
+            long authoritativeFav,
+            long factEpoch) {}
 }

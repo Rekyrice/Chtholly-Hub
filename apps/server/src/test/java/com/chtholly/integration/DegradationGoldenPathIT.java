@@ -1,5 +1,8 @@
 package com.chtholly.integration;
 
+import com.chtholly.counter.schema.BitmapShard;
+import com.chtholly.counter.schema.CounterKeys;
+import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.post.service.PostService;
 import com.chtholly.relation.outbox.OutboxTopics;
 import org.awaitility.Awaitility;
@@ -8,8 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -92,7 +97,7 @@ class DegradationGoldenPathIT extends AbstractGoldenPathIT {
     }
 
     @Test
-    void redisFailureRejectsLikeButMysqlOnlyDraftStillCommits() throws Exception {
+    void redisFailureDoesNotBlockMysqlReactionOrDraftAndOutboxReplayRecovers() throws Exception {
         REDIS_PROXY.setConnectionCut(true);
         try {
             mockMvc.perform(post("/api/v1/action/like")
@@ -101,23 +106,61 @@ class DegradationGoldenPathIT extends AbstractGoldenPathIT {
                             .content("""
                                     {"entityType":"post","entityId":"9001"}
                                     """))
-                    .andExpect(status().is5xxServerError())
-                    .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.changed").value(true))
+                    .andExpect(jsonPath("$.liked").value(true));
 
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM posts", Long.class)).isZero();
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM outbox", Long.class)).isZero();
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM counter_reaction WHERE entity_type = 'post' "
+                            + "AND entity_id = '9001' AND metric = 'like' AND user_id = ?",
+                    Long.class,
+                    USER_ID)).isEqualTo(1L);
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM outbox WHERE aggregate_type = ?",
+                    Long.class,
+                    CounterReactionCommandService.OUTBOX_AGGREGATE_TYPE)).isEqualTo(1L);
 
             long draftId = postService.createDraft(USER_ID);
             assertThat(jdbc.queryForObject(
                     "SELECT status FROM posts WHERE id = ?", String.class, draftId)).isEqualTo("draft");
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM outbox", Long.class)).isZero();
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM outbox WHERE aggregate_type = ?",
+                    Long.class,
+                    CounterReactionCommandService.OUTBOX_AGGREGATE_TYPE)).isEqualTo(1L);
         } finally {
             REDIS_PROXY.setConnectionCut(false);
         }
 
         Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
                 assertThat(redis.getConnectionFactory().getConnection().ping()).isEqualTo("PONG"));
-        // 连接中断可能发生在 Redis 执行 Lua 之后、响应返回之前；此时客户端只能得到未知结果，
-        // 因而契约只承诺无 MySQL/Outbox 副作用，Bitmap 仍由幂等写保证最多一个有效 bit。
+        Map<String, Object> outbox = jdbc.queryForMap("""
+                SELECT id, aggregate_type, type, payload
+                FROM outbox
+                WHERE aggregate_type = ?
+                """, CounterReactionCommandService.OUTBOX_AGGREGATE_TYPE);
+        long outboxId = ((Number) outbox.get("id")).longValue();
+        kafka.send(
+                        OutboxTopics.CANAL_OUTBOX,
+                        Long.toString(outboxId),
+                        canalEnvelope(
+                                outboxId,
+                                String.valueOf(outbox.get("aggregate_type")),
+                                String.valueOf(outbox.get("type")),
+                                String.valueOf(outbox.get("payload"))))
+                .get(10, TimeUnit.SECONDS);
+
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM counter_event_inbox WHERE event_id = ?",
+                    Long.class,
+                    Long.toString(outboxId))).isEqualTo(1L);
+            String bitmapKey = CounterKeys.bitmapKey(
+                    "like", "post", "9001", BitmapShard.chunkOf(USER_ID));
+            Long bitCount = redis.execute((RedisCallback<Long>) connection ->
+                    connection.stringCommands().bitCount(
+                            bitmapKey.getBytes(StandardCharsets.UTF_8)));
+            assertThat(bitCount).isEqualTo(1L);
+        });
     }
 }
