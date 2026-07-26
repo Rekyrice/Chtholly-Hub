@@ -37,7 +37,7 @@ public interface CounterPersistenceMapper {
     /** Applies grouped deltas to durable counter snapshots. */
     void incrementSnapshots(@Param("deltas") List<CounterSnapshotDelta> deltas);
 
-    /** Replaces like and favorite snapshots with Bitmap-derived absolute values. */
+    /** Replaces like and favorite snapshots with MySQL-derived absolute values. */
     void replaceReactionSnapshots(
             @Param("entityType") String entityType,
             @Param("entityId") String entityId,

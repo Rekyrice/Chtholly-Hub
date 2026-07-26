@@ -119,7 +119,7 @@ public class UserInterestProfile {
         Set<Long> interacted = new LinkedHashSet<>(loadInteractionPostIds(userId));
 
         if (interacted.isEmpty()) {
-            interacted.addAll(bootstrapInteractionsFromBitmap(userId));
+            interacted.addAll(bootstrapInteractionsFromReactions(userId));
         }
 
         List<Post> posts = interacted.isEmpty()
@@ -201,7 +201,7 @@ public class UserInterestProfile {
         return ids;
     }
 
-    private Set<Long> bootstrapInteractionsFromBitmap(long userId) {
+    private Set<Long> bootstrapInteractionsFromReactions(long userId) {
         Instant since = Instant.now().minus(Duration.ofDays(profileTtlDays));
         List<PostFeedRow> recent = postMapper.listRecentPublicSince(since, bootstrapPostLimit);
         if (recent.isEmpty()) {

@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 灾难场景下的非成员计数重建消费者：基于 earliest 回放历史事件，直接折叠到 SDS。
- * 帖子点赞/收藏的成员事实只存在于 Redis bitmap，不能从增量事件可靠恢复，因此会被明确跳过。
+ * 点赞/收藏由 MySQL 关系事实执行绝对校准，旧增量事件不能替代终态关系，因此会被明确跳过。
  * 默认关闭，仅当 counter.rebuild.enabled=true 时启用。
  */
 @Service
@@ -73,8 +73,8 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
     boolean applyRebuildEvent(CounterEvent evt) {
         if (isReaction(evt)) {
             if (reactionSkipWarningLogged.compareAndSet(false, true)) {
-                log.warn("Kafka counter rebuild skips like/fav membership events; restore Redis bitmap backup "
-                        + "and derive reaction SDS from bitmap facts");
+                log.warn("Kafka counter rebuild skips legacy like/fav deltas; rebuild reaction "
+                        + "Bitmap, SDS, and snapshots from authoritative MySQL relations");
             }
             return false;
         }

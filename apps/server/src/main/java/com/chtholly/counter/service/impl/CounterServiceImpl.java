@@ -78,7 +78,7 @@ public class CounterServiceImpl implements CounterService {
     }
 
     /**
-     * Returns aggregated counts from SDS and reconciles reaction fields from Bitmap authority when missing.
+     * Returns aggregated counts from SDS and rebuilds missing reaction fields from MySQL facts.
      *
      * @param metrics Subset of metrics to read (e.g. "like", "fav").
      */
@@ -148,7 +148,7 @@ public class CounterServiceImpl implements CounterService {
 
     /**
      * 批量获取实体计数（管道批量 GET 降低 RTT）。
-     * reaction SDS 缺失或结构异常时从 Bitmap 权威事实校准；恢复失败则返回 503。
+     * reaction SDS 缺失或结构异常时从 MySQL 关系事实校准；恢复失败则返回 503。
      * @param entityType 实体类型
      * @param entityIds 实体ID列表
      * @param metrics 指标名列表

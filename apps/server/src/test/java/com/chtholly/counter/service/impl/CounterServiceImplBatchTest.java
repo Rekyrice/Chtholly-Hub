@@ -228,7 +228,7 @@ class CounterServiceImplBatchTest {
     }
 
     @Test
-    void missingBatchEntryCalibratesFromAuthoritativeBitmapBeforeReturningCounts() {
+    void missingBatchEntryCalibratesFromMysqlFactsBeforeReturningCounts() {
         byte[] calibratedSds = ByteBuffer.allocate(20)
                 .putInt(19)
                 .putInt(7)
