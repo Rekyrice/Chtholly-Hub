@@ -47,7 +47,7 @@ class NotificationEventListenerTest {
 
     @Test
     void given_enrichedLikeEvent_when_onCounterEvent_then_usesPayloadWithoutDbLookup() {
-        CounterEvent event = CounterEvent.of("post", "42", "like", 0, 9L, 1);
+        CounterEvent event = CounterEvent.of("101", "post", "42", "like", 1, 9L, 1);
         event.setPostCreatorId(10L);
         event.setPostTitle("Re:Zero");
         event.setPostSlug("re-zero");
@@ -68,7 +68,7 @@ class NotificationEventListenerTest {
 
     @Test
     void given_missingPostCreatorId_when_onCounterEvent_then_skipsNotification() {
-        CounterEvent event = CounterEvent.of("post", "42", "like", 0, 9L, 1);
+        CounterEvent event = CounterEvent.of("102", "post", "42", "like", 1, 9L, 1);
 
         listener.onCounterEvent(event);
 
@@ -77,7 +77,7 @@ class NotificationEventListenerTest {
 
     @Test
     void given_selfLike_when_onCounterEvent_then_skipsNotification() {
-        CounterEvent event = CounterEvent.of("post", "42", "like", 0, 10L, 1);
+        CounterEvent event = CounterEvent.of("103", "post", "42", "like", 1, 10L, 1);
         event.setPostCreatorId(10L);
 
         listener.onCounterEvent(event);
