@@ -8,6 +8,14 @@
             <arg column="payload" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
+    <resultMap id="ReactionReplayRowMap" type="com.chtholly.relation.outbox.OutboxMapper$ReactionReplayRow">
+        <constructor>
+            <arg column="id" javaType="_long"/>
+            <arg column="type" javaType="java.lang.String"/>
+            <arg column="payload" javaType="java.lang.String"/>
+            <arg column="pending" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
 
     <insert id="insert">
         INSERT INTO outbox (id, aggregate_type, aggregate_id, type, payload, created_at)
@@ -30,6 +38,34 @@
           AND aggregate_type='following'
           AND type IN ('FollowCreated', 'FollowCanceled')
         ORDER BY id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findCounterReactionReplayHighWatermark" resultType="java.lang.Long">
+        SELECT COALESCE(MAX(id), 0)
+        FROM outbox
+        WHERE aggregate_type = 'counter_reaction'
+          AND type = 'CounterReactionChanged'
+          AND created_at &lt;= TIMESTAMPADD(SECOND, -5, NOW(3))
+    </select>
+
+    <select id="listCounterReactionReplayPage" resultMap="ReactionReplayRowMap">
+        SELECT o.id,
+               o.type,
+               o.payload,
+               1 AS pending
+        FROM outbox o
+        LEFT JOIN counter_event_inbox i
+          ON i.event_id = CAST(o.id AS CHAR CHARACTER SET ascii)
+        WHERE o.aggregate_type = 'counter_reaction'
+          AND o.type = 'CounterReactionChanged'
+          AND o.id &gt; #{afterId}
+          AND o.id &lt;= #{throughId}
+          AND o.created_at &lt;= TIMESTAMPADD(SECOND, -5, NOW(3))
+          AND (i.event_id IS NULL
+               OR (i.side_effects_published_at IS NULL
+                   AND i.applied_at &lt;= TIMESTAMPADD(SECOND, -5, NOW(3))))
+        ORDER BY o.id
         LIMIT #{limit}
     </select>
 </mapper>

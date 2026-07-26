@@ -66,6 +66,32 @@
           AND fact_epoch = #{factEpoch}
     </select>
 
+    <select id="listPendingReactionSideEffectEventIds" resultType="java.lang.String">
+        SELECT event_id
+        FROM counter_event_inbox
+        WHERE side_effects_published_at IS NULL
+          AND event_id IN
+        <foreach collection="eventIds" item="eventId" open="(" separator="," close=")">
+            #{eventId}
+        </foreach>
+    </select>
+
+    <select id="lockReactionSideEffectPublication" resultType="java.lang.Integer">
+        SELECT IF(side_effects_published_at IS NULL, 0, 1)
+        FROM counter_event_inbox
+        WHERE event_id = #{eventId}
+          AND metric IN ('like', 'fav')
+        FOR UPDATE
+    </select>
+
+    <update id="markReactionSideEffectsPublished">
+        UPDATE counter_event_inbox
+        SET side_effects_published_at = NOW(3)
+        WHERE event_id = #{eventId}
+          AND metric IN ('like', 'fav')
+          AND side_effects_published_at IS NULL
+    </update>
+
     <insert id="incrementSnapshots">
         INSERT INTO counter_snapshot
             (entity_type, entity_id, metric, count_value, fact_epoch, updated_at)

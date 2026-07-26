@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Outbox 消息解析工具。
@@ -30,31 +31,52 @@ public final class OutboxMessageUtil {
      *
      * @param objectMapper Jackson 解析器
      * @param message Canal JSON 消息
-     * @return outbox 行数组；不匹配或解析失败返回空列表
+     * @return outbox 行数组；合法但无关的表或操作返回空列表
+     * @throws IllegalArgumentException 消息不是合法 JSON，或 outbox INSERT/UPDATE 结构不完整
      */
     public static List<JsonNode> extractRows(ObjectMapper objectMapper, String message) {
+        Objects.requireNonNull(objectMapper, "objectMapper");
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("Canal envelope is required");
+        }
         try {
             JsonNode root = objectMapper.readTree(message);
-
+            if (root == null || !root.isObject()) {
+                throw new IllegalArgumentException("Canal envelope must be a JSON object");
+            }
             JsonNode table = root.get("table");
-            if (table == null || !"outbox".equals(table.asText())) {
+            if (table == null || !table.isTextual() || table.asText().isBlank()) {
+                throw new IllegalArgumentException("Canal envelope table is required");
+            }
+            if (!"outbox".equals(table.asText())) {
                 return Collections.emptyList();
             }
 
             JsonNode type = root.get("type");
-            if (type == null || (!"INSERT".equals(type.asText()) && !"UPDATE".equals(type.asText()))) {
+            if (type == null || !type.isTextual() || type.asText().isBlank()) {
+                throw new IllegalArgumentException("Canal Outbox envelope type is required");
+            }
+            if (!"INSERT".equals(type.asText()) && !"UPDATE".equals(type.asText())) {
                 return Collections.emptyList();
             }
 
             JsonNode data = root.get("data");
             if (data == null || !data.isArray()) {
-                return Collections.emptyList();
+                throw new IllegalArgumentException(
+                        "Canal Outbox envelope data must be an array");
+            }
+            if (data.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Canal Outbox envelope data must contain at least one row");
             }
             List<JsonNode> rows = new ArrayList<>();
             data.forEach(rows::add);
-            return rows;
-        } catch (Exception e) {
-            return Collections.emptyList();
+            return List.copyOf(rows);
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalArgumentException(
+                    "Canal envelope is not valid JSON", exception);
         }
     }
 

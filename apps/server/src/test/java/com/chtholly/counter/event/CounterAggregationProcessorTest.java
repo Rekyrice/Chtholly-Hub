@@ -54,6 +54,8 @@ class CounterAggregationProcessorTest {
         lenient().when(persistenceMapper.lockReactionSnapshotEpochs(anyList())).thenReturn(List.of(
                 new CounterSnapshotEpoch("post", "7", "fav", 0L),
                 new CounterSnapshotEpoch("post", "7", "like", 0L)));
+        lenient().when(persistenceMapper.listPendingReactionSideEffectEventIds(anyList()))
+                .thenAnswer(invocation -> List.copyOf(invocation.getArgument(0)));
     }
 
     @Test
@@ -80,18 +82,34 @@ class CounterAggregationProcessorTest {
                 processor.applyBatchWithResult(List.of(event));
 
         assertThat(result.insertedEvents()).isZero();
-        assertThat(result.currentReactionEvents()).containsExactly(event);
+        assertThat(result.sideEffectEvents()).containsExactly(event);
         verify(persistenceMapper, never()).incrementSnapshots(anyList());
     }
 
     @Test
-    void reactionBatchUsesAnIndependentTransactionForAfterCommitDispatch() throws Exception {
+    void durablyReceiptedReactionReplayDoesNotRepublishSideEffects() {
+        CounterEvent event = CounterEvent.of("evt-1", "post", "7", "like", 1, 100L, 1);
+        when(persistenceMapper.insertInbox(event)).thenReturn(0);
+        when(persistenceMapper.countMatchingInbox(event)).thenReturn(1);
+        when(persistenceMapper.listPendingReactionSideEffectEventIds(List.of("evt-1")))
+                .thenReturn(List.of());
+
+        CounterAggregationProcessor.ApplyBatchResult result =
+                processor.applyBatchWithResult(List.of(event));
+
+        assertThat(result.insertedEvents()).isZero();
+        assertThat(result.sideEffectEvents()).isEmpty();
+        verify(persistenceMapper, never()).incrementSnapshots(anyList());
+    }
+
+    @Test
+    void reactionBatchJoinsTheEventProcessorsTransactionBoundary() throws Exception {
         Method method = CounterAggregationProcessor.class.getMethod(
                 "applyBatchWithResult", List.class);
         Transactional transactional = method.getAnnotation(Transactional.class);
 
         assertThat(transactional).isNotNull();
-        assertThat(transactional.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+        assertThat(transactional.propagation()).isEqualTo(Propagation.REQUIRED);
     }
 
     @Test
@@ -108,7 +126,7 @@ class CounterAggregationProcessorTest {
     }
 
     @Test
-    void staleReactionEpochIsPersistentlyDeduplicatedButNotAppliedOrPublished() {
+    void staleReactionEpochSkipsSnapshotDeltaButKeepsItsRealTransitionSideEffect() {
         CounterEvent stale = CounterEvent.of("evt-old", "post", "7", "like", 1, 100L, 1);
         stale.setFactEpoch(2L);
         CounterEvent current = CounterEvent.of("evt-new", "post", "7", "like", 1, 101L, 1);
@@ -127,7 +145,7 @@ class CounterAggregationProcessorTest {
         assertThat(deltas.getValue()).containsExactly(
                 new CounterSnapshotDelta("post", "7", "like", 1L, 3L));
         assertThat(result.insertedEvents()).isEqualTo(2);
-        assertThat(result.currentReactionEvents()).containsExactly(current);
+        assertThat(result.sideEffectEvents()).containsExactly(stale, current);
     }
 
     @Test
@@ -213,8 +231,18 @@ class CounterAggregationProcessorTest {
 
         processor.flush();
 
-        verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
-                        CounterKeys.sdsKey("post", "42"), aggKey, CounterKeys.aggIndexKey())),
+        ArgumentCaptor<DefaultRedisScript<Long>> script =
+                ArgumentCaptor.forClass(DefaultRedisScript.class);
+        verify(redis).execute(script.capture(), eq(List.of(
+                        CounterKeys.sdsKey("post", "42"),
+                        aggKey,
+                        CounterKeys.aggIndexKey(),
+                        CounterKeys.reactionProjectionCompleteKey("post", "42"),
+                        CounterKeys.factMaintenanceFenceKey("post", "42"))),
                 eq("5"), eq("4"), eq("0"));
+        assertThat(script.getValue().getScriptAsString())
+                .contains(
+                        "redis.call('DEL', completeKey)",
+                        "redis.call('SET', fenceKey, '@dirty:'");
     }
 }

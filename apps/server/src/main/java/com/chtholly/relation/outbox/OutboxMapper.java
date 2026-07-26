@@ -12,6 +12,7 @@ import java.util.List;
 @Mapper
 public interface OutboxMapper {
     record RelationReplayRow(long id, String type, String payload) {}
+    record ReactionReplayRow(long id, String type, String payload, boolean pending) {}
 
     /**
      * 写入 Outbox 事件。
@@ -33,4 +34,13 @@ public interface OutboxMapper {
     List<RelationReplayRow> listRelationReplayRows(@Param("fromId") long fromId,
                                                    @Param("toId") long toId,
                                                    @Param("limit") int limit);
+
+    /** Captures the upper bound for one finite local recovery scan. */
+    Long findCounterReactionReplayHighWatermark();
+
+    /** Returns one bounded cursor page and whether each row still needs local recovery. */
+    List<ReactionReplayRow> listCounterReactionReplayPage(
+            @Param("afterId") long afterId,
+            @Param("throughId") long throughId,
+            @Param("limit") int limit);
 }

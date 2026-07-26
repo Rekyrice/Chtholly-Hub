@@ -34,6 +34,20 @@ public interface CounterPersistenceMapper {
     /** Confirms that an existing event ID represents the exact same counter mutation. */
     int countMatchingInbox(CounterEvent event);
 
+    /** Returns reaction event IDs whose existing local side effects still need delivery. */
+    List<String> listPendingReactionSideEffectEventIds(
+            @Param("eventIds") List<String> eventIds);
+
+    /**
+     * Locks one reaction Inbox row and returns whether its side effects were published.
+     *
+     * @return {@code 0} when pending, {@code 1} when published, or {@code null} when missing
+     */
+    Integer lockReactionSideEffectPublication(@Param("eventId") String eventId);
+
+    /** Marks one reaction event after all local side-effect listeners return successfully. */
+    int markReactionSideEffectsPublished(@Param("eventId") String eventId);
+
     /** Applies grouped deltas to durable counter snapshots. */
     void incrementSnapshots(@Param("deltas") List<CounterSnapshotDelta> deltas);
 

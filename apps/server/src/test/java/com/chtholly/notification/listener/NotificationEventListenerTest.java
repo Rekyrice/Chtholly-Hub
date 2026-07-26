@@ -10,11 +10,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.scheduling.annotation.Async;
 
+import java.lang.reflect.Method;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -64,6 +67,28 @@ class NotificationEventListenerTest {
         assertThat(payload.get("postTitle")).isEqualTo("Re:Zero");
         assertThat(payload.get("postSlug")).isEqualTo("re-zero");
         assertThat(payload.get("actorNickname")).isEqualTo("Alice");
+    }
+
+    @Test
+    void given_reactionNotificationFails_when_onCounterEvent_then_propagatesForReplay() {
+        CounterEvent event = CounterEvent.of("104", "post", "42", "like", 1, 9L, 1);
+        event.setPostCreatorId(10L);
+        when(notificationService.hasUnreadLikePost(10L, 42L)).thenReturn(false);
+        doThrow(new RuntimeException("db down"))
+                .when(notificationService)
+                .create(eq(10L), eq(NotificationType.LIKE_POST), any());
+
+        assertThatThrownBy(() -> listener.onCounterEvent(event))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("db down");
+    }
+
+    @Test
+    void reactionNotificationRunsInsideTheDurablePublicationClaim() throws Exception {
+        Method method =
+                NotificationEventListener.class.getMethod("onCounterEvent", CounterEvent.class);
+
+        assertThat(method.getAnnotation(Async.class)).isNull();
     }
 
     @Test

@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** 监听业务事件并异步写入通知。 */
+/** 监听业务事件；评论/关注通知异步写入，互动通知同步参与事件级回执。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -64,7 +64,6 @@ public class NotificationEventListener {
         }
     }
 
-    @Async("notificationExecutor")
     @EventListener
     public void onCounterEvent(CounterEvent event) {
         try {
@@ -106,6 +105,10 @@ public class NotificationEventListener {
         } catch (Exception ex) {
             log.error("点赞通知写入失败 postId={} actorUserId={}: {}",
                     event.getEntityId(), event.getUserId(), ex.getMessage(), ex);
+            if (ex instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Reaction notification persistence failed", ex);
         }
     }
 

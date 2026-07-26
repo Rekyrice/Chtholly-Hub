@@ -133,7 +133,8 @@ CREATE TABLE IF NOT EXISTS outbox (
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     KEY ix_outbox_agg (aggregate_type, aggregate_id),
-    KEY ix_outbox_ct (created_at)
+    KEY ix_outbox_ct (created_at),
+    KEY ix_outbox_reaction_replay (aggregate_type, type, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Durable idempotency for counter events and their convergent MySQL snapshots.
@@ -146,6 +147,7 @@ CREATE TABLE IF NOT EXISTS counter_event_inbox (
     user_id BIGINT NOT NULL,
     fact_epoch BIGINT UNSIGNED NOT NULL,
     applied_at DATETIME(3) NOT NULL,
+    side_effects_published_at DATETIME(3) NULL,
     PRIMARY KEY (event_id),
     KEY ix_counter_inbox_entity (entity_type, entity_id, metric, applied_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
