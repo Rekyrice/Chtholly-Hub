@@ -35,19 +35,16 @@ public final class CounterKeys {
         return String.format("counter:reaction-projection:complete:%s:%s", entityType, entityId);
     }
 
-    /** Persistent cursor for the bounded legacy Bitmap index backfill. */
-    public static String bitmapIndexBackfillCursorKey() {
-        return "counter:calibration:reaction-bitmap:cursor";
-    }
-
-    /** Marks that every Bitmap present at deployment has completed one index pass. */
-    public static String bitmapIndexBackfillCompleteKey() {
-        return "counter:calibration:reaction-bitmap:complete";
-    }
-
-    /** Persistent round-robin entity registry populated by the bounded Bitmap scan. */
-    public static String bitmapCalibrationCandidatesKey() {
-        return "counter:calibration:reaction-bitmap:candidates";
+    /** Temporary Bitmap shard used only during one fenced MySQL-driven rebuild. */
+    public static String reactionProjectionStageBitmapKey(
+            String token,
+            String metric,
+            String entityType,
+            String entityId,
+            long chunk) {
+        return String.format(
+                "counter:reaction-rebuild:stage:%s:%s:%s:%s:%d",
+                token, metric, entityType, entityId, chunk);
     }
 
     // 聚合增量持久化桶（Hash）：agg:{schema}:{etype}:{eid}

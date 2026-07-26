@@ -7,7 +7,6 @@ import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterService;
-import com.chtholly.counter.service.impl.CounterBitmapIndexService;
 import com.chtholly.counter.service.impl.CounterCalibrationService;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -50,7 +49,6 @@ class CounterInteractionEvidenceCollectorIT extends AbstractGoldenPathIT {
     @Autowired private CounterService counterService;
     @Autowired private CounterAggregationProcessor aggregationProcessor;
     @Autowired private CounterCalibrationService calibrationService;
-    @Autowired private CounterBitmapIndexService bitmapIndex;
     @Autowired private KafkaTemplate<String, String> kafka;
     @Autowired private KafkaListenerEndpointRegistry listeners;
     @Autowired private CounterEvidenceSqlProbe sqlProbe;
@@ -108,10 +106,6 @@ class CounterInteractionEvidenceCollectorIT extends AbstractGoldenPathIT {
             assertThat(firstApplied).isEqualTo(3);
             assertThat(replayApplied).isZero();
             long preCalibrationDiscrepancy = discrepancy();
-            Awaitility.await().atMost(Duration.ofSeconds(5)).until(() -> {
-                bitmapIndex.discoverCandidates(0);
-                return bitmapIndex.isBackfillComplete();
-            });
             CounterCalibrationService.ReconciliationResult reconciliation =
                     calibrationService.reconcileEntity("post", ENTITY_ID);
             long postCalibrationDiscrepancy = discrepancy();

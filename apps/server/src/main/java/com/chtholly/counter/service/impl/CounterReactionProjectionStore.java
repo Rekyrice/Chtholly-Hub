@@ -26,8 +26,8 @@ import java.util.Set;
 @Component
 public class CounterReactionProjectionStore {
 
-    static final String COMPLETE_VERSION = "@mysql-v1";
-    static final String SHARD_INDEX_SENTINEL = "@mysql-v1";
+    public static final String COMPLETE_VERSION = "@mysql-v1";
+    public static final String SHARD_INDEX_SENTINEL = "@mysql-v1";
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<List> projectScript;
