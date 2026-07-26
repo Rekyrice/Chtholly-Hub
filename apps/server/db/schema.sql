@@ -285,8 +285,14 @@ CREATE TABLE IF NOT EXISTS dead_letter_messages (
     exception_class VARCHAR(255) NULL,
     exception_message TEXT NULL,
     retry_count INT NOT NULL DEFAULT 0,
-    status ENUM('PENDING', 'RETRYING', 'DEAD') NOT NULL DEFAULT 'PENDING',
+    status ENUM(
+        'PENDING', 'RETRYING', 'DEAD', 'REPLAYING', 'UNCERTAIN'
+    ) NOT NULL DEFAULT 'PENDING',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    replay_attempt_token VARCHAR(64)
+        CHARACTER SET ascii COLLATE ascii_bin NULL,
+    replay_started_at DATETIME(3) NULL,
+    replay_deadline_at DATETIME(3) NULL,
     PRIMARY KEY (id),
     KEY idx_topic_status (source_topic, status),
     KEY idx_created (created_at)

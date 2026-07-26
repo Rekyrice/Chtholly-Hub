@@ -4,5 +4,7 @@ package com.chtholly.common.kafka;
 public enum DeadLetterStatus {
     PENDING,
     RETRYING,
-    DEAD
+    DEAD,
+    REPLAYING,
+    UNCERTAIN
 }
