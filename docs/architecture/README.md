@@ -45,9 +45,9 @@ Spring Boot（认证、内容、社区、搜索、后台任务）
 - 页面渲染、认证、文章与评论读写等用户需要立即确认结果的操作，经 Next.js 到 Spring Boot 同步完成。
 - MySQL 写入定义业务提交边界；缓存失效、搜索索引或计数汇总不得反向成为业务事实来源。
 - Redis 命中可缩短读链路，未命中时回源 MySQL；缓存不可用时由具体领域决定降级或失败策略。
-- 点赞/收藏命令同步提交 MySQL 目标关系与 Outbox，并直接返回事务确定的目标状态，不等待异步投影。只有 `KAFKA_ENABLED=true` 且 `CANAL_ENABLED=true` 时，Canal-compatible Outbox 消息才经 `canal-outbox` 交给互动消费者；任一开关关闭时，`AFTER_COMMIT` 本地适配器调用同一处理核心。共享核心先回查 MySQL 终态并维护 Redis 投影，再由 `CounterAggregationProcessor` 以独立事务提交 Inbox 与快照；投影允许短暂延迟。
+- 点赞/收藏命令同步提交 MySQL 目标关系与 Outbox，并直接返回事务确定的目标状态，不等待异步投影。只有 `KAFKA_ENABLED=true` 且 `CANAL_ENABLED=true` 时，Canal-compatible Outbox 消息才经 `canal-outbox` 交给互动消费者；任一开关关闭时，`AFTER_COMMIT` 本地适配器先尝试处理，MySQL Outbox 定时回放再恢复提交后未完成的事件。两条路径进入同一个 `REQUIRES_NEW` 处理事务：先锁定 reaction snapshot、登记 Inbox 并计算快照，再批量回查 MySQL 终态和维护 Redis 投影，最后提交 MySQL 事务；关系与 Outbox 已经独立提交，投影允许短暂延迟。
 - 浏览量等通用计数仍由 `KAFKA_ENABLED` 选择旧 `counter-events` 或进程内 Spring Event 通道。Spring 属性缺省值是 `false`，仓库示例显式设置 `KAFKA_ENABLED=true`、`CANAL_ENABLED=false`：该组合保留通用 Kafka 能力，但互动 Outbox 使用本地提交后路径。
-- 核心投影提交后，仅发布当前处理批次内每个关系键中 `eventId` 最大且与 MySQL 当前终态方向一致的事件；通知、Feed/作者计数与兴趣画像继续通过 Spring ApplicationEvent 做进程内 best-effort 协作。24 小时 Redis 守卫可抑制普通同进程重放，但没有逐监听器持久回执；进程崩溃、异步任务失败或部分监听器失败不会由校准自动补发。
+- 每一条真实关系变化对应的 Outbox 事件都会在核心处理事务提交后尝试发布进程内副作用，包括已落后于当前 snapshot epoch 的事件。`counter_event_inbox.side_effects_published_at` 只在整次同步 Spring 事件发布调用正常返回后记录事件级回执；向发布器传播的失败保持为空，由本地 Outbox 回放再次尝试。它不是逐监听器回执：某个监听器已产生非事务副作用、后续监听器再失败时，重放仍可能重复前者；监听器若自行吞掉内部失败并正常返回，也可能形成缺失副作用而事件级回执仍成功。24 小时 Redis 标记只在回执提交后尽力写入，不会压住仍待发布的事件；该链路不宣称跨 MySQL、Redis、Kafka 原子提交或 exactly-once。
 - Agent 的 WebSocket/API 调用在会话内流式返回，LLM、RAG 与工具调用属于可选分支；关闭相关特性不应阻断博客与社区主链路。
 
 ## 章节导航

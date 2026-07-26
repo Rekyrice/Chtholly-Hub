@@ -27,7 +27,8 @@
 - `COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS` 与 `COUNTER_KAFKA_PUBLISH_ACK_TIMEOUT` 控制浏览量等旧 `counter-events` 发布确认；点赞/收藏已经改为 MySQL 关系与同事务 Outbox，不在请求内等待该 publisher。
 - `COUNTER_KAFKA_CONSUMER_MAX_ATTEMPTS`、`COUNTER_KAFKA_CONSUMER_RETRY_BACKOFF` 和 `COUNTER_KAFKA_CONSUMER_DLT_ACK_TIMEOUT` 只控制旧 `counter-events` 批量消费者。互动 Outbox 使用 `canal-outbox`、`canal-outbox-retry` 与 `canal-outbox-dlq`；其第 1/2/3 次重试固定延迟 5/30/120 秒，当前没有对应环境变量。
 - KafkaAdmin 可自动创建 `canal-outbox`（3 分区）、`canal-outbox-retry`（3 分区）和 `canal-outbox-dlq`（1 分区）。外部 broker 禁止自动建 topic 时必须预创建这些主题，并为应用 Kafka 身份配置所需的 CREATE（若允许自动创建）、DESCRIBE、READ、WRITE 与消费组权限；Canal 的 MySQL 复制账号权限是独立配置边界。
-- `COUNTER_CALIBRATION_ENABLED`、`COUNTER_CALIBRATION_FIXED_DELAY` 与 `COUNTER_CALIBRATION_BATCH_SIZE` 控制 MySQL→Redis 的周期互动校准。候选来自 MySQL 中最久未校准的 reaction snapshot 实体；每个实体在 Redisson 锁与 token fence 下分页读取 `counter_reaction`，重建 Bitmap/SDS 并更新快照 epoch。当前链路没有 Redis SCAN cursor 配置。关闭周期任务不会禁用计数读路径在 SDS 缺失时触发的单实体校准；成员投影不完整时直接回源 MySQL。校准不补发通知、Feed/作者计数或兴趣画像。
+- `COUNTER_CALIBRATION_ENABLED`、`COUNTER_CALIBRATION_FIXED_DELAY` 与 `COUNTER_CALIBRATION_BATCH_SIZE` 控制 MySQL→Redis 的周期互动校准。任务先取得当前 MySQL reaction snapshot 身份的固定字典序高水位，再按 `(entity_type, entity_id)` keyset 分页完成一轮有限扫描；持续新增实体不会让旧候选永久饥饿。每个实体在 Redisson 锁与 token fence 下分页读取 `counter_reaction`，直接重写 live Bitmap/SDS 并更新快照 epoch。关闭周期任务不会改变读取规则：成员投影不完整时按请求批量回源 MySQL，读取链路本身不触发校准。校准不补发通知、Feed/作者计数或兴趣画像。
+- 本地互动恢复由 `counter.reaction.local-replay.batch-size`（缺省 `100`，范围 `1`–`500`）、`counter.reaction.local-replay.fixed-delay`（缺省 `PT5S`）和 `counter.reaction.local-replay.initial-delay`（缺省 `PT5S`）控制。它仅在 Kafka 或 Canal 任一关闭时装配，按固定 Outbox 高水位与 ID keyset 扫描；这些属性当前没有单独环境变量映射，需要时以 Spring 配置或启动参数覆盖。
 
 ### 存储、LLM 与外部服务
 
