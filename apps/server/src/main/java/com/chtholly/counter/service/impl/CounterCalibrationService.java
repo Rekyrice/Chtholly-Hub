@@ -12,28 +12,28 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 /** Rebuilds Redis reaction projections and durable counts from authoritative MySQL facts. */
 @Service
 public class CounterCalibrationService {
 
     private static final Logger log = LoggerFactory.getLogger(CounterCalibrationService.class);
-    private static final int MYSQL_DISCOVERY_WINDOW_MIN = 50;
-
     private final RedissonClient redisson;
     private final CounterPersistenceMapper persistenceMapper;
     private final CounterReactionProjectionRebuilder projectionRebuilder;
     private final PlatformTransactionManager transactionManager;
     private final boolean scheduledEnabled;
     private final int scheduledBatchSize;
-    private final AtomicLong mysqlRotation = new AtomicLong();
+    private CounterEntityIdentity mysqlSweepCursor;
+    private CounterEntityIdentity mysqlSweepHighWatermark;
 
     public CounterCalibrationService(
             RedissonClient redisson,
@@ -62,6 +62,10 @@ public class CounterCalibrationService {
      */
     public ReconciliationResult reconcileEntity(String entityType, String entityId) {
         CounterSchema.requirePersistableIdentity(entityType, entityId);
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException(
+                    "Counter reconciliation cannot join an active transaction");
+        }
         RLock lock = redisson.getLock(CounterKeys.factMaintenanceLockKey(entityType, entityId));
         boolean locked = false;
         boolean begun = false;
@@ -76,11 +80,13 @@ public class CounterCalibrationService {
             begun = true;
 
             TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+            transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
             ReconciliationResult result = transaction.execute(status ->
                     reconcileInTransaction(entityType, entityId, token));
             if (result == null) {
                 throw new IllegalStateException("Counter reconciliation transaction returned no result");
             }
+            projectionRebuilder.publishComplete(entityType, entityId, token);
             return result;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
@@ -112,16 +118,13 @@ public class CounterCalibrationService {
 
     /** Periodically repairs a bounded rotation of MySQL-backed reaction entities. */
     @Scheduled(fixedDelayString = "${counter.calibration.fixed-delay:PT5M}")
-    public void reconcileScheduled() {
+    public synchronized void reconcileScheduled() {
         if (!scheduledEnabled) {
             return;
         }
-        int discoveryWindow = Math.min(
-                1_000,
-                Math.max(MYSQL_DISCOVERY_WINDOW_MIN, scheduledBatchSize));
         List<CounterEntityIdentity> candidates;
         try {
-            candidates = persistenceMapper.listOldestReactionSnapshotIdentities(discoveryWindow);
+            candidates = listScheduledCandidates();
             if (candidates == null) {
                 throw new IllegalStateException("Counter reconciliation candidate query returned no result");
             }
@@ -133,14 +136,7 @@ public class CounterCalibrationService {
             return;
         }
 
-        int start = (int) Math.floorMod(mysqlRotation.getAndIncrement(), candidates.size());
-        int processed = 0;
-        for (int offset = 0; offset < candidates.size() && processed < scheduledBatchSize; offset++) {
-            CounterEntityIdentity candidate = candidates.get((start + offset) % candidates.size());
-            if (candidate == null) {
-                continue;
-            }
-            processed++;
+        for (CounterEntityIdentity candidate : candidates) {
             try {
                 CounterSchema.requirePersistableIdentity(
                         candidate.entityType(), candidate.entityId());
@@ -153,6 +149,86 @@ public class CounterCalibrationService {
                         exception.getMessage());
             }
         }
+    }
+
+    private List<CounterEntityIdentity> listScheduledCandidates() {
+        CounterEntityIdentity highWatermark = mysqlSweepHighWatermark;
+        if (highWatermark == null) {
+            highWatermark = persistenceMapper.findReactionSnapshotIdentityHighWatermark();
+            if (highWatermark == null) {
+                return List.of();
+            }
+            validateIdentity(highWatermark);
+            mysqlSweepHighWatermark = highWatermark;
+        }
+        CounterEntityIdentity after = mysqlSweepCursor;
+        List<CounterEntityIdentity> candidates =
+                persistenceMapper.listReactionSnapshotIdentitiesPage(
+                        after == null ? null : after.entityType(),
+                        after == null ? null : after.entityId(),
+                        highWatermark.entityType(),
+                        highWatermark.entityId(),
+                        scheduledBatchSize);
+        if (candidates == null) {
+            return null;
+        }
+        validateScheduledPage(after, highWatermark, candidates);
+        if (candidates.isEmpty()) {
+            resetMysqlSweep();
+            return candidates;
+        }
+        CounterEntityIdentity last = candidates.getLast();
+        if (candidates.size() < scheduledBatchSize
+                || compareIdentity(last, highWatermark) >= 0) {
+            resetMysqlSweep();
+        } else {
+            mysqlSweepCursor = last;
+        }
+        return candidates;
+    }
+
+    private void validateScheduledPage(
+            CounterEntityIdentity after,
+            CounterEntityIdentity highWatermark,
+            List<CounterEntityIdentity> candidates) {
+        if (candidates.size() > scheduledBatchSize) {
+            throw new IllegalStateException(
+                    "Counter reconciliation candidate query exceeded its limit");
+        }
+        CounterEntityIdentity previous = after;
+        for (CounterEntityIdentity candidate : candidates) {
+            if (candidate == null
+                    || candidate.entityType() == null
+                    || candidate.entityId() == null
+                    || (previous != null && compareIdentity(candidate, previous) <= 0)
+                    || compareIdentity(candidate, highWatermark) > 0) {
+                throw new IllegalStateException(
+                        "Counter reconciliation candidate query returned an invalid page");
+            }
+            previous = candidate;
+        }
+    }
+
+    private static void validateIdentity(CounterEntityIdentity identity) {
+        if (identity.entityType() == null || identity.entityId() == null) {
+            throw new IllegalStateException(
+                    "Counter reconciliation high watermark is invalid");
+        }
+        CounterSchema.requirePersistableIdentity(identity.entityType(), identity.entityId());
+    }
+
+    private void resetMysqlSweep() {
+        mysqlSweepCursor = null;
+        mysqlSweepHighWatermark = null;
+    }
+
+    private static int compareIdentity(
+            CounterEntityIdentity left,
+            CounterEntityIdentity right) {
+        int typeOrder = left.entityType().compareTo(right.entityType());
+        return typeOrder != 0
+                ? typeOrder
+                : left.entityId().compareTo(right.entityId());
     }
 
     private ReconciliationResult reconcileInTransaction(

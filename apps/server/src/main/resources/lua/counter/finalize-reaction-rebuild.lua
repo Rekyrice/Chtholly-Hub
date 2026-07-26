@@ -17,10 +17,9 @@ local favIndex = tonumber(ARGV[5])
 local likeCount = tonumber(ARGV[6])
 local favCount = tonumber(ARGV[7])
 local nextEpochText = ARGV[8]
-local completeVersion = ARGV[9]
-local indexSentinel = ARGV[10]
-local likePrefix = ARGV[11]
-local favPrefix = ARGV[12]
+local indexSentinel = ARGV[9]
+local likeShardCount = tonumber(ARGV[10])
+local favShardCount = tonumber(ARGV[11])
 local uint32Max = 4294967295
 
 local function keyType(key)
@@ -33,7 +32,7 @@ if (keyType(counterKey) ~= 'none' and keyType(counterKey) ~= 'string')
       or (keyType(aggregationIndexKey) ~= 'none' and keyType(aggregationIndexKey) ~= 'set')
       or keyType(fenceKey) ~= 'string'
       or (keyType(epochKey) ~= 'none' and keyType(epochKey) ~= 'string')
-      or (keyType(completeKey) ~= 'none' and keyType(completeKey) ~= 'string') then
+      or keyType(completeKey) ~= 'none' then
   return redis.error_reply('counter reaction finalization key has an invalid Redis type')
 end
 if redis.call('GET', fenceKey) ~= token then
@@ -45,13 +44,22 @@ if expectedLength ~= 20 or fieldSize ~= 4 or likeIndex ~= 1 or favIndex ~= 2
       or not likeCount or not favCount or likeCount < 0 or favCount < 0
       or likeCount > uint32Max or favCount > uint32Max
       or likeCount ~= math.floor(likeCount) or favCount ~= math.floor(favCount)
+      or not likeShardCount or not favShardCount
+      or likeShardCount < 0 or favShardCount < 0
+      or likeShardCount > uint32Max or favShardCount > uint32Max
+      or likeShardCount ~= math.floor(likeShardCount)
+      or favShardCount ~= math.floor(favShardCount)
+      or (likeCount == 0 and likeShardCount ~= 0)
+      or (likeCount > 0 and (likeShardCount < 1 or likeShardCount > likeCount))
+      or (favCount == 0 and favShardCount ~= 0)
+      or (favCount > 0 and (favShardCount < 1 or favShardCount > favCount))
       or not nextEpoch or nextEpoch < 1 or nextEpoch ~= math.floor(nextEpoch)
       or not string.match(nextEpochText, '^%d+$')
-      or completeVersion ~= '@mysql-v1' or indexSentinel ~= '@mysql-v1' then
+      or indexSentinel ~= '@mysql-v1' then
   return redis.error_reply('counter reaction finalization arguments are invalid')
 end
 
-local function validateIndex(indexKey, countKey, prefix, absoluteCount)
+local function validateIndex(indexKey, countKey, expectedShardCount)
   if keyType(indexKey) ~= 'set' or keyType(countKey) ~= 'string' then
     return false
   end
@@ -63,26 +71,12 @@ local function validateIndex(indexKey, countKey, prefix, absoluteCount)
         or (expectedText ~= '0' and string.match(expectedText, '^0')) then
     return false
   end
-  local expected = tonumber(expectedText)
-  local members = redis.call('SMEMBERS', indexKey)
-  if not expected or expected ~= #members - 1 then
-    return false
-  end
-  local actualCount = 0
-  for _, member in ipairs(members) do
-    if member ~= indexSentinel then
-      if string.sub(member, 1, string.len(prefix)) ~= prefix
-            or keyType(member) ~= 'string' then
-        return false
-      end
-      actualCount = actualCount + redis.call('BITCOUNT', member)
-    end
-  end
-  return actualCount == absoluteCount
+  return expectedText == tostring(expectedShardCount)
+        and redis.call('SCARD', indexKey) == expectedShardCount + 1
 end
 
-if not validateIndex(likeIndexKey, likeIndexCountKey, likePrefix, likeCount)
-      or not validateIndex(favIndexKey, favIndexCountKey, favPrefix, favCount) then
+if not validateIndex(likeIndexKey, likeIndexCountKey, likeShardCount)
+      or not validateIndex(favIndexKey, favIndexCountKey, favShardCount) then
   return redis.error_reply('counter reaction rebuilt indexes are incomplete')
 end
 
@@ -112,6 +106,5 @@ if redis.call('HLEN', aggregationKey) == 0 then
   redis.call('DEL', aggregationKey)
   redis.call('SREM', aggregationIndexKey, aggregationKey)
 end
-redis.call('SET', completeKey, completeVersion)
-redis.call('DEL', fenceKey)
+redis.call('SET', fenceKey, '@prepared:' .. token)
 return {likeCount, favCount, nextEpoch}

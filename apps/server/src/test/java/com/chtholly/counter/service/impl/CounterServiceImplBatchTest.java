@@ -1,8 +1,8 @@
 package com.chtholly.counter.service.impl;
 
-import com.chtholly.common.exception.BusinessException;
 import com.chtholly.counter.mapper.CounterReactionKey;
 import com.chtholly.counter.mapper.CounterReactionMapper;
+import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.counter.service.CounterService;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,11 +12,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.serializer.RedisSerializer;
 
-import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,8 +41,6 @@ class CounterServiceImplBatchTest {
     @Mock
     private StringRedisTemplate redis;
     @Mock
-    private CounterCalibrationService calibrationService;
-    @Mock
     private CounterReactionCommandService reactionCommandService;
     @Mock
     private CounterReactionMapper reactionMapper;
@@ -57,8 +55,7 @@ class CounterServiceImplBatchTest {
                 redis,
                 reactionCommandService,
                 reactionMapper,
-                reactionProjectionStore,
-                calibrationService);
+                reactionProjectionStore);
     }
 
     @Test
@@ -272,48 +269,114 @@ class CounterServiceImplBatchTest {
     }
 
     @Test
-    void missingReactionSdsUsesAuthoritativeCalibrationBeforeReturningCounts() {
-        byte[] calibratedSds = ByteBuffer.allocate(20)
-                .putInt(19)
-                .putInt(7)
-                .putInt(3)
-                .putInt(0)
-                .putInt(0)
-                .array();
-        doReturn(null, calibratedSds, calibratedSds)
-                .when(redis).execute(any(RedisCallback.class));
+    void missingReactionSdsUsesMysqlWithoutRequestPathCalibration() {
+        doReturn(List.of(-1L), List.of(-1L))
+                .when(redis).execute(
+                        any(DefaultRedisScript.class),
+                        anyList(),
+                        any(Object[].class));
+        when(reactionMapper.countByEntityMetrics("post", List.of("99")))
+                .thenReturn(List.of(
+                        new CounterReactionMapper.ReactionCountRow("99", "like", 7L),
+                        new CounterReactionMapper.ReactionCountRow("99", "fav", 3L)));
 
         assertThat(counterService.getCounts("post", "99", List.of("like")))
                 .containsEntry("like", 7L);
         assertThat(counterService.getCounts("post", "99", List.of("fav")))
                 .containsEntry("fav", 3L);
 
-        verify(calibrationService).reconcileEntity("post", "99");
     }
 
     @Test
-    void missingReactionSdsFailsClosedWhenAuthoritativeCalibrationCannotRestoreIt() {
-        doReturn(null, null).when(redis).execute(any(RedisCallback.class));
+    void missingReactionSdsFallsBackToMysqlFactsInOneReadAttempt() {
+        doReturn(List.of(-1L))
+                .when(redis).execute(
+                        any(DefaultRedisScript.class),
+                        anyList(),
+                        any(Object[].class));
+        when(reactionMapper.countByEntityMetrics("post", List.of("99")))
+                .thenReturn(List.of(
+                        new CounterReactionMapper.ReactionCountRow("99", "like", 6L)));
 
-        assertThatThrownBy(() -> counterService.getCounts("post", "99", List.of("like")))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(error -> assertThat(((BusinessException) error).getHttpStatus()).isEqualTo(503));
+        assertThat(counterService.getCounts("post", "99", List.of("like")))
+                .containsEntry("like", 6L);
 
-        verify(calibrationService).reconcileEntity("post", "99");
+        verify(redis).execute(
+                any(DefaultRedisScript.class), anyList(), any(Object[].class));
     }
 
     @Test
-    void missingBatchEntryCalibratesFromMysqlFactsBeforeReturningCounts() {
-        byte[] calibratedSds = ByteBuffer.allocate(20)
-                .putInt(19)
-                .putInt(7)
-                .putInt(3)
-                .putInt(0)
-                .putInt(0)
-                .array();
-        when(redis.executePipelined(any(RedisCallback.class)))
-                .thenReturn(Collections.singletonList(null));
-        doReturn(null, calibratedSds).when(redis).execute(any(RedisCallback.class));
+    void validSdsWithMissingCompleteMarkerUsesMysqlReactionFacts() {
+        doReturn(List.of(0L, 19L, 7L, 3L, 0L, 0L))
+                .when(redis).execute(
+                        any(DefaultRedisScript.class),
+                        anyList(),
+                        any(Object[].class));
+        when(reactionMapper.countByEntityMetrics("post", List.of("99")))
+                .thenReturn(List.of(
+                        new CounterReactionMapper.ReactionCountRow("99", "like", 8L)));
+
+        assertThat(counterService.getCounts("post", "99", List.of("like")))
+                .containsEntry("like", 8L);
+
+    }
+
+    @Test
+    void incompleteSingleEntityReadsLikeAndFavoriteFromOneMysqlSnapshot() {
+        doReturn(List.of(-1L))
+                .when(redis).execute(
+                        any(DefaultRedisScript.class),
+                        anyList(),
+                        any(Object[].class));
+        when(reactionMapper.countByEntityMetrics("post", List.of("99")))
+                .thenReturn(List.of(
+                        new CounterReactionMapper.ReactionCountRow("99", "like", 8L),
+                        new CounterReactionMapper.ReactionCountRow("99", "fav", 5L)));
+
+        assertThat(counterService.getCounts(
+                "post", "99", List.of("like", "fav")))
+                .containsExactly(
+                        Map.entry("like", 8L),
+                        Map.entry("fav", 5L));
+
+        verify(reactionMapper).countByEntityMetrics("post", List.of("99"));
+    }
+
+    @Test
+    void completeReactionCountsAtomicallyPairTheMarkerAndSds() {
+        doReturn(List.of(1L, 19L, 7L, 3L, 0L, 0L))
+                .when(redis).execute(
+                        any(DefaultRedisScript.class),
+                        anyList(),
+                        any(Object[].class));
+
+        assertThat(counterService.getCounts(
+                "post", "99", List.of("like", "fav")))
+                .containsExactly(
+                        Map.entry("like", 7L),
+                        Map.entry("fav", 3L));
+
+        ArgumentCaptor<DefaultRedisScript<List>> script =
+                ArgumentCaptor.forClass(DefaultRedisScript.class);
+        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
+        verify(redis).execute(
+                script.capture(), keys.capture(), any(Object[].class));
+        assertThat(keys.getValue()).containsExactly(
+                CounterKeys.sdsKey("post", "99"),
+                CounterKeys.reactionProjectionCompleteKey("post", "99"));
+        assertThat(script.getValue().getScriptAsString())
+                .contains("redis.call('GET', counterKey)")
+                .contains("redis.call('GET', completeKey)");
+    }
+
+    @Test
+    void missingBatchEntryUsesGroupedMysqlFactsWithoutRequestPathCalibration() {
+        when(redis.executePipelined(any(SessionCallback.class)))
+                .thenReturn(List.of(List.of(-1L)));
+        when(reactionMapper.countByEntityMetrics("post", List.of("99")))
+                .thenReturn(List.of(
+                        new CounterReactionMapper.ReactionCountRow("99", "like", 7L),
+                        new CounterReactionMapper.ReactionCountRow("99", "fav", 3L)));
 
         Map<String, Map<String, Long>> result =
                 counterService.getCountsBatch("post", List.of("99"), List.of("like", "fav"));
@@ -323,6 +386,87 @@ class CounterServiceImplBatchTest {
                 .containsEntry("like", 7L)
                 .containsEntry("fav", 3L);
 
-        verify(calibrationService).reconcileEntity("post", "99");
+    }
+
+    @Test
+    void completeBatchEntryUsesPairedSdsAndMarkerWithoutMysql() {
+        when(redis.executePipelined(any(SessionCallback.class)))
+                .thenReturn(List.of(List.of(1L, 19L, 7L, 3L, 0L, 0L)));
+
+        Map<String, Map<String, Long>> result =
+                counterService.getCountsBatch(
+                        "post", List.of("99"), List.of("like", "fav"));
+
+        assertThat(result.get("99"))
+                .containsEntry("like", 7L)
+                .containsEntry("fav", 3L);
+    }
+
+    @Test
+    void incompleteBatchEntriesUseOneGroupedMysqlFallbackWithoutCalibration() {
+        when(redis.executePipelined(any(SessionCallback.class)))
+                .thenReturn(List.of(
+                        List.of(0L, 19L, 7L, 3L, 0L, 0L),
+                        List.of(-1L)));
+        when(reactionMapper.countByEntityMetrics(
+                "post", List.of("101", "102")))
+                .thenReturn(List.of(
+                        new CounterReactionMapper.ReactionCountRow("101", "like", 4L),
+                        new CounterReactionMapper.ReactionCountRow("102", "like", 2L),
+                        new CounterReactionMapper.ReactionCountRow("102", "fav", 5L)));
+
+        Map<String, Map<String, Long>> result =
+                counterService.getCountsBatch(
+                        "post", List.of("101", "102"), List.of("like", "fav"));
+
+        assertThat(result.get("101"))
+                .containsEntry("like", 4L)
+                .containsEntry("fav", 0L);
+        assertThat(result.get("102"))
+                .containsEntry("like", 2L)
+                .containsEntry("fav", 5L);
+        verify(reactionMapper).countByEntityMetrics(
+                "post", List.of("101", "102"));
+    }
+
+    @Test
+    void fiveHundredAndOneIncompleteCountEntriesUseTwoBoundedMysqlQueries() {
+        List<String> entityIds = LongStream.rangeClosed(1L, 501L)
+                .mapToObj(Long::toString)
+                .toList();
+        List<Object> missing = LongStream.rangeClosed(1L, 501L)
+                .mapToObj(ignored -> (Object) List.of(-1L))
+                .toList();
+        when(redis.executePipelined(any(SessionCallback.class)))
+                .thenReturn(missing);
+        when(reactionMapper.countByEntityMetrics(eq("post"), anyList()))
+                .thenReturn(List.of());
+
+        Map<String, Map<String, Long>> result =
+                counterService.getCountsBatch(
+                        "post", entityIds, List.of("like", "fav"));
+
+        assertThat(result).hasSize(501);
+        assertThat(result.get("1"))
+                .containsEntry("like", 0L)
+                .containsEntry("fav", 0L);
+        ArgumentCaptor<List<String>> chunks = ArgumentCaptor.forClass(List.class);
+        verify(reactionMapper, times(2))
+                .countByEntityMetrics(eq("post"), chunks.capture());
+        assertThat(chunks.getAllValues()).containsExactly(
+                entityIds.subList(0, 500),
+                entityIds.subList(500, 501));
+    }
+
+    @Test
+    void batchCountsRejectInvalidIdentityBeforeReadingRedis() {
+        assertThatThrownBy(() -> counterService.getCountsBatch(
+                "post", List.of("invalid:id"), List.of("like")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("unsupported");
+
+        verify(redis, never()).executePipelined(any(SessionCallback.class));
+        verify(redis, never()).executePipelined(
+                any(RedisCallback.class), any(RedisSerializer.class));
     }
 }

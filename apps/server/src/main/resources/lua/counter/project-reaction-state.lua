@@ -3,12 +3,14 @@ local counterKey = KEYS[2]
 local fenceKey = KEYS[3]
 local indexKey = KEYS[4]
 local indexCountKey = KEYS[5]
+local completeKey = KEYS[6]
 local bitOffset = tonumber(ARGV[1])
 local target = tonumber(ARGV[2])
 local metricIndex = tonumber(ARGV[3])
 local expectedLength = tonumber(ARGV[4])
 local fieldSize = tonumber(ARGV[5])
 local indexSentinel = ARGV[6]
+local completeVersion = ARGV[7]
 local uint32Max = 4294967295
 
 local function keyType(key)
@@ -17,34 +19,80 @@ local function keyType(key)
   return reply
 end
 
-local bitmapType = keyType(bitmapKey)
-local counterType = keyType(counterKey)
 local fenceType = keyType(fenceKey)
-local indexType = keyType(indexKey)
-local indexCountType = keyType(indexCountKey)
-if (bitmapType ~= 'none' and bitmapType ~= 'string')
-      or (counterType ~= 'none' and counterType ~= 'string')
-      or (fenceType ~= 'none' and fenceType ~= 'string')
-      or (indexType ~= 'none' and indexType ~= 'set')
-      or (indexCountType ~= 'none' and indexCountType ~= 'string') then
-  return redis.error_reply('counter reaction projection key has an invalid Redis type')
+if fenceType ~= 'none' and fenceType ~= 'string' then
+  redis.call('DEL', completeKey)
+  return {-2, 0}
 end
 if not bitOffset or bitOffset < 0 or bitOffset >= 32768
       or bitOffset ~= math.floor(bitOffset)
       or (target ~= 0 and target ~= 1)
       or (metricIndex ~= 1 and metricIndex ~= 2)
       or expectedLength ~= 20 or fieldSize ~= 4
-      or indexSentinel ~= '@mysql-v1' then
+      or indexSentinel ~= '@mysql-v1'
+      or completeVersion ~= '@mysql-v1' then
   return redis.error_reply('counter reaction projection arguments are invalid')
 end
 if redis.call('EXISTS', fenceKey) == 1 then
+  local fenceValue = redis.call('GET', fenceKey)
+  if string.sub(fenceValue, 1, 7) ~= '@dirty:' then
+    if string.sub(fenceValue, 1, 10) == '@prepared:' then
+      redis.call('SET', fenceKey, '@dirty:' .. string.sub(fenceValue, 11))
+    else
+      redis.call('SET', fenceKey, '@dirty:' .. fenceValue)
+    end
+  end
+  redis.call('DEL', completeKey)
   return {-1, 0}
+end
+
+local bitmapType = keyType(bitmapKey)
+local counterType = keyType(counterKey)
+local indexType = keyType(indexKey)
+local indexCountType = keyType(indexCountKey)
+local completeType = keyType(completeKey)
+if (bitmapType ~= 'none' and bitmapType ~= 'string')
+      or (counterType ~= 'none' and counterType ~= 'string')
+      or (indexType ~= 'none' and indexType ~= 'set')
+      or (indexCountType ~= 'none' and indexCountType ~= 'string')
+      or (completeType ~= 'none' and completeType ~= 'string') then
+  redis.call('DEL', completeKey)
+  return {-2, 0}
+end
+
+local wasComplete = redis.call('GET', completeKey) == completeVersion
+local structurallyComplete = wasComplete
+if wasComplete then
+  if indexType ~= 'set' or indexCountType ~= 'string'
+        or redis.call('SISMEMBER', indexKey, indexSentinel) ~= 1 then
+    structurallyComplete = false
+  else
+    local expectedText = redis.call('GET', indexCountKey)
+    if not expectedText or not string.match(expectedText, '^%d+$')
+          or (expectedText ~= '0' and string.match(expectedText, '^0')) then
+      structurallyComplete = false
+    else
+      local expected = tonumber(expectedText)
+      if not expected or redis.call('SCARD', indexKey) ~= expected + 1 then
+        structurallyComplete = false
+      end
+    end
+  end
+  local indexed = redis.call('SISMEMBER', indexKey, bitmapKey) == 1
+  if (bitmapType == 'none' and indexed)
+        or (bitmapType == 'string' and not indexed) then
+    structurallyComplete = false
+  end
 end
 
 local previous = redis.call('GETBIT', bitmapKey, bitOffset)
 local delta = target - previous
 local raw = redis.call('GET', counterKey)
-local validCounter = raw and string.len(raw) == expectedLength
+local validCounter = structurallyComplete and raw and string.len(raw) == expectedLength
+if not validCounter then
+  structurallyComplete = false
+  redis.call('DEL', completeKey)
+end
 local nextCount = nil
 if validCounter and delta ~= 0 then
   local byteOffset = metricIndex * fieldSize
@@ -52,7 +100,8 @@ if validCounter and delta ~= 0 then
   local currentCount = ((b1 * 256 + b2) * 256 + b3) * 256 + b4
   nextCount = currentCount + delta
   if nextCount < 0 or nextCount > uint32Max then
-    return redis.error_reply('counter reaction projection would overflow unsigned Int32')
+    redis.call('DEL', completeKey)
+    return {-2, 0}
   end
 end
 

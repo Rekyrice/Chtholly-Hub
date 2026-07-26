@@ -35,18 +35,6 @@ public final class CounterKeys {
         return String.format("counter:reaction-projection:complete:%s:%s", entityType, entityId);
     }
 
-    /** Temporary Bitmap shard used only during one fenced MySQL-driven rebuild. */
-    public static String reactionProjectionStageBitmapKey(
-            String token,
-            String metric,
-            String entityType,
-            String entityId,
-            long chunk) {
-        return String.format(
-                "counter:reaction-rebuild:stage:%s:%s:%s:%s:%d",
-                token, metric, entityType, entityId, chunk);
-    }
-
     // 聚合增量持久化桶（Hash）：agg:{schema}:{etype}:{eid}
     public static String aggKey(String entityType, String entityId) {
         return String.format("agg:%s:%s:%s", CounterSchema.SCHEMA_ID, entityType, entityId); // 刷写前的增量存储桶

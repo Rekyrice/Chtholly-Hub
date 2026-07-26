@@ -9,6 +9,8 @@ import java.util.List;
 @Mapper
 public interface CounterReactionMapper {
 
+    record ReactionCountRow(String entityId, String metric, long countValue) {}
+
     /** Inserts one fact only when it does not already exist. */
     int insertIgnore(
             @Param("entityType") String entityType,
@@ -48,11 +50,10 @@ public interface CounterReactionMapper {
             @Param("afterUserId") long afterUserId,
             @Param("limit") int limit);
 
-    /** Counts authoritative facts for one entity and reaction metric. */
-    long countByEntityMetric(
+    /** Counts reaction facts for a bounded entity batch in one grouped query. */
+    List<ReactionCountRow> countByEntityMetrics(
             @Param("entityType") String entityType,
-            @Param("entityId") String entityId,
-            @Param("metric") String metric);
+            @Param("entityIds") List<String> entityIds);
 
     /** Inserts a bounded batch of facts, ignoring facts that already exist. */
     int insertAllIgnore(@Param("keys") List<CounterReactionKey> keys);

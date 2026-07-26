@@ -94,13 +94,39 @@
             fact_epoch = GREATEST(fact_epoch, VALUES(fact_epoch))
     </insert>
 
-    <select id="listOldestReactionSnapshotIdentities"
+    <select id="findReactionSnapshotIdentityHighWatermark"
             resultType="com.chtholly.counter.mapper.CounterEntityIdentity">
         SELECT entity_type, entity_id
         FROM counter_snapshot
         WHERE metric IN ('like', 'fav')
         GROUP BY entity_type, entity_id
-        ORDER BY MIN(updated_at), entity_type, entity_id
+        ORDER BY BINARY entity_type DESC, BINARY entity_id DESC
+        LIMIT 1
+    </select>
+
+    <select id="listReactionSnapshotIdentitiesPage"
+            resultType="com.chtholly.counter.mapper.CounterEntityIdentity">
+        SELECT entity_type, entity_id
+        FROM counter_snapshot
+        WHERE metric IN ('like', 'fav')
+        <if test="afterEntityType != null and afterEntityId != null">
+          AND (
+                BINARY entity_type &gt; BINARY #{afterEntityType}
+                OR (
+                    BINARY entity_type = BINARY #{afterEntityType}
+                    AND BINARY entity_id &gt; BINARY #{afterEntityId}
+                )
+              )
+        </if>
+          AND (
+                BINARY entity_type &lt; BINARY #{throughEntityType}
+                OR (
+                    BINARY entity_type = BINARY #{throughEntityType}
+                    AND BINARY entity_id &lt;= BINARY #{throughEntityId}
+                )
+              )
+        GROUP BY entity_type, entity_id
+        ORDER BY BINARY entity_type, BINARY entity_id
         LIMIT #{limit}
     </select>
 </mapper>

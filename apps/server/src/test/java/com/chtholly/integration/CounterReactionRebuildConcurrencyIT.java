@@ -1,6 +1,7 @@
 package com.chtholly.integration;
 
 import com.chtholly.counter.event.CounterEvent;
+import com.chtholly.counter.mapper.CounterReactionKey;
 import com.chtholly.counter.schema.BitmapShard;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
@@ -23,13 +24,16 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,6 +56,9 @@ class CounterReactionRebuildConcurrencyIT extends AbstractGoldenPathIT {
     private CounterReactionProjectionRebuilder projectionRebuilder;
 
     @Autowired
+    private CounterReactionProjectionStore projectionStore;
+
+    @Autowired
     private KafkaTemplate<String, String> kafka;
 
     @BeforeEach
@@ -68,6 +75,194 @@ class CounterReactionRebuildConcurrencyIT extends AbstractGoldenPathIT {
     @Test
     void unlikeCommandWaitsForCalibrationSnapshotLockAndUsesNewEpoch() throws Exception {
         assertReactionCommandWaitsForCalibration("7312", 48L, false);
+    }
+
+    @Test
+    void rebuildStreamsMoreThanOneMysqlPageIntoCompleteRedisProjection() {
+        String entityId = "7313";
+        List<Long> likeUserIds = LongStream.rangeClosed(1L, 501L)
+                .map(index -> index * BitmapShard.CHUNK_SIZE + 7L)
+                .boxed()
+                .toList();
+        List<Long> favoriteUserIds = List.of(19L, BitmapShard.CHUNK_SIZE * 2L + 23L);
+        String insert = """
+                INSERT INTO counter_reaction
+                    (entity_type, entity_id, metric, user_id, created_at)
+                VALUES ('post', ?, ?, ?, NOW(3))
+                """;
+        jdbc.batchUpdate(insert, likeUserIds.stream()
+                .map(userId -> new Object[]{entityId, "like", userId})
+                .toList());
+        jdbc.batchUpdate(insert, favoriteUserIds.stream()
+                .map(userId -> new Object[]{entityId, "fav", userId})
+                .toList());
+
+        projectionRebuilder.begin("post", entityId, "page-boundary-owner");
+        CounterReactionProjectionRebuilder.RebuildResult result =
+                projectionRebuilder.rebuild(
+                        "post", entityId, "page-boundary-owner", 9L);
+
+        assertThat(result).isEqualTo(
+                new CounterReactionProjectionRebuilder.RebuildResult(501L, 2L, 9L));
+        assertThat(redis.hasKey(
+                CounterKeys.reactionProjectionCompleteKey("post", entityId))).isFalse();
+        projectionRebuilder.publishComplete(
+                "post", entityId, "page-boundary-owner");
+        assertThat(readSds(entityId)).containsExactly(0L, 501L, 2L, 0L, 0L);
+        assertThat(redis.opsForValue().get(
+                CounterKeys.bitmapShardIndexCountKey("like", "post", entityId)))
+                .isEqualTo("501");
+        assertThat(redis.opsForSet().size(
+                CounterKeys.bitmapShardIndexKey("like", "post", entityId)))
+                .isEqualTo(502L);
+        assertThat(likeUserIds)
+                .filteredOn(userId -> userId.equals(likeUserIds.getFirst())
+                        || userId.equals(likeUserIds.get(250))
+                        || userId.equals(likeUserIds.getLast()))
+                .allSatisfy(userId -> assertThat(redis.opsForValue().getBit(
+                        CounterKeys.bitmapKey(
+                                "like",
+                                "post",
+                                entityId,
+                                BitmapShard.chunkOf(userId)),
+                        BitmapShard.bitOf(userId))).isTrue());
+        assertThat(redis.opsForValue().get(
+                CounterKeys.reactionProjectionCompleteKey("post", entityId)))
+                .isEqualTo(CounterReactionProjectionStore.COMPLETE_VERSION);
+        assertThat(redis.hasKey(
+                CounterKeys.factMaintenanceFenceKey("post", entityId))).isFalse();
+    }
+
+    @Test
+    void incompleteBitmapNeverExposesAStaleReactionSdsCount() {
+        String entityId = "7314";
+        long healthyUser = 41L;
+        long lostUser = BitmapShard.CHUNK_SIZE + 43L;
+        jdbc.batchUpdate("""
+                        INSERT INTO counter_reaction
+                            (entity_type, entity_id, metric, user_id, created_at)
+                        VALUES ('post', ?, 'like', ?, NOW(3))
+                        """,
+                List.of(
+                        new Object[]{entityId, healthyUser},
+                        new Object[]{entityId, lostUser}));
+        projectionRebuilder.begin("post", entityId, "loss-owner");
+        projectionRebuilder.rebuild("post", entityId, "loss-owner", 3L);
+        projectionRebuilder.publishComplete("post", entityId, "loss-owner");
+        assertThat(counterService.getCounts("post", entityId, List.of("like")))
+                .containsEntry("like", 2L);
+
+        String lostBitmap = CounterKeys.bitmapKey(
+                "like", "post", entityId, BitmapShard.chunkOf(lostUser));
+        redis.delete(lostBitmap);
+        redis.opsForSet().remove(
+                CounterKeys.bitmapShardIndexKey("like", "post", entityId),
+                lostBitmap);
+        jdbc.update("""
+                DELETE FROM counter_reaction
+                WHERE entity_type = 'post'
+                  AND entity_id = ?
+                  AND metric = 'like'
+                  AND user_id = ?
+                """, entityId, lostUser);
+        projectionStore.project(Map.of(
+                new CounterReactionKey(
+                        "post", entityId, "like", healthyUser),
+                true));
+
+        assertThat(redis.hasKey(
+                CounterKeys.reactionProjectionCompleteKey("post", entityId)))
+                .isFalse();
+        assertThat(readSds(entityId)).containsExactly(0L, 2L, 0L, 0L, 0L);
+        assertThat(counterService.getCounts("post", entityId, List.of("like")))
+                .containsEntry("like", 1L);
+    }
+
+    @Test
+    void kafkaEventInCommitToPublishWindowPreventsStaleCompleteness() throws Exception {
+        String entityId = "7315";
+        long userId = 49L;
+        assertThat(calibrationService.reconcileEntity("post", entityId))
+                .isEqualTo(new CounterCalibrationService.ReconciliationResult(0L, 0L, 1L));
+
+        CountDownLatch publishEntered = new CountDownLatch(1);
+        CountDownLatch releasePublish = new CountDownLatch(1);
+        AtomicReference<Thread> calibrationOwner = new AtomicReference<>();
+        doAnswer(invocation -> {
+            if (Thread.currentThread() == calibrationOwner.get()) {
+                publishEntered.countDown();
+                if (!releasePublish.await(15, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException(
+                            "Timed out waiting to release reconciliation publication");
+                }
+            }
+            return invocation.callRealMethod();
+        }).when(projectionRebuilder).publishComplete(
+                eq("post"), eq(entityId), anyString());
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<CounterCalibrationService.ReconciliationResult> reconciliation =
+                    executor.submit(() -> {
+                        Thread owner = Thread.currentThread();
+                        calibrationOwner.set(owner);
+                        try {
+                            return calibrationService.reconcileEntity("post", entityId);
+                        } finally {
+                            calibrationOwner.compareAndSet(owner, null);
+                        }
+                    });
+
+            assertThat(publishEntered.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(counterService.like("post", entityId, userId)).isTrue();
+            ReactionOutbox outbox = reactionOutboxes().getFirst();
+            send(outbox);
+            awaitKafkaConsumerCaughtUp("counter-reaction-outbox");
+
+            Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+                assertThat(redis.opsForValue().get(
+                        CounterKeys.factMaintenanceFenceKey("post", entityId)))
+                        .startsWith("@dirty:");
+                assertThat(redis.hasKey(
+                        CounterKeys.reactionProjectionCompleteKey("post", entityId)))
+                        .isFalse();
+            });
+            assertThat(inboxCount(outbox.id())).isZero();
+            assertThat(snapshotCount(entityId, "like")).isZero();
+
+            releasePublish.countDown();
+
+            assertThatThrownBy(() -> reconciliation.get(10, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .cause()
+                    .isInstanceOf(RuntimeException.class);
+            assertThat(redis.hasKey(
+                    CounterKeys.factMaintenanceFenceKey("post", entityId)))
+                    .isFalse();
+            assertThat(redis.hasKey(
+                    CounterKeys.reactionProjectionCompleteKey("post", entityId)))
+                    .isFalse();
+
+            Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+                assertThat(inboxCount(outbox.id())).isEqualTo(1L);
+                assertThat(snapshotCount(entityId, "like")).isEqualTo(1L);
+            });
+            assertThat(counterService.isLiked("post", entityId, userId)).isTrue();
+            assertThat(counterService.getCounts("post", entityId, List.of("like")))
+                    .containsEntry("like", 1L);
+
+            assertThat(calibrationService.reconcileEntity("post", entityId))
+                    .isEqualTo(
+                            new CounterCalibrationService.ReconciliationResult(1L, 0L, 3L));
+            assertThat(bitCount(entityId, userId)).isEqualTo(1L);
+            assertThat(readSds(entityId))
+                    .containsExactly(0L, 1L, 0L, 0L, 0L);
+        } finally {
+            releasePublish.countDown();
+            calibrationOwner.set(null);
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
     }
 
     private void assertReactionCommandWaitsForCalibration(

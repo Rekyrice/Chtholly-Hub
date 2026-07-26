@@ -20,27 +20,24 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
-/** Replaces one fenced Redis reaction projection with a bounded MySQL fact snapshot. */
+/** Replaces one fenced Redis reaction projection from bounded MySQL fact pages. */
 @Component
 public class CounterReactionProjectionRebuilder {
 
     private static final int MYSQL_PAGE_SIZE = 500;
     private static final int REDIS_BATCH_SIZE = 500;
-    private static final int REDIS_RENAME_PAIR_BATCH_SIZE = 250;
-    private static final long STAGE_TTL_SECONDS = 3_600L;
     private static final long UINT32_MAX = 0xffff_ffffL;
 
     private final StringRedisTemplate redis;
     private final CounterReactionMapper reactionMapper;
     private final DefaultRedisScript<Long> beginScript;
-    private final DefaultRedisScript<Long> releaseFenceScript;
-    private final DefaultRedisScript<Long> stageScript;
+    private final DefaultRedisScript<Long> abortScript;
+    private final DefaultRedisScript<Long> writeBitmapScript;
     private final DefaultRedisScript<Long> ownedDeleteScript;
-    private final DefaultRedisScript<Long> ownedRenameScript;
-    private final DefaultRedisScript<Long> ownedIndexAddScript;
-    private final DefaultRedisScript<Long> ownedIndexFinishScript;
+    private final DefaultRedisScript<Long> resetIndexScript;
+    private final DefaultRedisScript<Long> finishIndexScript;
+    private final DefaultRedisScript<Long> publishCompleteScript;
     private final DefaultRedisScript<List> finalizeScript;
 
     public CounterReactionProjectionRebuilder(
@@ -49,17 +46,17 @@ public class CounterReactionProjectionRebuilder {
         this.redis = Objects.requireNonNull(redis, "redis");
         this.reactionMapper = Objects.requireNonNull(reactionMapper, "reactionMapper");
         this.beginScript = longScript("lua/counter/begin-reaction-rebuild.lua");
-        this.releaseFenceScript = longScript(
-                "lua/counter/fact-maintenance-fence-release.lua");
-        this.stageScript = longScript("lua/counter/stage-reaction-bitmap.lua");
-        this.ownedDeleteScript = longScript(
-                "lua/counter/delete-reaction-rebuild-keys.lua");
-        this.ownedRenameScript = longScript(
-                "lua/counter/rename-reaction-rebuild-shards.lua");
-        this.ownedIndexAddScript = longScript(
-                "lua/counter/add-reaction-rebuild-index.lua");
-        this.ownedIndexFinishScript = longScript(
-                "lua/counter/finish-reaction-rebuild-index.lua");
+        this.abortScript = longScript("lua/counter/abort-reaction-rebuild.lua");
+        this.writeBitmapScript =
+                longScript("lua/counter/write-reaction-rebuild-bitmap.lua");
+        this.ownedDeleteScript =
+                longScript("lua/counter/delete-reaction-rebuild-keys.lua");
+        this.resetIndexScript =
+                longScript("lua/counter/reset-reaction-rebuild-index.lua");
+        this.finishIndexScript =
+                longScript("lua/counter/finish-reaction-rebuild-index.lua");
+        this.publishCompleteScript =
+                longScript("lua/counter/publish-reaction-rebuild.lua");
         this.finalizeScript = new DefaultRedisScript<>();
         this.finalizeScript.setResultType(List.class);
         this.finalizeScript.setLocation(
@@ -87,7 +84,28 @@ public class CounterReactionProjectionRebuilder {
     }
 
     /**
-     * Pages MySQL memberships, replaces all Bitmap shards, and atomically publishes completeness.
+     * Hides the current projection before managed MySQL facts can be changed.
+     *
+     * <p>The caller must hold the entity maintenance lock. A missing marker is already the
+     * required state and is therefore successful.</p>
+     */
+    public void invalidateComplete(String entityType, String entityId) {
+        CounterSchema.requirePersistableIdentity(entityType, entityId);
+        Boolean deleted = redis.delete(
+                CounterKeys.reactionProjectionCompleteKey(entityType, entityId));
+        if (deleted == null) {
+            throw new IllegalStateException(
+                    "Counter reaction projection completeness was not invalidated");
+        }
+    }
+
+    /**
+     * Streams MySQL memberships into fenced live shards and prepares their absolute counters.
+     *
+     * <p>Reads remain on MySQL fallback while the fence is active because {@link #begin} removed
+     * the complete marker. A failed attempt may leave partial shards, but the next attempt deletes
+     * them in bounded batches before writing another snapshot. Completeness remains hidden until
+     * {@link #publishComplete} runs after the enclosing MySQL transaction commits.</p>
      *
      * @param entityType entity type
      * @param entityId entity ID
@@ -101,206 +119,136 @@ public class CounterReactionProjectionRebuilder {
             String token,
             long nextEpoch) {
         requireArguments(entityType, entityId, token, nextEpoch);
-        Set<String> temporaryKeys = new LinkedHashSet<>();
-        RuntimeException primaryFailure = null;
-        try {
-            MetricStage like = stageMetric(entityType, entityId, "like", token, temporaryKeys);
-            MetricStage favorite = stageMetric(entityType, entityId, "fav", token, temporaryKeys);
-            replaceLiveProjection(entityType, entityId, token, List.of(like, favorite));
-            return finalizeProjection(
-                    entityType, entityId, token, nextEpoch, like.count(), favorite.count());
-        } catch (RuntimeException exception) {
-            primaryFailure = exception;
-            throw exception;
-        } finally {
-            try {
-                deleteInBatches(temporaryKeys);
-            } catch (RuntimeException cleanupFailure) {
-                if (primaryFailure != null) {
-                    primaryFailure.addSuppressed(cleanupFailure);
-                } else {
-                    throw cleanupFailure;
-                }
-            }
-        }
+        MetricProjection like = rebuildMetric(entityType, entityId, "like", token);
+        MetricProjection favorite = rebuildMetric(entityType, entityId, "fav", token);
+        return finalizeProjection(
+                entityType,
+                entityId,
+                token,
+                nextEpoch,
+                like,
+                favorite);
     }
 
     /**
-     * Invalidates a failed rebuild and releases its fence without deleting another owner's token.
+     * Atomically exposes a prepared projection after its MySQL snapshot transaction committed.
      *
      * @param entityType entity type
      * @param entityId entity ID
      * @param token rebuild ownership token
      */
-    public void abort(String entityType, String entityId, String token) {
-        CounterSchema.requirePersistableIdentity(entityType, entityId);
-        Objects.requireNonNull(token, "token");
-        RuntimeException failure = null;
-        try {
-            redis.delete(CounterKeys.reactionProjectionCompleteKey(entityType, entityId));
-        } catch (RuntimeException exception) {
-            failure = exception;
-        }
-        try {
-            Long released = redis.execute(
-                    releaseFenceScript,
-                    List.of(CounterKeys.factMaintenanceFenceKey(entityType, entityId)),
-                    token);
-            if (released == null || (released != 0L && released != 1L)) {
-                throw new IllegalStateException("Counter reaction rebuild fence release failed");
-            }
-        } catch (RuntimeException exception) {
-            if (failure == null) {
-                failure = exception;
-            } else {
-                failure.addSuppressed(exception);
-            }
-        }
-        if (failure != null) {
-            throw failure;
+    public void publishComplete(String entityType, String entityId, String token) {
+        requireArguments(entityType, entityId, token, 1L);
+        Long result = redis.execute(
+                publishCompleteScript,
+                List.of(
+                        CounterKeys.factMaintenanceFenceKey(entityType, entityId),
+                        CounterKeys.reactionProjectionCompleteKey(entityType, entityId)),
+                token,
+                CounterReactionProjectionStore.COMPLETE_VERSION);
+        if (!Long.valueOf(1L).equals(result)) {
+            throw new IllegalStateException(
+                    "Counter reaction rebuilt projection was not published");
         }
     }
 
-    private MetricStage stageMetric(
+    /**
+     * Invalidates a failed owned rebuild and releases only its own fence.
+     *
+     * <p>If another owner has replaced the token, neither its complete marker nor its fence is
+     * changed.</p>
+     */
+    public void abort(String entityType, String entityId, String token) {
+        CounterSchema.requirePersistableIdentity(entityType, entityId);
+        Objects.requireNonNull(token, "token");
+        Long result = redis.execute(
+                abortScript,
+                List.of(
+                        CounterKeys.factMaintenanceFenceKey(entityType, entityId),
+                        CounterKeys.reactionProjectionCompleteKey(entityType, entityId)),
+                token);
+        if (result == null || (result != 0L && result != 1L)) {
+            throw new IllegalStateException("Counter reaction rebuild abort failed");
+        }
+    }
+
+    private MetricProjection rebuildMetric(
             String entityType,
             String entityId,
             String metric,
-            String token,
-            Set<String> temporaryKeys) {
-        LinkedHashMap<Long, String> stageKeys = new LinkedHashMap<>();
+            String token) {
+        List<Long> page = reactionMapper.listUserIdsAfter(
+                entityType, entityId, metric, 0L, MYSQL_PAGE_SIZE);
+        validatePage(page, 0L);
+        deleteLiveBitmapKeys(entityType, entityId, metric, token);
+        resetIndex(entityType, entityId, metric, token);
+
         long afterUserId = 0L;
-        long count = 0L;
+        long relationCount = 0L;
+        long shardCount = 0L;
+        long lastChunk = -1L;
         while (true) {
-            List<Long> page = reactionMapper.listUserIdsAfter(
-                    entityType, entityId, metric, afterUserId, MYSQL_PAGE_SIZE);
-            validatePage(page, afterUserId);
             if (page.isEmpty()) {
                 break;
             }
-            count = Math.addExact(count, page.size());
-            if (count > UINT32_MAX) {
+            relationCount = Math.addExact(relationCount, page.size());
+            if (relationCount > UINT32_MAX) {
                 throw new IllegalStateException("Counter reaction count exceeds unsigned Int32");
             }
 
             LinkedHashMap<Long, List<Long>> offsetsByChunk = new LinkedHashMap<>();
             for (Long userId : page) {
                 long chunk = BitmapShard.chunkOf(userId);
+                if (chunk != lastChunk) {
+                    shardCount = Math.addExact(shardCount, 1L);
+                    lastChunk = chunk;
+                }
                 offsetsByChunk.computeIfAbsent(chunk, ignored -> new ArrayList<>())
                         .add(BitmapShard.bitOf(userId));
-                stageKeys.computeIfAbsent(
-                        chunk,
-                        ignored -> CounterKeys.reactionProjectionStageBitmapKey(
-                                token, metric, entityType, entityId, chunk));
             }
-            temporaryKeys.addAll(stageKeys.values());
-            stagePage(entityType, entityId, token, stageKeys, offsetsByChunk);
+            writePage(entityType, entityId, metric, token, offsetsByChunk);
             afterUserId = page.get(page.size() - 1);
             if (page.size() < MYSQL_PAGE_SIZE) {
                 break;
             }
+            page = reactionMapper.listUserIdsAfter(
+                    entityType, entityId, metric, afterUserId, MYSQL_PAGE_SIZE);
+            validatePage(page, afterUserId);
         }
-        return new MetricStage(metric, count, stageKeys);
+        finishIndex(
+                entityType,
+                entityId,
+                metric,
+                token,
+                shardCount);
+        return new MetricProjection(relationCount, shardCount);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private void stagePage(
+    private void deleteLiveBitmapKeys(
             String entityType,
             String entityId,
-            String token,
-            Map<Long, String> stageKeys,
-            Map<Long, List<Long>> offsetsByChunk) {
-        List<Object> results = redis.executePipelined(new SessionCallback<>() {
-            @Override
-            public Object execute(RedisOperations operations) {
-                for (Map.Entry<Long, List<Long>> entry : offsetsByChunk.entrySet()) {
-                    List<String> arguments = new ArrayList<>(entry.getValue().size() + 2);
-                    arguments.add(token);
-                    arguments.add(Long.toString(STAGE_TTL_SECONDS));
-                    entry.getValue().forEach(offset -> arguments.add(Long.toString(offset)));
-                    operations.execute(
-                            stageScript,
-                            List.of(
-                                    stageKeys.get(entry.getKey()),
-                                    CounterKeys.factMaintenanceFenceKey(entityType, entityId)),
-                            arguments.toArray(String[]::new));
-                }
-                return null;
-            }
-        });
-        if (results.size() != offsetsByChunk.size()) {
-            throw new IllegalStateException("Counter reaction staging returned an incomplete batch");
-        }
-        int index = 0;
-        for (List<Long> offsets : offsetsByChunk.values()) {
-            Object value = results.get(index++);
-            if (!(value instanceof Number number)
-                    || number.longValue() != offsets.size()) {
-                throw new IllegalStateException("Counter reaction staging returned an invalid result");
-            }
-        }
-    }
-
-    private void replaceLiveProjection(
-            String entityType,
-            String entityId,
-            String token,
-            List<MetricStage> stages) {
-        for (MetricStage stage : stages) {
-            LinkedHashSet<String> deleteKeys = new LinkedHashSet<>(
-                    scanLiveBitmapKeys(stage.metric(), entityType, entityId));
-            deleteKeys.add(CounterKeys.bitmapShardIndexKey(
-                    stage.metric(), entityType, entityId));
-            deleteKeys.add(CounterKeys.bitmapShardIndexCountKey(
-                    stage.metric(), entityType, entityId));
-            deleteOwnedInBatches(entityType, entityId, token, deleteKeys);
-        }
-
-        List<RenamePair> renames = stages.stream()
-                .flatMap(stage -> stage.stageKeys().entrySet().stream()
-                        .map(entry -> new RenamePair(
-                                entry.getValue(),
-                                CounterKeys.bitmapKey(
-                                        stage.metric(),
-                                        entityType,
-                                        entityId,
-                                        entry.getKey()))))
-                .toList();
-        renameOwnedInBatches(entityType, entityId, token, renames);
-
-        for (MetricStage stage : stages) {
-            String indexKey = CounterKeys.bitmapShardIndexKey(
-                    stage.metric(), entityType, entityId);
-            List<String> liveKeys = stage.stageKeys().keySet().stream()
-                    .sorted()
-                    .map(chunk -> CounterKeys.bitmapKey(
-                            stage.metric(), entityType, entityId, chunk))
-                    .toList();
-            List<String> members = new ArrayList<>(liveKeys.size() + 1);
-            members.add(CounterReactionProjectionStore.SHARD_INDEX_SENTINEL);
-            members.addAll(liveKeys);
-            addIndexMembersOwned(
-                    entityType, entityId, token, indexKey, members);
-            finishIndexOwned(
-                    entityType,
-                    entityId,
-                    token,
-                    indexKey,
-                    CounterKeys.bitmapShardIndexCountKey(
-                            stage.metric(), entityType, entityId),
-                    liveKeys.size());
-        }
-    }
-
-    private Set<String> scanLiveBitmapKeys(
             String metric,
-            String entityType,
-            String entityId) {
+            String token) {
         String prefix = bitmapPrefix(metric, entityType, entityId);
         ScanOptions options = ScanOptions.scanOptions()
                 .match(prefix + "*")
                 .count(REDIS_BATCH_SIZE)
                 .build();
-        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        while (scanAndDeleteLiveBitmapKeys(
+                entityType, entityId, metric, token, prefix, options)) {
+            // Restarting SCAN after each destructive pass closes cursor-resize gaps.
+        }
+    }
+
+    private boolean scanAndDeleteLiveBitmapKeys(
+            String entityType,
+            String entityId,
+            String metric,
+            String token,
+            String prefix,
+            ScanOptions options) {
+        LinkedHashSet<String> batch = new LinkedHashSet<>(REDIS_BATCH_SIZE);
+        boolean found = false;
         try (Cursor<String> cursor = redis.scan(options)) {
             if (cursor == null) {
                 throw new IllegalStateException("Counter reaction Bitmap scan returned no cursor");
@@ -308,34 +256,102 @@ public class CounterReactionProjectionRebuilder {
             while (cursor.hasNext()) {
                 String key = cursor.next();
                 parseAndValidateChunk(key, prefix, metric, entityType, entityId);
-                keys.add(key);
+                found = true;
+                batch.add(key);
+                if (batch.size() == REDIS_BATCH_SIZE) {
+                    deleteOwnedInBatches(entityType, entityId, token, batch);
+                    batch.clear();
+                }
             }
         }
-        return keys;
+        if (!batch.isEmpty()) {
+            deleteOwnedInBatches(entityType, entityId, token, batch);
+        }
+        return found;
     }
 
-    private void renameOwnedInBatches(
+    private void resetIndex(
             String entityType,
             String entityId,
-            String token,
-            List<RenamePair> renames) {
-        if (renames.isEmpty()) {
-            return;
+            String metric,
+            String token) {
+        Long result = redis.execute(
+                resetIndexScript,
+                List.of(
+                        CounterKeys.factMaintenanceFenceKey(entityType, entityId),
+                        CounterKeys.bitmapShardIndexKey(metric, entityType, entityId),
+                        CounterKeys.bitmapShardIndexCountKey(metric, entityType, entityId)),
+                token,
+                CounterReactionProjectionStore.SHARD_INDEX_SENTINEL);
+        if (!Long.valueOf(1L).equals(result)) {
+            throw new IllegalStateException("Counter reaction shard index reset failed");
         }
-        for (int from = 0; from < renames.size(); from += REDIS_RENAME_PAIR_BATCH_SIZE) {
-            List<RenamePair> batch = renames.subList(
-                    from, Math.min(from + REDIS_RENAME_PAIR_BATCH_SIZE, renames.size()));
-            List<String> keys = new ArrayList<>(batch.size() * 2 + 1);
-            keys.add(CounterKeys.factMaintenanceFenceKey(entityType, entityId));
-            for (RenamePair pair : batch) {
-                keys.add(pair.source());
-                keys.add(pair.target());
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private void writePage(
+            String entityType,
+            String entityId,
+            String metric,
+            String token,
+            Map<Long, List<Long>> offsetsByChunk) {
+        List<Object> results = redis.executePipelined(new SessionCallback<>() {
+            @Override
+            public Object execute(RedisOperations operations) {
+                for (Map.Entry<Long, List<Long>> entry : offsetsByChunk.entrySet()) {
+                    List<String> arguments = new ArrayList<>(entry.getValue().size() + 1);
+                    arguments.add(token);
+                    entry.getValue().forEach(offset -> arguments.add(Long.toString(offset)));
+                    operations.execute(
+                            writeBitmapScript,
+                            List.of(
+                                    CounterKeys.factMaintenanceFenceKey(entityType, entityId),
+                                    CounterKeys.bitmapKey(
+                                            metric,
+                                            entityType,
+                                            entityId,
+                                            entry.getKey()),
+                                    CounterKeys.bitmapShardIndexKey(
+                                            metric,
+                                            entityType,
+                                            entityId)),
+                            arguments.toArray(String[]::new));
+                }
+                return null;
             }
-            Long renamed = redis.execute(ownedRenameScript, keys, token);
-            if (renamed == null || renamed != batch.size()) {
+        });
+        if (results.size() != offsetsByChunk.size()) {
+            throw new IllegalStateException("Counter reaction rebuild write returned an incomplete batch");
+        }
+        int index = 0;
+        for (List<Long> offsets : offsetsByChunk.values()) {
+            Object value = results.get(index++);
+            if (!(value instanceof Number number)
+                    || number.longValue() != offsets.size()) {
                 throw new IllegalStateException(
-                        "Counter reaction shard rename returned an invalid result");
+                        "Counter reaction rebuild write returned an invalid result");
             }
+        }
+    }
+
+    private void finishIndex(
+            String entityType,
+            String entityId,
+            String metric,
+            String token,
+            long expectedShardCount) {
+        Long result = redis.execute(
+                finishIndexScript,
+                List.of(
+                        CounterKeys.factMaintenanceFenceKey(entityType, entityId),
+                        CounterKeys.bitmapShardIndexKey(metric, entityType, entityId),
+                        CounterKeys.bitmapShardIndexCountKey(metric, entityType, entityId)),
+                token,
+                Long.toString(expectedShardCount),
+                CounterReactionProjectionStore.SHARD_INDEX_SENTINEL);
+        if (result == null || result != expectedShardCount) {
+            throw new IllegalStateException(
+                    "Counter reaction shard index finalization failed");
         }
     }
 
@@ -344,8 +360,8 @@ public class CounterReactionProjectionRebuilder {
             String entityId,
             String token,
             long nextEpoch,
-            long likeCount,
-            long favCount) {
+            MetricProjection like,
+            MetricProjection favorite) {
         List<?> raw = redis.execute(
                 finalizeScript,
                 List.of(
@@ -364,39 +380,23 @@ public class CounterReactionProjectionRebuilder {
                 Integer.toString(CounterSchema.FIELD_SIZE),
                 Integer.toString(CounterSchema.IDX_LIKE),
                 Integer.toString(CounterSchema.IDX_FAV),
-                Long.toString(likeCount),
-                Long.toString(favCount),
+                Long.toString(like.relationCount()),
+                Long.toString(favorite.relationCount()),
                 Long.toString(nextEpoch),
-                CounterReactionProjectionStore.COMPLETE_VERSION,
                 CounterReactionProjectionStore.SHARD_INDEX_SENTINEL,
-                bitmapPrefix("like", entityType, entityId),
-                bitmapPrefix("fav", entityType, entityId));
+                Long.toString(like.shardCount()),
+                Long.toString(favorite.shardCount()));
         if (raw == null
                 || raw.size() != 3
                 || !(raw.get(0) instanceof Number actualLike)
                 || !(raw.get(1) instanceof Number actualFavorite)
                 || !(raw.get(2) instanceof Number actualEpoch)
-                || actualLike.longValue() != likeCount
-                || actualFavorite.longValue() != favCount
+                || actualLike.longValue() != like.relationCount()
+                || actualFavorite.longValue() != favorite.relationCount()
                 || actualEpoch.longValue() != nextEpoch) {
             throw new IllegalStateException("Counter reaction finalization returned an invalid result");
         }
-        return new RebuildResult(likeCount, favCount, nextEpoch);
-    }
-
-    private void deleteInBatches(Collection<String> keys) {
-        if (keys == null || keys.isEmpty()) {
-            return;
-        }
-        List<String> ordered = keys.stream().filter(Objects::nonNull).distinct().toList();
-        for (int from = 0; from < ordered.size(); from += REDIS_BATCH_SIZE) {
-            Collection<String> batch = ordered.subList(
-                    from, Math.min(from + REDIS_BATCH_SIZE, ordered.size()));
-            Long deleted = redis.delete(batch);
-            if (deleted == null || deleted < 0L) {
-                throw new IllegalStateException("Counter reaction Redis cleanup failed");
-            }
-        }
+        return new RebuildResult(like.relationCount(), favorite.relationCount(), nextEpoch);
     }
 
     private void deleteOwnedInBatches(
@@ -415,53 +415,6 @@ public class CounterReactionProjectionRebuilder {
                 throw new IllegalStateException(
                         "Counter reaction owned Redis cleanup failed");
             }
-        }
-    }
-
-    private void addIndexMembersOwned(
-            String entityType,
-            String entityId,
-            String token,
-            String indexKey,
-            List<String> members) {
-        for (int from = 0; from < members.size(); from += REDIS_BATCH_SIZE) {
-            List<String> batch = members.subList(
-                    from, Math.min(from + REDIS_BATCH_SIZE, members.size()));
-            List<String> arguments = new ArrayList<>(batch.size() + 1);
-            arguments.add(token);
-            arguments.addAll(batch);
-            Long added = redis.execute(
-                    ownedIndexAddScript,
-                    List.of(
-                            CounterKeys.factMaintenanceFenceKey(entityType, entityId),
-                            indexKey),
-                    arguments.toArray(String[]::new));
-            if (added == null || added != batch.size()) {
-                throw new IllegalStateException(
-                        "Counter reaction shard index rebuild failed");
-            }
-        }
-    }
-
-    private void finishIndexOwned(
-            String entityType,
-            String entityId,
-            String token,
-            String indexKey,
-            String indexCountKey,
-            int expectedCount) {
-        Long result = redis.execute(
-                ownedIndexFinishScript,
-                List.of(
-                        CounterKeys.factMaintenanceFenceKey(entityType, entityId),
-                        indexKey,
-                        indexCountKey),
-                token,
-                Integer.toString(expectedCount),
-                CounterReactionProjectionStore.SHARD_INDEX_SENTINEL);
-        if (result == null || result != expectedCount) {
-            throw new IllegalStateException(
-                    "Counter reaction shard index finalization failed");
         }
     }
 
@@ -532,10 +485,5 @@ public class CounterReactionProjectionRebuilder {
     /** Absolute result published by one full entity rebuild. */
     public record RebuildResult(long likeCount, long favCount, long factEpoch) {}
 
-    private record MetricStage(
-            String metric,
-            long count,
-            LinkedHashMap<Long, String> stageKeys) {}
-
-    private record RenamePair(String source, String target) {}
+    private record MetricProjection(long relationCount, long shardCount) {}
 }

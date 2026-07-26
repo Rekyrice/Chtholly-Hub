@@ -79,16 +79,24 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
             return false;
         }
         String cntKey = CounterKeys.sdsKey(evt.getEntityType(), evt.getEntityId());
+        String completeKey = CounterKeys.reactionProjectionCompleteKey(
+                evt.getEntityType(), evt.getEntityId());
+        String fenceKey = CounterKeys.factMaintenanceFenceKey(
+                evt.getEntityType(), evt.getEntityId());
         if (evt.getFactEpoch() < 0L) {
             throw new IllegalArgumentException("Counter event fact epoch must not be negative");
         }
         List<String> keys;
         DefaultRedisScript<Long> script;
         if (evt.getEventId() == null || evt.getEventId().isBlank()) {
-            keys = List.of(cntKey);
+            keys = List.of(cntKey, completeKey, fenceKey);
             script = incrScript;
         } else {
-            keys = List.of(cntKey, CounterKeys.eventDedupeKey(evt.getEventId()));
+            keys = List.of(
+                    cntKey,
+                    CounterKeys.eventDedupeKey(evt.getEventId()),
+                    completeKey,
+                    fenceKey);
             script = dedupeIncrScript;
         }
         Long applied = redis.execute(script, keys,
@@ -121,10 +129,19 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
     private static final String INCR_FIELD_LUA = """
 
             local cntKey = KEYS[1]
+            local completeKey = KEYS[2]
+            local fenceKey = KEYS[3]
             local schemaLen = tonumber(ARGV[1])
             local fieldSize = tonumber(ARGV[2]) -- 固定为4
             local idx = tonumber(ARGV[3])
             local delta = tonumber(ARGV[4])
+            local uint32Max = 4294967295
+            if schemaLen ~= 5 or fieldSize ~= 4
+                  or not idx or idx < 0 or idx >= schemaLen
+                  or idx ~= math.floor(idx)
+                  or not delta or delta ~= math.floor(delta) then
+              return redis.error_reply('counter rebuild arguments are invalid')
+            end
 
             local function read32be(s, off)
               local b = {string.byte(s, off+1, off+4)}
@@ -139,11 +156,40 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
               return string.char(unpack(t))
             end
 
-            local cnt = redis.call('GET', cntKey)
-            if not cnt then cnt = string.rep(string.char(0), schemaLen * fieldSize) end
+            local typeReply = redis.call('TYPE', cntKey)
+            local cntType = type(typeReply) == 'table' and typeReply['ok'] or typeReply
+            local cnt = nil
+            if cntType == 'string' then cnt = redis.call('GET', cntKey) end
+            if not cnt or string.len(cnt) ~= schemaLen * fieldSize then
+              local fenceTypeReply = redis.call('TYPE', fenceKey)
+              local fenceType =
+                    type(fenceTypeReply) == 'table' and fenceTypeReply['ok'] or fenceTypeReply
+              if fenceType ~= 'none' and fenceType ~= 'string' then
+                redis.call('DEL', completeKey)
+                return redis.error_reply('counter reaction maintenance fence has an invalid Redis type')
+              end
+              if fenceType == 'string' then
+                local fenceValue = redis.call('GET', fenceKey)
+                if string.sub(fenceValue, 1, 7) ~= '@dirty:' then
+                  if string.sub(fenceValue, 1, 10) == '@prepared:' then
+                    redis.call('SET', fenceKey, '@dirty:' .. string.sub(fenceValue, 11))
+                  else
+                    redis.call('SET', fenceKey, '@dirty:' .. fenceValue)
+                  end
+                end
+              end
+              redis.call('DEL', completeKey)
+              if cntType ~= 'none' and cntType ~= 'string' then
+                redis.call('DEL', cntKey)
+              end
+              cnt = string.rep(string.char(0), schemaLen * fieldSize)
+            end
             local off = idx * fieldSize
             local v = read32be(cnt, off) + delta
             if v < 0 then v = 0 end
+            if v > uint32Max then
+              return redis.error_reply('counter rebuild would overflow unsigned Int32')
+            end
             local seg = write32be(v)
             cnt = string.sub(cnt, 1, off) .. seg .. string.sub(cnt, off+fieldSize+1)
             redis.call('SET', cntKey, cnt)
@@ -153,11 +199,20 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
     private static final String DEDUPE_INCR_FIELD_LUA = """
             local cntKey = KEYS[1]
             local dedupeKey = KEYS[2]
+            local completeKey = KEYS[3]
+            local fenceKey = KEYS[4]
             local schemaLen = tonumber(ARGV[1])
             local fieldSize = tonumber(ARGV[2])
             local idx = tonumber(ARGV[3])
             local delta = tonumber(ARGV[4])
-            if redis.call('SETNX', dedupeKey, '1') == 0 then return 0 end
+            local uint32Max = 4294967295
+            if schemaLen ~= 5 or fieldSize ~= 4
+                  or not idx or idx < 0 or idx >= schemaLen
+                  or idx ~= math.floor(idx)
+                  or not delta or delta ~= math.floor(delta) then
+              return redis.error_reply('counter rebuild arguments are invalid')
+            end
+            if redis.call('EXISTS', dedupeKey) ~= 0 then return 0 end
 
             local function read32be(s, off)
               local b = {string.byte(s, off+1, off+4)}
@@ -172,14 +227,43 @@ public class CounterRebuildConsumer extends AbstractKafkaConsumer {
               return string.char(unpack(t))
             end
 
-            local cnt = redis.call('GET', cntKey)
-            if not cnt then cnt = string.rep(string.char(0), schemaLen * fieldSize) end
+            local typeReply = redis.call('TYPE', cntKey)
+            local cntType = type(typeReply) == 'table' and typeReply['ok'] or typeReply
+            local cnt = nil
+            if cntType == 'string' then cnt = redis.call('GET', cntKey) end
+            if not cnt or string.len(cnt) ~= schemaLen * fieldSize then
+              local fenceTypeReply = redis.call('TYPE', fenceKey)
+              local fenceType =
+                    type(fenceTypeReply) == 'table' and fenceTypeReply['ok'] or fenceTypeReply
+              if fenceType ~= 'none' and fenceType ~= 'string' then
+                redis.call('DEL', completeKey)
+                return redis.error_reply('counter reaction maintenance fence has an invalid Redis type')
+              end
+              if fenceType == 'string' then
+                local fenceValue = redis.call('GET', fenceKey)
+                if string.sub(fenceValue, 1, 7) ~= '@dirty:' then
+                  if string.sub(fenceValue, 1, 10) == '@prepared:' then
+                    redis.call('SET', fenceKey, '@dirty:' .. string.sub(fenceValue, 11))
+                  else
+                    redis.call('SET', fenceKey, '@dirty:' .. fenceValue)
+                  end
+                end
+              end
+              redis.call('DEL', completeKey)
+              if cntType ~= 'none' and cntType ~= 'string' then
+                redis.call('DEL', cntKey)
+              end
+              cnt = string.rep(string.char(0), schemaLen * fieldSize)
+            end
             local off = idx * fieldSize
             local v = read32be(cnt, off) + delta
             if v < 0 then v = 0 end
+            if v > uint32Max then
+              return redis.error_reply('counter rebuild would overflow unsigned Int32')
+            end
             local seg = write32be(v)
             cnt = string.sub(cnt, 1, off) .. seg .. string.sub(cnt, off+fieldSize+1)
-            redis.call('SET', cntKey, cnt)
+            redis.call('MSET', cntKey, cnt, dedupeKey, '1')
             return 1
             """;
 }

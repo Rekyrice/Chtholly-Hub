@@ -6,6 +6,7 @@ import com.chtholly.counter.schema.CounterKeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -14,6 +15,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -30,7 +32,9 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -80,8 +84,41 @@ class CounterCalibrationServiceTest {
         order.verify(projectionRebuilder).rebuild(eq("post"), eq("7"), anyString(), eq(5L));
         order.verify(persistenceMapper).replaceReactionSnapshots("post", "7", 2L, 3L, 5L);
         order.verify(transactionManager).commit(transactionStatus);
+        order.verify(projectionRebuilder)
+                .publishComplete(eq("post"), eq("7"), anyString());
         verify(projectionRebuilder, never()).abort(anyString(), anyString(), anyString());
         verify(lock).unlock();
+    }
+
+    @Test
+    void reconciliationUsesAnIndependentTransactionDefinition() throws Exception {
+        prepareLockAndTransaction("post", "7");
+        when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(4L, 4L));
+        when(projectionRebuilder.rebuild(eq("post"), eq("7"), anyString(), eq(5L)))
+                .thenReturn(new CounterReactionProjectionRebuilder.RebuildResult(2L, 3L, 5L));
+
+        service.reconcileEntity("post", "7");
+
+        ArgumentCaptor<TransactionDefinition> definition =
+                ArgumentCaptor.forClass(TransactionDefinition.class);
+        verify(transactionManager).getTransaction(definition.capture());
+        assertThat(definition.getValue().getPropagationBehavior())
+                .isEqualTo(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
+    @Test
+    void callerManagedTransactionIsRejectedBeforeTakingTheMaintenanceLock() {
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            assertThatThrownBy(() -> service.reconcileEntity("post", "7"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("active transaction");
+        } finally {
+            TransactionSynchronizationManager.clear();
+        }
+
+        verify(redisson, never()).getLock(anyString());
+        verifyNoInteractions(persistenceMapper, projectionRebuilder, transactionManager);
     }
 
     @Test
@@ -118,6 +155,8 @@ class CounterCalibrationServiceTest {
                 .hasMessage("commit failed");
 
         verify(projectionRebuilder).abort(eq("post"), eq("7"), anyString());
+        verify(projectionRebuilder, never())
+                .publishComplete(anyString(), anyString(), anyString());
         verify(lock).unlock();
     }
 
@@ -136,11 +175,14 @@ class CounterCalibrationServiceTest {
     }
 
     @Test
-    void scheduledRunUsesOnlyBoundedMysqlSnapshotCandidates() {
-        when(persistenceMapper.listOldestReactionSnapshotIdentities(50))
-                .thenReturn(List.of(
-                        new CounterEntityIdentity("post", "first"),
-                        new CounterEntityIdentity("post", "second")));
+    void scheduledRunUsesOnlyOneBoundedMysqlSnapshotPage() {
+        CounterEntityIdentity first = new CounterEntityIdentity("post", "first");
+        CounterEntityIdentity second = new CounterEntityIdentity("post", "second");
+        when(persistenceMapper.findReactionSnapshotIdentityHighWatermark())
+                .thenReturn(second);
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                null, null, "post", "second", 2))
+                .thenReturn(List.of(first, second));
         CounterCalibrationService spy = spy(service);
         doReturn(new CounterCalibrationService.ReconciliationResult(1L, 0L, 1L))
                 .when(spy).reconcileEntity("post", "first");
@@ -151,7 +193,72 @@ class CounterCalibrationServiceTest {
 
         verify(spy).reconcileEntity("post", "first");
         verify(spy).reconcileEntity("post", "second");
-        verify(persistenceMapper).listOldestReactionSnapshotIdentities(50);
+        verify(persistenceMapper).listReactionSnapshotIdentitiesPage(
+                null, null, "post", "second", 2);
+    }
+
+    @Test
+    void failedCandidatesCannotStarveLaterPagesInTheStableMysqlSweep() {
+        CounterEntityIdentity first = new CounterEntityIdentity("post", "first");
+        CounterEntityIdentity second = new CounterEntityIdentity("post", "second");
+        CounterEntityIdentity third = new CounterEntityIdentity("post", "third");
+        when(persistenceMapper.findReactionSnapshotIdentityHighWatermark())
+                .thenReturn(third);
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                null, null, "post", "third", 2))
+                .thenReturn(List.of(first, second));
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                "post", "second", "post", "third", 2))
+                .thenReturn(List.of(third));
+        CounterCalibrationService spy = spy(service);
+        doThrow(new IllegalStateException("first failed"))
+                .when(spy).reconcileEntity("post", "first");
+        doThrow(new IllegalStateException("second failed"))
+                .when(spy).reconcileEntity("post", "second");
+        doReturn(new CounterCalibrationService.ReconciliationResult(1L, 1L, 1L))
+                .when(spy).reconcileEntity("post", "third");
+
+        spy.reconcileScheduled();
+        spy.reconcileScheduled();
+
+        verify(spy).reconcileEntity("post", "first");
+        verify(spy).reconcileEntity("post", "second");
+        verify(spy).reconcileEntity("post", "third");
+        verify(persistenceMapper).listReactionSnapshotIdentitiesPage(
+                "post", "second", "post", "third", 2);
+    }
+
+    @Test
+    void continuousIdentityGrowthCannotPreventFailedLowIdentitiesFromBeingRevisited() {
+        CounterEntityIdentity first = new CounterEntityIdentity("post", "a");
+        CounterEntityIdentity second = new CounterEntityIdentity("post", "b");
+        CounterEntityIdentity third = new CounterEntityIdentity("post", "c");
+        CounterEntityIdentity fifth = new CounterEntityIdentity("post", "e");
+        when(persistenceMapper.findReactionSnapshotIdentityHighWatermark())
+                .thenReturn(third, fifth);
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                null, null, "post", "c", 2))
+                .thenReturn(List.of(first, second));
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                "post", "b", "post", "c", 2))
+                .thenReturn(List.of(third));
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                null, null, "post", "e", 2))
+                .thenReturn(List.of(first, second));
+        CounterCalibrationService spy = spy(service);
+        doReturn(new CounterCalibrationService.ReconciliationResult(1L, 1L, 1L))
+                .when(spy).reconcileEntity(anyString(), anyString());
+        doThrow(new IllegalStateException("first failed"))
+                .when(spy).reconcileEntity("post", "a");
+
+        spy.reconcileScheduled();
+        spy.reconcileScheduled();
+        spy.reconcileScheduled();
+
+        verify(spy, times(2)).reconcileEntity("post", "a");
+        verify(spy).reconcileEntity("post", "c");
+        verify(persistenceMapper, times(2))
+                .findReactionSnapshotIdentityHighWatermark();
     }
 
     @Test

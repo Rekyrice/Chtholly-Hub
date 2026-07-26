@@ -1,18 +1,18 @@
 package com.chtholly.counter.service.impl;
 
-import com.chtholly.common.exception.BusinessException;
-import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.counter.mapper.CounterReactionKey;
 import com.chtholly.counter.mapper.CounterReactionMapper;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.counter.service.CounterService;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.http.HttpStatus;
+import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -21,32 +21,35 @@ import java.util.*;
 /**
  * Counter command facade and Redis-backed online read service.
  */
-@Slf4j
 @Service
 public class CounterServiceImpl implements CounterService {
 
     private static final int MYSQL_MEMBERSHIP_BATCH_SIZE = 500;
+    private static final int MYSQL_COUNT_BATCH_SIZE = 500;
+    private static final long UINT32_MAX = 0xffff_ffffL;
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> effectiveCountScript;
+    private final DefaultRedisScript<List> reactionCountsScript;
     private final CounterReactionCommandService reactionCommandService;
     private final CounterReactionMapper reactionMapper;
     private final CounterReactionProjectionStore reactionProjectionStore;
-    private final CounterCalibrationService calibrationService;
 
     public CounterServiceImpl(StringRedisTemplate redis,
                               CounterReactionCommandService reactionCommandService,
                               CounterReactionMapper reactionMapper,
-                              CounterReactionProjectionStore reactionProjectionStore,
-                              CounterCalibrationService calibrationService) {
+                              CounterReactionProjectionStore reactionProjectionStore) {
         this.redis = redis;
         this.reactionCommandService = reactionCommandService;
         this.reactionMapper = reactionMapper;
         this.reactionProjectionStore = reactionProjectionStore;
-        this.calibrationService = calibrationService;
         this.effectiveCountScript = new DefaultRedisScript<>();
         this.effectiveCountScript.setResultType(Long.class);
         this.effectiveCountScript.setScriptText(EFFECTIVE_COUNT_LUA);
+        this.reactionCountsScript = new DefaultRedisScript<>();
+        this.reactionCountsScript.setResultType(List.class);
+        this.reactionCountsScript.setLocation(
+                new ClassPathResource("lua/counter/read-reaction-counts.lua"));
     }
 
     /**
@@ -78,47 +81,41 @@ public class CounterServiceImpl implements CounterService {
     }
 
     /**
-     * Returns aggregated counts from SDS and rebuilds missing reaction fields from MySQL facts.
+     * Returns aggregated counts from SDS and falls back to one grouped MySQL fact query when the
+     * reaction projection is incomplete.
      *
      * @param metrics Subset of metrics to read (e.g. "like", "fav").
      */
     @Override
     public Map<String, Long> getCounts(String entityType, String entityId, List<String> metrics) {
         CounterSchema.requirePersistableIdentity(entityType, entityId);
-        String sdsKey = CounterKeys.sdsKey(entityType, entityId);
-        int expectedLen = CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE;
-        byte[] raw = getRaw(sdsKey);
-        Map<String, Long> result = new LinkedHashMap<>();
+        boolean needsReaction = metrics.stream()
+                .anyMatch(CounterServiceImpl::isReactionMetric);
+        if (!needsReaction) {
+            return getNonReactionCounts(entityType, entityId, metrics);
+        }
 
-        if (raw == null || raw.length != expectedLen) {
+        Map<String, Long> result = new LinkedHashMap<>();
+        CountProjectionRead projection = readReactionCounts(entityType, entityId);
+        if (!projection.hasCounts()) {
             if (metrics.contains("view")) {
                 result.put("view", getEffectiveCount(entityType, entityId, "view"));
             }
-            boolean needsReaction = metrics.stream()
-                    .anyMatch(metric -> "like".equals(metric) || "fav".equals(metric));
-            if (!needsReaction) {
-                return result;
-            }
-            try {
-                calibrationService.reconcileEntity(entityType, entityId);
-            } catch (RuntimeException exception) {
-                log.warn("Counter read reconciliation failed entityType={} entityId={}: {}",
-                        entityType, entityId, exception.getMessage());
-            }
-            raw = getRaw(sdsKey);
-            if (raw == null || raw.length != expectedLen) {
-                throw new BusinessException(
-                        ErrorCode.INTERNAL_ERROR,
-                        "互动计数暂时不可用，请稍后重试",
-                        HttpStatus.SERVICE_UNAVAILABLE.value());
-            }
         }
+        Map<String, Long> reactionFallback = projection.complete()
+                ? Map.of()
+                : readMysqlReactionCountsBatch(entityType, List.of(entityId))
+                        .getOrDefault(entityId, Map.of());
 
         for (String metric : metrics) {
             if (result.containsKey(metric)) { continue; }
+            if (isReactionMetric(metric) && !projection.complete()) {
+                result.put(metric, reactionFallback.getOrDefault(metric, 0L));
+                continue;
+            }
             Integer index = CounterSchema.NAME_TO_IDX.get(metric);
-            if (index != null) {
-                result.put(metric, readInt32BE(raw, index * CounterSchema.FIELD_SIZE));
+            if (index != null && projection.hasCounts()) {
+                result.put(metric, projection.counts()[index]);
             }
         }
         return result;
@@ -148,51 +145,72 @@ public class CounterServiceImpl implements CounterService {
 
     /**
      * 批量获取实体计数（管道批量 GET 降低 RTT）。
-     * reaction SDS 缺失或结构异常时从 MySQL 关系事实校准；恢复失败则返回 503。
+     * reaction SDS 或完整标记不可用时按实体从 MySQL 关系事实聚合。
      * @param entityType 实体类型
      * @param entityIds 实体ID列表
      * @param metrics 指标名列表
      * @return 每个实体的指标计数映射
      */
     @Override
-    public Map<String, Map<String, Long>> getCountsBatch(String entityType, List<String> entityIds, List<String> metrics) {
+    public Map<String, Map<String, Long>> getCountsBatch(
+            String entityType,
+            List<String> entityIds,
+            List<String> metrics) {
         Map<String, Map<String, Long>> out = new LinkedHashMap<>();
-        if (entityIds == null || entityIds.isEmpty() || metrics == null || metrics.isEmpty()) {
+        if (entityIds == null || entityIds.isEmpty()
+                || metrics == null || metrics.isEmpty()) {
             return out;
         }
 
-        List<String> keys = new ArrayList<>(entityIds.size());
-        for (String eid : entityIds) {
-            keys.add(CounterKeys.sdsKey(entityType, eid));
+        List<String> distinctEntityIds = entityIds.stream().distinct().toList();
+        for (String entityId : distinctEntityIds) {
+            CounterSchema.requirePersistableIdentity(entityType, entityId);
+        }
+        boolean needsReaction = metrics.stream()
+                .anyMatch(CounterServiceImpl::isReactionMetric);
+        List<CountProjectionRead> projections = needsReaction
+                ? readReactionCountsBatch(entityType, distinctEntityIds)
+                : readRawCountsBatch(entityType, distinctEntityIds);
+        List<String> reactionFallbackIds = new ArrayList<>();
+        List<String> missingViewIds = new ArrayList<>();
+        for (int index = 0; index < distinctEntityIds.size(); index++) {
+            String entityId = distinctEntityIds.get(index);
+            CountProjectionRead projection = projections.get(index);
+            Map<String, Long> counts = new LinkedHashMap<>();
+            if (projection.hasCounts()) {
+                for (String metric : metrics) {
+                    if (isReactionMetric(metric) && !projection.complete()) {
+                        continue;
+                    }
+                    Integer metricIndex = CounterSchema.NAME_TO_IDX.get(metric);
+                    if (metricIndex != null) {
+                        counts.put(metric, projection.counts()[metricIndex]);
+                    }
+                }
+            } else if (metrics.contains("view")) {
+                missingViewIds.add(entityId);
+            }
+            if (needsReaction && !projection.complete()) {
+                reactionFallbackIds.add(entityId);
+            }
+            out.put(entityId, counts);
         }
 
-        // 管道批量 GET：将多个 SDS 读取合并到一次往返
-        List<Object> raws = redis.executePipelined((RedisCallback<Object>) connection -> {
-            for (String k : keys) {
-                connection.stringCommands().get(k.getBytes(StandardCharsets.UTF_8));
-            }
-            return null;
-        });
+        readEffectiveViewCountsBatch(entityType, missingViewIds)
+                .forEach((entityId, count) ->
+                        out.get(entityId).put("view", count));
 
-        int expectedLen = CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE;
-        for (int i = 0; i < entityIds.size(); i++) {
-            String eid = entityIds.get(i);
-            Object rawObj = i < raws.size() ? raws.get(i) : null;
-            byte[] raw = (rawObj instanceof byte[]) ? (byte[]) rawObj : null;
-
-            Map<String, Long> m = new LinkedHashMap<>();
-            if (raw != null && raw.length == expectedLen) {
-                for (String name : metrics) {
-                    Integer idx = CounterSchema.NAME_TO_IDX.get(name);
-                    if (idx == null) continue;
-                    int off = idx * CounterSchema.FIELD_SIZE;
-                    long val = readInt32BE(raw, off);
-                    m.put(name, val);
+        Map<String, Map<String, Long>> mysqlCounts =
+                readMysqlReactionCountsBatch(entityType, reactionFallbackIds);
+        for (String entityId : reactionFallbackIds) {
+            Map<String, Long> counts = out.get(entityId);
+            Map<String, Long> fallback =
+                    mysqlCounts.getOrDefault(entityId, Map.of());
+            for (String metric : metrics) {
+                if (isReactionMetric(metric)) {
+                    counts.put(metric, fallback.getOrDefault(metric, 0L));
                 }
-            } else {
-                m.putAll(getCounts(entityType, eid, metrics));
             }
-            out.put(eid, m);
         }
         return out;
     }
@@ -272,12 +290,235 @@ public class CounterServiceImpl implements CounterService {
                 .orElseGet(() -> reactionMapper.exists(entityType, entityId, metric, userId) == 1);
     }
 
-    /**
-     * 读取 SDS 原始字节（固定结构，长度=字段数×4）。
-     */
+    private Map<String, Long> getNonReactionCounts(
+            String entityType,
+            String entityId,
+            List<String> metrics) {
+        byte[] raw = getRaw(CounterKeys.sdsKey(entityType, entityId));
+        Map<String, Long> result = new LinkedHashMap<>();
+        if (raw == null
+                || raw.length != CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE) {
+            if (metrics.contains("view")) {
+                result.put("view", getEffectiveCount(entityType, entityId, "view"));
+            }
+            return result;
+        }
+        long[] counts = decodeSds(raw);
+        for (String metric : metrics) {
+            Integer index = CounterSchema.NAME_TO_IDX.get(metric);
+            if (index != null) {
+                result.put(metric, counts[index]);
+            }
+        }
+        return result;
+    }
+
+    /** Reads SDS and its complete marker at one Redis Lua linearization point. */
+    private CountProjectionRead readReactionCounts(
+            String entityType,
+            String entityId) {
+        List<?> raw = redis.execute(
+                reactionCountsScript,
+                List.of(
+                        CounterKeys.sdsKey(entityType, entityId),
+                        CounterKeys.reactionProjectionCompleteKey(
+                                entityType, entityId)),
+                CounterReactionProjectionStore.COMPLETE_VERSION,
+                Integer.toString(CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE),
+                Integer.toString(CounterSchema.FIELD_SIZE),
+                Integer.toString(CounterSchema.SCHEMA_LEN));
+        return mapCountProjection(raw);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private List<CountProjectionRead> readReactionCountsBatch(
+            String entityType,
+            List<String> entityIds) {
+        List<Object> raw = redis.executePipelined(new SessionCallback<>() {
+            @Override
+            public Object execute(RedisOperations operations) {
+                for (String entityId : entityIds) {
+                    operations.execute(
+                            reactionCountsScript,
+                            List.of(
+                                    CounterKeys.sdsKey(entityType, entityId),
+                                    CounterKeys.reactionProjectionCompleteKey(
+                                            entityType, entityId)),
+                            CounterReactionProjectionStore.COMPLETE_VERSION,
+                            Integer.toString(
+                                    CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE),
+                            Integer.toString(CounterSchema.FIELD_SIZE),
+                            Integer.toString(CounterSchema.SCHEMA_LEN));
+                }
+                return null;
+            }
+        });
+        if (raw == null || raw.size() != entityIds.size()) {
+            throw new IllegalStateException(
+                    "Counter reaction count projection returned an incomplete batch");
+        }
+        return raw.stream()
+                .map(CounterServiceImpl::mapCountProjection)
+                .toList();
+    }
+
+    private List<CountProjectionRead> readRawCountsBatch(
+            String entityType,
+            List<String> entityIds) {
+        List<Object> raw = redis.executePipelined(
+                (RedisCallback<Object>) connection -> {
+                    for (String entityId : entityIds) {
+                        connection.stringCommands().get(
+                                CounterKeys.sdsKey(entityType, entityId)
+                                        .getBytes(StandardCharsets.UTF_8));
+                    }
+                    return null;
+                },
+                RedisSerializer.byteArray());
+        if (raw == null || raw.size() != entityIds.size()) {
+            throw new IllegalStateException(
+                    "Counter count projection returned an incomplete batch");
+        }
+        int expectedLength = CounterSchema.SCHEMA_LEN * CounterSchema.FIELD_SIZE;
+        List<CountProjectionRead> result = new ArrayList<>(raw.size());
+        for (Object value : raw) {
+            if (value instanceof byte[] bytes && bytes.length == expectedLength) {
+                result.add(new CountProjectionRead(true, decodeSds(bytes)));
+            } else {
+                result.add(new CountProjectionRead(false, null));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private Map<String, Long> readEffectiveViewCountsBatch(
+            String entityType,
+            List<String> entityIds) {
+        if (entityIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Object> raw = redis.executePipelined(new SessionCallback<>() {
+            @Override
+            public Object execute(RedisOperations operations) {
+                for (String entityId : entityIds) {
+                    operations.execute(
+                            effectiveCountScript,
+                            List.of(
+                                    CounterKeys.sdsKey(entityType, entityId),
+                                    CounterKeys.aggKey(entityType, entityId)),
+                            Integer.toString(CounterSchema.IDX_VIEW),
+                            Integer.toString(CounterSchema.FIELD_SIZE),
+                            Integer.toString(CounterSchema.SCHEMA_LEN));
+                }
+                return null;
+            }
+        });
+        if (raw == null || raw.size() != entityIds.size()) {
+            throw new IllegalStateException(
+                    "Counter effective view projection returned an incomplete batch");
+        }
+        Map<String, Long> result = new LinkedHashMap<>();
+        for (int index = 0; index < entityIds.size(); index++) {
+            Object value = raw.get(index);
+            if (!(value instanceof Number number)) {
+                throw new IllegalStateException(
+                        "Counter effective view projection returned an invalid result");
+            }
+            result.put(entityIds.get(index), Math.max(0L, number.longValue()));
+        }
+        return Map.copyOf(result);
+    }
+
+    private Map<String, Map<String, Long>> readMysqlReactionCountsBatch(
+            String entityType,
+            List<String> entityIds) {
+        if (entityIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Map<String, Long>> result = new LinkedHashMap<>();
+        for (int from = 0; from < entityIds.size(); from += MYSQL_COUNT_BATCH_SIZE) {
+            List<String> chunk = entityIds.subList(
+                    from, Math.min(from + MYSQL_COUNT_BATCH_SIZE, entityIds.size()));
+            List<CounterReactionMapper.ReactionCountRow> rows =
+                    reactionMapper.countByEntityMetrics(entityType, chunk);
+            if (rows == null) {
+                throw new IllegalStateException(
+                        "Counter reaction MySQL count fallback returned no result");
+            }
+            Set<String> requested = new HashSet<>(chunk);
+            for (CounterReactionMapper.ReactionCountRow row : rows) {
+                if (row == null
+                        || !requested.contains(row.entityId())
+                        || !isReactionMetric(row.metric())
+                        || row.countValue() < 0L) {
+                    throw new IllegalStateException(
+                            "Counter reaction MySQL count fallback returned an unexpected row");
+                }
+                Map<String, Long> entityCounts =
+                        result.computeIfAbsent(row.entityId(), ignored -> new LinkedHashMap<>());
+                if (entityCounts.putIfAbsent(row.metric(), row.countValue()) != null) {
+                    throw new IllegalStateException(
+                            "Counter reaction MySQL count fallback returned a duplicate row");
+                }
+            }
+        }
+        return result;
+    }
+
+    /** Reads SDS raw bytes for non-reaction counters. */
     private byte[] getRaw(String key) {
         return redis.execute((RedisCallback<byte[]>) connection ->
                 connection.stringCommands().get(key.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static boolean isReactionMetric(String metric) {
+        return "like".equals(metric) || "fav".equals(metric);
+    }
+
+    private static CountProjectionRead mapCountProjection(Object raw) {
+        if (!(raw instanceof List<?> values)
+                || values.isEmpty()
+                || !(values.getFirst() instanceof Number statusNumber)) {
+            throw new IllegalStateException(
+                    "Counter reaction count projection returned an invalid result");
+        }
+        long status = statusNumber.longValue();
+        if (status == -1L && values.size() == 1) {
+            return new CountProjectionRead(false, null);
+        }
+        if ((status != 0L && status != 1L)
+                || values.size() != CounterSchema.SCHEMA_LEN + 1) {
+            throw new IllegalStateException(
+                    "Counter reaction count projection returned an invalid result");
+        }
+        long[] counts = new long[CounterSchema.SCHEMA_LEN];
+        for (int index = 0; index < counts.length; index++) {
+            Object value = values.get(index + 1);
+            if (!(value instanceof Number number)
+                    || number.longValue() < 0L
+                    || number.longValue() > UINT32_MAX) {
+                throw new IllegalStateException(
+                        "Counter reaction count projection returned an invalid count");
+            }
+            counts[index] = number.longValue();
+        }
+        return new CountProjectionRead(status == 1L, counts);
+    }
+
+    private static long[] decodeSds(byte[] raw) {
+        long[] counts = new long[CounterSchema.SCHEMA_LEN];
+        for (int index = 0; index < counts.length; index++) {
+            counts[index] = readInt32BE(
+                    raw, index * CounterSchema.FIELD_SIZE);
+        }
+        return counts;
+    }
+
+    private record CountProjectionRead(boolean complete, long[] counts) {
+        private boolean hasCounts() {
+            return counts != null;
+        }
     }
 
     /**

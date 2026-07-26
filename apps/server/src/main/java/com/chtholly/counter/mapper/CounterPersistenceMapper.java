@@ -45,6 +45,14 @@ public interface CounterPersistenceMapper {
             @Param("favCount") long favCount,
             @Param("factEpoch") long factEpoch);
 
-    /** Returns the least recently calibrated reaction entities. */
-    List<CounterEntityIdentity> listOldestReactionSnapshotIdentities(@Param("limit") int limit);
+    /** Returns the fixed upper bound for one periodic reaction-entity sweep. */
+    CounterEntityIdentity findReactionSnapshotIdentityHighWatermark();
+
+    /** Returns one stable bounded keyset page for the periodic reaction-entity sweep. */
+    List<CounterEntityIdentity> listReactionSnapshotIdentitiesPage(
+            @Param("afterEntityType") String afterEntityType,
+            @Param("afterEntityId") String afterEntityId,
+            @Param("throughEntityType") String throughEntityType,
+            @Param("throughEntityId") String throughEntityId,
+            @Param("limit") int limit);
 }

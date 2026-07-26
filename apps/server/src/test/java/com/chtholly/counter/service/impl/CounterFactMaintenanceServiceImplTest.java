@@ -3,6 +3,7 @@ package com.chtholly.counter.service.impl;
 import com.chtholly.counter.mapper.CounterPersistenceMapper;
 import com.chtholly.counter.mapper.CounterReactionKey;
 import com.chtholly.counter.mapper.CounterReactionMapper;
+import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.service.CounterFactMaintenanceService;
 import com.chtholly.counter.service.CounterFactMaintenanceService.ManagedPostReactionState;
 import com.chtholly.counter.service.CounterFactMaintenanceService.PostReactionReconciliationResult;
@@ -14,9 +15,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -25,6 +29,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,25 +56,36 @@ class CounterFactMaintenanceServiceImplTest {
     @Mock
     private CounterPersistenceMapper persistenceMapper;
     @Mock
+    private CounterReactionProjectionRebuilder projectionRebuilder;
+    @Mock
     private CounterCalibrationService calibrationService;
     @Mock
     private PlatformTransactionManager transactionManager;
     @Mock
     private TransactionStatus transactionStatus;
+    @Mock
+    private RedissonClient redisson;
+    @Mock
+    private RLock maintenanceLock;
 
     private CounterFactMaintenanceService service;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(transactionStatus);
         lenient().when(persistenceMapper.lockReactionEpochs(anyString(), anyString()))
                 .thenReturn(List.of(0L, 0L));
+        lenient().when(redisson.getLock(anyString())).thenReturn(maintenanceLock);
+        lenient().when(maintenanceLock.tryLock(0L, TimeUnit.MILLISECONDS))
+                .thenReturn(true);
         service = new CounterFactMaintenanceServiceImpl(
                 reactionMapper,
                 persistenceMapper,
+                projectionRebuilder,
                 calibrationService,
-                transactionManager);
+                transactionManager,
+                redisson);
     }
 
     @Test
@@ -101,11 +117,39 @@ class CounterFactMaintenanceServiceImplTest {
                 .isInstanceOf(NullPointerException.class);
 
         verifyNoInteractions(
-                reactionMapper, persistenceMapper, calibrationService, transactionManager);
+                reactionMapper,
+                persistenceMapper,
+                projectionRebuilder,
+                calibrationService,
+                transactionManager,
+                redisson,
+                maintenanceLock);
     }
 
     @Test
-    void reconcilesOnlyManagedMysqlFactsThenRebuildsTheWholeProjection() {
+    void rejectsAnActiveCallerTransactionBeforeAnyExternalInteraction() {
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            assertThatThrownBy(() -> service.reconcileManagedPostReactions(
+                    Set.of(1L), Set.of(10L), Map.of()))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("active transaction");
+        } finally {
+            TransactionSynchronizationManager.clear();
+        }
+
+        verifyNoInteractions(
+                reactionMapper,
+                persistenceMapper,
+                projectionRebuilder,
+                calibrationService,
+                transactionManager,
+                redisson,
+                maintenanceLock);
+    }
+
+    @Test
+    void reconcilesOnlyManagedMysqlFactsThenRebuildsTheWholeProjection() throws Exception {
         CounterReactionKey likeOne = key(10L, "like", 1L);
         CounterReactionKey likeTwo = key(10L, "like", 2L);
         CounterReactionKey favOne = key(10L, "fav", 1L);
@@ -127,9 +171,50 @@ class CounterFactMaintenanceServiceImplTest {
                 new PostReactionReconciliationResult(10L, 2L, 2L, 3L, 2L));
         verify(persistenceMapper).ensureReactionSnapshots("post", "10");
         verify(persistenceMapper).lockReactionEpochs("post", "10");
-        InOrder order = inOrder(transactionManager, calibrationService);
+        InOrder order = inOrder(
+                maintenanceLock,
+                projectionRebuilder,
+                transactionManager,
+                calibrationService);
+        order.verify(maintenanceLock).tryLock(0L, TimeUnit.MILLISECONDS);
+        order.verify(projectionRebuilder).invalidateComplete("post", "10");
         order.verify(transactionManager).commit(transactionStatus);
         order.verify(calibrationService).reconcileEntity("post", "10");
+        order.verify(maintenanceLock).unlock();
+    }
+
+    @Test
+    void busyMaintenanceLockCannotCommitFactsBehindAnOlderCalibration() throws Exception {
+        when(maintenanceLock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.reconcileManagedPostReactions(
+                Set.of(1L), Set.of(10L), Map.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("busy");
+
+        verify(redisson).getLock(CounterKeys.factMaintenanceLockKey("post", "10"));
+        verifyNoInteractions(
+                reactionMapper,
+                persistenceMapper,
+                projectionRebuilder,
+                calibrationService);
+        verify(transactionManager, never()).getTransaction(any());
+        verify(maintenanceLock, never()).unlock();
+    }
+
+    @Test
+    void projectionInvalidationFailureCannotStartTheManagedFactsTransaction() {
+        doThrow(new IllegalStateException("redis unavailable"))
+                .when(projectionRebuilder).invalidateComplete("post", "10");
+
+        assertThatThrownBy(() -> service.reconcileManagedPostReactions(
+                Set.of(1L), Set.of(10L), Map.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("redis unavailable");
+
+        verifyNoInteractions(reactionMapper, persistenceMapper, calibrationService);
+        verify(transactionManager, never()).getTransaction(any());
+        verify(maintenanceLock).unlock();
     }
 
     @Test
@@ -213,6 +298,7 @@ class CounterFactMaintenanceServiceImplTest {
         InOrder order = inOrder(transactionManager, calibrationService);
         order.verify(transactionManager).commit(transactionStatus);
         order.verify(calibrationService).reconcileEntity("post", "10");
+        verify(maintenanceLock).unlock();
     }
 
     @Test

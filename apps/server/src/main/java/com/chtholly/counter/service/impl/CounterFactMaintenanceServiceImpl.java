@@ -3,9 +3,13 @@ package com.chtholly.counter.service.impl;
 import com.chtholly.counter.mapper.CounterPersistenceMapper;
 import com.chtholly.counter.mapper.CounterReactionKey;
 import com.chtholly.counter.mapper.CounterReactionMapper;
+import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.service.CounterFactMaintenanceService;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
@@ -18,6 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
 
 /** Reconciles managed historical reactions in MySQL before rebuilding Redis projections. */
 @Service
@@ -30,18 +35,25 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
 
     private final CounterReactionMapper reactionMapper;
     private final CounterPersistenceMapper persistenceMapper;
+    private final CounterReactionProjectionRebuilder projectionRebuilder;
     private final CounterCalibrationService calibrationService;
     private final PlatformTransactionManager transactionManager;
+    private final RedissonClient redisson;
 
     public CounterFactMaintenanceServiceImpl(
             CounterReactionMapper reactionMapper,
             CounterPersistenceMapper persistenceMapper,
+            CounterReactionProjectionRebuilder projectionRebuilder,
             CounterCalibrationService calibrationService,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            RedissonClient redisson) {
         this.reactionMapper = Objects.requireNonNull(reactionMapper, "reactionMapper");
         this.persistenceMapper = Objects.requireNonNull(persistenceMapper, "persistenceMapper");
+        this.projectionRebuilder = Objects.requireNonNull(
+                projectionRebuilder, "projectionRebuilder");
         this.calibrationService = Objects.requireNonNull(calibrationService, "calibrationService");
         this.transactionManager = Objects.requireNonNull(transactionManager, "transactionManager");
+        this.redisson = Objects.requireNonNull(redisson, "redisson");
     }
 
     /** {@inheritDoc} */
@@ -50,6 +62,10 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             Set<Long> managedUserIds,
             Set<Long> authoritativePostIds,
             Map<Long, ManagedPostReactionState> desiredByPost) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException(
+                    "Counter fact maintenance cannot join an active transaction");
+        }
         ValidatedRequest request = validateAndCopyInput(
                 managedUserIds, authoritativePostIds, desiredByPost);
         Map<Long, PostReactionReconciliationResult> results = new LinkedHashMap<>();
@@ -65,22 +81,58 @@ public class CounterFactMaintenanceServiceImpl implements CounterFactMaintenance
             long postId,
             Set<Long> managedUserIds,
             ManagedPostReactionState desired) {
-        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
-        ManagedMutation mutation = transaction.execute(status ->
-                reconcileManagedFacts(postId, managedUserIds, desired));
-        if (mutation == null) {
-            throw new IllegalStateException(
-                    "Counter managed reaction transaction returned no result");
-        }
+        String entityId = Long.toString(postId);
+        RLock lock = redisson.getLock(
+                CounterKeys.factMaintenanceLockKey(ENTITY_TYPE_POST, entityId));
+        boolean locked = false;
+        RuntimeException primaryFailure = null;
+        try {
+            try {
+                locked = lock.tryLock(0L, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(
+                        "Interrupted while acquiring counter fact maintenance lock",
+                        exception);
+            }
+            if (!locked) {
+                throw new IllegalStateException(
+                        "Counter fact maintenance lock is busy");
+            }
+            projectionRebuilder.invalidateComplete(ENTITY_TYPE_POST, entityId);
 
-        CounterCalibrationService.ReconciliationResult rebuilt =
-                calibrationService.reconcileEntity(ENTITY_TYPE_POST, Long.toString(postId));
-        return new PostReactionReconciliationResult(
-                postId,
-                mutation.inserted(),
-                mutation.deleted(),
-                rebuilt.likeCount(),
-                rebuilt.favCount());
+            TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+            ManagedMutation mutation = transaction.execute(status ->
+                    reconcileManagedFacts(postId, managedUserIds, desired));
+            if (mutation == null) {
+                throw new IllegalStateException(
+                        "Counter managed reaction transaction returned no result");
+            }
+
+            CounterCalibrationService.ReconciliationResult rebuilt =
+                    calibrationService.reconcileEntity(ENTITY_TYPE_POST, entityId);
+            return new PostReactionReconciliationResult(
+                    postId,
+                    mutation.inserted(),
+                    mutation.deleted(),
+                    rebuilt.likeCount(),
+                    rebuilt.favCount());
+        } catch (RuntimeException exception) {
+            primaryFailure = exception;
+            throw exception;
+        } finally {
+            if (locked) {
+                try {
+                    lock.unlock();
+                } catch (RuntimeException unlockFailure) {
+                    if (primaryFailure != null) {
+                        primaryFailure.addSuppressed(unlockFailure);
+                    } else {
+                        throw unlockFailure;
+                    }
+                }
+            }
+        }
     }
 
     private ManagedMutation reconcileManagedFacts(

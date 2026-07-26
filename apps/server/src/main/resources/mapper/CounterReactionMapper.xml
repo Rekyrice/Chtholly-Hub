@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.chtholly.counter.mapper.CounterReactionMapper">
+    <resultMap id="ReactionCountRowMap"
+               type="com.chtholly.counter.mapper.CounterReactionMapper$ReactionCountRow">
+        <constructor>
+            <arg column="entity_id" javaType="java.lang.String"/>
+            <arg column="metric" javaType="java.lang.String"/>
+            <arg column="count_value" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
     <insert id="insertIgnore">
         INSERT IGNORE INTO counter_reaction
             (entity_type, entity_id, metric, user_id, created_at)
@@ -59,12 +68,16 @@
         LIMIT #{limit}
     </select>
 
-    <select id="countByEntityMetric" resultType="long">
-        SELECT COUNT(*)
+    <select id="countByEntityMetrics" resultMap="ReactionCountRowMap">
+        SELECT entity_id, metric, COUNT(*) AS count_value
         FROM counter_reaction
         WHERE entity_type = #{entityType}
-          AND entity_id = #{entityId}
-          AND metric = #{metric}
+          AND metric IN ('like', 'fav')
+          AND entity_id IN
+        <foreach collection="entityIds" item="entityId" open="(" separator="," close=")">
+            #{entityId}
+        </foreach>
+        GROUP BY entity_id, metric
     </select>
 
     <insert id="insertAllIgnore">

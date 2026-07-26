@@ -48,11 +48,18 @@ class CounterRebuildConsumerTest {
 
         ArgumentCaptor<DefaultRedisScript<Long>> script = ArgumentCaptor.forClass(DefaultRedisScript.class);
         verify(redis, org.mockito.Mockito.times(2)).execute(script.capture(), eq(List.of(
-                CounterKeys.sdsKey("post", "7"), CounterKeys.eventDedupeKey("seed-view:ns:7:10"))),
+                CounterKeys.sdsKey("post", "7"),
+                CounterKeys.eventDedupeKey("seed-view:ns:7:10"),
+                CounterKeys.reactionProjectionCompleteKey("post", "7"),
+                CounterKeys.factMaintenanceFenceKey("post", "7"))),
                 eq("5"), eq("4"), eq("0"), eq("10"));
         assertThat(script.getValue().getScriptAsString())
-                .contains("SETNX", "redis.call('SET', cntKey, cnt)")
-                .doesNotContain("EXPIRE", "PEXPIRE");
+                .contains(
+                        "redis.call('EXISTS', dedupeKey)",
+                        "redis.call('MSET', cntKey, cnt, dedupeKey, '1')",
+                        "redis.call('DEL', completeKey)",
+                        "redis.call('SET', fenceKey, '@dirty:'")
+                .doesNotContain("SETNX", "EXPIRE", "PEXPIRE");
     }
 
     @Test
@@ -67,10 +74,16 @@ class CounterRebuildConsumerTest {
         assertThat(consumer.applyRebuildEvent(second)).isTrue();
 
         verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
-                CounterKeys.sdsKey("post", "7"), CounterKeys.eventDedupeKey("baseline-10"))),
+                CounterKeys.sdsKey("post", "7"),
+                CounterKeys.eventDedupeKey("baseline-10"),
+                CounterKeys.reactionProjectionCompleteKey("post", "7"),
+                CounterKeys.factMaintenanceFenceKey("post", "7"))),
                 eq("5"), eq("4"), eq("0"), eq("10"));
         verify(redis).execute(any(DefaultRedisScript.class), eq(List.of(
-                CounterKeys.sdsKey("post", "7"), CounterKeys.eventDedupeKey("baseline-15"))),
+                CounterKeys.sdsKey("post", "7"),
+                CounterKeys.eventDedupeKey("baseline-15"),
+                CounterKeys.reactionProjectionCompleteKey("post", "7"),
+                CounterKeys.factMaintenanceFenceKey("post", "7"))),
                 eq("5"), eq("4"), eq("0"), eq("5"));
     }
 
