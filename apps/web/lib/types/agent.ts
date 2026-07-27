@@ -33,6 +33,7 @@ export interface ChatMessage {
 }
 
 export type ProactiveNotificationItem = {
+  instanceId: string;
   type: "missing-you" | "new-posts" | "thought" | string;
   message: string;
   timestamp: string;

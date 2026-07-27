@@ -23,6 +23,7 @@ export function ProactiveNotification() {
 
   return (
     <ProactiveNotificationCard
+      key={visibleProactiveNotification.instanceId}
       notification={visibleProactiveNotification}
       onDismiss={dismissProactiveNotification}
     />
@@ -44,7 +45,6 @@ function ProactiveNotificationCard({
 }: ProactiveNotificationCardProps) {
   const messageId = useId();
   const messageRef = useRef<HTMLParagraphElement>(null);
-  const previousNotificationRef = useRef(notification);
   const autoDismissTimerRef = useRef<number | null>(null);
   const [collapsedHeight, setCollapsedHeight] = useState<number>();
   const [expanded, setExpanded] = useState(false);
@@ -76,17 +76,6 @@ function ProactiveNotificationCard({
   }, []);
 
   useLayoutEffect(() => {
-    if (previousNotificationRef.current === notification) return;
-
-    previousNotificationRef.current = notification;
-    cancelAutoDismiss();
-    setExpanded(false);
-    setOverflowing(false);
-    setInteracted(false);
-    if (messageRef.current) messageRef.current.scrollTop = 0;
-  }, [cancelAutoDismiss, notification]);
-
-  useLayoutEffect(() => {
     measureOverflow();
 
     if (typeof ResizeObserver === "undefined" || !messageRef.current) return undefined;
@@ -94,7 +83,7 @@ function ProactiveNotificationCard({
     const observer = new ResizeObserver(measureOverflow);
     observer.observe(messageRef.current);
     return () => observer.disconnect();
-  }, [measureOverflow, notification]);
+  }, [measureOverflow]);
 
   useEffect(() => {
     cancelAutoDismiss();
@@ -105,7 +94,7 @@ function ProactiveNotificationCard({
       onDismiss();
     }, 8000);
     return cancelAutoDismiss;
-  }, [cancelAutoDismiss, interacted, notification, onDismiss]);
+  }, [cancelAutoDismiss, interacted, onDismiss]);
 
   const markInteracted = useCallback(() => {
     cancelAutoDismiss();

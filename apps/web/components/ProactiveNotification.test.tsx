@@ -4,6 +4,7 @@ import { ProactiveNotification } from "@/components/ProactiveNotification";
 
 const chat = vi.hoisted(() => ({
   notification: null as {
+    instanceId: string;
     type: string;
     message: string;
     timestamp: string;
@@ -28,6 +29,7 @@ const longMessage =
 
 let measuredScrollHeight = 0;
 let computedLineHeight = "20px";
+let nextInstanceId = 0;
 let resizeCallbacks: ResizeObserverCallback[] = [];
 
 class ResizeObserverMock {
@@ -40,8 +42,13 @@ class ResizeObserverMock {
   }
 }
 
-function setNotification(message: string, timestamp = "2026-07-27T08:00:00.000Z") {
+function setNotification(
+  message: string,
+  timestamp = "2026-07-27T08:00:00.000Z",
+  instanceId = `notification-${++nextInstanceId}`,
+) {
   chat.notification = {
+    instanceId,
     type: "thought",
     message,
     timestamp,
@@ -61,6 +68,7 @@ describe("ProactiveNotification", () => {
     chat.dismiss.mockReset();
     measuredScrollHeight = 0;
     computedLineHeight = "20px";
+    nextInstanceId = 0;
     resizeCallbacks = [];
 
     Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
@@ -244,19 +252,32 @@ describe("ProactiveNotification", () => {
     expect(chat.dismiss).toHaveBeenCalledTimes(1);
   });
 
-  it("resets state for a new notification object whose fields are unchanged", () => {
+  it("remounts for a new instance with identical business fields without writing scrollTop", () => {
     measuredScrollHeight = 140;
-    setNotification(longMessage);
+    setNotification(longMessage, "2026-07-27T08:00:00.000Z", "notification-1");
     const { rerender } = render(<ProactiveNotification />);
 
+    const previousMessage = screen.getByText(longMessage);
+    const scrollTopSetter = vi.fn();
+    Object.defineProperty(previousMessage, "scrollTop", {
+      configurable: true,
+      get: () => 48,
+      set: scrollTopSetter,
+    });
+    fireEvent.scroll(previousMessage);
     fireEvent.click(screen.getByRole("button", { name: "展开" }));
     expect(screen.getByRole("button", { name: "收起" })).toBeInTheDocument();
 
-    const nextNotification = { ...chat.notification! };
-    expect(nextNotification).not.toBe(chat.notification);
-    chat.notification = nextNotification;
+    chat.notification = {
+      ...chat.notification!,
+      instanceId: "notification-2",
+    };
     rerender(<ProactiveNotification />);
 
+    const nextMessage = screen.getByText(longMessage);
+    expect(nextMessage).not.toBe(previousMessage);
+    expect(scrollTopSetter).not.toHaveBeenCalled();
+    expect(nextMessage.scrollTop).toBe(0);
     expect(screen.getByRole("button", { name: "展开" })).toHaveAttribute(
       "aria-expanded",
       "false",

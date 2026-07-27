@@ -83,6 +83,7 @@ export function useAgentWebSocket({
     useState<ProactiveNotificationItem | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const streamingIdRef = useRef<string | null>(null);
+  const proactiveInstanceSequenceRef = useRef(0);
   const stepsRef = useRef<string[]>([]);
   const backendClearIntentRef = useRef<"none" | "backend" | "user">("none");
 
@@ -98,7 +99,9 @@ export function useAgentWebSocket({
   const pushProactiveNotification = useCallback((data: Record<string, unknown>) => {
     const message = String(data.message ?? "");
     if (!message) return;
+    proactiveInstanceSequenceRef.current += 1;
     const notification: ProactiveNotificationItem = {
+      instanceId: `proactive-${proactiveInstanceSequenceRef.current}`,
       type: String(data.type ?? "thought"),
       message,
       timestamp: String(data.timestamp ?? new Date().toISOString()),
