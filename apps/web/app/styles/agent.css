@@ -781,6 +781,72 @@
     background: transparent;
   }
 
+  .agent-workspace-main-chat > .agent-workspace-chat {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .agent-skill-mode-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.65rem 1rem 0.35rem;
+    pointer-events: auto;
+  }
+
+  .agent-skill-mode-selector {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 0.4rem;
+    overflow-x: auto;
+  }
+
+  .agent-skill-mode-button,
+  .agent-skill-mode-cancel {
+    min-height: 34px;
+    border: 1px solid color-mix(in srgb, var(--color-sky) 28%, var(--color-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+    color: var(--color-text-secondary);
+    font-size: 0.78rem;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      border-color 0.16s ease,
+      background 0.16s ease,
+      color 0.16s ease;
+  }
+
+  .agent-skill-mode-button {
+    padding: 0.55rem 0.8rem;
+  }
+
+  .agent-skill-mode-button:hover,
+  .agent-skill-mode-button:focus-visible,
+  .agent-skill-mode-button--active {
+    border-color: var(--color-sky);
+    background: color-mix(in srgb, var(--color-sky) 14%, var(--color-surface));
+    color: var(--color-text);
+  }
+
+  .agent-skill-mode-button--active {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-sky) 36%, transparent);
+  }
+
+  .agent-skill-mode-cancel {
+    padding: 0.55rem 0.7rem;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .agent-skill-mode-cancel:hover,
+  .agent-skill-mode-cancel:focus-visible {
+    color: var(--color-sky);
+    background: color-mix(in srgb, var(--color-sky) 9%, transparent);
+  }
+
   .agent-input::placeholder {
     color: var(--text-tertiary);
     font-style: italic;

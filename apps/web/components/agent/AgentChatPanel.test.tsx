@@ -2,7 +2,12 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AgentChatPanel from "@/components/agent/AgentChatPanel";
 
-const agentState = vi.hoisted(() => ({ busy: false, streaming: false }));
+const agentState = vi.hoisted(() => ({
+  busy: false,
+  streaming: false,
+  input: "",
+  sendMessage: vi.fn(),
+}));
 const linkState = vi.hoisted(() => ({ componentPreventedNavigation: false }));
 const messageListState = vi.hoisted(() => ({ compactAssistantMessages: undefined as boolean | undefined }));
 
@@ -24,7 +29,7 @@ vi.mock("@/components/agent/AgentChatProvider", () => ({
   useAgentChatContext: () => ({
     activeSessionId: "session-1",
     messages: [],
-    input: "",
+    input: agentState.input,
     setInput: vi.fn(),
     connected: true,
     busy: agentState.busy,
@@ -33,7 +38,7 @@ vi.mock("@/components/agent/AgentChatProvider", () => ({
     setShowSteps: vi.fn(),
     richMarkdown: false,
     liveSteps: [],
-    sendMessage: vi.fn(),
+    sendMessage: agentState.sendMessage,
     clearConversation: vi.fn(),
     fillAndSend: vi.fn(),
   }),
@@ -52,6 +57,8 @@ describe("AgentChatPanel expansion", () => {
   beforeEach(() => {
     agentState.busy = false;
     agentState.streaming = false;
+    agentState.input = "";
+    agentState.sendMessage.mockReset();
     linkState.componentPreventedNavigation = false;
     messageListState.compactAssistantMessages = undefined;
   });
@@ -103,5 +110,30 @@ describe("AgentChatPanel expansion", () => {
     render(<AgentChatPanel variant={variant} />);
 
     expect(messageListState.compactAssistantMessages).toBe(expected);
+  });
+
+  it.each([
+    ["page-explain", "想解释页面里的哪一部分？"],
+    ["evidence-outline", "告诉我主题，我会整理一份资料大纲…"],
+    ["draft-fact-check", "把要核查的草稿或主张贴在这里…"],
+  ] as const)("uses the %s placeholder and sends its explicit task type", (taskType, placeholder) => {
+    agentState.input = "解释这里";
+    render(
+      <AgentChatPanel
+        variant="workspace"
+        taskType={taskType}
+        placeholder={placeholder}
+      />,
+    );
+
+    expect(screen.getByTestId("agent-input")).toHaveAttribute(
+      "placeholder",
+      placeholder,
+    );
+    fireEvent.submit(screen.getByTestId("agent-input").closest("form")!);
+    expect(agentState.sendMessage).toHaveBeenCalledWith(
+      "解释这里",
+      { taskType },
+    );
   });
 });

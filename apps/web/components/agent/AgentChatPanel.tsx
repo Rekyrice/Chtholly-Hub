@@ -10,6 +10,7 @@ import ChthollyAvatar from "@/components/site/ChthollyAvatar";
 import { useAgentPlaceholder } from "@/lib/hooks/useAgentPlaceholder";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import { cn } from "@/lib/utils";
+import type { AgentTaskType } from "@/lib/types/agent";
 
 type AgentChatPanelProps = {
   variant?: "float" | "workspace" | "room";
@@ -17,6 +18,8 @@ type AgentChatPanelProps = {
   onExpand?: () => void;
   headerAction?: ReactNode;
   className?: string;
+  taskType?: AgentTaskType | null;
+  placeholder?: string;
 };
 
 export default function AgentChatPanel({
@@ -25,6 +28,8 @@ export default function AgentChatPanel({
   onExpand,
   headerAction,
   className,
+  taskType,
+  placeholder,
 }: AgentChatPanelProps) {
   const {
     activeSessionId,
@@ -149,7 +154,13 @@ export default function AgentChatPanel({
           showAssistantAvatar={showAssistantAvatar}
           compactAssistantMessages={variant === "float"}
           scrollContainerRef={scrollContainerRef}
-          onSuggestion={fillAndSend}
+          onSuggestion={(text) => {
+            if (taskType) {
+              void sendMessage(text, { taskType });
+              return;
+            }
+            fillAndSend(text);
+          }}
         />
       </div>
 
@@ -157,13 +168,16 @@ export default function AgentChatPanel({
         className="floating-agent-input shrink-0"
         onSubmit={(e) => {
           e.preventDefault();
-          void sendMessage(input);
+          void sendMessage(input, taskType ? { taskType } : undefined);
         }}
       >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={isWorkspace ? workspacePlaceholder : isRoom ? "想和她说什么…" : "输入问题…"}
+          placeholder={
+            placeholder
+              ?? (isWorkspace ? workspacePlaceholder : isRoom ? "想和她说什么…" : "输入问题…")
+          }
           disabled={busy}
           className={cn(
             "floating-agent-input-field agent-input flex-1 text-sm disabled:opacity-50",

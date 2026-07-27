@@ -118,7 +118,7 @@ export default function ArticleReadingSidebar({
         <div className="article-reading-sidebar__title">珂朵莉陪读</div>
         <ChthollyIllustration size="sm" state={readingState} mood={0} timeOfDay={timeOfDay} />
         <p>{readingComment}</p>
-        <Link href={askHref}>问珂朵莉</Link>
+        <Link href={askHref}>解释这篇文章</Link>
       </section>
     </aside>
   );

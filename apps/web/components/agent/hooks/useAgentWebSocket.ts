@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import { getAgentWsUrl } from "@/lib/agent/wsUrl";
 import type {
   AgentEventType,
+  AgentSendOptions,
+  AgentTaskType,
   AgentWsEnvelope,
   ChatMessage,
   ProactiveNotificationItem,
@@ -18,6 +20,41 @@ type UseAgentWebSocketOptions = {
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   onInputConsumed: () => void;
 };
+
+type BuildAgentChatPayloadInput = {
+  sessionId: string;
+  message: string;
+  pathname: string;
+  title: string;
+  search: string;
+  taskType?: AgentTaskType;
+};
+
+export function buildAgentChatPayload({
+  sessionId,
+  message,
+  pathname,
+  title,
+  search,
+  taskType,
+}: BuildAgentChatPayloadInput) {
+  const source = new URLSearchParams(search).get("context") ?? undefined;
+  const context: Record<string, string> = {
+    page: pathname,
+    title,
+  };
+  if (source) context.source = source;
+  if (source?.startsWith("post:")) {
+    context.postSlug = source.slice("post:".length);
+  }
+  return {
+    type: "chat" as const,
+    sessionId,
+    message,
+    ...(taskType ? { taskType } : {}),
+    context,
+  };
+}
 
 function formatActInput(input: unknown) {
   if (!input || typeof input !== "object") return "";
@@ -237,7 +274,7 @@ export function useAgentWebSocket({
   }, []);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, options?: AgentSendOptions) => {
       const trimmed = text.trim();
       if (!trimmed || busy) return;
       if (!loggedIn) {
@@ -282,15 +319,14 @@ export function useAgentWebSocket({
       stepsRef.current = [];
       setLiveSteps([]);
       streamingIdRef.current = null;
-      const context: Record<string, string | undefined> = {
-        page: window.location.pathname,
+      socket.send(JSON.stringify(buildAgentChatPayload({
+        sessionId,
+        message: trimmed,
+        pathname: window.location.pathname,
         title: document.title,
-        source: new URLSearchParams(window.location.search).get("context") ?? undefined,
-      };
-      if (context.source?.startsWith("post:")) {
-        context.postSlug = context.source.slice("post:".length);
-      }
-      socket.send(JSON.stringify({ type: "chat", sessionId, message: trimmed, context }));
+        search: window.location.search,
+        taskType: options?.taskType,
+      })));
     },
     [activeSessionIdRef, busy, connect, loggedIn, onInputConsumed, setMessages, waitUntilOpen],
   );

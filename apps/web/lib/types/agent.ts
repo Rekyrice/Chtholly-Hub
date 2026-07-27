@@ -8,6 +8,15 @@ export type AgentEventType =
   | "cleared"
   | "proactive";
 
+export type AgentTaskType =
+  | "page-explain"
+  | "evidence-outline"
+  | "draft-fact-check";
+
+export type AgentSendOptions = {
+  taskType?: AgentTaskType;
+};
+
 export interface AgentWsEnvelope {
   type: AgentEventType;
   data: Record<string, unknown>;

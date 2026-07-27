@@ -6,6 +6,10 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import AgentChatPanel from "@/components/agent/AgentChatPanel";
 import AgentLive2DStage from "@/components/agent/AgentLive2DStage";
 import AgentSessionSidebar from "@/components/agent/AgentSessionSidebar";
+import AgentSkillModeSelector, {
+  getAgentSkillMode,
+  parseAgentTaskType,
+} from "@/components/agent/AgentSkillModeSelector";
 import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import {
   loadSessionsCollapsedPreference,
@@ -13,6 +17,7 @@ import {
 } from "@/lib/agent/sessions";
 import { agentService } from "@/lib/services/agentService";
 import type { AgentExperience } from "@/lib/types/agent";
+import type { AgentTaskType } from "@/lib/types/agent";
 import { useMinWidth } from "@/lib/hooks/useMinWidth";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -43,7 +48,10 @@ export default function AgentWorkspace() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const sessionParam = searchParams.get("session");
-  const contextParam = searchParams.get("context");
+  const taskTypeParam = searchParams.get("taskType");
+  const [taskType, setTaskType] = useState<AgentTaskType | null>(
+    () => parseAgentTaskType(taskTypeParam),
+  );
   const appliedUrlSessionRef = useRef(false);
   const sessionsCollapsed = useSyncExternalStore(
     subscribeSessionsCollapsed,
@@ -53,6 +61,12 @@ export default function AgentWorkspace() {
   const [recentThoughts, setRecentThoughts] = useState<AgentThought[]>([]);
   const isDesktopLayout = useMinWidth(992);
   const sessionsCollapsedEffective = sessionsCollapsed && isDesktopLayout;
+  const activeSkillMode = getAgentSkillMode(taskType);
+
+  useEffect(() => {
+    const nextTaskType = parseAgentTaskType(taskTypeParam);
+    setTaskType((current) => current === nextTaskType ? current : nextTaskType);
+  }, [taskTypeParam]);
 
   useEffect(() => {
     if (!loggedIn) return;
@@ -86,15 +100,24 @@ export default function AgentWorkspace() {
 
   useEffect(() => {
     if (!activeSessionId || sessionParam === activeSessionId) return;
-    const nextParams = new URLSearchParams();
+    const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("session", activeSessionId);
-    if (contextParam) {
-      nextParams.set("context", contextParam);
-    }
     router.replace(`/agent?${nextParams.toString()}`, {
       scroll: false,
     });
-  }, [sessionParam, contextParam, activeSessionId, router]);
+  }, [sessionParam, activeSessionId, router, searchParams]);
+
+  const changeTaskType = useCallback((nextTaskType: AgentTaskType | null) => {
+    setTaskType(nextTaskType);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextTaskType) {
+      nextParams.set("taskType", nextTaskType);
+    } else {
+      nextParams.delete("taskType");
+    }
+    const query = nextParams.toString();
+    router.replace(query ? `/agent?${query}` : "/agent", { scroll: false });
+  }, [router, searchParams]);
 
   if (!loggedIn) {
     return (
@@ -151,7 +174,12 @@ export default function AgentWorkspace() {
           <AgentLive2DStage />
         </div>
         <div className="agent-workspace-main-chat">
-          <AgentChatPanel variant="workspace" />
+          <AgentSkillModeSelector value={taskType} onChange={changeTaskType} />
+          <AgentChatPanel
+            variant="workspace"
+            taskType={taskType}
+            placeholder={activeSkillMode?.placeholder}
+          />
         </div>
       </section>
 

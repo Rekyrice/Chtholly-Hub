@@ -14,7 +14,11 @@ import { useAgentSessions } from "@/components/agent/hooks/useAgentSessions";
 import { useAgentWebSocket } from "@/components/agent/hooks/useAgentWebSocket";
 import type { AgentSessionRecord } from "@/lib/agent/sessions";
 import { isLoggedIn, purgeExpiredAuth } from "@/lib/auth/tokens";
-import type { ChatMessage, ProactiveNotificationItem } from "@/lib/types/agent";
+import type {
+  AgentSendOptions,
+  ChatMessage,
+  ProactiveNotificationItem,
+} from "@/lib/types/agent";
 import type { AgentLivePhase } from "@/lib/types/live2d";
 
 type BooleanStateAction = boolean | ((previous: boolean) => boolean);
@@ -41,7 +45,7 @@ type AgentChatContextValue = {
   proactiveNotifications: ProactiveNotificationItem[];
   visibleProactiveNotification: ProactiveNotificationItem | null;
   dismissProactiveNotification: () => void;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, options?: AgentSendOptions) => Promise<void>;
   clearConversation: () => void;
   switchSession: (sessionId: string) => void;
   createSession: () => string;

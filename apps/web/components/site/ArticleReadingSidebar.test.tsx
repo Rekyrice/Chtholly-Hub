@@ -36,7 +36,7 @@ const commonProps = {
       href: "/post/related-3",
     },
   ],
-  askHref: "/agent?context=post",
+  askHref: "/agent?taskType=page-explain&context=post",
   readingComment: "慢慢看。",
   readingState: "calm" as const,
   timeOfDay: "night" as const,
@@ -74,7 +74,10 @@ describe("ArticleReadingSidebar", () => {
     expect(screen.queryByText("第三篇不应出现")).not.toBeInTheDocument();
 
     expect(screen.getByText("珂朵莉陪读")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "问珂朵莉" })).toHaveAttribute("href", "/agent?context=post");
+    expect(screen.getByRole("link", { name: "解释这篇文章" })).toHaveAttribute(
+      "href",
+      "/agent?taskType=page-explain&context=post",
+    );
     expect(screen.getByTestId("chtholly-reading-companion")).toBeInTheDocument();
   });
 
