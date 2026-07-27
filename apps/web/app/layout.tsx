@@ -1,46 +1,8 @@
 import type { Metadata } from "next";
-import {
-  JetBrains_Mono,
-  Noto_Sans_JP,
-  Noto_Sans_SC,
-  Playfair_Display,
-  Source_Sans_3,
-} from "next/font/google";
 import { siteConfig } from "@/lib/site.config";
 import { siteUrl } from "@/lib/site-url";
 import { MOTION_BOOTSTRAP_SCRIPT } from "@/lib/motion-bootstrap";
 import "./globals.css";
-
-const notoSansSc = Noto_Sans_SC({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "700"],
-  variable: "--font-noto-sans-sc",
-});
-
-const sourceSans = Source_Sans_3({
-  subsets: ["latin"],
-  weight: ["300", "400", "600", "700"],
-  variable: "--font-source-sans",
-});
-
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  variable: "--font-serif",
-  display: "swap",
-});
-
-const notoSansJp = Noto_Sans_JP({
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-jp",
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   metadataBase: siteUrl,
@@ -59,13 +21,18 @@ export default function RootLayout({
   const cssVars = [
     `--blog-primary: ${siteConfig.theme.primary}`,
     `--blog-body-bg: ${siteConfig.theme.bodyBg}`,
+    `--font-noto-sans-sc: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif`,
+    `--font-source-sans: "Segoe UI", Arial, sans-serif`,
+    `--font-serif: "Noto Serif SC", "Songti SC", Georgia, serif`,
+    `--font-jp: "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif`,
+    `--font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, monospace`,
     `--blog-font: var(--font-noto-sans-sc), var(--font-source-sans), sans-serif`,
   ].join("; ");
 
   return (
     <html
       lang="zh-CN"
-      className={`${notoSansSc.variable} ${sourceSans.variable} ${playfair.variable} ${notoSansJp.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className="h-full antialiased"
       suppressHydrationWarning
     >
       <head>
