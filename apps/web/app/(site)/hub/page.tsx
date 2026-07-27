@@ -8,7 +8,7 @@ import { searchService } from "@/lib/services/searchService";
 import type { FeedItem } from "@/lib/types/post";
 import type { HubFeedResponse } from "@/lib/types/search";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 type HubPageProps = {
   searchParams: Promise<{ page?: string }>;

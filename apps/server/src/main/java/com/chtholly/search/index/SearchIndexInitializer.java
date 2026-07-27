@@ -59,6 +59,8 @@ public class SearchIndexInitializer {
             es.indices().putMapping(mapping -> mapping
                     .index(INDEX)
                     .properties("author_handle", Property.of(
+                            property -> property.keyword(KeywordProperty.of(builder -> builder))))
+                    .properties("visible", Property.of(
                             property -> property.keyword(KeywordProperty.of(builder -> builder)))));
         } catch (Exception exception) {
             // Search is degradable; a mapping upgrade failure must not block application startup or backfill retries.
@@ -94,6 +96,7 @@ public class SearchIndexInitializer {
                 .properties("favorite_count", Property.of(p -> p.integer(IntegerNumberProperty.of(b -> b))))
                 .properties("view_count", Property.of(p -> p.integer(IntegerNumberProperty.of(b -> b))))
                 .properties("status", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
+                .properties("visible", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("img_urls", Property.of(p -> p.keyword(KeywordProperty.of(b -> b))))
                 .properties("is_top", Property.of(p -> p.boolean_(b -> b)))
                 .properties("title_suggest", Property.of(p -> p.completion(CompletionProperty.of(b -> b))))

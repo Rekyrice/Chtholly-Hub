@@ -345,8 +345,13 @@ public class PostServiceImpl implements PostService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
 
+        writePostOutbox(id, "PostVisibilityChanged", "upsert");
         invalidateCache(id);
-        runAfterCommit(() -> postFeedService.invalidateMyPublishedCache(creatorId));
+        runAfterCommit(() -> {
+            cacheInvalidator.invalidateAllPublicFeedPages();
+            postFeedService.invalidateMyPublishedCache(creatorId);
+            syncSearchIndexUpsert(id);
+        });
     }
 
     /** Soft-deletes a post and removes it from search index when previously published. */

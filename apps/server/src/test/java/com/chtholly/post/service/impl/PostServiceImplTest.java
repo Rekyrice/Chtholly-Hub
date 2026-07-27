@@ -25,6 +25,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.ZSetOperations;
 
 import java.util.List;
 import java.util.Set;
@@ -57,6 +58,8 @@ class PostServiceImplTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
     @Mock
+    private ZSetOperations<String, String> zSetOperations;
+    @Mock
     private PostRagIndexer ragIndexService;
     @Mock
     private OutboxMapper outboxMapper;
@@ -83,6 +86,7 @@ class PostServiceImplTest {
         postDetailCache = Caffeine.newBuilder().build();
 
         lenient().when(redis.opsForSet()).thenReturn(setOperations);
+        lenient().when(redis.opsForZSet()).thenReturn(zSetOperations);
 
         OssProperties ossProperties = new OssProperties();
         PostCacheInvalidator cacheInvalidator =
@@ -156,6 +160,22 @@ class PostServiceImplTest {
 
         service.updateTop(creatorId, postId, true);
 
+        verify(postFeedService).invalidateMyPublishedCache(creatorId);
+    }
+
+    @Test
+    void updateVisibilitySynchronizesSearchAndInvalidatesAllPublicFeeds() {
+        long creatorId = 9L;
+        long postId = 42L;
+        when(mapper.updateVisibility(postId, creatorId, "private")).thenReturn(1);
+        when(zSetOperations.range("feed:public:pages", 0, -1)).thenReturn(Set.of());
+
+        service.updateVisibility(creatorId, postId, "private");
+
+        verify(outboxMapper).insert(
+                anyLong(), eq("post"), eq(postId), eq("PostVisibilityChanged"), anyString());
+        verify(searchIndexService).upsertPost(postId);
+        verify(redis).delete("feed:public:pages");
         verify(postFeedService).invalidateMyPublishedCache(creatorId);
     }
 

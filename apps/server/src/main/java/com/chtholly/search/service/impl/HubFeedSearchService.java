@@ -89,7 +89,9 @@ public class HubFeedSearchService {
                 .body(b -> b
                         .from(from)
                         .size(size)
-                        .query(q -> q.term(t -> t.field("status").value("published")))
+                        .query(q -> q.bool(bool -> bool
+                                .filter(f -> f.term(t -> t.field("status").value("published")))
+                                .filter(f -> f.term(t -> t.field("visible").value("public")))))
                         .sort(s -> s.field(f -> f.field("publish_time").order(SortOrder.Desc)))));
     }
 
@@ -98,7 +100,9 @@ public class HubFeedSearchService {
                 .header(h -> h.index(INDEX))
                 .body(b -> b
                         .size(0)
-                        .query(q -> q.term(t -> t.field("status").value("published")))
+                        .query(q -> q.bool(bool -> bool
+                                .filter(f -> f.term(t -> t.field("status").value("published")))
+                                .filter(f -> f.term(t -> t.field("visible").value("public")))))
                         .aggregations(HOT_TAGS_AGG, a -> a.terms(t -> t.field("tags").size(20)))));
     }
 
@@ -109,6 +113,7 @@ public class HubFeedSearchService {
                         .size(5)
                         .query(q -> q.bool(bool -> {
                             bool.filter(f -> f.term(t -> t.field("status").value("published")));
+                            bool.filter(f -> f.term(t -> t.field("visible").value("public")));
                             if (tags != null && !tags.isEmpty()) {
                                 bool.must(m -> m.terms(t -> t.field("tags")
                                         .terms(tv -> tv.value(tags.stream().map(FieldValue::of).toList()))));
@@ -324,4 +329,3 @@ public class HubFeedSearchService {
         }
     }
 }
-

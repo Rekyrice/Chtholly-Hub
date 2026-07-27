@@ -1,7 +1,12 @@
 package com.chtholly.search.index;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.DeleteResponse;
+import co.elastic.clients.elasticsearch.core.DeleteByQueryResponse;
+import co.elastic.clients.elasticsearch.core.CountResponse;
 import co.elastic.clients.elasticsearch.core.IndexResponse;
+import co.elastic.clients.elasticsearch.indices.ElasticsearchIndicesClient;
+import co.elastic.clients.transport.endpoints.BooleanResponse;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostDetailRow;
@@ -33,6 +38,34 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.spy;
 
 class SearchIndexServiceTest {
+
+    @Test
+    void ensureBackfillPurgesLegacyDocumentsWithoutPublicVisibility() throws Exception {
+        ElasticsearchClient es = mock(ElasticsearchClient.class);
+        ElasticsearchIndicesClient indices = mock(ElasticsearchIndicesClient.class);
+        BooleanResponse exists = mock(BooleanResponse.class);
+        CountResponse count = mock(CountResponse.class);
+        PostMapper posts = mock(PostMapper.class);
+        when(es.indices()).thenReturn(indices);
+        when(indices.exists(any(java.util.function.Function.class))).thenReturn(exists);
+        when(exists.value()).thenReturn(true);
+        when(posts.countFeedPublic()).thenReturn(0L);
+        when(es.count(any(java.util.function.Function.class))).thenReturn(count);
+        when(count.count()).thenReturn(0L);
+        when(es.deleteByQuery(any(java.util.function.Function.class)))
+                .thenReturn(mock(DeleteByQueryResponse.class));
+        SearchIndexService service = new SearchIndexService(
+                es,
+                posts,
+                mock(CounterService.class),
+                new ObjectMapper(),
+                mock(RestTemplate.class),
+                "http://localhost:8888");
+
+        service.ensureBackfill();
+
+        verify(es).deleteByQuery(any(java.util.function.Function.class));
+    }
 
     @Test
     void reindexPublishedPostsByAuthorPagesThroughOnlyResolvedPostIds() {
@@ -100,6 +133,31 @@ class SearchIndexServiceTest {
                 es, posts, counters, new ObjectMapper(), rest, "http://localhost:8888");
 
         assertThat(service.tryUpsertPost(8L)).isFalse();
+    }
+
+    @Test
+    void given_privatePublishedPost_when_tryUpsert_then_removesItFromPublicIndex() throws Exception {
+        ElasticsearchClient es = mock(ElasticsearchClient.class);
+        PostMapper posts = mock(PostMapper.class);
+        RestTemplate rest = mock(RestTemplate.class);
+        PostDetailRow row = row(11L, "/uploads/private.md");
+        row.setVisible("private");
+        when(posts.findDetailById(11L)).thenReturn(row);
+        when(es.delete(any(co.elastic.clients.elasticsearch.core.DeleteRequest.class)))
+                .thenReturn(mock(DeleteResponse.class));
+        SearchIndexService service = new SearchIndexService(
+                es,
+                posts,
+                mock(CounterService.class),
+                new ObjectMapper(),
+                rest,
+                "http://localhost:8888");
+
+        assertThat(service.tryUpsertPost(11L)).isTrue();
+
+        verify(es).delete(any(co.elastic.clients.elasticsearch.core.DeleteRequest.class));
+        verify(es, never()).index(any(co.elastic.clients.elasticsearch.core.IndexRequest.class));
+        verify(rest, never()).exchange(any(String.class), any(), any(), eq(byte[].class));
     }
 
     @Test
@@ -173,6 +231,7 @@ class SearchIndexServiceTest {
         row.setTitle("title");
         row.setDescription("description");
         row.setStatus("published");
+        row.setVisible("public");
         row.setContentUrl(contentUrl);
         row.setAuthorHandle("rekyrice");
         return row;

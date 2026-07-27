@@ -3,6 +3,7 @@ package com.chtholly.search.index;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.IndexRequest;
 import co.elastic.clients.elasticsearch.core.IndexResponse;
+import co.elastic.clients.elasticsearch.core.DeleteRequest;
 import co.elastic.clients.elasticsearch._types.Refresh;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -74,15 +75,15 @@ public class SearchIndexService {
                 return;
             }
             long mysqlPublished = postMapper.countFeedPublic();
-            long esPublished = countPublishedDocuments();
-            if (mysqlPublished <= esPublished) {
-                return;
+            long esPublished = countPublicDocuments();
+            if (mysqlPublished > esPublished) {
+                log.info("Search index backfill started: mysqlPublished={} esPublished={}",
+                        mysqlPublished, esPublished);
+                int indexed = backfillPublishedPosts();
+                log.info("Search index backfill completed: {} posts processed, {} published documents in index",
+                        indexed, countPublicDocuments());
             }
-            log.info("Search index backfill started: mysqlPublished={} esPublished={}",
-                    mysqlPublished, esPublished);
-            int indexed = backfillPublishedPosts();
-            log.info("Search index backfill completed: {} posts processed, {} published documents in index",
-                    indexed, countPublishedDocuments());
+            purgeNonPublicDocuments();
         } catch (Exception e) {
             log.warn("Search index backfill skipped: {}", e.getMessage());
         }
@@ -133,9 +134,19 @@ public class SearchIndexService {
         return indexed;
     }
 
-    private long countPublishedDocuments() throws Exception {
+    private long countPublicDocuments() throws Exception {
         return es.count(c -> c.index(INDEX)
-                .query(q -> q.term(t -> t.field("status").value("published")))).count();
+                .query(q -> q.bool(b -> b
+                        .filter(f -> f.term(t -> t.field("status").value("published")))
+                        .filter(f -> f.term(t -> t.field("visible").value("public")))))).count();
+    }
+
+    private void purgeNonPublicDocuments() throws Exception {
+        es.deleteByQuery(d -> d
+                .index(INDEX)
+                .query(q -> q.bool(b -> b
+                        .mustNot(m -> m.term(t -> t.field("visible").value("public")))))
+                .refresh(true));
     }
 
     /**
@@ -169,8 +180,10 @@ public class SearchIndexService {
 
     private void upsertPostOrThrow(long id, boolean requireFullBody) throws Exception {
         PostDetailRow row = postMapper.findDetailById(id);
-        if (row == null) {
-            log.warn("Index upsert skipped: post {} not found", id);
+        if (row == null
+                || !"published".equals(row.getStatus())
+                || !"public".equals(row.getVisible())) {
+            removePostFromPublicIndex(id);
             return;
         }
         Map<String, Object> doc = new HashMap<>();
@@ -188,6 +201,7 @@ public class SearchIndexService {
             doc.put("publish_time", row.getPublishTime().toEpochMilli());
         }
         doc.put("status", row.getStatus());
+        doc.put("visible", row.getVisible());
         doc.put("tags", parseStringArray(row.getTags()));
         doc.put("img_urls", parseStringArray(row.getImgUrls()));
         if (row.getIsTop() != null) {
@@ -222,6 +236,11 @@ public class SearchIndexService {
         );
         IndexResponse resp = es.index(req);
         log.info("Indexed post {} result={} version={}", id, resp.result(), resp.version());
+    }
+
+    private void removePostFromPublicIndex(long id) throws Exception {
+        es.delete(DeleteRequest.of(d -> d.index(INDEX).id(String.valueOf(id))));
+        log.info("Removed non-public post {} from search index", id);
     }
 
     private String absoluteContentUrl(String url) {

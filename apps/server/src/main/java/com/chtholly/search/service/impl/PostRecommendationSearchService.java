@@ -51,6 +51,7 @@ public class PostRecommendationSearchService {
                             .query(q -> q.functionScore(fs -> fs
                                     .query(inner -> inner.bool(b -> {
                                         b.filter(f -> f.term(t -> t.field("status").value("published")));
+                                        b.filter(f -> f.term(t -> t.field("visible").value("public")));
                                         applyExcludeIds(b, exclude);
                                         return b;
                                     }))
@@ -79,6 +80,7 @@ public class PostRecommendationSearchService {
                             .size(safeLimit)
                             .query(q -> q.bool(b -> {
                                 b.filter(f -> f.term(t -> t.field("status").value("published")));
+                                b.filter(f -> f.term(t -> t.field("visible").value("public")));
                                 applyExcludeIds(b, exclude);
                                 return b;
                             }))
@@ -107,6 +109,7 @@ public class PostRecommendationSearchService {
                             .size(safeLimit)
                             .query(q -> q.bool(b -> {
                                 b.filter(f -> f.term(t -> t.field("status").value("published")));
+                                b.filter(f -> f.term(t -> t.field("visible").value("public")));
                                 applyExcludeIds(b, exclude);
                                 if (!tags.isEmpty()) {
                                     b.should(sh -> sh.terms(t -> t.field("tags")
@@ -182,4 +185,3 @@ public class PostRecommendationSearchService {
         return List.of();
     }
 }
-

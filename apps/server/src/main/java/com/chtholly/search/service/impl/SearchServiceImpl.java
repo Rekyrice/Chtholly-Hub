@@ -110,6 +110,8 @@ public class SearchServiceImpl implements SearchService {
                                     }
                                     bq.filter(f -> f.term(t -> t.field("status")
                                             .value(v -> v.stringValue("published"))));
+                                    bq.filter(f -> f.term(t -> t.field("visible")
+                                            .value(v -> v.stringValue("public"))));
 
                                     if (tags != null && !tags.isEmpty()) {
                                         bq.filter(f -> f.terms(t -> t.field("tags")
@@ -196,9 +198,12 @@ public class SearchServiceImpl implements SearchService {
                                                     .terms(values -> values.value(names.stream()
                                                             .map(FieldValue::of)
                                                             .toList()))))))
-                                    .filter(filter -> filter.term(term -> term
-                                            .field("status")
-                                            .value(value -> value.stringValue("published"))))))
+                                     .filter(filter -> filter.term(term -> term
+                                             .field("status")
+                                             .value(value -> value.stringValue("published"))))
+                                     .filter(filter -> filter.term(term -> term
+                                             .field("visible")
+                                             .value(value -> value.stringValue("public"))))))
                             .sort(sortsFor(SearchSort.RELEVANCE)),
                     (Class<Map<String, Object>>) (Class<?>) Map.class);
         } catch (Exception exception) {

@@ -132,6 +132,30 @@ class SearchServiceImplTest {
     }
 
     @Test
+    void publicFulltextSearchFiltersPublishedAndPublicPosts() throws Exception {
+        co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> empty =
+                emptySearchResponse();
+        when(es.search(any(Function.class), any(Class.class))).thenReturn(empty);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Function<SearchRequest.Builder, ObjectBuilder<SearchRequest>>> captor =
+                ArgumentCaptor.forClass(Function.class);
+
+        service.search("privacy", 10, null, null, SearchSort.RELEVANCE, null);
+
+        verify(es).search(captor.capture(), any(Class.class));
+        SearchRequest request = captor.getValue().apply(new SearchRequest.Builder()).build();
+        var filters = request.query().functionScore().query().bool().filter();
+        assertThat(filters).anySatisfy(filter -> {
+            assertThat(filter.term().field()).isEqualTo("status");
+            assertThat(filter.term().value().stringValue()).isEqualTo("published");
+        });
+        assertThat(filters).anySatisfy(filter -> {
+            assertThat(filter.term().field()).isEqualTo("visible");
+            assertThat(filter.term().value().stringValue()).isEqualTo("public");
+        });
+    }
+
+    @Test
     void givenEntityNames_whenSearchByEntityNames_thenUsesOneNestedArticleQuery() throws Exception {
         co.elastic.clients.elasticsearch.core.SearchResponse<Map<String, Object>> empty = emptySearchResponse();
         when(es.search(any(Function.class), any(Class.class))).thenReturn(empty);
@@ -383,6 +407,11 @@ class SearchServiceImplTest {
         MsearchRequest request = captor.getValue().apply(new MsearchRequest.Builder()).build();
         assertThat(request.searches().getFirst().body().from()).isEqualTo(8);
         assertThat(request.searches().getFirst().body().size()).isEqualTo(8);
+        assertThat(request.searches().getFirst().body().query().bool().filter())
+                .anySatisfy(filter -> {
+                    assertThat(filter.term().field()).isEqualTo("visible");
+                    assertThat(filter.term().value().stringValue()).isEqualTo("public");
+                });
         assertThat(response.latestPostsTotal()).isEqualTo(23);
     }
 
