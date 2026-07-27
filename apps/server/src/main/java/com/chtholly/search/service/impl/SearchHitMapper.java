@@ -57,6 +57,7 @@ public class SearchHitMapper {
         Map<Long, Boolean> faved = currentUserId == null
                 ? Collections.emptyMap()
                 : counterService.batchIsFaved(currentUserId, postIds);
+        Map<String, Map<String, Long>> reactionCounts = loadReactionCounts(postIds);
         Map<Long, Long> commentCounts = commentService.countActiveByPostIds(postIds);
 
         List<FeedItemResponse> items = new ArrayList<>(hits.size());
@@ -65,10 +66,16 @@ public class SearchHitMapper {
             if (source == null) continue;
             Long postId = asLong(source.get("content_id"));
             String snippet = highlightedSnippet(hit);
+            Map<String, Long> counts = postId == null
+                    ? Map.of()
+                    : reactionCounts.getOrDefault(String.valueOf(postId), Map.of());
             FeedItemResponse item = FeedItemResponse.fromEsHit(
                     source,
                     postId != null && Boolean.TRUE.equals(liked.get(postId)),
                     postId != null && Boolean.TRUE.equals(faved.get(postId)))
+                    .withCounts(
+                            counts.getOrDefault("like", asLongOrZero(source.get("like_count"))),
+                            counts.getOrDefault("fav", asLongOrZero(source.get("favorite_count"))))
                     .withCommentCount(postId == null ? 0L : commentCounts.getOrDefault(postId, 0L));
             if (snippet != null && !snippet.isBlank()) item = item.withDescription(snippet);
             items.add(item.withTop(null));
@@ -106,6 +113,21 @@ public class SearchHitMapper {
         return List.copyOf(refreshed);
     }
 
+    private Map<String, Map<String, Long>> loadReactionCounts(List<Long> postIds) {
+        if (postIds.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            return counterService.getCountsBatch(
+                    "post",
+                    postIds.stream().map(String::valueOf).toList(),
+                    List.of("like", "fav"));
+        } catch (RuntimeException exception) {
+            log.warn("Failed to refresh search reaction counts, postIds={}", postIds, exception);
+            return Map.of();
+        }
+    }
+
     private String highlightedSnippet(Hit<Map<String, Object>> hit) {
         Map<String, List<String>> highlights = hit.highlight();
         if (highlights == null || highlights.isEmpty()) return null;
@@ -132,5 +154,10 @@ public class SearchHitMapper {
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    private long asLongOrZero(Object value) {
+        Long parsed = asLong(value);
+        return parsed == null ? 0L : Math.max(0L, parsed);
     }
 }

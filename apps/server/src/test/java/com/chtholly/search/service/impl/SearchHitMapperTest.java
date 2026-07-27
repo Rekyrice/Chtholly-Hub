@@ -58,6 +58,33 @@ class SearchHitMapperTest {
         verify(commentService).countActiveByPostIds(List.of(1L, 2L));
     }
 
+    @Test
+    void mapPostHitsOverlaysAuthoritativeReactionCounts() {
+        Hit<Map<String, Object>> hit = hit(Map.of(
+                "content_id", 1L,
+                "author_id", 7L,
+                "author_nickname", "作者",
+                "like_count", 0L,
+                "favorite_count", 0L
+        ));
+        when(counterService.getCountsBatch(
+                "post", List.of("1"), List.of("like", "fav")))
+                .thenReturn(Map.of("1", Map.of("like", 4L, "fav", 2L)));
+        when(commentService.countActiveByPostIds(List.of(1L))).thenReturn(Map.of(1L, 1L));
+        when(publicAuthorQueryService.findByIds(List.of(7L))).thenReturn(Map.of());
+        SearchHitMapper mapper = new SearchHitMapper(counterService, publicAuthorQueryService, commentService);
+
+        List<FeedItemResponse> items = mapper.mapPostHits(List.of(hit), null);
+
+        assertThat(items).singleElement().satisfies(item -> {
+            assertThat(item.likeCount()).isEqualTo(4L);
+            assertThat(item.favoriteCount()).isEqualTo(2L);
+            assertThat(item.commentCount()).isEqualTo(1L);
+        });
+        verify(counterService).getCountsBatch(
+                "post", List.of("1"), List.of("like", "fav"));
+    }
+
     @SuppressWarnings("unchecked")
     private Hit<Map<String, Object>> hit(Map<String, Object> source) {
         Hit<Map<String, Object>> hit = mock(Hit.class);
