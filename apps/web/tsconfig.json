@@ -26,10 +26,11 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts",
+    ".next-prod/types/**/*.ts",
     "**/*.mts",
     ".next-dev/types/**/*.ts",
-    ".next-dev/dev/types/**/*.ts"
+    ".next-dev/dev/types/**/*.ts",
+    ".next-prod/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

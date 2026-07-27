@@ -8,7 +8,7 @@
 | 后端全量快速测试 | `cd apps/server` 后 `mvn test -Dspring.profiles.active=test` | 后端逻辑、配置或事件改动的常规回归；与 CI `backend-test` 一致 | CI 提供 Redis；本地按测试配置准备 | Surefire 测试通过并生成 JaCoCo 报告 |
 | Testcontainers 集成测试 | `cd apps/server` 后 `mvn verify -Pintegration-test` | MySQL、Kafka、Elasticsearch、Redis/网络故障等真实基础设施链路 | 可用的 Docker Engine；首次运行需拉取镜像 | Failsafe 执行 `**/*IT.java`，报告在 `target/failsafe-reports` |
 | 前端 Vitest | `cd apps/web` 后 `npm run test:run` | 组件、service、hook 和交互行为回归 | 已执行 `npm ci` 或 `npm install`；通常不需要运行后端 | `vitest run` 一次性结束且全部测试通过 |
-| 前端生产构建 | `cd apps/web` 后 `npm run build` | 验证类型、路由、Server/Client 边界和 standalone 输出 | 已安装依赖；所需 Next 变量由 `apps/web/.env.local` 或进程注入 | `next build` 成功并生成 `.next` |
+| 前端生产构建 | `cd apps/web` 后 `npm run build` | 验证类型、路由、Server/Client 边界和 standalone 输出 | 已安装依赖；所需 Next 变量由 `apps/web/.env.local` 或进程注入 | `next build` 成功并生成 `.next-prod` |
 | 文档与 Git | 根目录执行 `git diff --check`、`git status --short`；文档任务再检查本地链接 | 所有提交前，尤其是文档导航、路径和命令变更 | Git；链接检查不访问网络 | 无空白错误；状态与任务范围一致；仓库内链接目标存在 |
 
 ## Surefire 与 Failsafe 的边界
