@@ -40,8 +40,10 @@ export default function AgentWorkspace() {
   const {
     loggedIn,
     activeSessionId,
+    activeSessionContext,
     sessions,
     switchSession,
+    activateContextSession,
     workspaceDark,
     proactiveNotifications,
   } = useAgentChatContext();
@@ -49,10 +51,14 @@ export default function AgentWorkspace() {
   const router = useRouter();
   const sessionParam = searchParams.get("session");
   const taskTypeParam = searchParams.get("taskType");
+  const contextParam = searchParams.get("context");
+  const contextTitleParam = searchParams.get("postTitle");
+  const contextPostIdParam = searchParams.get("postId");
   const [taskType, setTaskType] = useState<AgentTaskType | null>(
     () => parseAgentTaskType(taskTypeParam),
   );
   const appliedUrlSessionRef = useRef(false);
+  const appliedArticleContextRef = useRef("");
   const sessionsCollapsed = useSyncExternalStore(
     subscribeSessionsCollapsed,
     loadSessionsCollapsedPreference,
@@ -99,13 +105,48 @@ export default function AgentWorkspace() {
   }, [sessionParam, sessions, activeSessionId, switchSession]);
 
   useEffect(() => {
-    if (!activeSessionId || sessionParam === activeSessionId) return;
+    if (
+      !loggedIn
+      || sessionParam
+      || !contextParam?.startsWith("post:")
+      || sessions.length === 0
+      || appliedArticleContextRef.current === contextParam
+    ) {
+      return;
+    }
+    appliedArticleContextRef.current = contextParam;
+    const articleSessionId = activateContextSession({
+      contextKey: contextParam,
+      contextTitle: contextTitleParam?.trim() || "当前文章",
+      postId: contextPostIdParam || undefined,
+    });
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("session", articleSessionId);
+    router.replace(`/agent?${nextParams.toString()}`, { scroll: false });
+  }, [
+    activateContextSession,
+    contextParam,
+    contextPostIdParam,
+    contextTitleParam,
+    loggedIn,
+    router,
+    searchParams,
+    sessionParam,
+    sessions.length,
+  ]);
+
+  useEffect(() => {
+    if (
+      !activeSessionId
+      || sessionParam === activeSessionId
+      || (!sessionParam && contextParam?.startsWith("post:"))
+    ) return;
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("session", activeSessionId);
     router.replace(`/agent?${nextParams.toString()}`, {
       scroll: false,
     });
-  }, [sessionParam, activeSessionId, router, searchParams]);
+  }, [sessionParam, activeSessionId, contextParam, router, searchParams]);
 
   const changeTaskType = useCallback((nextTaskType: AgentTaskType | null) => {
     setTaskType(nextTaskType);
@@ -174,6 +215,11 @@ export default function AgentWorkspace() {
           <AgentLive2DStage />
         </div>
         <div className="agent-workspace-main-chat">
+          {activeSessionContext?.contextKey.startsWith("post:") && (
+            <div className="agent-article-context" role="status">
+              正在陪读《{activeSessionContext.contextTitle}》
+            </div>
+          )}
           <AgentSkillModeSelector value={taskType} onChange={changeTaskType} />
           <AgentChatPanel
             variant="workspace"

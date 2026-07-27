@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { getAgentWsUrl } from "@/lib/agent/wsUrl";
+import type { AgentSessionContext } from "@/lib/agent/sessions";
 import type {
   AgentEventType,
   AgentSendOptions,
@@ -16,6 +17,7 @@ type UseAgentWebSocketOptions = {
   loggedIn: boolean;
   hydrated: boolean;
   activeSessionIdRef: { current: string };
+  activeSessionContextRef: { current: AgentSessionContext | null };
   messages: ChatMessage[];
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   onInputConsumed: () => void;
@@ -28,6 +30,7 @@ type BuildAgentChatPayloadInput = {
   title: string;
   search: string;
   taskType?: AgentTaskType;
+  sessionContext?: AgentSessionContext | null;
 };
 
 export function buildAgentChatPayload({
@@ -37,16 +40,20 @@ export function buildAgentChatPayload({
   title,
   search,
   taskType,
+  sessionContext,
 }: BuildAgentChatPayloadInput) {
-  const source = new URLSearchParams(search).get("context") ?? undefined;
+  const source = sessionContext === undefined
+    ? new URLSearchParams(search).get("context") ?? undefined
+    : sessionContext?.contextKey;
   const context: Record<string, string> = {
     page: pathname,
-    title,
+    title: sessionContext?.contextTitle ?? title,
   };
   if (source) context.source = source;
   if (source?.startsWith("post:")) {
     context.postSlug = source.slice("post:".length);
   }
+  if (sessionContext?.postId) context.postId = sessionContext.postId;
   return {
     type: "chat" as const,
     sessionId,
@@ -69,6 +76,7 @@ export function useAgentWebSocket({
   loggedIn,
   hydrated,
   activeSessionIdRef,
+  activeSessionContextRef,
   messages,
   setMessages,
   onInputConsumed,
@@ -329,9 +337,19 @@ export function useAgentWebSocket({
         title: document.title,
         search: window.location.search,
         taskType: options?.taskType,
+        sessionContext: activeSessionContextRef.current,
       })));
     },
-    [activeSessionIdRef, busy, connect, loggedIn, onInputConsumed, setMessages, waitUntilOpen],
+    [
+      activeSessionContextRef,
+      activeSessionIdRef,
+      busy,
+      connect,
+      loggedIn,
+      onInputConsumed,
+      setMessages,
+      waitUntilOpen,
+    ],
   );
 
   const clearBackendMemory = useCallback((sessionId: string) => {

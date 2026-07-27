@@ -1,5 +1,11 @@
 import type { ChatMessage } from "@/lib/types/agent";
 
+export type AgentSessionContext = {
+  contextKey: string;
+  contextTitle: string;
+  postId?: string;
+};
+
 export type AgentSessionRecord = {
   id: string;
   title: string;
@@ -8,6 +14,9 @@ export type AgentSessionRecord = {
   updatedAt: number;
   /** 用户手动重命名后，不再被首条消息自动覆盖标题 */
   titleLocked?: boolean;
+  contextKey?: string;
+  contextTitle?: string;
+  postId?: string;
 };
 
 const STORAGE_KEY = "chtholly-agent-sessions";

@@ -110,4 +110,17 @@ describe("PostQnA", () => {
       expect.any(AbortSignal),
     );
   });
+
+  it("renders structured answers as safe Markdown", async () => {
+    qaStream.mockImplementation(() => completedAnswer(
+      "核心观点：\n\n- **认真**面对魔物\n- 接受同伴的差异",
+    ));
+    render(<PostQnA postId="42" />);
+
+    ask("核心观点是什么？");
+
+    expect(await screen.findByText("认真").then((node) => node.tagName)).toBe("STRONG");
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(screen.getByText("接受同伴的差异")).toBeInTheDocument();
+  });
 });

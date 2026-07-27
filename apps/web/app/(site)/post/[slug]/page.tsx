@@ -62,7 +62,13 @@ export default async function PostPage({ params }: Props) {
   const readingState = getArticleReadingState(post);
   const readingComment = getReadingComment(post);
   const timeOfDay = getCurrentTimeOfDay();
-  const askHref = `/agent?taskType=page-explain&context=${encodeURIComponent(`post:${post.slug}`)}`;
+  const askParams = new URLSearchParams({
+    taskType: "page-explain",
+    context: `post:${post.slug}`,
+    postTitle: post.title,
+    postId: post.id,
+  });
+  const askHref = `/agent?${askParams.toString()}`;
   const headings = extractMarkdownHeadings(markdown);
   const { readingMinutes, charCount } = countWritingStats(markdown);
   const clues = buildReadingClues(post.description, markdown);

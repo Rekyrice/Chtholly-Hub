@@ -786,6 +786,17 @@
     min-height: 0;
   }
 
+  .agent-article-context {
+    margin: 0.65rem 1rem 0;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid color-mix(in srgb, var(--color-sky) 30%, var(--color-border));
+    border-radius: 0.8rem;
+    background: color-mix(in srgb, var(--color-sky) 9%, var(--color-surface));
+    color: var(--color-text-secondary);
+    font-family: var(--blog-font);
+    font-size: 0.82rem;
+  }
+
   .agent-skill-mode-bar {
     display: flex;
     flex-wrap: wrap;

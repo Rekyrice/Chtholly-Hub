@@ -8,6 +8,7 @@ import {
   saveActiveSessionId,
   saveStoredSessions,
   sessionTitleFromMessages,
+  type AgentSessionContext,
   type AgentSessionRecord,
 } from "@/lib/agent/sessions";
 import type { ChatMessage } from "@/lib/types/agent";
@@ -26,9 +27,22 @@ function upsertSessionRecord(
   return next;
 }
 
-function emptySession(id = createSessionId()): AgentSessionRecord {
+function emptySession(
+  id = createSessionId(),
+  context?: AgentSessionContext,
+): AgentSessionRecord {
   const now = Date.now();
-  return { id, title: NEW_SESSION_TITLE, messages: [], createdAt: now, updatedAt: now };
+  return {
+    id,
+    title: context ? `陪读：${context.contextTitle}` : NEW_SESSION_TITLE,
+    messages: [],
+    createdAt: now,
+    updatedAt: now,
+    titleLocked: context ? true : undefined,
+    contextKey: context?.contextKey,
+    contextTitle: context?.contextTitle,
+    postId: context?.postId,
+  };
 }
 
 export function useAgentSessions() {
@@ -37,6 +51,7 @@ export function useAgentSessions() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const activeSessionIdRef = useRef(activeSessionId);
+  const activeSessionContextRef = useRef<AgentSessionContext | null>(null);
   const messagesRef = useRef(messages);
   const sessionsRef = useRef(sessions);
 
@@ -56,7 +71,9 @@ export function useAgentSessions() {
     /* eslint-disable react-hooks/set-state-in-effect -- sessions are hydrated from localStorage */
     setSessions(initialSessions);
     setActiveSessionId(activeId);
-    setMessages(initialSessions.find((session) => session.id === activeId)?.messages ?? []);
+    const activeSession = initialSessions.find((session) => session.id === activeId);
+    setMessages(activeSession?.messages ?? []);
+    activeSessionContextRef.current = activeSession ? sessionContext(activeSession) : null;
     /* eslint-enable react-hooks/set-state-in-effect */
     saveActiveSessionId(activeId);
     setHydrated(true);
@@ -74,6 +91,9 @@ export function useAgentSessions() {
         createdAt: existing?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
         titleLocked: existing?.titleLocked,
+        contextKey: existing?.contextKey,
+        contextTitle: existing?.contextTitle,
+        postId: existing?.postId,
       };
       const next = upsertSessionRecord(previous, record);
       saveStoredSessions(next);
@@ -95,6 +115,7 @@ export function useAgentSessions() {
       activeSessionIdRef.current = sessionId;
       saveActiveSessionId(sessionId);
       setMessages(target.messages);
+      activeSessionContextRef.current = sessionContext(target);
       return true;
     },
     [persistActiveSession],
@@ -112,8 +133,39 @@ export function useAgentSessions() {
     activeSessionIdRef.current = record.id;
     saveActiveSessionId(record.id);
     setMessages([]);
+    activeSessionContextRef.current = null;
     return record.id;
   }, [persistActiveSession]);
+
+  const activateContextSession = useCallback(
+    (context: AgentSessionContext) => {
+      const existing = sessionsRef.current.find(
+        (session) => session.contextKey === context.contextKey,
+      );
+      if (existing) {
+        if (existing.id !== activeSessionIdRef.current) {
+          switchSession(existing.id);
+        } else {
+          activeSessionContextRef.current = sessionContext(existing);
+        }
+        return existing.id;
+      }
+
+      persistActiveSession(messagesRef.current);
+      const record = emptySession(undefined, context);
+      const next = upsertSessionRecord(sessionsRef.current, record);
+      sessionsRef.current = next;
+      setSessions(next);
+      saveStoredSessions(next);
+      setActiveSessionId(record.id);
+      activeSessionIdRef.current = record.id;
+      activeSessionContextRef.current = context;
+      saveActiveSessionId(record.id);
+      setMessages([]);
+      return record.id;
+    },
+    [persistActiveSession, switchSession],
+  );
 
   const renameSession = useCallback((sessionId: string, title: string) => {
     const trimmed = title.trim();
@@ -141,6 +193,7 @@ export function useAgentSessions() {
         activeSessionIdRef.current = fallback.id;
         saveActiveSessionId(fallback.id);
         setMessages(fallback.messages);
+        activeSessionContextRef.current = sessionContext(fallback);
       }
       setSessions(next);
       saveStoredSessions(next);
@@ -156,9 +209,20 @@ export function useAgentSessions() {
     setMessages,
     hydrated,
     activeSessionIdRef,
+    activeSessionContextRef,
     switchSession,
     createSession,
+    activateContextSession,
     renameSession,
     deleteSession,
   } as const;
+}
+
+function sessionContext(session: AgentSessionRecord): AgentSessionContext | null {
+  if (!session.contextKey || !session.contextTitle) return null;
+  return {
+    contextKey: session.contextKey,
+    contextTitle: session.contextTitle,
+    postId: session.postId,
+  };
 }

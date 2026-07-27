@@ -548,7 +548,26 @@
     border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
     background: color-mix(in srgb, var(--color-cloud) 58%, var(--color-surface));
     color: var(--color-text);
-    font-family: var(--font-jp);
+    font-family: var(--blog-font);
+  }
+
+  .post-qna-turn__answer > :first-child {
+    margin-top: 0;
+  }
+
+  .post-qna-turn__answer > :last-child {
+    margin-bottom: 0;
+  }
+
+  .post-qna-turn__answer p,
+  .post-qna-turn__answer ul,
+  .post-qna-turn__answer ol {
+    margin: 0.7em 0;
+  }
+
+  .post-qna-turn__answer ul,
+  .post-qna-turn__answer ol {
+    padding-left: 1.45em;
   }
 
   .post-qna-turn__answer--streaming::after {

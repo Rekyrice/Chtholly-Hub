@@ -12,7 +12,10 @@ import {
 import { useAgentPreferences } from "@/components/agent/hooks/useAgentPreferences";
 import { useAgentSessions } from "@/components/agent/hooks/useAgentSessions";
 import { useAgentWebSocket } from "@/components/agent/hooks/useAgentWebSocket";
-import type { AgentSessionRecord } from "@/lib/agent/sessions";
+import type {
+  AgentSessionContext,
+  AgentSessionRecord,
+} from "@/lib/agent/sessions";
 import { isLoggedIn, purgeExpiredAuth } from "@/lib/auth/tokens";
 import type {
   AgentSendOptions,
@@ -26,6 +29,7 @@ type BooleanStateAction = boolean | ((previous: boolean) => boolean);
 type AgentChatContextValue = {
   loggedIn: boolean;
   activeSessionId: string;
+  activeSessionContext: AgentSessionContext | null;
   sessions: AgentSessionRecord[];
   messages: ChatMessage[];
   input: string;
@@ -49,6 +53,7 @@ type AgentChatContextValue = {
   clearConversation: () => void;
   switchSession: (sessionId: string) => void;
   createSession: () => string;
+  activateContextSession: (context: AgentSessionContext) => string;
   renameSession: (sessionId: string, title: string) => void;
   deleteSession: (sessionId: string) => void;
   fillAndSend: (text: string) => void;
@@ -79,6 +84,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     loggedIn,
     hydrated: sessionState.hydrated,
     activeSessionIdRef: sessionState.activeSessionIdRef,
+    activeSessionContextRef: sessionState.activeSessionContextRef,
     messages: sessionState.messages,
     setMessages: sessionState.setMessages,
     onInputConsumed: consumeInput,
@@ -122,6 +128,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     () => ({
       loggedIn,
       activeSessionId: sessionState.activeSessionId,
+      activeSessionContext: sessionState.activeSessionContextRef.current,
       sessions: sessionState.sessions,
       messages: sessionState.messages,
       input,
@@ -140,6 +147,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       clearConversation: socketState.clearConversation,
       switchSession,
       createSession,
+      activateContextSession: sessionState.activateContextSession,
       renameSession: sessionState.renameSession,
       deleteSession,
       fillAndSend,
