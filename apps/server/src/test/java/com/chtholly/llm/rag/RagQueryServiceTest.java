@@ -51,6 +51,30 @@ class RagQueryServiceTest {
     }
 
     @Test
+    void postScopedSearchReturnsOnlyCurrentChunksFromRequestedPost() {
+        VectorStore vectorStore = mock(VectorStore.class);
+        when(vectorStore.similaritySearch(any(org.springframework.ai.vectorstore.SearchRequest.class)))
+                .thenReturn(List.of(
+                        document("42", "42#0", "sha-42", "requested first chunk"),
+                        document("99", "99#0", "sha-99", "unrelated chunk"),
+                        document("42", "42#1", "sha-42", "requested second chunk")));
+        RagIndexService indexService = mock(RagIndexService.class);
+        PostMapper postMapper = mock(PostMapper.class);
+        when(postMapper.findById(42L)).thenReturn(publicPost(42L, "sha-42"));
+        RagQueryService service = service(vectorStore, mock(ChatClient.class), indexService, postMapper);
+
+        List<SearchResult> results = service.searchPost(42L, "三个主要观点", 3);
+
+        assertThat(results)
+                .extracting(SearchResult::getId)
+                .containsOnly("post:42");
+        assertThat(results)
+                .extracting(SearchResult::getSnippet)
+                .containsExactly("requested first chunk", "requested second chunk");
+        verify(indexService).ensureIndexed(42L);
+    }
+
+    @Test
     void privatePostQuestionReturnsNoAnswerWithoutRetrievalOrModelCall() {
         VectorStore vectorStore = mock(VectorStore.class);
         ChatClient chatClient = mock(ChatClient.class);

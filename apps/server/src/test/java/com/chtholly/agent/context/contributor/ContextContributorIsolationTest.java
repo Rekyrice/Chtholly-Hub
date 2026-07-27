@@ -97,7 +97,7 @@ class ContextContributorIsolationTest {
                 .doesNotContain("result title", "result snippet");
         assertThat(knowledge.evidence()).hasSize(1);
         assertThat(knowledge.evidence().getFirst().title()).isEqualTo("result title");
-        assertThat(knowledge.evidenceRequired()).isTrue();
+        assertThat(knowledge.evidenceRequired()).isFalse();
         assertThat(knowledge.degraded()).isFalse();
     }
 

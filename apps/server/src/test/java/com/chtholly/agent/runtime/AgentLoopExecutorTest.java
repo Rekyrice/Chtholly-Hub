@@ -19,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -137,6 +138,41 @@ class AgentLoopExecutorTest {
     }
 
     @Test
+    void compoundBangumiQuestionCannotFinishBeforeCharactersToolRuns() throws Exception {
+        AgentTool search = tool("bangumi_search");
+        AgentTool characters = tool("bangumi_characters");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"bangumi_search\",\"input\":{\"keyword\":\"迷宫饭\"}}")
+                .thenReturn("{\"action\":\"final\"}")
+                .thenReturn("{\"action\":\"bangumi_characters\",\"input\":{\"keyword\":\"迷宫饭\"}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult("评分 8.1，共 24 集", AgentToolResult.Status.SUCCESS));
+        when(toolExecutor.execute(eq(characters), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult("主要角色：莱欧斯、玛露希尔", AgentToolResult.Status.SUCCESS));
+        AgentExecutionTrace trace = trace(5);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system",
+                "查询《迷宫饭》的评分、集数和放送时间。《迷宫饭》的主要角色有哪些？",
+                7L,
+                "",
+                Map.of(search.name(), search, characters.name(), characters),
+                5);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        verify(toolExecutor).execute(eq(search), anyMap(), anyLong());
+        verify(toolExecutor).execute(eq(characters), anyMap(), anyLong());
+        assertThat(trace.getStepActions())
+                .containsExactly("bangumi_search", "compound_tool_pending", "bangumi_characters");
+        assertThat(events.stream()
+                .filter(event -> "observe".equals(event.type()))
+                .map(event -> event.data().path("content").asText()))
+                .anyMatch(message -> message.contains("bangumi_characters"));
+    }
+
+    @Test
     void invalidJsonEmitsConfiguredParseEventsAndRetries() throws Exception {
         when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("not-json")
@@ -230,6 +266,23 @@ class AgentLoopExecutorTest {
         assertThat(trace.getErrorMessage()).isEqualTo("MODEL_FAILED");
         verify(observationService).finishSpanError(
                 eq(childSpan), eq("llm_error"), anyMap(), anyMap());
+    }
+
+    @Test
+    void transientLlmFailureRetriesOnceAndRecordsBothAttempts() throws Exception {
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenThrow(new ResourceAccessException("connection reset"))
+                .thenReturn("{\"action\":\"final\"}");
+        AgentExecutionTrace trace = trace(2);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(), 2), trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        verify(llmInvoker, times(2)).call(anyString(), anyString(), anyDouble(), anyInt());
+        JsonNode llmCalls = objectMapper.valueToTree(trace.toPayloadMap().get("llmCalls"));
+        assertThat(llmCalls).hasSize(2);
+        assertThat(eventTypes()).containsExactly("think");
     }
 
     @Test

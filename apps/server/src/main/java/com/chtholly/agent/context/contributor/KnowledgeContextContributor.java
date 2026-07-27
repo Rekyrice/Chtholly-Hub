@@ -9,6 +9,8 @@ import com.chtholly.agent.evidence.Evidence;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.agent.skill.EvidencePolicy;
+import com.chtholly.llm.rag.RagQueryService;
+import com.chtholly.post.mapper.PostMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,19 +28,34 @@ public class KnowledgeContextContributor implements ContextContributor {
 
     private final HybridSearchService hybridSearchService;
     private final KnowledgeService knowledgeService;
+    private final RagQueryService ragQueryService;
+    private final PostMapper postMapper;
 
     @Autowired
     public KnowledgeContextContributor(
             ObjectProvider<HybridSearchService> hybridSearchServiceProvider,
-            ObjectProvider<KnowledgeService> knowledgeServiceProvider) {
+            ObjectProvider<KnowledgeService> knowledgeServiceProvider,
+            ObjectProvider<RagQueryService> ragQueryServiceProvider,
+            ObjectProvider<PostMapper> postMapperProvider) {
         this(hybridSearchServiceProvider.getIfAvailable(),
-                knowledgeServiceProvider.getIfAvailable());
+                knowledgeServiceProvider.getIfAvailable(),
+                ragQueryServiceProvider.getIfAvailable(),
+                postMapperProvider.getIfAvailable());
     }
 
     public KnowledgeContextContributor(HybridSearchService hybridSearchService,
                                        KnowledgeService knowledgeService) {
+        this(hybridSearchService, knowledgeService, null, null);
+    }
+
+    public KnowledgeContextContributor(HybridSearchService hybridSearchService,
+                                       KnowledgeService knowledgeService,
+                                       RagQueryService ragQueryService,
+                                       PostMapper postMapper) {
         this.hybridSearchService = hybridSearchService;
         this.knowledgeService = knowledgeService;
+        this.ragQueryService = ragQueryService;
+        this.postMapper = postMapper;
     }
 
     @Override
@@ -62,15 +79,17 @@ public class KnowledgeContextContributor implements ContextContributor {
         boolean heuristicRetrieval = request.evidencePolicy() == EvidencePolicy.NOT_NEEDED
                 && isQueryIntent(request.userQuestion());
         boolean retrievalRequested = plannedRetrieval || heuristicRetrieval;
-        boolean evidenceRequired = request.evidencePolicy() == EvidencePolicy.REQUIRED
-                || heuristicRetrieval;
+        boolean evidenceRequired = request.evidencePolicy() == EvidencePolicy.REQUIRED;
         String retrievalQuery = request.retrievalQuery().isBlank()
                 ? request.userQuestion()
                 : request.retrievalQuery();
         List<Evidence> evidence = new ArrayList<>();
         Map<String, String> retrievalStatuses = new LinkedHashMap<>();
         if (retrievalRequested) {
-            if (hybridSearchService == null) {
+            if (isCurrentPostEvidenceRequest(request)) {
+                degraded |= retrieveCurrentPostEvidence(
+                        request.pageContext(), retrievalQuery, evidence, retrievalStatuses);
+            } else if (hybridSearchService == null) {
                 degraded = true;
                 markAllRoutesFailed(retrievalStatuses);
             } else {
@@ -108,6 +127,48 @@ public class KnowledgeContextContributor implements ContextContributor {
         return new ContextContribution(
                 name(), order(), prompt.toString(), degraded, evidence, evidenceRequired,
                 retrievalStatuses);
+    }
+
+    private boolean isCurrentPostEvidenceRequest(ContextRequest request) {
+        return request.evidencePolicy() == EvidencePolicy.REQUIRED
+                && (PageContextContributor.extractCurrentPostId(request.pageContext()) != null
+                || hasText(PageContextContributor.extractCurrentPostSlug(request.pageContext())));
+    }
+
+    private boolean retrieveCurrentPostEvidence(
+            String pageContext,
+            String query,
+            List<Evidence> evidence,
+            Map<String, String> statuses) {
+        if (ragQueryService == null || postMapper == null) {
+            statuses.put("current_post", HybridSearchService.RetrievalStatus.FAILED.name());
+            return true;
+        }
+        Long postId = PageContextContributor.extractCurrentPostId(pageContext);
+        if (postId == null) {
+            String slug = PageContextContributor.extractCurrentPostSlug(pageContext);
+            postId = hasText(slug) ? postMapper.findIdBySlug(slug) : null;
+        }
+        if (postId == null || postId <= 0) {
+            statuses.put("current_post", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY.name());
+            return false;
+        }
+        try {
+            List<SearchResult> results = ragQueryService.searchPost(postId, query, 5);
+            for (int index = 0; index < results.size(); index++) {
+                evidence.add(Evidence.fromSearchResult(results.get(index), index + 1));
+            }
+            statuses.put(
+                    "current_post",
+                    results.isEmpty()
+                            ? HybridSearchService.RetrievalStatus.SUCCESS_EMPTY.name()
+                            : HybridSearchService.RetrievalStatus.SUCCESS_RESULTS.name());
+            return false;
+        } catch (RuntimeException exception) {
+            log.warn("Current post evidence retrieval failed, postId={}", postId, exception);
+            statuses.put("current_post", HybridSearchService.RetrievalStatus.FAILED.name());
+            return true;
+        }
     }
 
     private boolean appendKnownFacts(StringBuilder prompt, String userQuestion) {

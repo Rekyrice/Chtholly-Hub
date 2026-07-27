@@ -450,7 +450,7 @@ class ChthollyAgentTest {
     }
 
     @Test
-    void missingCitationFallsBackBeforeAnyAnswerEvent() {
+    void missingCitationIsRepairedOnceBeforeAnyAnswerEvent() throws Exception {
         when(memory.formatForPrompt()).thenReturn("");
         when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(groundedSnapshot("assembled system"));
@@ -458,13 +458,14 @@ class ChthollyAgentTest {
                 AgentLoopResult.finalReady(List.of("current question"), 1, 10));
         when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
         when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
-                .thenReturn(
-                        Flux.just("没有引用的站内事实"),
-                        Flux.just("这次缺少可靠引用，我无法把它当成站内结论。"));
+                .thenReturn(Flux.just("没有引用的站内事实"));
+        when(llmInvoker.call(anyString(), anyString(), eq(0.0), eq(1024)))
+                .thenReturn("没有引用的站内事实 [E1]");
 
         agent.run("帮我查站内事实", 7L, memory, events::add);
 
-        assertThat(eventContents()).containsOnly("这次缺少可靠引用，我无法把它当成站内结论。");
+        assertThat(eventContents()).containsOnly("没有引用的站内事实 [E1]");
+        verify(llmInvoker, times(1)).call(anyString(), anyString(), eq(0.0), eq(1024));
     }
 
     @Test

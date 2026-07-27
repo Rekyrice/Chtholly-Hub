@@ -67,6 +67,17 @@ class SkillRequestPlannerTest {
     }
 
     @Test
+    void outlineBasedOnSiteArticlesRequiresEvidence() {
+        SkillRequestPlanner.SkillRequestPlan plan = planner.plan(
+                registry.require("evidence-outline", "v1"),
+                "基于站内文章，为“京都动画如何表现人物关系”生成一个至少四节的证据大纲",
+                "");
+
+        assertThat(plan.evidencePolicy()).isEqualTo(EvidencePolicy.REQUIRED);
+        assertThat(plan.retrievalQuery()).isEqualTo("京都动画如何表现人物关系");
+    }
+
+    @Test
     void pageExplainAcceptsPostContextOrExplicitConcept() {
         SkillRequestPlanner.SkillRequestPlan currentPost = planner.plan(
                 registry.require("page-explain", "v1"),
@@ -83,6 +94,19 @@ class SkillRequestPlannerTest {
         assertThat(concept.status()).isEqualTo(SkillRequestPlanner.PlanStatus.READY);
         assertThat(concept.evidencePolicy()).isEqualTo(EvidencePolicy.OPTIONAL);
         assertThat(concept.retrievalQuery()).isEqualTo("Redis 持久化");
+    }
+
+    @Test
+    void currentPostSummaryUsesTheRequestedAnalysisAsRetrievalQuery() {
+        SkillRequestPlanner.SkillRequestPlan plan = planner.plan(
+                registry.require("page-explain", "v1"),
+                "只依据当前文章，总结作者的三个主要观点，并标出证据编号",
+                "页面：/agent\n标题：吃掉红龙这件事\n来源：post:dungeon-meshi"
+                        + "\npostSlug：dungeon-meshi\npostId：42");
+
+        assertThat(plan.evidencePolicy()).isEqualTo(EvidencePolicy.REQUIRED);
+        assertThat(plan.retrievalQuery())
+                .isEqualTo("总结作者的三个主要观点，并标出证据编号");
     }
 
     @Test

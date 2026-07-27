@@ -571,6 +571,16 @@ public class ChthollyAgent {
             String candidate = truncateAnswer(full.toString());
             EvidenceSet.ValidationResult evidenceValidation = contextSnapshot.evidenceSet()
                     .validate(candidate, contextSnapshot.evidenceRequired());
+            if (evidenceValidation.status() == EvidenceSet.ValidationStatus.MISSING_CITATION
+                    && !contextSnapshot.evidenceSet().isEmpty()) {
+                candidate = repairMissingCitations(
+                        candidate,
+                        contextSnapshot.evidenceSet(),
+                        trace,
+                        stepIndex);
+                evidenceValidation = contextSnapshot.evidenceSet()
+                        .validate(candidate, contextSnapshot.evidenceRequired());
+            }
             trace.recordCitationValidation(evidenceValidation.status().name());
             if (evidenceValidation.status() == EvidenceSet.ValidationStatus.UNKNOWN_CITATION
                     || evidenceValidation.status() == EvidenceSet.ValidationStatus.MISSING_CITATION) {
@@ -688,6 +698,55 @@ public class ChthollyAgent {
             memory.add(AgentTurn.assistant(answer));
         }
         return streamMs;
+    }
+
+    private String repairMissingCitations(
+            String candidate,
+            EvidenceSet evidenceSet,
+            AgentExecutionTrace trace,
+            int stepIndex) {
+        String allowedIds = evidenceSet.items().stream()
+                .map(com.chtholly.agent.evidence.Evidence::citationId)
+                .collect(java.util.stream.Collectors.joining(", "));
+        String system = """
+                你只负责修复引用格式。保持原答案的全部文字、顺序和事实不变，
+                只在确有对应证据的句子末尾添加允许的 [E#]。
+                不得改写、删减、补充事实，也不得使用未列出的编号。
+                只输出修复后的完整答案。""";
+        String userPrompt = "允许的引用编号：" + allowedIds
+                + "\n\n" + evidenceSet.renderForPrompt()
+                + "\n\n待修复答案：\n" + candidate;
+        long startedAt = System.currentTimeMillis();
+        try {
+            String repaired = truncateAnswer(llmInvoker.call(system, userPrompt, 0.0, 1024));
+            trace.recordLlmCall(
+                    stepIndex,
+                    System.currentTimeMillis() - startedAt,
+                    system.length() + userPrompt.length(),
+                    repaired.length(),
+                    null);
+            return sameContentExceptCitations(candidate, repaired) ? repaired : candidate;
+        } catch (Exception exception) {
+            trace.recordLlmCall(
+                    stepIndex,
+                    System.currentTimeMillis() - startedAt,
+                    system.length() + userPrompt.length(),
+                    0,
+                    null);
+            log.warn("Agent citation repair failed: {}", exception.getMessage());
+            return candidate;
+        }
+    }
+
+    private boolean sameContentExceptCitations(String original, String repaired) {
+        if (repaired == null || repaired.isBlank()) {
+            return false;
+        }
+        String originalContent = original == null ? "" : original.replaceAll("\\s+", "");
+        String repairedContent = repaired
+                .replaceAll("\\[E\\d+]", "")
+                .replaceAll("\\s+", "");
+        return originalContent.equals(repairedContent);
     }
 
     private String truncateAnswer(String answer) {

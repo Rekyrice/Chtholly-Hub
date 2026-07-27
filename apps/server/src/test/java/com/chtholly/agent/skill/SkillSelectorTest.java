@@ -67,6 +67,21 @@ class SkillSelectorTest {
     }
 
     @Test
+    void currentArticleEvidenceSummarySelectsPageExplain() {
+        SkillSelector.SkillSelection selection = selector.select(
+                registry.enabled(),
+                context(
+                        "",
+                        "只依据当前文章，总结作者的三个主要观点，并标出证据编号",
+                        "source: post:dungeon-meshi",
+                        Set.of("article_rag"),
+                        Set.of("article_rag")));
+
+        assertThat(selection.status()).isEqualTo(SkillSelector.Status.SELECTED);
+        assertThat(selection.definition().id()).isEqualTo("page-explain");
+    }
+
+    @Test
     void controlledWriteSkillCannotEnterGeneralAgentToolLoop() {
         SkillDefinition draftEdit = new SkillDefinition(
                 "draft-edit", "v1", true, "test", List.of("draft_edit"),

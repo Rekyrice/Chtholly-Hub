@@ -20,6 +20,7 @@ public class SkillRequestPlanner {
             "^(?:请|帮我|麻烦你|给我)*\\s*(?:生成|写|做|列(?:出)?)\\s*(?:一份|一个)?\\s*");
     private static final Pattern OUTLINE_SUFFIX = Pattern.compile(
             "(?:的)?\\s*(?:技术分享)?\\s*(?:文章|写作)?\\s*(?:大纲|提纲|结构)\\s*$");
+    private static final Pattern QUOTED_TOPIC = Pattern.compile("[“\"]([^”\"]+)[”\"]");
     private static final Pattern EXPLAIN_COMMAND = Pattern.compile(
             "^(?:请|帮我|麻烦你)?\\s*(?:解释(?:一下)?|说明(?:一下)?|讲讲)\\s*");
     private static final Pattern FACT_CHECK_COMMAND = Pattern.compile(
@@ -29,7 +30,8 @@ public class SkillRequestPlanner {
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
     private static final String[] SITE_CONSTRAINTS = {
             "根据站内资料", "结合站内资料", "引用站内内容", "根据当前页面",
-            "结合当前页面", "结合这篇文章", "根据这篇文章", "引用这篇文章"
+            "结合当前页面", "结合这篇文章", "根据这篇文章", "引用这篇文章",
+            "基于站内文章", "基于当前文章", "只依据当前文章", "只依据这篇文章"
     };
 
     /**
@@ -65,7 +67,10 @@ public class SkillRequestPlanner {
             return clarification("explain_target_missing");
         }
         if (!pageQuery.isBlank()) {
-            return ready(EvidencePolicy.REQUIRED, pageQuery, "current_page");
+            return ready(
+                    EvidencePolicy.REQUIRED,
+                    target.isBlank() ? pageQuery : target,
+                    "current_page");
         }
         EvidencePolicy policy = hasSiteConstraint(question)
                 ? EvidencePolicy.REQUIRED
@@ -96,6 +101,10 @@ public class SkillRequestPlanner {
     }
 
     static String cleanOutlineTopic(String question) {
+        Matcher quoted = QUOTED_TOPIC.matcher(normalize(question));
+        if (quoted.find()) {
+            return normalize(stripEdges(quoted.group(1)));
+        }
         String text = removeSiteConstraints(normalize(question));
         text = OUTLINE_COMMAND.matcher(text).replaceFirst("");
         text = OUTLINE_SUFFIX.matcher(text).replaceFirst("");

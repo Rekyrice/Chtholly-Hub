@@ -52,6 +52,9 @@ public class AgentLoopExecutor {
             Observation agentSpan,
             Consumer<AgentEvent> sink) {
         List<String> transcript = initialTranscript(request);
+        boolean charactersRequired = requiresBangumiCharacters(request);
+        boolean bangumiSearchCompleted = false;
+        boolean bangumiCharactersCompleted = false;
 
         for (int step = 0; step < request.maxSteps(); step++) {
             String userPrompt = String.join("\n\n", transcript);
@@ -60,7 +63,8 @@ public class AgentLoopExecutor {
             long stepLlmStart = System.currentTimeMillis();
             String llmOut;
             try {
-                llmOut = llmInvoker.call(request.systemPrompt(), userPrompt, 0.1, 1024);
+                llmOut = invokeDecisionWithRetry(
+                        request.systemPrompt(), userPrompt, inputChars, step, trace);
             } catch (InterruptedException e) {
                 long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
                 Thread.currentThread().interrupt();
@@ -110,7 +114,6 @@ public class AgentLoopExecutor {
             }
 
             long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
-            trace.recordLlmCall(step, stepLlmMs, inputChars, llmOut.length(), null);
             agentObservationService.finishSpan(
                     llmSpan,
                     AgentSpanAttributes.llm("ok"),
@@ -133,6 +136,14 @@ public class AgentLoopExecutor {
 
             emitThink(sink, action);
             if (action.isFinal()) {
+                if (charactersRequired && bangumiSearchCompleted && !bangumiCharactersCompleted) {
+                    String observation = "COMPOUND_QUERY_INCOMPLETE：作品资料已查询，但角色问题尚未完成。"
+                            + "请继续调用 bangumi_characters，再生成最终回答。";
+                    emitObserve(sink, observation);
+                    appendExchange(transcript, llmOut, observation);
+                    trace.recordStep(step, "compound_tool_pending", stepLlmMs, 0);
+                    continue;
+                }
                 return AgentLoopResult.finalReady(transcript, step, stepLlmMs);
             }
 
@@ -177,6 +188,13 @@ public class AgentLoopExecutor {
                     summarizeToolInput(action.input()),
                     observation,
                     toolResult.status() == AgentToolResult.Status.SUCCESS);
+            if ("bangumi_search".equals(tool.name())
+                    && toolResult.status() == AgentToolResult.Status.SUCCESS) {
+                bangumiSearchCompleted = true;
+            }
+            if ("bangumi_characters".equals(tool.name())) {
+                bangumiCharactersCompleted = true;
+            }
             observation = augmentObservation(tool.name(), observation, toolResult.status());
             emitObserve(sink, observation);
             trace.recordStep(step, tool.name(), stepLlmMs, stepToolMs);
@@ -202,6 +220,69 @@ public class AgentLoopExecutor {
                 trace,
                 sink,
                 trace::terminateMaxSteps);
+    }
+
+    private String invokeDecisionWithRetry(
+            String systemPrompt,
+            String userPrompt,
+            int inputChars,
+            int step,
+            AgentExecutionTrace trace) throws Exception {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            long attemptStartedAt = System.currentTimeMillis();
+            try {
+                String output = llmInvoker.call(systemPrompt, userPrompt, 0.1, 1024);
+                trace.recordLlmCall(
+                        step,
+                        System.currentTimeMillis() - attemptStartedAt,
+                        inputChars,
+                        output == null ? 0 : output.length(),
+                        null);
+                return output;
+            } catch (Exception exception) {
+                trace.recordLlmCall(
+                        step,
+                        System.currentTimeMillis() - attemptStartedAt,
+                        inputChars,
+                        0,
+                        null);
+                if (attempt == 0 && isRetryableModelFailure(exception)) {
+                    log.warn(
+                            "Agent LLM call failed transiently; retrying once: {}",
+                            exception.getMessage());
+                    continue;
+                }
+                throw exception;
+            }
+        }
+        throw new IllegalStateException("unreachable model retry state");
+    }
+
+    private boolean isRetryableModelFailure(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            String className = current.getClass().getName();
+            String message = current.getMessage() == null
+                    ? ""
+                    : current.getMessage().toLowerCase(java.util.Locale.ROOT);
+            if (className.contains("TransientAiException")
+                    || className.contains("ResourceAccessException")
+                    || className.contains("ConnectException")
+                    || className.contains("SocketException")
+                    || message.contains("429")
+                    || message.contains("rate limit")
+                    || message.contains("too many requests")
+                    || message.contains("temporarily unavailable")
+                    || message.contains("connection reset")
+                    || message.contains("connection refused")) {
+                return true;
+            }
+            if (current instanceof TimeoutException || current instanceof InterruptedException) {
+                return false;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private List<String> initialTranscript(AgentLoopRequest request) {
@@ -270,6 +351,18 @@ public class AgentLoopExecutor {
 
     private boolean isBangumiTool(String toolName) {
         return toolName != null && toolName.startsWith("bangumi_");
+    }
+
+    private boolean requiresBangumiCharacters(AgentLoopRequest request) {
+        if (!request.tools().containsKey("bangumi_characters")) {
+            return false;
+        }
+        String question = request.question() == null ? "" : request.question().toLowerCase();
+        return question.contains("角色")
+                || question.contains("人物")
+                || question.contains("登场")
+                || question.contains("配角")
+                || question.contains("character");
     }
 
     private boolean isEmptySiteResult(String observation) {

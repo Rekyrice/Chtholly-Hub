@@ -64,7 +64,8 @@ public class SkillSelector {
     private boolean matches(String skillId, String question) {
         return switch (skillId) {
             case "page-explain" -> containsAny(
-                    question, "解释", "是什么", "这个页面", "这篇文章", "讲了什么");
+                    question, "解释", "是什么", "这个页面", "这篇文章", "当前文章",
+                    "只依据本文", "主要观点", "讲了什么");
             case "evidence-outline" -> containsAny(question, "大纲", "提纲", "文章结构", "写作结构");
             case "draft-fact-check" -> containsAny(
                     question, "事实核查", "核查", "查证", "是否准确", "草稿事实");

@@ -205,7 +205,7 @@ class ContextEngineTest {
     }
 
     @Test
-    void injectsHybridSearchResultsForQueryIntent() {
+    void injectsHybridSearchResultsForQueryIntentWithoutForcingCitations() {
         HybridSearchService hybridSearchService = mock(HybridSearchService.class);
         ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
         when(hybridSearchService.hybridSearch("帮我查一下芙莉莲的时间主题", 5)).thenReturn(
@@ -231,7 +231,7 @@ class ContextEngineTest {
                 .contains("title=时间的重量", "sources=semantic+keyword")
                 .contains("<evidence_data>芙莉莲文章片段</evidence_data>")
                 .doesNotContain("- 时间的重量：芙莉莲文章片段");
-        assertThat(snapshot.evidenceRequired()).isTrue();
+        assertThat(snapshot.evidenceRequired()).isFalse();
         assertThat(snapshot.evidenceSet().items()).hasSize(1);
         assertThat(snapshot.evidenceSet().items().getFirst().documentId()).isEqualTo("post:9");
         assertThat(snapshot.retrievalStatuses()).containsExactlyInAnyOrderEntriesOf(Map.of(
@@ -242,7 +242,7 @@ class ContextEngineTest {
     }
 
     @Test
-    void groundedQueryWithoutDocumentsStillFreezesEvidenceRequirement() {
+    void heuristicRetrievalWithoutDocumentsDoesNotForceCitations() {
         HybridSearchService hybridSearchService = mock(HybridSearchService.class);
         ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
         when(hybridSearchService.hybridSearch("帮我查站内资料", 5)).thenReturn(
@@ -254,7 +254,7 @@ class ContextEngineTest {
         AgentContextSnapshot snapshot = engine.buildSnapshot(
                 7L, "ws-1", "", List.of(), "", "帮我查站内资料", false);
 
-        assertThat(snapshot.evidenceRequired()).isTrue();
+        assertThat(snapshot.evidenceRequired()).isFalse();
         assertThat(snapshot.evidenceSet().isEmpty()).isTrue();
         assertThat(snapshot.retrievalStatuses()).containsEntry("semantic", "SUCCESS_EMPTY");
     }

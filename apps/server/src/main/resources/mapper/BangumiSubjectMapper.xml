@@ -24,7 +24,14 @@
             <include refid="subjectColumns"/>
         FROM bangumi_subjects
         WHERE MATCH(name, name_cn) AGAINST(#{keyword} IN NATURAL LANGUAGE MODE)
-        ORDER BY score DESC, `rank` ASC
+        ORDER BY
+            CASE
+                WHEN name = #{keyword} OR name_cn = #{keyword} THEN 0
+                WHEN name LIKE CONCAT(#{keyword}, '%')
+                    OR name_cn LIKE CONCAT(#{keyword}, '%') THEN 1
+                ELSE 2
+            END,
+            score DESC, `rank` ASC
         LIMIT #{limit}
     </select>
 
@@ -34,7 +41,14 @@
         FROM bangumi_subjects
         WHERE name LIKE CONCAT('%', #{keyword}, '%')
            OR name_cn LIKE CONCAT('%', #{keyword}, '%')
-        ORDER BY score DESC, `rank` ASC
+        ORDER BY
+            CASE
+                WHEN name = #{keyword} OR name_cn = #{keyword} THEN 0
+                WHEN name LIKE CONCAT(#{keyword}, '%')
+                    OR name_cn LIKE CONCAT(#{keyword}, '%') THEN 1
+                ELSE 2
+            END,
+            score DESC, `rank` ASC
         LIMIT #{limit}
     </select>
 

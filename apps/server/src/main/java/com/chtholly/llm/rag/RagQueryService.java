@@ -75,6 +75,45 @@ public class RagQueryService {
         return List.copyOf(results);
     }
 
+    /**
+     * Searches only current verified chunks belonging to one public post.
+     *
+     * @param postId target post ID
+     * @param query semantic query
+     * @param topK maximum returned chunks
+     * @return authorized current post chunks
+     */
+    public List<SearchResult> searchPost(long postId, String query, int topK) {
+        if (postId <= 0 || !StringUtils.hasText(query) || topK <= 0) {
+            return List.of();
+        }
+        indexService.ensureIndexed(postId);
+        Post post = postMapper.findById(postId);
+        if (!isPublicPublished(post) || !StringUtils.hasText(currentContentHash(post))) {
+            return List.of();
+        }
+        int safeTopK = Math.min(topK, 20);
+        int fetchK = Math.max(safeTopK * 3, 20);
+        List<Document> docs = vectorStore.similaritySearch(
+                SearchRequest.builder().query(query.trim()).topK(fetchK).build());
+        if (docs == null || docs.isEmpty()) {
+            return List.of();
+        }
+        List<SearchResult> results = new ArrayList<>(safeTopK);
+        for (Document document : docs) {
+            Long candidateId = parsePostId(document.getMetadata().get("postId"));
+            if (candidateId == null || candidateId.longValue() != postId
+                    || !eligible(document, post)) {
+                continue;
+            }
+            results.add(toSearchResult(document, post));
+            if (results.size() >= safeTopK) {
+                break;
+            }
+        }
+        return List.copyOf(results);
+    }
+
     public Flux<String> streamAnswerFlux(long postId, String question, int topK, int maxTokens) {
         return streamAnswerFlux(postId, question, List.of(), topK, maxTokens);
     }
@@ -85,16 +124,11 @@ public class RagQueryService {
                                          List<RagConversationTurn> history,
                                          int topK,
                                          int maxTokens) {
-        try {
-            indexService.ensureIndexed(postId);
-        } catch (RuntimeException exception) {
-            log.warn("RAG index reconciliation failed for post {}: {}", postId, exception.getMessage());
-            return Flux.just(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
-        }
-
         List<String> contexts;
         try {
-            contexts = searchContexts(postId, question, Math.max(1, topK));
+            contexts = searchPost(postId, question, Math.max(1, topK)).stream()
+                    .map(SearchResult::getSnippet)
+                    .toList();
         } catch (RuntimeException exception) {
             log.warn("RAG context retrieval failed for post {}: {}", postId, exception.getMessage());
             return Flux.just(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
@@ -118,29 +152,22 @@ public class RagQueryService {
                 .content();
     }
 
-    private List<String> searchContexts(long postId, String query, int topK) {
-        Post post = postMapper.findById(postId);
-        if (!isPublicPublished(post) || !StringUtils.hasText(currentContentHash(post))) {
-            return List.of();
-        }
-        int fetchK = Math.max(topK * 3, 20);
-        List<Document> docs = vectorStore.similaritySearch(
-                SearchRequest.builder().query(query).topK(fetchK).build());
-        if (docs == null || docs.isEmpty()) {
-            return List.of();
-        }
-        List<String> contexts = new ArrayList<>(topK);
-        for (Document document : docs) {
-            Long candidateId = parsePostId(document.getMetadata().get("postId"));
-            if (candidateId != null && candidateId == postId && eligible(document, post)
-                    && StringUtils.hasText(document.getText())) {
-                contexts.add(document.getText());
-                if (contexts.size() >= topK) {
-                    break;
-                }
-            }
-        }
-        return List.copyOf(contexts);
+    private SearchResult toSearchResult(Document document, Post post) {
+        String id = "post:" + post.getId();
+        String sourceVersion = post.getUpdateTime() == null
+                ? "current"
+                : post.getUpdateTime().toString();
+        return new SearchResult(
+                id,
+                StringUtils.hasText(post.getTitle()) ? post.getTitle() : "帖子片段",
+                truncate(document.getText(), 240),
+                "semantic",
+                document.getScore() == null ? 0.0 : document.getScore(),
+                id,
+                nullableString(document.getMetadata().get("chunkId")),
+                sourceVersion,
+                currentContentHash(post),
+                Set.of("PUBLIC"));
     }
 
     private Map<Long, Post> loadPosts(List<Document> docs) {
