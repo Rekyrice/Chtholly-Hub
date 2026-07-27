@@ -12,6 +12,7 @@ docs/补充.txt
 # --- 构建产物 ---
 apps/server/target/
 apps/web/.next/
+apps/web/.next-dev/
 apps/web/out/
 apps/web/node_modules/
 scripts/oss/node_modules/

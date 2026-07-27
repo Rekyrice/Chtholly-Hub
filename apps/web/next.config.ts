@@ -28,6 +28,7 @@ const remotePatterns = [developmentOssPattern, configuredOssPattern]
   );
 
 const nextConfig: NextConfig = {
+  distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   output: "standalone",
   devIndicators: false,
   serverExternalPackages: ["pixi.js", "pixi-live2d-display"],

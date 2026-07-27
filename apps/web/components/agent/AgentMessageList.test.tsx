@@ -100,16 +100,15 @@ describe("AgentMessageList compact assistant replies", () => {
     expect(screen.getByRole("button", { name: "收起回答" })).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("does not collapse short or streaming replies", () => {
+  it("does not collapse short replies", () => {
     const messages: ChatMessage[] = [
       { id: "short", role: "assistant", content: "简短回答" },
-      { id: "streaming", role: "assistant", content: "生成中".repeat(200), streaming: true },
     ];
 
     render(
       <AgentMessageList
         messages={messages}
-        busy
+        busy={false}
         showSteps={false}
         liveSteps={[]}
         compactAssistantMessages
@@ -117,5 +116,31 @@ describe("AgentMessageList compact assistant replies", () => {
     );
 
     expect(screen.queryByRole("button", { name: "展开回答" })).not.toBeInTheDocument();
+  });
+
+  it("bounds a long streaming reply as soon as it exceeds the compact threshold", () => {
+    const content = "生成中".repeat(200);
+    const message: ChatMessage = {
+      id: "streaming",
+      role: "assistant",
+      content,
+      streaming: true,
+    };
+
+    render(
+      <AgentMessageList
+        messages={[message]}
+        busy
+        showSteps={false}
+        liveSteps={[]}
+        compactAssistantMessages
+      />,
+    );
+
+    expect(screen.getByText(content)).toHaveClass("agent-bubble-content--collapsed");
+    expect(screen.getByRole("button", { name: "展开回答" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
   });
 });

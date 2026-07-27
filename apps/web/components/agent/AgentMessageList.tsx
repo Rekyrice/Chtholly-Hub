@@ -46,7 +46,7 @@ function MessageBubble({
   const [isEntering, setIsEntering] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const canCollapse =
-    compactAssistantMessages && !msg.streaming && msg.content.length > 320;
+    compactAssistantMessages && msg.content.length > 320;
   const collapsed = canCollapse && !expanded;
   const finishEntering = (event: React.AnimationEvent<HTMLDivElement>) => {
     if (event.currentTarget === event.target) setIsEntering(false);
