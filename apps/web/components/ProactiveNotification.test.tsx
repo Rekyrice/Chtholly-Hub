@@ -27,6 +27,7 @@ const longMessage =
   "这是一条需要完整保留的超长主动通知。它不会被字符截断，即使默认只展示四行，用户也仍然可以在消息区域内部滚动阅读全文，并在需要更大阅读空间时展开通知。";
 
 let measuredScrollHeight = 0;
+let computedLineHeight = "20px";
 let resizeCallbacks: ResizeObserverCallback[] = [];
 
 class ResizeObserverMock {
@@ -59,6 +60,7 @@ describe("ProactiveNotification", () => {
     chat.notification = null;
     chat.dismiss.mockReset();
     measuredScrollHeight = 0;
+    computedLineHeight = "20px";
     resizeCallbacks = [];
 
     Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
@@ -70,7 +72,7 @@ describe("ProactiveNotification", () => {
       const style = getComputedStyle(element, pseudoElement);
       Object.defineProperty(style, "lineHeight", {
         configurable: true,
-        value: "20px",
+        value: computedLineHeight,
       });
       return style;
     });
@@ -167,6 +169,21 @@ describe("ProactiveNotification", () => {
     expect(chat.dismiss).not.toHaveBeenCalled();
   });
 
+  it("synchronously cancels auto-dismiss when scrolling at the timer boundary", () => {
+    measuredScrollHeight = 140;
+    setNotification(longMessage);
+    render(<ProactiveNotification />);
+    const message = screen.getByText(longMessage);
+
+    act(() => vi.advanceTimersByTime(7999));
+    act(() => {
+      message.dispatchEvent(new Event("scroll", { bubbles: true }));
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(chat.dismiss).not.toHaveBeenCalled();
+  });
+
   it("does not automatically dismiss after a notification control receives focus", () => {
     measuredScrollHeight = 60;
     setNotification(shortMessage);
@@ -187,6 +204,22 @@ describe("ProactiveNotification", () => {
     act(() => vi.advanceTimersByTime(8000));
 
     expect(chat.dismiss).not.toHaveBeenCalled();
+  });
+
+  it("synchronously cancels auto-dismiss when expanding at the timer boundary", () => {
+    measuredScrollHeight = 140;
+    setNotification(longMessage);
+    render(<ProactiveNotification />);
+    const expand = screen.getByRole("button", { name: "展开" });
+
+    act(() => vi.advanceTimersByTime(7999));
+    act(() => {
+      expand.click();
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(chat.dismiss).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "收起" })).toBeInTheDocument();
   });
 
   it("resets expansion and interaction state when a new notification arrives", () => {
@@ -211,6 +244,29 @@ describe("ProactiveNotification", () => {
     expect(chat.dismiss).toHaveBeenCalledTimes(1);
   });
 
+  it("resets state for a new notification object whose fields are unchanged", () => {
+    measuredScrollHeight = 140;
+    setNotification(longMessage);
+    const { rerender } = render(<ProactiveNotification />);
+
+    fireEvent.click(screen.getByRole("button", { name: "展开" }));
+    expect(screen.getByRole("button", { name: "收起" })).toBeInTheDocument();
+
+    const nextNotification = { ...chat.notification! };
+    expect(nextNotification).not.toBe(chat.notification);
+    chat.notification = nextNotification;
+    rerender(<ProactiveNotification />);
+
+    expect(screen.getByRole("button", { name: "展开" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    act(() => vi.advanceTimersByTime(7999));
+    expect(chat.dismiss).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(chat.dismiss).toHaveBeenCalledTimes(1);
+  });
+
   it("remeasures overflow when ResizeObserver reports a size change", () => {
     measuredScrollHeight = 60;
     setNotification(longMessage);
@@ -219,6 +275,20 @@ describe("ProactiveNotification", () => {
     expect(screen.queryByRole("button", { name: "展开" })).not.toBeInTheDocument();
 
     measuredScrollHeight = 140;
+    triggerResize();
+
+    expect(screen.getByRole("button", { name: "展开" })).toBeInTheDocument();
+  });
+
+  it("allows for whole-pixel scrollHeight rounding at exactly four fractional-height lines", () => {
+    computedLineHeight = "24.225px";
+    measuredScrollHeight = 97;
+    setNotification(longMessage);
+    render(<ProactiveNotification />);
+
+    expect(screen.queryByRole("button", { name: "展开" })).not.toBeInTheDocument();
+
+    measuredScrollHeight = 98;
     triggerResize();
 
     expect(screen.getByRole("button", { name: "展开" })).toBeInTheDocument();

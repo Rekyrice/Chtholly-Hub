@@ -14,21 +14,15 @@ import { useAgentChatContext } from "@/components/agent/AgentChatProvider";
 import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import type { ProactiveNotificationItem } from "@/lib/types/agent";
 
+const OVERFLOW_TOLERANCE_PX = 1;
+
 export function ProactiveNotification() {
   const { visibleProactiveNotification, dismissProactiveNotification } = useAgentChatContext();
 
   if (!visibleProactiveNotification) return null;
 
-  const notificationKey = [
-    visibleProactiveNotification.timestamp,
-    visibleProactiveNotification.type,
-    visibleProactiveNotification.channel ?? "",
-    visibleProactiveNotification.message,
-  ].join("\u0000");
-
   return (
     <ProactiveNotificationCard
-      key={notificationKey}
       notification={visibleProactiveNotification}
       onDismiss={dismissProactiveNotification}
     />
@@ -50,10 +44,19 @@ function ProactiveNotificationCard({
 }: ProactiveNotificationCardProps) {
   const messageId = useId();
   const messageRef = useRef<HTMLParagraphElement>(null);
+  const previousNotificationRef = useRef(notification);
+  const autoDismissTimerRef = useRef<number | null>(null);
   const [collapsedHeight, setCollapsedHeight] = useState<number>();
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const [interacted, setInteracted] = useState(false);
+
+  const cancelAutoDismiss = useCallback(() => {
+    if (autoDismissTimerRef.current === null) return;
+
+    window.clearTimeout(autoDismissTimerRef.current);
+    autoDismissTimerRef.current = null;
+  }, []);
 
   const measureOverflow = useCallback(() => {
     const messageElement = messageRef.current;
@@ -67,8 +70,21 @@ function ProactiveNotificationCard({
 
     const fourLineHeight = lineHeight * 4;
     setCollapsedHeight(fourLineHeight);
-    setOverflowing(messageElement.scrollHeight > fourLineHeight);
+    setOverflowing(
+      messageElement.scrollHeight > fourLineHeight + OVERFLOW_TOLERANCE_PX,
+    );
   }, []);
+
+  useLayoutEffect(() => {
+    if (previousNotificationRef.current === notification) return;
+
+    previousNotificationRef.current = notification;
+    cancelAutoDismiss();
+    setExpanded(false);
+    setOverflowing(false);
+    setInteracted(false);
+    if (messageRef.current) messageRef.current.scrollTop = 0;
+  }, [cancelAutoDismiss, notification]);
 
   useLayoutEffect(() => {
     measureOverflow();
@@ -78,18 +94,23 @@ function ProactiveNotificationCard({
     const observer = new ResizeObserver(measureOverflow);
     observer.observe(messageRef.current);
     return () => observer.disconnect();
-  }, [measureOverflow]);
+  }, [measureOverflow, notification]);
 
   useEffect(() => {
-    if (interacted) return undefined;
+    cancelAutoDismiss();
+    if (interacted) return cancelAutoDismiss;
 
-    const timer = window.setTimeout(onDismiss, 8000);
-    return () => window.clearTimeout(timer);
-  }, [interacted, onDismiss]);
+    autoDismissTimerRef.current = window.setTimeout(() => {
+      autoDismissTimerRef.current = null;
+      onDismiss();
+    }, 8000);
+    return cancelAutoDismiss;
+  }, [cancelAutoDismiss, interacted, notification, onDismiss]);
 
   const markInteracted = useCallback(() => {
+    cancelAutoDismiss();
     setInteracted(true);
-  }, []);
+  }, [cancelAutoDismiss]);
 
   const toggleExpanded = () => {
     markInteracted();
