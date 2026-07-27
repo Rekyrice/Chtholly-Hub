@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import tsconfig from "./tsconfig.json";
 
 async function loadConfig(nodeEnv: "development" | "production") {
   vi.stubEnv("NODE_ENV", nodeEnv);
@@ -18,5 +19,10 @@ describe("Next.js build output isolation", () => {
 
     expect(development.distDir).toBe(".next-dev");
     expect(production.distDir).toBe(".next");
+  });
+
+  it("does not type-check legacy development declarations from the production directory", () => {
+    expect(tsconfig.include).not.toContain(".next/dev/types/**/*.ts");
+    expect(tsconfig.include).toContain(".next-dev/dev/types/**/*.ts");
   });
 });
