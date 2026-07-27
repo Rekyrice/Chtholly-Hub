@@ -1911,16 +1911,69 @@
   }
 
   .proactive-notification__content {
+    display: grid;
     flex: 1 1 auto;
     min-width: 0;
+    gap: 8px;
     padding-top: 3px;
   }
 
-  .proactive-notification__content p {
+  .proactive-notification__message {
     margin: 0;
     color: var(--color-text);
     font-size: 0.92rem;
     line-height: 1.55;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .proactive-notification__message--collapsed {
+    max-height: var(--proactive-notification-collapsed-height, calc(1.55em * 4));
+  }
+
+  .proactive-notification__message--expanded {
+    max-height: min(50vh, 28rem);
+  }
+
+  .proactive-notification__message:focus-visible {
+    outline: 2px solid var(--color-sky);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  .proactive-notification__controls {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .proactive-notification__toggle {
+    min-height: 28px;
+    padding: 3px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-card) 82%, var(--color-sky) 18%);
+    color: var(--color-text-secondary);
+    font: inherit;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    cursor: pointer;
+    transition:
+      border-color 0.2s ease,
+      background 0.2s ease,
+      color 0.2s ease;
+  }
+
+  .proactive-notification__toggle:hover {
+    border-color: color-mix(in srgb, var(--color-sky) 55%, var(--border-subtle));
+    background: color-mix(in srgb, var(--bg-card) 72%, var(--color-sky) 28%);
+    color: var(--color-sky);
+  }
+
+  .proactive-notification__toggle:focus-visible,
+  .proactive-notification__close:focus-visible {
+    outline: 2px solid var(--color-sky);
+    outline-offset: 2px;
   }
 
   .proactive-notification__close {
