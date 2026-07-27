@@ -10,7 +10,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-trac
 powershell -NoProfile -ExecutionPolicy Bypass -File benchmarks/tests/verify-harness.ps1
 ```
 
-Agent 候选集位于 `benchmarks/datasets/agent-evaluation/`：27 条 Skill、45 条检索、5 条草稿流程和 2 条 Trace 回放。它们都标记为 `CANDIDATE_REQUIRES_OWNER_REVIEW`，在项目本人复核前不能作为人工 gold。
+Agent 候选集位于 `benchmarks/datasets/agent-evaluation/`：27 条 Skill、45 条检索、5 条草稿流程和 2 条 Trace 回放。它们都标记为 `CANDIDATE_REQUIRES_OWNER_REVIEW`，在项目本人复核前不能作为人工 gold。`*-candidates-v1` 是不可变的历史候选快照，其中互动恢复场景仍描述 V25 之前的 Bitmap 权威模型；它们不参与当前互动正确性证据。若要评测当前模型，必须生成新的 dataset version 与 snapshot ID，不能原位改写 v1。
 
 ## 检索候选诊断
 
@@ -80,9 +80,9 @@ runner 会在 k6 启动前读取应用的 `chtholly.cache.runtime` 指标，校�
 ./scripts/benchmark/collect-counter-evidence.ps1 -RunId counter-correctness-001
 ```
 
-固定序列包含 8 次点赞/取消请求，其中 4 次真实改变 Bitmap 与 Redis 即时计数并产生 Kafka 事件；随后原样重放第一条 `eventId`，因此 Kafka 记录数为 5、去重命中为 1。采集器显式执行两个聚合批次并遗漏最后一条真实事件，校准前差异为 1；Bitmap 校准后 Redis 与 MySQL 差异归零。`mysqlUpdateCount=2` 只统计成功执行的 `incrementSnapshots` 与 `replaceReactionSnapshots`，不包含 inbox 幂等写入。
+固定序列包含 8 次目标状态命令，其中 4 次真实改变 MySQL `counter_reaction`，并在同一事务生成 4 条 Outbox。采集器向 `canal-outbox` 投递前三条，再原样重放第一条，因此共投递 4 次、Inbox 只有 3 行；第四条先保留为延迟事件。此时 MySQL 当前成员数与快照相差 1，随后从 MySQL 全量校准 Bitmap、SDS 与快照，差异归零并推进 epoch；最后投递第四条旧 epoch 事件，它会写入 Inbox，但不能扰动已校准快照。
 
-采集入口要求工作树干净、三个提交身份都等于实际执行提交，拒绝覆盖已有 runId。结果只记录八项固定正确性指标以及运行环境和提交身份，不据此宣称 QPS 或 exactly-once。
+采集入口要求工作树干净、三个提交身份都等于实际执行提交，拒绝覆盖已有 runId。`counter-interaction-v2` 结果只记录八项固定正确性指标：`requestTotal=8`、`stateChangeCount=4`、`outboxRowCount=4`、`kafkaDeliveryCount=5`、`inboxDedupHitCount=1`、`snapshotWriteCount=4`、`preCalibrationDiscrepancy=1` 与 `postCalibrationDiscrepancy=0`，并绑定运行环境和三个提交身份。这里的第 5 次投递是校准后的延迟旧事件；这些数值不代表吞吐、延迟或 exactly-once。
 
 ## 汇总
 

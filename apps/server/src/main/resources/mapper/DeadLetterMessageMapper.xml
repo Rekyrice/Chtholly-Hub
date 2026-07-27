@@ -24,7 +24,10 @@
             exception_message AS exceptionMessage,
             retry_count AS retryCount,
             status,
-            created_at AS createdAt
+            created_at AS createdAt,
+            replay_attempt_token AS replayAttemptToken,
+            replay_started_at AS replayStartedAt,
+            replay_deadline_at AS replayDeadlineAt
         FROM dead_letter_messages
         WHERE id = #{id}
         LIMIT 1
@@ -40,7 +43,10 @@
             exception_message AS exceptionMessage,
             retry_count AS retryCount,
             status,
-            created_at AS createdAt
+            created_at AS createdAt,
+            replay_attempt_token AS replayAttemptToken,
+            replay_started_at AS replayStartedAt,
+            replay_deadline_at AS replayDeadlineAt
         FROM dead_letter_messages
         <where>
             <if test="topic != null and topic != ''">
@@ -67,9 +73,43 @@
         </where>
     </select>
 
-    <update id="updateStatus">
+    <update id="claimReplay">
         UPDATE dead_letter_messages
-        SET status = #{status}
+        SET status = 'REPLAYING',
+            replay_attempt_token = #{attemptToken},
+            replay_started_at = CURRENT_TIMESTAMP(3),
+            replay_deadline_at = TIMESTAMPADD(
+                MICROSECOND,
+                #{recoveryHorizonMillis} * 1000,
+                CURRENT_TIMESTAMP(3))
         WHERE id = #{id}
+          AND status = 'DEAD'
+    </update>
+
+    <update id="finishReplay">
+        UPDATE dead_letter_messages
+        SET status = #{targetStatus}
+        WHERE id = #{id}
+          AND status = 'REPLAYING'
+          AND replay_attempt_token = #{attemptToken}
+    </update>
+
+    <update id="recoverExpiredReplay">
+        UPDATE dead_letter_messages
+        SET status = 'UNCERTAIN'
+        WHERE id = #{id}
+          AND status = 'REPLAYING'
+          AND replay_attempt_token IS NOT NULL
+          AND replay_attempt_token = #{attemptToken}
+          AND replay_deadline_at IS NOT NULL
+          AND replay_deadline_at &lt;= CURRENT_TIMESTAMP(3)
+    </update>
+
+    <update id="resolveUncertain">
+        UPDATE dead_letter_messages
+        SET status = #{targetStatus}
+        WHERE id = #{id}
+          AND status = 'UNCERTAIN'
+          AND replay_attempt_token = #{attemptToken}
     </update>
 </mapper>

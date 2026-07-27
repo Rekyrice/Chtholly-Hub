@@ -1,5 +1,7 @@
 # 社区互动真实性增强实施计划
 
+> **状态：历史计划。** 本文保留当时实施上下文，不描述当前运行态；其中 Redis Bitmap 权威模型已被 V25 MySQL 互动事实模型取代。当前边界见[数据与存储](../architecture/data-and-storage.md)与[核心请求链路](../architecture/request-flows.md#4-点赞收藏事实与异步读投影)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task.
 
 **Goal:** 将现有 44 篇公开文章扩充为覆盖完整、时间自然、人物关系可信的社区互动数据，并保证评论、关系、Redis bitmap、SDS、用户计数、缓存和搜索索引可重复收敛。

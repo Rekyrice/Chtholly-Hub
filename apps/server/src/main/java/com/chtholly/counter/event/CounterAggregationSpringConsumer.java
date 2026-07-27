@@ -19,6 +19,9 @@ public class CounterAggregationSpringConsumer {
 
     @EventListener
     public void onCounterEvent(CounterEvent event) {
+        if ("like".equals(event.getMetric()) || "fav".equals(event.getMetric())) {
+            return;
+        }
         processor.applyBatch(List.of(event));
     }
 }

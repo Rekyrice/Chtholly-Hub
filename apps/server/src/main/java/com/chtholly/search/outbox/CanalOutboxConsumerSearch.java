@@ -48,7 +48,7 @@ public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
         consumeRecord(record, ack);
     }
 
-    @KafkaListener(topics = OutboxTopics.CANAL_OUTBOX + "-retry", groupId = CONSUMER_GROUP + "-retry")
+    @KafkaListener(topics = OutboxTopics.CANAL_OUTBOX_RETRY, groupId = CONSUMER_GROUP + "-retry")
     public void onRetryMessage(ConsumerRecord<String, String> record, Acknowledgment ack) {
         consumeRetryRecord(record, ack);
     }
@@ -62,6 +62,10 @@ public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
     }
 
     private void processOutboxRow(JsonNode row) throws Exception {
+        String aggregateType = row.path("aggregate_type").asText();
+        if (!"post".equals(aggregateType) && !"user".equals(aggregateType)) {
+            return;
+        }
         Long eventId = OutboxMessageUtil.extractEventId(row);
         if (eventId != null && idempotencyGuard.isAlreadyConsumed(IDEMPOTENCY_SCOPE, eventId)) {
             return;

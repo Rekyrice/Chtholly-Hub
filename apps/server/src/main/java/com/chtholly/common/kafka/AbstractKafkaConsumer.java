@@ -9,6 +9,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.Acknowledgment;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -38,7 +39,11 @@ public abstract class AbstractKafkaConsumer {
      */
     protected void consumeRetryRecord(ConsumerRecord<String, String> record, Acknowledgment ack) {
         CorrelationIdSupport.runWithContext(CorrelationIdSupport.contextFromKafka(record), () ->
-                consumeRetryEnvelope(record.value(), ack));
+                consumeRetryEnvelope(
+                        sourceTopicFromRetryTopic(record.topic()),
+                        record.key(),
+                        record.value(),
+                        ack));
     }
 
     /**
@@ -68,22 +73,32 @@ public abstract class AbstractKafkaConsumer {
      * 消费重试 topic 上的信封消息。
      */
     protected void consumeRetryEnvelope(String envelopeJson, Acknowledgment ack) {
+        consumeRetryEnvelope("unknown", null, envelopeJson, ack);
+    }
+
+    private void consumeRetryEnvelope(
+            String sourceTopicHint,
+            String messageKeyHint,
+            String envelopeJson,
+            Acknowledgment ack) {
         final KafkaRetryEnvelope envelope;
         try {
             envelope = objectMapper.readValue(envelopeJson, KafkaRetryEnvelope.class);
         } catch (Exception e) {
             log.error("[{}] Failed to consume retry envelope: {}", consumerName(), e.getMessage(), e);
-            handleError("unknown", null, envelopeJson, MAX_RETRY_COUNT, e);
+            handleError(
+                    sourceTopicHint,
+                    messageKeyHint,
+                    envelopeJson,
+                    MAX_RETRY_COUNT,
+                    e);
             ack.acknowledge();
             return;
         }
 
         if (envelope.deliverAfterEpochMs() > System.currentTimeMillis()) {
-            awaitKafkaBroker(
-                    KafkaTopicNames.retryTopic(envelope.sourceTopic()),
-                    envelope.messageKey(),
-                    envelopeJson);
-            ack.acknowledge();
+            long remainingDelayMs = envelope.deliverAfterEpochMs() - System.currentTimeMillis();
+            ack.nack(Duration.ofMillis(Math.max(1L, remainingDelayMs)));
             return;
         }
 
@@ -98,6 +113,15 @@ public abstract class AbstractKafkaConsumer {
                     e);
         }
         ack.acknowledge();
+    }
+
+    private static String sourceTopicFromRetryTopic(String retryTopic) {
+        String suffix = "-retry";
+        if (retryTopic != null && retryTopic.endsWith(suffix)
+                && retryTopic.length() > suffix.length()) {
+            return retryTopic.substring(0, retryTopic.length() - suffix.length());
+        }
+        return retryTopic == null || retryTopic.isBlank() ? "unknown" : retryTopic;
     }
 
     /**

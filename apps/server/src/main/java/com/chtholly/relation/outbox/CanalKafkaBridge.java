@@ -179,24 +179,26 @@ public class CanalKafkaBridge implements SmartLifecycle {
             return;
         }
 
-        ArrayNode dataArray = objectMapper.createArrayNode();
-        String messageKey = null;
         for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
             ObjectNode row = rowMapper.toJson(rowData);
+            ArrayNode dataArray = objectMapper.createArrayNode();
             dataArray.add(row);
-            if (messageKey == null && row.hasNonNull("id")) {
-                messageKey = row.path("id").asText();
-            }
-        }
-        if (dataArray.isEmpty()) {
-            return;
-        }
 
-        ObjectNode envelope = objectMapper.createObjectNode();
-        envelope.put("table", entry.getHeader().getTableName());
-        envelope.put("type", eventType == CanalEntry.EventType.INSERT ? "INSERT" : "UPDATE");
-        envelope.set("data", dataArray);
-        awaitKafkaBroker(messageKey, objectMapper.writeValueAsString(envelope));
+            ObjectNode envelope = objectMapper.createObjectNode();
+            envelope.put("table", entry.getHeader().getTableName());
+            envelope.put("type", eventType == CanalEntry.EventType.INSERT ? "INSERT" : "UPDATE");
+            envelope.set("data", dataArray);
+            awaitKafkaBroker(messageKey(row), objectMapper.writeValueAsString(envelope));
+        }
+    }
+
+    private static String messageKey(ObjectNode row) {
+        String aggregateType = row.path("aggregate_type").asText();
+        String aggregateId = row.path("aggregate_id").asText();
+        if (!aggregateType.isBlank() && !aggregateId.isBlank()) {
+            return aggregateType + ":" + aggregateId;
+        }
+        return row.hasNonNull("id") ? row.path("id").asText() : null;
     }
 
     private void awaitKafkaBroker(String messageKey, String payload) {

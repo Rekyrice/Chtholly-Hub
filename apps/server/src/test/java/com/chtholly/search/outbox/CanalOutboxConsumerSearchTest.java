@@ -13,6 +13,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -57,6 +58,19 @@ class CanalOutboxConsumerSearchTest {
         verify(idempotencyGuard, never()).markConsumed("search", 101L);
     }
 
+    @Test
+    void unrelatedAggregateIsIgnoredBeforeRedisIdempotencyLookup() throws Exception {
+        CanalOutboxConsumerSearch consumer = consumer();
+        String payload = "{\"entityType\":\"post\",\"entityId\":\"7\",\"metric\":\"like\"}";
+        String envelope = "{\"table\":\"outbox\",\"type\":\"INSERT\",\"data\":[{"
+                + "\"id\":\"102\",\"aggregate_type\":\"counter_reaction\","
+                + "\"payload\":" + quote(payload) + "}]}";
+
+        consumer.process("canal-outbox", "102", envelope, 0);
+
+        verifyNoInteractions(idempotencyGuard, searchIndexService);
+    }
+
     private CanalOutboxConsumerSearch consumer() {
         return new CanalOutboxConsumerSearch(
                 new ObjectMapper(), searchIndexService, kafkaTemplate, deadLetterMessageService, idempotencyGuard);
@@ -65,7 +79,8 @@ class CanalOutboxConsumerSearchTest {
     private String authorEvent(long eventId, long userId) {
         String payload = "{\"entity\":\"user\",\"op\":\"author_profile_changed\",\"id\":" + userId + "}";
         return "{\"table\":\"outbox\",\"type\":\"INSERT\",\"data\":[{\"id\":\""
-                + eventId + "\",\"payload\":" + quote(payload) + "}]}";
+                + eventId + "\",\"aggregate_type\":\"user\",\"payload\":"
+                + quote(payload) + "}]}";
     }
 
     private String quote(String value) {

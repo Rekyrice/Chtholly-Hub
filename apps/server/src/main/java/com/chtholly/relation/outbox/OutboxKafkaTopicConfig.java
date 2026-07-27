@@ -22,6 +22,14 @@ public class OutboxKafkaTopicConfig {
     }
 
     @Bean
+    public NewTopic canalOutboxRetryTopic() {
+        return TopicBuilder.name(OutboxTopics.CANAL_OUTBOX_RETRY)
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
     public NewTopic canalOutboxDlqTopic() {
         return TopicBuilder.name(OutboxTopics.CANAL_OUTBOX_DLQ)
                 .partitions(1)

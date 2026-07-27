@@ -26,5 +26,18 @@ public interface DeadLetterMessageMapper {
 
     long count(@Param("topic") String topic, @Param("status") String status);
 
-    int updateStatus(@Param("id") long id, @Param("status") String status);
+    int claimReplay(@Param("id") long id,
+                    @Param("attemptToken") String attemptToken,
+                    @Param("recoveryHorizonMillis") long recoveryHorizonMillis);
+
+    int finishReplay(@Param("id") long id,
+                     @Param("attemptToken") String attemptToken,
+                     @Param("targetStatus") String targetStatus);
+
+    int recoverExpiredReplay(@Param("id") long id,
+                             @Param("attemptToken") String attemptToken);
+
+    int resolveUncertain(@Param("id") long id,
+                         @Param("attemptToken") String attemptToken,
+                         @Param("targetStatus") String targetStatus);
 }

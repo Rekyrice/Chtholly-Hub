@@ -23,5 +23,6 @@ function Ensure-Topic {
 
 Write-Host "Ensuring Kafka topics in container '$container'..."
 Ensure-Topic -Name "canal-outbox" -Partitions 3
+Ensure-Topic -Name "canal-outbox-retry" -Partitions 3
 Ensure-Topic -Name "canal-outbox-dlq" -Partitions 1
 Write-Host "Done."

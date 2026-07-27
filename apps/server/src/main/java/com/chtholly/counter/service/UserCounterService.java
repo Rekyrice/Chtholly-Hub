@@ -12,11 +12,12 @@ public interface UserCounterService {
     void incrementFollowers(long userId, int delta);
     /** 增量更新发文数 */
     void incrementPosts(long userId, int delta);
-    /** 增量更新获赞数（作者维度） */
-    void incrementLikesReceived(long userId, int delta);
-    /** 增量更新获收藏数（作者维度） */
-    void incrementFavsReceived(long userId, int delta);
+    /** 幂等失效用户计数缓存，防止乱序互动事件永久累加。 */
+    void invalidateReactionCounters(long userId);
+    /** 从 MySQL 互动关系事实读取作者收到的点赞数。 */
+    long countLikesReceived(long userId);
+    /** 从 MySQL 互动关系事实读取作者收到的收藏数。 */
+    long countFavsReceived(long userId);
     /** 基于事实重建全部计数 */
     void rebuildAllCounters(long userId);
 }
-

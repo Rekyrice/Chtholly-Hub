@@ -6,35 +6,40 @@ import com.chtholly.counter.schema.CounterKeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CounterCalibrationServiceTest {
 
-    @Mock
-    private StringRedisTemplate redis;
     @Mock
     private RedissonClient redisson;
     @Mock
@@ -42,160 +47,252 @@ class CounterCalibrationServiceTest {
     @Mock
     private CounterPersistenceMapper persistenceMapper;
     @Mock
-    private CounterBitmapIndexService bitmapIndex;
+    private CounterReactionProjectionRebuilder projectionRebuilder;
+    @Mock
+    private PlatformTransactionManager transactionManager;
+    @Mock
+    private TransactionStatus transactionStatus;
+
     private CounterCalibrationService service;
 
     @BeforeEach
     void setUp() {
         service = new CounterCalibrationService(
-                redis, redisson, persistenceMapper, bitmapIndex, true, 2);
+                redisson,
+                persistenceMapper,
+                projectionRebuilder,
+                transactionManager,
+                true,
+                2);
     }
 
     @Test
-    void entityReconciliationPersistsTheBitmapAbsoluteCountsAtTheNewEpoch() throws Exception {
-        when(redisson.getLock(CounterKeys.factMaintenanceLockKey("post", "7"))).thenReturn(lock);
-        when(lock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(true);
-        when(bitmapIndex.requireShardKeys("like", "post", "7")).thenReturn(Set.of());
-        when(bitmapIndex.requireShardKeys("fav", "post", "7")).thenReturn(Set.of());
-        doAnswer(invocation -> {
-            DefaultRedisScript<?> script = invocation.getArgument(0);
-            String lua = script.getScriptAsString();
-            if (lua.contains("return {likeCount, favCount, nextEpoch}")) {
-                return List.of(2L, 3L, 4L);
-            }
-            return 1L;
-        }).when(redis).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+    void entityReconciliationRebuildsFromMysqlAtTheNextLockedEpoch() throws Exception {
+        prepareLockAndTransaction("post", "7");
+        when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(4L, 4L));
+        when(projectionRebuilder.rebuild(eq("post"), eq("7"), anyString(), eq(5L)))
+                .thenReturn(new CounterReactionProjectionRebuilder.RebuildResult(2L, 3L, 5L));
+
+        CounterCalibrationService.ReconciliationResult result =
+                service.reconcileEntity("post", "7");
+
+        assertThat(result).isEqualTo(new CounterCalibrationService.ReconciliationResult(2L, 3L, 5L));
+        InOrder order = inOrder(projectionRebuilder, persistenceMapper, transactionManager);
+        order.verify(projectionRebuilder).begin(eq("post"), eq("7"), anyString());
+        order.verify(persistenceMapper).ensureReactionSnapshots("post", "7");
+        order.verify(persistenceMapper).lockReactionEpochs("post", "7");
+        order.verify(projectionRebuilder).rebuild(eq("post"), eq("7"), anyString(), eq(5L));
+        order.verify(persistenceMapper).replaceReactionSnapshots("post", "7", 2L, 3L, 5L);
+        order.verify(transactionManager).commit(transactionStatus);
+        order.verify(projectionRebuilder)
+                .publishComplete(eq("post"), eq("7"), anyString());
+        verify(projectionRebuilder, never()).abort(anyString(), anyString(), anyString());
+        verify(lock).unlock();
+    }
+
+    @Test
+    void reconciliationUsesAnIndependentTransactionDefinition() throws Exception {
+        prepareLockAndTransaction("post", "7");
+        when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(4L, 4L));
+        when(projectionRebuilder.rebuild(eq("post"), eq("7"), anyString(), eq(5L)))
+                .thenReturn(new CounterReactionProjectionRebuilder.RebuildResult(2L, 3L, 5L));
 
         service.reconcileEntity("post", "7");
 
-        verify(persistenceMapper).replaceReactionSnapshots("post", "7", 2L, 3L, 4L);
-        verify(lock).unlock();
+        ArgumentCaptor<TransactionDefinition> definition =
+                ArgumentCaptor.forClass(TransactionDefinition.class);
+        verify(transactionManager).getTransaction(definition.capture());
+        assertThat(definition.getValue().getPropagationBehavior())
+                .isEqualTo(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Test
-    void entityLockIsReleasedWhenRedisFenceReleaseFails() throws Exception {
-        when(redisson.getLock(CounterKeys.factMaintenanceLockKey("post", "7"))).thenReturn(lock);
-        when(lock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(true);
-        when(bitmapIndex.requireShardKeys("like", "post", "7")).thenReturn(Set.of());
-        when(bitmapIndex.requireShardKeys("fav", "post", "7")).thenReturn(Set.of());
-        doAnswer(invocation -> {
-            DefaultRedisScript<?> script = invocation.getArgument(0);
-            String lua = script.getScriptAsString();
-            if (lua.contains("return {likeCount, favCount, nextEpoch}")) {
-                return List.of(2L, 3L, 4L);
-            }
-            if (lua.contains("return redis.call('DEL', fenceKey)")) {
-                throw new IllegalStateException("fence release failed");
-            }
-            return 1L;
-        }).when(redis).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+    void callerManagedTransactionIsRejectedBeforeTakingTheMaintenanceLock() {
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            assertThatThrownBy(() -> service.reconcileEntity("post", "7"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("active transaction");
+        } finally {
+            TransactionSynchronizationManager.clear();
+        }
+
+        verify(redisson, never()).getLock(anyString());
+        verifyNoInteractions(persistenceMapper, projectionRebuilder, transactionManager);
+    }
+
+    @Test
+    void rebuildFailureRollsBackAndKeepsTheProjectionIncomplete() throws Exception {
+        prepareLockAndTransaction("post", "7");
+        when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(4L, 4L));
+        doThrow(new IllegalStateException("stage failed"))
+                .when(projectionRebuilder)
+                .rebuild(eq("post"), eq("7"), anyString(), eq(5L));
 
         assertThatThrownBy(() -> service.reconcileEntity("post", "7"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("fence release failed");
+                .hasMessage("stage failed");
 
+        verify(transactionManager).rollback(transactionStatus);
+        verify(projectionRebuilder).abort(eq("post"), eq("7"), anyString());
+        verify(persistenceMapper, never())
+                .replaceReactionSnapshots(
+                        anyString(), anyString(), anyLong(), anyLong(), anyLong());
         verify(lock).unlock();
     }
 
     @Test
-    void scheduledRunIncludesRedisOnlyAndOldestMysqlCandidates() {
-        when(bitmapIndex.discoverCandidates(1))
-                .thenReturn(List.of(new CounterEntityIdentity("post", "redis-only")));
-        when(bitmapIndex.isBackfillComplete()).thenReturn(true);
-        when(persistenceMapper.listOldestReactionSnapshotIdentities(50))
-                .thenReturn(List.of(new CounterEntityIdentity("post", "mysql-only")));
+    void transactionCommitFailureInvalidatesTheCompletedProjection() throws Exception {
+        prepareLockAndTransaction("post", "7");
+        when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(0L, 0L));
+        when(projectionRebuilder.rebuild(eq("post"), eq("7"), anyString(), eq(1L)))
+                .thenReturn(new CounterReactionProjectionRebuilder.RebuildResult(1L, 0L, 1L));
+        doThrow(new IllegalStateException("commit failed"))
+                .when(transactionManager).commit(transactionStatus);
+
+        assertThatThrownBy(() -> service.reconcileEntity("post", "7"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("commit failed");
+
+        verify(projectionRebuilder).abort(eq("post"), eq("7"), anyString());
+        verify(projectionRebuilder, never())
+                .publishComplete(anyString(), anyString(), anyString());
+        verify(lock).unlock();
+    }
+
+    @Test
+    void busyEntityLockDoesNotTouchTheProjectionOrMysql() throws Exception {
+        when(redisson.getLock(CounterKeys.factMaintenanceLockKey("post", "7"))).thenReturn(lock);
+        when(lock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.reconcileEntity("post", "7"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("busy");
+
+        verify(projectionRebuilder, never()).begin(anyString(), anyString(), anyString());
+        verify(transactionManager, never()).getTransaction(any());
+        verify(lock, never()).unlock();
+    }
+
+    @Test
+    void scheduledRunUsesOnlyOneBoundedMysqlSnapshotPage() {
+        CounterEntityIdentity first = new CounterEntityIdentity("post", "first");
+        CounterEntityIdentity second = new CounterEntityIdentity("post", "second");
+        when(persistenceMapper.findReactionSnapshotIdentityHighWatermark())
+                .thenReturn(second);
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                null, null, "post", "second", 2))
+                .thenReturn(List.of(first, second));
         CounterCalibrationService spy = spy(service);
         doReturn(new CounterCalibrationService.ReconciliationResult(1L, 0L, 1L))
-                .when(spy).reconcileEntity("post", "redis-only");
-        doReturn(new CounterCalibrationService.ReconciliationResult(0L, 0L, 2L))
-                .when(spy).reconcileEntity("post", "mysql-only");
+                .when(spy).reconcileEntity("post", "first");
+        doReturn(new CounterCalibrationService.ReconciliationResult(0L, 1L, 1L))
+                .when(spy).reconcileEntity("post", "second");
 
         spy.reconcileScheduled();
 
-        verify(spy).reconcileEntity("post", "redis-only");
-        verify(spy).reconcileEntity("post", "mysql-only");
-        verify(persistenceMapper).listOldestReactionSnapshotIdentities(eq(50));
+        verify(spy).reconcileEntity("post", "first");
+        verify(spy).reconcileEntity("post", "second");
+        verify(persistenceMapper).listReactionSnapshotIdentitiesPage(
+                null, null, "post", "second", 2);
     }
 
     @Test
-    void scheduledRunReservesCapacityForMysqlOnlyDriftWhenRedisCandidatesFillTheBatch() {
-        when(bitmapIndex.discoverCandidates(1))
-                .thenReturn(List.of(new CounterEntityIdentity("post", "redis-one")));
-        when(bitmapIndex.isBackfillComplete()).thenReturn(true);
-        when(persistenceMapper.listOldestReactionSnapshotIdentities(50))
-                .thenReturn(List.of(new CounterEntityIdentity("post", "mysql-only")));
+    void failedCandidatesCannotStarveLaterPagesInTheStableMysqlSweep() {
+        CounterEntityIdentity first = new CounterEntityIdentity("post", "first");
+        CounterEntityIdentity second = new CounterEntityIdentity("post", "second");
+        CounterEntityIdentity third = new CounterEntityIdentity("post", "third");
+        when(persistenceMapper.findReactionSnapshotIdentityHighWatermark())
+                .thenReturn(third);
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                null, null, "post", "third", 2))
+                .thenReturn(List.of(first, second));
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                "post", "second", "post", "third", 2))
+                .thenReturn(List.of(third));
         CounterCalibrationService spy = spy(service);
-        doReturn(new CounterCalibrationService.ReconciliationResult(1L, 0L, 1L))
-                .when(spy).reconcileEntity("post", "redis-one");
-        doReturn(new CounterCalibrationService.ReconciliationResult(0L, 0L, 2L))
-                .when(spy).reconcileEntity("post", "mysql-only");
+        doThrow(new IllegalStateException("first failed"))
+                .when(spy).reconcileEntity("post", "first");
+        doThrow(new IllegalStateException("second failed"))
+                .when(spy).reconcileEntity("post", "second");
+        doReturn(new CounterCalibrationService.ReconciliationResult(1L, 1L, 1L))
+                .when(spy).reconcileEntity("post", "third");
 
         spy.reconcileScheduled();
+        spy.reconcileScheduled();
 
-        verify(spy).reconcileEntity("post", "redis-one");
-        verify(spy).reconcileEntity("post", "mysql-only");
-        verify(persistenceMapper).listOldestReactionSnapshotIdentities(50);
+        verify(spy).reconcileEntity("post", "first");
+        verify(spy).reconcileEntity("post", "second");
+        verify(spy).reconcileEntity("post", "third");
+        verify(persistenceMapper).listReactionSnapshotIdentitiesPage(
+                "post", "second", "post", "third", 2);
     }
 
     @Test
-    void persistentBitmapRotationAdvancesDiscoveryAndBoundsEachRun() {
-        when(bitmapIndex.discoverCandidates(1)).thenReturn(
-                List.of(new CounterEntityIdentity("post", "redis-one")),
-                List.of(new CounterEntityIdentity("post", "redis-two")));
-        when(bitmapIndex.isBackfillComplete()).thenReturn(true);
-        when(persistenceMapper.listOldestReactionSnapshotIdentities(anyInt()))
-                .thenReturn(List.of(new CounterEntityIdentity("post", "mysql-only")));
+    void continuousIdentityGrowthCannotPreventFailedLowIdentitiesFromBeingRevisited() {
+        CounterEntityIdentity first = new CounterEntityIdentity("post", "a");
+        CounterEntityIdentity second = new CounterEntityIdentity("post", "b");
+        CounterEntityIdentity third = new CounterEntityIdentity("post", "c");
+        CounterEntityIdentity fifth = new CounterEntityIdentity("post", "e");
+        when(persistenceMapper.findReactionSnapshotIdentityHighWatermark())
+                .thenReturn(third, fifth);
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                null, null, "post", "c", 2))
+                .thenReturn(List.of(first, second));
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                "post", "b", "post", "c", 2))
+                .thenReturn(List.of(third));
+        when(persistenceMapper.listReactionSnapshotIdentitiesPage(
+                null, null, "post", "e", 2))
+                .thenReturn(List.of(first, second));
         CounterCalibrationService spy = spy(service);
-        for (String entityId : List.of("mysql-only", "redis-one", "redis-two")) {
-            doReturn(new CounterCalibrationService.ReconciliationResult(0L, 0L, 1L))
-                    .when(spy).reconcileEntity("post", entityId);
-        }
+        doReturn(new CounterCalibrationService.ReconciliationResult(1L, 1L, 1L))
+                .when(spy).reconcileEntity(anyString(), anyString());
+        doThrow(new IllegalStateException("first failed"))
+                .when(spy).reconcileEntity("post", "a");
 
         spy.reconcileScheduled();
         spy.reconcileScheduled();
+        spy.reconcileScheduled();
 
-        verify(spy, times(2)).reconcileEntity("post", "mysql-only");
-        verify(spy).reconcileEntity("post", "redis-one");
-        verify(spy).reconcileEntity("post", "redis-two");
-        verify(bitmapIndex, times(2)).discoverCandidates(1);
-        verify(bitmapIndex).rotateCandidate(new CounterEntityIdentity("post", "redis-one"));
-        verify(bitmapIndex).rotateCandidate(new CounterEntityIdentity("post", "redis-two"));
+        verify(spy, times(2)).reconcileEntity("post", "a");
+        verify(spy).reconcileEntity("post", "c");
+        verify(persistenceMapper, times(2))
+                .findReactionSnapshotIdentityHighWatermark();
     }
 
     @Test
-    void failedOldestMysqlCandidateDoesNotStarveTheNextSnapshot() {
-        CounterCalibrationService singleSlotService =
-                new CounterCalibrationService(
-                        redis, redisson, persistenceMapper, bitmapIndex, true, 1);
-        when(bitmapIndex.discoverCandidates(1)).thenReturn(List.of());
-        when(bitmapIndex.isBackfillComplete()).thenReturn(true);
-        when(persistenceMapper.listOldestReactionSnapshotIdentities(anyInt())).thenReturn(List.of(
-                new CounterEntityIdentity("post", "stuck"),
-                new CounterEntityIdentity("post", "next")));
-        CounterCalibrationService spy = spy(singleSlotService);
-        doThrow(new IllegalStateException("persistent failure"))
-                .when(spy).reconcileEntity("post", "stuck");
-        doReturn(new CounterCalibrationService.ReconciliationResult(0L, 0L, 1L))
-                .when(spy).reconcileEntity("post", "next");
+    void inconsistentSnapshotEpochsFailBeforeRedisRebuild() throws Exception {
+        prepareLockAndTransaction("post", "7");
+        when(persistenceMapper.lockReactionEpochs("post", "7")).thenReturn(List.of(2L, 3L));
 
-        spy.reconcileScheduled();
-        spy.reconcileScheduled();
+        assertThatThrownBy(() -> service.reconcileEntity("post", "7"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("epoch");
 
-        verify(spy).reconcileEntity("post", "stuck");
-        verify(spy).reconcileEntity("post", "next");
-        verify(persistenceMapper, times(2)).listOldestReactionSnapshotIdentities(50);
+        verify(projectionRebuilder, never())
+                .rebuild(anyString(), anyString(), anyString(), anyLong());
+        verify(projectionRebuilder).abort(eq("post"), eq("7"), anyString());
     }
 
     @Test
-    void scheduledRunAdvancesOnlyDiscoveryWhileInitialBackfillIsIncomplete() {
-        when(bitmapIndex.discoverCandidates(1)).thenReturn(List.of());
-        when(bitmapIndex.isBackfillComplete()).thenReturn(false);
+    void maximumEpochCannotWrap() throws Exception {
+        prepareLockAndTransaction("post", "7");
+        when(persistenceMapper.lockReactionEpochs("post", "7"))
+                .thenReturn(List.of(Long.MAX_VALUE, Long.MAX_VALUE));
 
-        service.reconcileScheduled();
+        assertThatThrownBy(() -> service.reconcileEntity("post", "7"))
+                .isInstanceOf(ArithmeticException.class);
 
-        verify(bitmapIndex).discoverCandidates(1);
-        verify(persistenceMapper, org.mockito.Mockito.never())
-                .listOldestReactionSnapshotIdentities(anyInt());
-        verify(bitmapIndex, org.mockito.Mockito.never()).rotateCandidate(any());
+        verify(projectionRebuilder, never())
+                .rebuild(anyString(), anyString(), anyString(), anyLong());
+        verify(projectionRebuilder).abort(eq("post"), eq("7"), anyString());
+    }
+
+    private void prepareLockAndTransaction(String entityType, String entityId) throws Exception {
+        when(redisson.getLock(CounterKeys.factMaintenanceLockKey(entityType, entityId))).thenReturn(lock);
+        when(lock.tryLock(0L, TimeUnit.MILLISECONDS)).thenReturn(true);
+        when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenReturn(transactionStatus);
     }
 }

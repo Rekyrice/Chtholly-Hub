@@ -3,17 +3,22 @@ package com.chtholly.counter.event;
 import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.schema.CounterSchema;
 import com.chtholly.counter.mapper.CounterPersistenceMapper;
+import com.chtholly.counter.mapper.CounterEntityIdentity;
 import com.chtholly.counter.mapper.CounterSnapshotDelta;
+import com.chtholly.counter.mapper.CounterSnapshotEpoch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -52,42 +57,148 @@ public class CounterAggregationProcessor {
         this.cleanupEmptyAggScript.setScriptText(CLEANUP_EMPTY_AGG_LUA);
     }
 
-    /** Applies one Kafka batch using the MySQL inbox and snapshot in one transaction. */
+    /** Applies one Kafka or local batch using the MySQL inbox and snapshot in one transaction. */
     @Transactional
     public int applyBatch(List<CounterEvent> events) {
-        if (events == null || events.isEmpty()) { return 0; }
+        return applyBatchWithResult(events).insertedEvents();
+    }
+
+    /**
+     * Applies one batch and reports reaction events still lacking a durable side-effect receipt.
+     *
+     * @param events counter events
+     * @return durable insert count and pending reaction side effects, including safe broker replays
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public ApplyBatchResult applyBatchWithResult(List<CounterEvent> events) {
+        if (events == null || events.isEmpty()) { return new ApplyBatchResult(0, List.of()); }
         List<CounterEvent> copy = List.copyOf(events);
         copy.forEach(CounterAggregationProcessor::validateEvent);
 
+        Map<CounterEntityIdentity, Long> reactionEpochs = lockReactionEpochs(copy);
         Map<SnapshotKey, Long> grouped = new LinkedHashMap<>();
         List<CounterEvent> newViewEvents = new ArrayList<>();
+        Map<String, CounterEvent> reactionEvents = new LinkedHashMap<>();
         int applied = 0;
         for (CounterEvent event : copy) {
             int inserted = persistenceMapper.insertInbox(event);
+            boolean newlyInserted;
             if (inserted == 0) {
                 if (persistenceMapper.countMatchingInbox(event) != 1) {
                     throw new IllegalStateException("Counter event ID collision detected");
                 }
-                continue;
-            }
-            if (inserted != 1) {
+                newlyInserted = false;
+            } else if (inserted == 1) {
+                newlyInserted = true;
+                applied++;
+            } else {
                 throw new IllegalStateException("Counter inbox insert returned an invalid row count");
             }
-            applied++;
+            boolean current = isCurrent(event, reactionEpochs);
+            if (isReaction(event)) {
+                reactionEvents.putIfAbsent(event.getEventId(), event);
+            }
+            if (!newlyInserted || !current) {
+                continue;
+            }
             SnapshotKey key = new SnapshotKey(
                     event.getEntityType(), event.getEntityId(), event.getMetric(), event.getFactEpoch());
             grouped.merge(key, (long) event.getDelta(), Math::addExact);
             if ("view".equals(event.getMetric())) { newViewEvents.add(event); }
         }
-        if (grouped.isEmpty()) { return 0; }
-        List<CounterSnapshotDelta> deltas = grouped.entrySet().stream()
-                .map(entry -> new CounterSnapshotDelta(
-                        entry.getKey().entityType(), entry.getKey().entityId(),
-                        entry.getKey().metric(), entry.getValue(), entry.getKey().factEpoch()))
+        if (!grouped.isEmpty()) {
+            List<CounterSnapshotDelta> deltas = grouped.entrySet().stream()
+                    .map(entry -> new CounterSnapshotDelta(
+                            entry.getKey().entityType(), entry.getKey().entityId(),
+                            entry.getKey().metric(), entry.getValue(), entry.getKey().factEpoch()))
+                    .toList();
+            persistenceMapper.incrementSnapshots(deltas);
+            newViewEvents.forEach(this::applyViewEvent);
+        }
+        return new ApplyBatchResult(
+                applied,
+                pendingReactionSideEffects(reactionEvents));
+    }
+
+    private List<CounterEvent> pendingReactionSideEffects(
+            Map<String, CounterEvent> reactionEvents) {
+        if (reactionEvents.isEmpty()) {
+            return List.of();
+        }
+        List<String> pendingIds =
+                persistenceMapper.listPendingReactionSideEffectEventIds(
+                        List.copyOf(reactionEvents.keySet()));
+        if (pendingIds == null) {
+            throw new IllegalStateException(
+                    "Counter reaction pending side-effect query returned no result");
+        }
+        Set<String> pending = new LinkedHashSet<>();
+        for (String eventId : pendingIds) {
+            if (eventId == null
+                    || !reactionEvents.containsKey(eventId)
+                    || !pending.add(eventId)) {
+                throw new IllegalStateException(
+                        "Counter reaction pending side-effect query returned an invalid event ID");
+            }
+        }
+        return reactionEvents.entrySet().stream()
+                .filter(entry -> pending.contains(entry.getKey()))
+                .map(Map.Entry::getValue)
                 .toList();
-        persistenceMapper.incrementSnapshots(deltas);
-        newViewEvents.forEach(this::applyViewEvent);
-        return applied;
+    }
+
+    private Map<CounterEntityIdentity, Long> lockReactionEpochs(List<CounterEvent> events) {
+        List<CounterEntityIdentity> identities = events.stream()
+                .filter(CounterAggregationProcessor::isReaction)
+                .map(event -> new CounterEntityIdentity(event.getEntityType(), event.getEntityId()))
+                .distinct()
+                .sorted(Comparator.comparing(CounterEntityIdentity::entityType)
+                        .thenComparing(CounterEntityIdentity::entityId))
+                .toList();
+        if (identities.isEmpty()) {
+            return Map.of();
+        }
+        persistenceMapper.ensureReactionSnapshotsBatch(identities);
+        List<CounterSnapshotEpoch> rows = persistenceMapper.lockReactionSnapshotEpochs(identities);
+        if (rows == null || rows.size() != identities.size() * 2) {
+            throw new IllegalStateException("Counter reaction snapshot lock is incomplete");
+        }
+        Map<CounterEntityIdentity, Long> epochs = new LinkedHashMap<>();
+        Map<CounterEntityIdentity, Integer> counts = new LinkedHashMap<>();
+        for (CounterSnapshotEpoch row : rows) {
+            if (row == null || row.factEpoch() < 0L
+                    || (!"like".equals(row.metric()) && !"fav".equals(row.metric()))) {
+                throw new IllegalStateException("Counter reaction snapshot epoch row is invalid");
+            }
+            CounterEntityIdentity identity =
+                    new CounterEntityIdentity(row.entityType(), row.entityId());
+            Long previous = epochs.putIfAbsent(identity, row.factEpoch());
+            if (previous != null && previous != row.factEpoch()) {
+                throw new IllegalStateException("Counter reaction snapshot epoch is inconsistent");
+            }
+            counts.merge(identity, 1, Integer::sum);
+        }
+        for (CounterEntityIdentity identity : identities) {
+            if (counts.getOrDefault(identity, 0) != 2 || !epochs.containsKey(identity)) {
+                throw new IllegalStateException("Counter reaction snapshot lock is incomplete");
+            }
+        }
+        return Map.copyOf(epochs);
+    }
+
+    private static boolean isCurrent(
+            CounterEvent event,
+            Map<CounterEntityIdentity, Long> reactionEpochs) {
+        if (!isReaction(event)) {
+            return true;
+        }
+        Long current = reactionEpochs.get(
+                new CounterEntityIdentity(event.getEntityType(), event.getEntityId()));
+        return current != null && current == event.getFactEpoch();
+    }
+
+    private static boolean isReaction(CounterEvent event) {
+        return "like".equals(event.getMetric()) || "fav".equals(event.getMetric());
     }
 
     private boolean applyViewEvent(CounterEvent evt) {
@@ -160,6 +271,10 @@ public class CounterAggregationProcessor {
         }
 
         String cntKey = CounterKeys.sdsKey(parts[2], parts[3]);
+        String completeKey =
+                CounterKeys.reactionProjectionCompleteKey(parts[2], parts[3]);
+        String fenceKey =
+                CounterKeys.factMaintenanceFenceKey(parts[2], parts[3]);
 
         for (Map.Entry<Object, Object> e : entries.entrySet()) {
             String field = String.valueOf(e.getKey());
@@ -174,7 +289,9 @@ public class CounterAggregationProcessor {
             }
 
             try {
-                redis.execute(transferFieldScript, List.of(cntKey, aggKey, indexKey),
+                redis.execute(
+                        transferFieldScript,
+                        List.of(cntKey, aggKey, indexKey, completeKey, fenceKey),
                         String.valueOf(CounterSchema.SCHEMA_LEN),
                         String.valueOf(CounterSchema.FIELD_SIZE),
                         field);
@@ -187,6 +304,13 @@ public class CounterAggregationProcessor {
 
     private record SnapshotKey(String entityType, String entityId, String metric, long factEpoch) {}
 
+    /** Detailed durable application result used by the reaction Outbox projection. */
+    public record ApplyBatchResult(int insertedEvents, List<CounterEvent> sideEffectEvents) {
+        public ApplyBatchResult {
+            sideEffectEvents = List.copyOf(sideEffectEvents);
+        }
+    }
+
     private static final String AGG_INCR_LUA = """
             local aggKey = KEYS[1]
             local indexKey = KEYS[2]
@@ -197,6 +321,11 @@ public class CounterAggregationProcessor {
             local dedupTtl = tonumber(ARGV[3])
             local epochFenced = ARGV[4] == '1'
             local expectedEpoch = tonumber(ARGV[5])
+            if not delta or delta ~= math.floor(delta)
+                  or not dedupTtl or dedupTtl <= 0
+                  or dedupTtl ~= math.floor(dedupTtl) then
+              return redis.error_reply('counter aggregation arguments are invalid')
+            end
             if epochFenced then
               local epochTypeReply = redis.call('TYPE', epochKey)
               local epochType = type(epochTypeReply) == 'table' and epochTypeReply['ok'] or epochTypeReply
@@ -211,11 +340,23 @@ public class CounterAggregationProcessor {
               end
               if currentEpoch ~= expectedEpoch then return -1 end
             end
-            if not redis.call('SET', eventKey, '1', 'NX', 'EX', dedupTtl) then
-                return 0
+            if redis.call('EXISTS', eventKey) ~= 0 then return 0 end
+            local aggTypeReply = redis.call('TYPE', aggKey)
+            local aggType =
+                  type(aggTypeReply) == 'table' and aggTypeReply['ok'] or aggTypeReply
+            local indexTypeReply = redis.call('TYPE', indexKey)
+            local indexType =
+                  type(indexTypeReply) == 'table' and indexTypeReply['ok'] or indexTypeReply
+            if (aggType ~= 'none' and aggType ~= 'hash')
+                  or (indexType ~= 'none' and indexType ~= 'set') then
+              return redis.error_reply('counter aggregation key has an invalid Redis type')
             end
-            redis.call('HINCRBY', aggKey, field, delta)
+            local increment = redis.pcall('HINCRBY', aggKey, field, delta)
+            if type(increment) == 'table' and increment['err'] then
+              return redis.error_reply(increment['err'])
+            end
             redis.call('SADD', indexKey, aggKey)
+            redis.call('SET', eventKey, '1', 'EX', dedupTtl)
             return 1
             """;
 
@@ -224,6 +365,8 @@ public class CounterAggregationProcessor {
             local cntKey = KEYS[1]
             local aggKey = KEYS[2]
             local indexKey = KEYS[3]
+            local completeKey = KEYS[4]
+            local fenceKey = KEYS[5]
             local schemaLen = tonumber(ARGV[1])
             local fieldSize = tonumber(ARGV[2]) -- 固定为4
             local field = ARGV[3]
@@ -237,6 +380,13 @@ public class CounterAggregationProcessor {
               return 0
             end
             local delta = tonumber(rawDelta)
+            if not delta or delta ~= math.floor(delta)
+                  or not idx or idx < 0 or idx >= schemaLen
+                  or idx ~= math.floor(idx)
+                  or schemaLen ~= 5 or fieldSize ~= 4 then
+              return redis.error_reply('counter aggregation field is invalid')
+            end
+            local uint32Max = 4294967295
 
             local function read32be(s, off)
               local b = {string.byte(s, off+1, off+4)}
@@ -251,11 +401,40 @@ public class CounterAggregationProcessor {
               return string.char(unpack(t))
             end
 
-            local cnt = redis.call('GET', cntKey)
-            if not cnt then cnt = string.rep(string.char(0), schemaLen * fieldSize) end
+            local typeReply = redis.call('TYPE', cntKey)
+            local cntType = type(typeReply) == 'table' and typeReply['ok'] or typeReply
+            local cnt = nil
+            if cntType == 'string' then cnt = redis.call('GET', cntKey) end
+            if not cnt or string.len(cnt) ~= schemaLen * fieldSize then
+              local fenceTypeReply = redis.call('TYPE', fenceKey)
+              local fenceType =
+                    type(fenceTypeReply) == 'table' and fenceTypeReply['ok'] or fenceTypeReply
+              if fenceType ~= 'none' and fenceType ~= 'string' then
+                redis.call('DEL', completeKey)
+                return redis.error_reply('counter reaction maintenance fence has an invalid Redis type')
+              end
+              if fenceType == 'string' then
+                local fenceValue = redis.call('GET', fenceKey)
+                if string.sub(fenceValue, 1, 7) ~= '@dirty:' then
+                  if string.sub(fenceValue, 1, 10) == '@prepared:' then
+                    redis.call('SET', fenceKey, '@dirty:' .. string.sub(fenceValue, 11))
+                  else
+                    redis.call('SET', fenceKey, '@dirty:' .. fenceValue)
+                  end
+                end
+              end
+              redis.call('DEL', completeKey)
+              if cntType ~= 'none' and cntType ~= 'string' then
+                redis.call('DEL', cntKey)
+              end
+              cnt = string.rep(string.char(0), schemaLen * fieldSize)
+            end
             local off = idx * fieldSize
             local v = read32be(cnt, off) + delta
             if v < 0 then v = 0 end
+            if v > uint32Max then
+              return redis.error_reply('counter aggregation would overflow unsigned Int32')
+            end
             local seg = write32be(v)
             cnt = string.sub(cnt, 1, off) .. seg .. string.sub(cnt, off+fieldSize+1)
             redis.call('SET', cntKey, cnt)

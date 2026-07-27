@@ -21,6 +21,7 @@ class CanalOutboxRowMapperTest {
         CanalEntry.RowData rowData = CanalEntry.RowData.newBuilder()
                 .addAfterColumns(column("id", "42"))
                 .addAfterColumns(column("aggregate_type", "post"))
+                .addAfterColumns(column("aggregate_id", "7"))
                 .addAfterColumns(column("type", "PostPublished"))
                 .addAfterColumns(column("payload", payload))
                 .build();
@@ -29,6 +30,7 @@ class CanalOutboxRowMapperTest {
 
         assertThat(OutboxMessageUtil.extractEventId(row)).isEqualTo(42L);
         assertThat(row.path("aggregate_type").asText()).isEqualTo("post");
+        assertThat(row.path("aggregate_id").asText()).isEqualTo("7");
         assertThat(row.path("type").asText()).isEqualTo("PostPublished");
         assertThat(row.path("payload").asText()).isEqualTo(payload);
     }

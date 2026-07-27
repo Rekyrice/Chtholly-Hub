@@ -1,6 +1,51 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.chtholly.counter.mapper.CounterPersistenceMapper">
+    <insert id="ensureReactionSnapshots">
+        INSERT INTO counter_snapshot
+            (entity_type, entity_id, metric, count_value, fact_epoch, updated_at)
+        VALUES
+            (#{entityType}, #{entityId}, 'fav', 0, 0, NOW(3)),
+            (#{entityType}, #{entityId}, 'like', 0, 0, NOW(3))
+        ON DUPLICATE KEY UPDATE
+            fact_epoch = counter_snapshot.fact_epoch
+    </insert>
+
+    <select id="lockReactionEpochs" resultType="java.lang.Long">
+        SELECT fact_epoch
+        FROM counter_snapshot
+        WHERE entity_type = #{entityType}
+          AND entity_id = #{entityId}
+          AND metric IN ('fav', 'like')
+        ORDER BY metric
+        FOR UPDATE
+    </select>
+
+    <insert id="ensureReactionSnapshotsBatch">
+        INSERT INTO counter_snapshot
+            (entity_type, entity_id, metric, count_value, fact_epoch, updated_at)
+        VALUES
+        <foreach collection="identities" item="identity" separator=",">
+            (#{identity.entityType}, #{identity.entityId}, 'fav', 0, 0, NOW(3)),
+            (#{identity.entityType}, #{identity.entityId}, 'like', 0, 0, NOW(3))
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+            fact_epoch = counter_snapshot.fact_epoch
+    </insert>
+
+    <select id="lockReactionSnapshotEpochs"
+            resultType="com.chtholly.counter.mapper.CounterSnapshotEpoch">
+        SELECT entity_type, entity_id, metric, fact_epoch
+        FROM counter_snapshot
+        WHERE metric IN ('fav', 'like')
+          AND (entity_type, entity_id) IN
+        <foreach collection="identities" item="identity" open="(" separator="," close=")">
+            (#{identity.entityType}, #{identity.entityId})
+        </foreach>
+        ORDER BY entity_type, entity_id, metric
+        FOR UPDATE
+    </select>
+
     <insert id="insertInbox">
         INSERT IGNORE INTO counter_event_inbox
             (event_id, entity_type, entity_id, metric, delta, user_id, fact_epoch, applied_at)
@@ -20,6 +65,32 @@
           AND user_id = #{userId}
           AND fact_epoch = #{factEpoch}
     </select>
+
+    <select id="listPendingReactionSideEffectEventIds" resultType="java.lang.String">
+        SELECT event_id
+        FROM counter_event_inbox
+        WHERE side_effects_published_at IS NULL
+          AND event_id IN
+        <foreach collection="eventIds" item="eventId" open="(" separator="," close=")">
+            #{eventId}
+        </foreach>
+    </select>
+
+    <select id="lockReactionSideEffectPublication" resultType="java.lang.Integer">
+        SELECT IF(side_effects_published_at IS NULL, 0, 1)
+        FROM counter_event_inbox
+        WHERE event_id = #{eventId}
+          AND metric IN ('like', 'fav')
+        FOR UPDATE
+    </select>
+
+    <update id="markReactionSideEffectsPublished">
+        UPDATE counter_event_inbox
+        SET side_effects_published_at = NOW(3)
+        WHERE event_id = #{eventId}
+          AND metric IN ('like', 'fav')
+          AND side_effects_published_at IS NULL
+    </update>
 
     <insert id="incrementSnapshots">
         INSERT INTO counter_snapshot
@@ -49,13 +120,39 @@
             fact_epoch = GREATEST(fact_epoch, VALUES(fact_epoch))
     </insert>
 
-    <select id="listOldestReactionSnapshotIdentities"
+    <select id="findReactionSnapshotIdentityHighWatermark"
             resultType="com.chtholly.counter.mapper.CounterEntityIdentity">
         SELECT entity_type, entity_id
         FROM counter_snapshot
         WHERE metric IN ('like', 'fav')
         GROUP BY entity_type, entity_id
-        ORDER BY MIN(updated_at), entity_type, entity_id
+        ORDER BY BINARY entity_type DESC, BINARY entity_id DESC
+        LIMIT 1
+    </select>
+
+    <select id="listReactionSnapshotIdentitiesPage"
+            resultType="com.chtholly.counter.mapper.CounterEntityIdentity">
+        SELECT entity_type, entity_id
+        FROM counter_snapshot
+        WHERE metric IN ('like', 'fav')
+        <if test="afterEntityType != null and afterEntityId != null">
+          AND (
+                BINARY entity_type &gt; BINARY #{afterEntityType}
+                OR (
+                    BINARY entity_type = BINARY #{afterEntityType}
+                    AND BINARY entity_id &gt; BINARY #{afterEntityId}
+                )
+              )
+        </if>
+          AND (
+                BINARY entity_type &lt; BINARY #{throughEntityType}
+                OR (
+                    BINARY entity_type = BINARY #{throughEntityType}
+                    AND BINARY entity_id &lt;= BINARY #{throughEntityId}
+                )
+              )
+        GROUP BY entity_type, entity_id
+        ORDER BY BINARY entity_type, BINARY entity_id
         LIMIT #{limit}
     </select>
 </mapper>

@@ -29,8 +29,9 @@ import java.util.concurrent.TimeUnit;
  * Reconciles declared historical reactions without emitting user-facing interaction events.
  *
  * <p>Likes and favorites are a complete managed-user fact set on every authoritative target. The
- * maintenance boundary sets and clears only Seed-owned bits, preserves valid natural users, and
- * rebuilds the post counters exactly. Visitor views remain monotonic minimum baselines.
+ * maintenance boundary reconciles only Seed-owned MySQL relation rows, preserves valid natural
+ * users, and rebuilds Redis projections and post counters. Visitor views remain monotonic minimum
+ * baselines.
  */
 @Component
 public final class ContentPackReactionApplier {

@@ -19,21 +19,23 @@
 ### 基础服务与异步链路
 
 - `MYSQL_*`、`REDIS_*`、`ES_URIS` 定位后端依赖；生产 Compose 会把主机名固定为服务名。
-- `KAFKA_ENABLED` 在 `application.yml` 中缺省为 `false`，即使用进程内 fallback；两份 `.env` 示例都显式写成 `true`，按示例启动就必须提供 Kafka。这一差异是有意的：属性缺省保证可降级，推荐完整环境覆盖异步链路。
-- `CANAL_ENABLED` 缺省及示例均为 `false`。未部署 Canal 时不要仅因存在相关配置就开启。
+- `KAFKA_ENABLED` 在 `application.yml` 中缺省为 `false`，即通用计数使用进程内 fallback；两份 `.env` 示例都显式写成 `true`，按示例启动就必须提供 Kafka。这一开关仍独立控制浏览量等旧 `counter-events` 链路。
+- `KAFKA_ENABLED=true` 且 `CANAL_ENABLED=true` 时，代码选择点赞/收藏 Kafka 传输；任一关闭时，互动 Outbox 经 `AFTER_COMMIT` 本地适配器处理。开关不探测 CDC 健康，也不会在运行中自动回退；启用 Kafka 路径前必须确认 CDC 可达。示例的 `KAFKA_ENABLED=true`、`CANAL_ENABLED=false` 是混合模式：通用计数使用 Kafka，互动关系使用本地提交后路径。
 
-### 互动计数恢复
+### 计数与互动恢复
 
-- `COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS` 与 `COUNTER_KAFKA_PUBLISH_ACK_TIMEOUT` 限制一次真实状态变化等待 Kafka 确认的次数和时长；每次重试复用同一个 event ID、消息 key 与序列化 payload。
-- `COUNTER_KAFKA_CONSUMER_MAX_ATTEMPTS`、`COUNTER_KAFKA_CONSUMER_RETRY_BACKOFF` 和 `COUNTER_KAFKA_CONSUMER_DLT_ACK_TIMEOUT` 控制批量消费者的有限重试与死信确认。业务事务成功前不会确认原批次。
-- `COUNTER_CALIBRATION_ENABLED`、`COUNTER_CALIBRATION_FIXED_DELAY`、`COUNTER_CALIBRATION_BATCH_SIZE` 和 `COUNTER_CALIBRATION_SCAN_COUNT` 控制从点赞/收藏 Bitmap 权威事实恢复 Redis SDS 与 MySQL 快照的周期任务。每轮只推进一个可恢复 SCAN cursor 页面，`SCAN_COUNT` 是 Redis 工作量提示而不是严格 key 数上限；初始完整页面循环结束前不处理实体，之后实际校准实体数受 `BATCH_SIZE` 严格限制。页面候选进入持久 ZSet，两类实体分片索引保留版本哨兵和期望 shard 数；任一缺失或成员数不符时失败关闭并等待后续页面重建非空分片。批次同时为 Redis 候选和 MySQL-only 漂移保留容量；关闭周期任务不会禁用读路径上的单实体校准。
+- `COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS` 与 `COUNTER_KAFKA_PUBLISH_ACK_TIMEOUT` 控制浏览量等旧 `counter-events` 发布确认；点赞/收藏已经改为 MySQL 关系与同事务 Outbox，不在请求内等待该 publisher。
+- `COUNTER_KAFKA_CONSUMER_MAX_ATTEMPTS`、`COUNTER_KAFKA_CONSUMER_RETRY_BACKOFF` 和 `COUNTER_KAFKA_CONSUMER_DLT_ACK_TIMEOUT` 只控制旧 `counter-events` 批量消费者。互动 Outbox 使用 `canal-outbox`、`canal-outbox-retry` 与 `canal-outbox-dlq`；其第 1/2/3 次重试固定延迟 5/30/120 秒，当前没有对应环境变量。
+- KafkaAdmin 可自动创建 `canal-outbox`（3 分区）、`canal-outbox-retry`（3 分区）和 `canal-outbox-dlq`（1 分区）。外部 broker 禁止自动建 topic 时必须预创建这些主题，并为应用 Kafka 身份配置所需的 CREATE（若允许自动创建）、DESCRIBE、READ、WRITE 与消费组权限；Canal 的 MySQL 复制账号权限是独立配置边界。
+- `COUNTER_CALIBRATION_ENABLED`、`COUNTER_CALIBRATION_FIXED_DELAY` 与 `COUNTER_CALIBRATION_BATCH_SIZE` 控制 MySQL→Redis 的周期互动校准。任务先取得当前 MySQL reaction snapshot 身份的固定字典序高水位，再按 `(entity_type, entity_id)` keyset 分页完成一轮有限扫描；持续新增实体不会让旧候选永久饥饿。每个实体在 Redisson 锁与 token fence 下分页读取 `counter_reaction`，直接重写 live Bitmap/SDS 并更新快照 epoch。关闭周期任务不会改变读取规则：成员投影不完整时按请求批量回源 MySQL，读取链路本身不触发校准。校准不补发通知、Feed/作者计数或兴趣画像。
+- 本地互动恢复由 `counter.reaction.local-replay.batch-size`（缺省 `100`，范围 `1`–`500`）、`counter.reaction.local-replay.fixed-delay`（缺省 `PT5S`）和 `counter.reaction.local-replay.initial-delay`（缺省 `PT5S`）控制。它仅在 Kafka 或 Canal 任一关闭时装配，按固定 Outbox 高水位与 ID keyset 扫描；这些属性当前没有单独环境变量映射，需要时以 Spring 配置或启动参数覆盖。
 
 ### 存储、LLM 与外部服务
 
 - `STORAGE_TYPE` 缺省和当前本地/生产示例均为 `local`；路径分别默认 `./uploads` 和 Compose 中的 `/app/uploads`。切换 `oss` 后才需要有效的 `OSS_*`。
 - `LLM_ENABLED` 缺省和示例均为 `false`。启用时需 `llm` profile、`DEEPSEEK_API_KEY` 与 `DASHSCOPE_API_KEY`；推荐根脚本会按开关补充 profile，裸 Maven 不会。
 - `BANGUMI_ENABLED` 缺省为 `true`，但访问令牌、代理和同步任务分别控制受限接口与后台同步。
-- `application-dev.yml` 默认开启 Swagger 和冷启动 seed；生产示例关闭 Swagger，且 Compose 当前固定 `LLM_ENABLED=false`、`CANAL_ENABLED=false`，修改示例 `.env` 本身不会覆盖这些固定值。
+- `application-dev.yml` 默认开启 Swagger 和冷启动 seed；生产示例关闭 Swagger，且 Compose 当前固定 `LLM_ENABLED=false`、`CANAL_ENABLED=false`，修改示例 `.env` 本身不会覆盖这些固定值。该 Compose 因而始终让互动关系走本地提交后路径；若要启用完整 CDC/Kafka 互动传输，需要另行适配部署拓扑并同时启用两个开关。
 
 ### Agent 领域配置
 

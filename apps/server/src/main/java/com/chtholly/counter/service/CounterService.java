@@ -43,15 +43,14 @@ public interface CounterService {
 
     Map<String, Map<String, Long>> getCountsBatch(String entityType, List<String> entityIds, List<String> metrics);
 
-    /**
-     * 判断是否点赞/收藏（位图）。
-     */
+    /** Reads like state from the complete online projection or falls back to MySQL. */
     boolean isLiked(String entityType, String entityId, long userId);
+    /** Reads favorite state from the complete online projection or falls back to MySQL. */
     boolean isFaved(String entityType, String entityId, long userId);
 
-    /** 批量查询用户对帖子的点赞状态（Redis Pipeline）。 */
+    /** 批量查询用户点赞状态，并只对不完整投影执行 MySQL 批量回源。 */
     Map<Long, Boolean> batchIsLiked(long userId, List<Long> postIds);
 
-    /** 批量查询用户对帖子的收藏状态（Redis Pipeline）。 */
+    /** 批量查询用户收藏状态，并只对不完整投影执行 MySQL 批量回源。 */
     Map<Long, Boolean> batchIsFaved(long userId, List<Long> postIds);
 }

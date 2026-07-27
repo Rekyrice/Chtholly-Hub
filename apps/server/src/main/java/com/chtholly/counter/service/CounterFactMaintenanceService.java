@@ -39,12 +39,11 @@ public interface CounterFactMaintenanceService {
         }
     }
 
-    /** Statistics returned by the atomic reconciliation of one post. */
+    /** Statistics returned after one post's MySQL reconciliation and projection rebuild. */
     record PostReactionReconciliationResult(
             long postId,
-            long managedSetCount,
-            long managedClearCount,
-            long orphanClearCount,
+            long managedInsertCount,
+            long managedDeleteCount,
             long likeTotal,
             long favTotal) {}
 

@@ -13,6 +13,9 @@ public class DeadLetterMessageRow {
     private Integer retryCount;
     private String status;
     private LocalDateTime createdAt;
+    private String replayAttemptToken;
+    private LocalDateTime replayStartedAt;
+    private LocalDateTime replayDeadlineAt;
 
     public Long getId() {
         return id;
@@ -84,5 +87,29 @@ public class DeadLetterMessageRow {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getReplayAttemptToken() {
+        return replayAttemptToken;
+    }
+
+    public void setReplayAttemptToken(String replayAttemptToken) {
+        this.replayAttemptToken = replayAttemptToken;
+    }
+
+    public LocalDateTime getReplayStartedAt() {
+        return replayStartedAt;
+    }
+
+    public void setReplayStartedAt(LocalDateTime replayStartedAt) {
+        this.replayStartedAt = replayStartedAt;
+    }
+
+    public LocalDateTime getReplayDeadlineAt() {
+        return replayDeadlineAt;
+    }
+
+    public void setReplayDeadlineAt(LocalDateTime replayDeadlineAt) {
+        this.replayDeadlineAt = replayDeadlineAt;
     }
 }

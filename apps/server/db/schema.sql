@@ -133,7 +133,8 @@ CREATE TABLE IF NOT EXISTS outbox (
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     KEY ix_outbox_agg (aggregate_type, aggregate_id),
-    KEY ix_outbox_ct (created_at)
+    KEY ix_outbox_ct (created_at),
+    KEY ix_outbox_reaction_replay (aggregate_type, type, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Durable idempotency for counter events and their convergent MySQL snapshots.
@@ -146,6 +147,7 @@ CREATE TABLE IF NOT EXISTS counter_event_inbox (
     user_id BIGINT NOT NULL,
     fact_epoch BIGINT UNSIGNED NOT NULL,
     applied_at DATETIME(3) NOT NULL,
+    side_effects_published_at DATETIME(3) NULL,
     PRIMARY KEY (event_id),
     KEY ix_counter_inbox_entity (entity_type, entity_id, metric, applied_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -159,6 +161,18 @@ CREATE TABLE IF NOT EXISTS counter_snapshot (
     updated_at DATETIME(3) NOT NULL,
     PRIMARY KEY (entity_type, entity_id, metric),
     KEY ix_counter_snapshot_updated (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Durable like/favorite membership facts; Redis Bitmap is rebuilt from this table.
+CREATE TABLE IF NOT EXISTS counter_reaction (
+    entity_type VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    entity_id VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    metric VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    user_id BIGINT UNSIGNED NOT NULL,
+    created_at DATETIME(3) NOT NULL,
+    PRIMARY KEY (entity_type, entity_id, metric, user_id),
+    KEY ix_counter_reaction_user_metric (user_id, metric, entity_type, entity_id),
+    CONSTRAINT ck_counter_reaction_metric CHECK (metric IN ('like', 'fav'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Relation write/read models.
@@ -271,8 +285,14 @@ CREATE TABLE IF NOT EXISTS dead_letter_messages (
     exception_class VARCHAR(255) NULL,
     exception_message TEXT NULL,
     retry_count INT NOT NULL DEFAULT 0,
-    status ENUM('PENDING', 'RETRYING', 'DEAD') NOT NULL DEFAULT 'PENDING',
+    status ENUM(
+        'PENDING', 'RETRYING', 'DEAD', 'REPLAYING', 'UNCERTAIN'
+    ) NOT NULL DEFAULT 'PENDING',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    replay_attempt_token VARCHAR(64)
+        CHARACTER SET ascii COLLATE ascii_bin NULL,
+    replay_started_at DATETIME(3) NULL,
+    replay_deadline_at DATETIME(3) NULL,
     PRIMARY KEY (id),
     KEY idx_topic_status (source_topic, status),
     KEY idx_created (created_at)

@@ -17,7 +17,7 @@ public final class CounterKeys {
 
     // 分片键：bm:{metric}:{etype}:{eid}:{chunk}
     public static String bitmapKey(String metric, String entityType, String entityId, long chunk) {
-        return String.format("bm:%s:%s:%s:%d", metric, entityType, entityId, chunk); // 位图事实层（分片）
+        return String.format("bm:%s:%s:%s:%d", metric, entityType, entityId, chunk); // 在线成员读投影（分片）
     }
 
     /** Set of non-empty Bitmap shard keys for one reaction metric and entity. */
@@ -30,19 +30,9 @@ public final class CounterKeys {
         return String.format("bmidxcnt:%s:%s:%s", metric, entityType, entityId);
     }
 
-    /** Persistent cursor for the bounded legacy Bitmap index backfill. */
-    public static String bitmapIndexBackfillCursorKey() {
-        return "counter:calibration:reaction-bitmap:cursor";
-    }
-
-    /** Marks that every Bitmap present at deployment has completed one index pass. */
-    public static String bitmapIndexBackfillCompleteKey() {
-        return "counter:calibration:reaction-bitmap:complete";
-    }
-
-    /** Persistent round-robin entity registry populated by the bounded Bitmap scan. */
-    public static String bitmapCalibrationCandidatesKey() {
-        return "counter:calibration:reaction-bitmap:candidates";
+    /** Marks a fully rebuilt MySQL-backed reaction projection for one entity. */
+    public static String reactionProjectionCompleteKey(String entityType, String entityId) {
+        return String.format("counter:reaction-projection:complete:%s:%s", entityType, entityId);
     }
 
     // 聚合增量持久化桶（Hash）：agg:{schema}:{etype}:{eid}
@@ -55,12 +45,12 @@ public final class CounterKeys {
         return String.format("agg:%s:__keys", CounterSchema.SCHEMA_ID);
     }
 
-    /** Per-entity write fence used while authoritative bitmap facts are reconciled. */
+    /** Per-entity write fence used while MySQL facts are projected into Redis. */
     public static String factMaintenanceFenceKey(String entityType, String entityId) {
         return String.format("counter:fact-maintenance:%s:%s", entityType, entityId);
     }
 
-    /** Shared entity lock for exact fact maintenance and bitmap-derived SDS rebuilds. */
+    /** Shared entity lock for exact fact maintenance and MySQL-driven projection rebuilds. */
     public static String factMaintenanceLockKey(String entityType, String entityId) {
         return String.format("lock:counter-fact-maintenance:%s:%s", entityType, entityId);
     }
