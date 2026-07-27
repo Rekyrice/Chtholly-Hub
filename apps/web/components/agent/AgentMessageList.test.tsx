@@ -69,3 +69,53 @@ describe("AgentMessageList enter animation", () => {
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 });
+
+describe("AgentMessageList compact assistant replies", () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("lets users expand and collapse a completed long reply", () => {
+    const content = "很长的回答。".repeat(80);
+    const message: ChatMessage = { id: "long-reply", role: "assistant", content };
+
+    render(
+      <AgentMessageList
+        messages={[message]}
+        busy={false}
+        showSteps={false}
+        liveSteps={[]}
+        compactAssistantMessages
+      />,
+    );
+
+    const text = screen.getByText(content);
+    expect(text).toHaveClass("agent-bubble-content--collapsed");
+    const expand = screen.getByRole("button", { name: "展开回答" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(expand);
+
+    expect(text).not.toHaveClass("agent-bubble-content--collapsed");
+    expect(screen.getByRole("button", { name: "收起回答" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("does not collapse short or streaming replies", () => {
+    const messages: ChatMessage[] = [
+      { id: "short", role: "assistant", content: "简短回答" },
+      { id: "streaming", role: "assistant", content: "生成中".repeat(200), streaming: true },
+    ];
+
+    render(
+      <AgentMessageList
+        messages={messages}
+        busy
+        showSteps={false}
+        liveSteps={[]}
+        compactAssistantMessages
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "展开回答" })).not.toBeInTheDocument();
+  });
+});

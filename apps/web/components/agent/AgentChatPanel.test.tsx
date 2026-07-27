@@ -4,6 +4,7 @@ import AgentChatPanel from "@/components/agent/AgentChatPanel";
 
 const agentState = vi.hoisted(() => ({ busy: false, streaming: false }));
 const linkState = vi.hoisted(() => ({ componentPreventedNavigation: false }));
+const messageListState = vi.hoisted(() => ({ compactAssistantMessages: undefined as boolean | undefined }));
 
 vi.mock("next/link", () => ({
   default: ({ children, onClick, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
@@ -37,7 +38,12 @@ vi.mock("@/components/agent/AgentChatProvider", () => ({
     fillAndSend: vi.fn(),
   }),
 }));
-vi.mock("@/components/agent/AgentMessageList", () => ({ default: () => <div /> }));
+vi.mock("@/components/agent/AgentMessageList", () => ({
+  default: (props: { compactAssistantMessages?: boolean }) => {
+    messageListState.compactAssistantMessages = props.compactAssistantMessages;
+    return <div />;
+  },
+}));
 vi.mock("@/components/agent/AgentWorkspaceSettings", () => ({ default: () => <div /> }));
 vi.mock("@/lib/hooks/useAgentPlaceholder", () => ({ useAgentPlaceholder: () => "placeholder" }));
 vi.mock("@/lib/hooks/useMinWidth", () => ({ useMinWidth: () => true }));
@@ -47,6 +53,7 @@ describe("AgentChatPanel expansion", () => {
     agentState.busy = false;
     agentState.streaming = false;
     linkState.componentPreventedNavigation = false;
+    messageListState.compactAssistantMessages = undefined;
   });
 
   afterEach(() => {
@@ -86,5 +93,15 @@ describe("AgentChatPanel expansion", () => {
     render(<AgentChatPanel variant="room" />);
 
     expect(screen.getByTestId("chtholly-avatar")).toHaveAttribute("data-size", "md");
+  });
+
+  it.each([
+    ["float", true],
+    ["workspace", false],
+    ["room", false],
+  ] as const)("uses compact replies only for the %s variant", (variant, expected) => {
+    render(<AgentChatPanel variant={variant} />);
+
+    expect(messageListState.compactAssistantMessages).toBe(expected);
   });
 });

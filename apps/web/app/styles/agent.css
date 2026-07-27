@@ -393,6 +393,32 @@
     box-shadow: 0 2px 12px color-mix(in srgb, var(--color-sky) 10%, transparent);
   }
 
+  .agent-bubble-content {
+    display: block;
+  }
+
+  .agent-bubble-content--collapsed {
+    max-height: 10.5rem;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent);
+    mask-image: linear-gradient(to bottom, #000 72%, transparent);
+  }
+
+  .agent-bubble-expand {
+    margin-top: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-sky);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .agent-bubble-expand:hover {
+    color: var(--color-sky-deep);
+  }
+
   .agent-message-row {
     display: flex;
     justify-content: flex-start;

@@ -21,6 +21,7 @@ type AgentMessageListProps = {
   rich?: boolean;
   mangaLayout?: boolean;
   showAssistantAvatar?: boolean;
+  compactAssistantMessages?: boolean;
   scrollContainerRef?: RefObject<HTMLElement | null>;
   onSuggestion?: (text: string) => void;
 };
@@ -32,6 +33,7 @@ function MessageBubble({
   isSpeaking,
   bubbleRef,
   showAssistantAvatar,
+  compactAssistantMessages,
 }: {
   msg: ChatMessage;
   showSteps: boolean;
@@ -39,8 +41,13 @@ function MessageBubble({
   isSpeaking?: boolean;
   bubbleRef?: RefObject<HTMLDivElement | null>;
   showAssistantAvatar?: boolean;
+  compactAssistantMessages?: boolean;
 }) {
   const [isEntering, setIsEntering] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const canCollapse =
+    compactAssistantMessages && !msg.streaming && msg.content.length > 320;
+  const collapsed = canCollapse && !expanded;
   const finishEntering = (event: React.AnimationEvent<HTMLDivElement>) => {
     if (event.currentTarget === event.target) setIsEntering(false);
   };
@@ -93,9 +100,26 @@ function MessageBubble({
         {rich && !msg.streaming ? (
           <AgentRichMessage content={msg.content} />
         ) : (
-          <span className="whitespace-pre-wrap">{msg.content}</span>
+          <span
+            className={cn(
+              "agent-bubble-content whitespace-pre-wrap",
+              collapsed && "agent-bubble-content--collapsed",
+            )}
+          >
+            {msg.content}
+          </span>
         )}
         {msg.streaming && <span className="agent-stream-cursor" aria-hidden="true" />}
+        {canCollapse && (
+          <button
+            type="button"
+            className="agent-bubble-expand"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? "收起回答" : "展开回答"}
+          </button>
+        )}
         {showSteps && msg.steps && msg.steps.length > 0 && <AgentSteps steps={msg.steps} />}
       </div>
     </div>
@@ -110,6 +134,7 @@ export default function AgentMessageList({
   rich = false,
   mangaLayout = false,
   showAssistantAvatar = true,
+  compactAssistantMessages = false,
   scrollContainerRef,
   onSuggestion,
 }: AgentMessageListProps) {
@@ -184,6 +209,7 @@ export default function AgentMessageList({
             isSpeaking={isSpeaking}
             bubbleRef={speakingBubbleRef}
             showAssistantAvatar={showAssistantAvatar}
+            compactAssistantMessages={compactAssistantMessages}
           />
         );
       })}

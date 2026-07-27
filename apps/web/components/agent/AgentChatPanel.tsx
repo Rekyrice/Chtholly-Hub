@@ -147,6 +147,7 @@ export default function AgentChatPanel({
           rich={isWorkspace && richMarkdown}
           mangaLayout={isWorkspace}
           showAssistantAvatar={showAssistantAvatar}
+          compactAssistantMessages={variant === "float"}
           scrollContainerRef={scrollContainerRef}
           onSuggestion={fillAndSend}
         />
