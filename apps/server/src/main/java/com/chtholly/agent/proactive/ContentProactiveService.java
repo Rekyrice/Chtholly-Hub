@@ -103,7 +103,7 @@ public class ContentProactiveService {
                     用一句话温和地提醒，可以轻轻推荐，不要催促。
                     标签：%s
                     新文章数量：%d
-                    """.formatted(digest.tagName(), digest.postCount()));
+                    """.formatted(digest.tagName(), digest.postCount()), 30, 100);
             if (message != null && !message.isBlank()) {
                 dispatcher.send(digest.userId(),
                         new Notification("new-posts", message.trim(), NotificationChannel.FLOATING),
@@ -190,7 +190,7 @@ public class ContentProactiveService {
                     用户名：%s
                     上次互动：%s
                     """.formatted(newPosts, hotTitles.isBlank() ? "暂无" : hotTitles,
-                    user.nickname(), user.lastInteraction()));
+                    user.nickname(), user.lastInteraction()), 80, 240);
             if (message == null || message.isBlank()) {
                 message = "你不在的这几天，仓库来了 %d 篇新文章。热门话题：%s"
                         .formatted(newPosts, hotTitles.isBlank() ? "还在慢慢热起来" : hotTitles);

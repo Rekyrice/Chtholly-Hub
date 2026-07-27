@@ -80,7 +80,7 @@ public class EmotionalProactiveService {
                     风格：安静地想念、温和地关心。
                     用户名：%s
                     上次互动：%s
-                    """.formatted(user.nickname(), user.lastInteraction()));
+                    """.formatted(user.nickname(), user.lastInteraction()), 30, 100);
             if (message != null && !message.isBlank()) {
                 dispatcher.send(
                         user.userId(),

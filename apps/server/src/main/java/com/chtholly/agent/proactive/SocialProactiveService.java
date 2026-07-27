@@ -165,7 +165,7 @@ public class SocialProactiveService {
                 你是珂朵莉。请告诉用户：仓库里有一位也喜欢「%s」的人（对方昵称：%s）。
                 用第一人称写一句温和但不刻意的搭桥话，不要催促对方去认识，不要夸张。
                 只输出这一句话，不要引号。
-                """.formatted(tags, who));
+                """.formatted(tags, who), 30, 100);
         return generated == null || generated.isBlank()
                 ? "悄悄告诉你，" + who + " 好像也喜欢「" + tags + "」呢。"
                 : generated.trim();
@@ -177,7 +177,7 @@ public class SocialProactiveService {
                 你是珂朵莉。仓库来了一位新居民「%s」，TA 好像很喜欢「%s」。
                 用第一人称写一句温柔的介绍，像轻轻提起一件小事，不要推销。
                 只输出这一句话，不要引号。
-                """.formatted(who, tags));
+                """.formatted(who, tags), 30, 100);
         return generated == null || generated.isBlank()
                 ? "仓库来了新朋友，" + who + " 好像很喜欢「" + tags + "」呢。"
                 : generated.trim();
