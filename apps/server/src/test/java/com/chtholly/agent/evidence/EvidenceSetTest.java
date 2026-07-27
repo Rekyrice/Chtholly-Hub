@@ -59,19 +59,28 @@ class EvidenceSetTest {
                 .isEqualTo(EvidenceSet.ValidationStatus.UNKNOWN_CITATION);
         assertThat(evidenceSet.validate("有效 [E1]", true).status())
                 .isEqualTo(EvidenceSet.ValidationStatus.VALID);
-        assertThat(evidenceSet.validate(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER, true).status())
-                .isEqualTo(EvidenceSet.ValidationStatus.NO_ANSWER);
     }
 
     @Test
-    void forgedCitationAlwaysProducesTheDeterministicNoAnswer() {
+    void forgedCitationReturnsMachineStateWithoutChoosingDisplayCopy() {
         EvidenceSet evidenceSet = EvidenceSet.of(List.of(evidence(
                 "ev-1", "post:1", "标题", "资料", Set.of("PUBLIC"))), Set.of("PUBLIC"));
 
         EvidenceSet.ValidationResult result = evidenceSet.validate("结论 [E999]", true);
 
-        assertThat(result.safeAnswer()).isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        assertThat(result.safeAnswer()).isBlank();
         assertThat(result.unknownCitationIds()).containsExactly("E999");
+    }
+
+    @Test
+    void visibleChineseCopyIsNeverUsedAsAnInternalSentinel() {
+        EvidenceSet evidenceSet = EvidenceSet.of(List.of(evidence(
+                "ev-1", "post:1", "标题", "资料", Set.of("PUBLIC"))), Set.of("PUBLIC"));
+
+        EvidenceSet.ValidationResult result =
+                evidenceSet.validate("当前证据不足，无法可靠回答这个问题。", true);
+
+        assertThat(result.status()).isEqualTo(EvidenceSet.ValidationStatus.MISSING_CITATION);
     }
 
     private Evidence evidence(

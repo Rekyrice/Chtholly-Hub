@@ -59,6 +59,7 @@ public class AgentExecutionTrace {
     private String citationValidationStatus = "NOT_RUN";
     private Map<String, String> toolVersions = Map.of();
     private FailureType failureType = FailureType.NONE;
+    private OutcomeReason outcomeReason = OutcomeReason.NONE;
 
     @Setter
     private String errorMessage;
@@ -245,6 +246,10 @@ public class AgentExecutionTrace {
         failureType = type == null ? FailureType.INTERNAL_ERROR : type;
     }
 
+    public void recordOutcomeReason(OutcomeReason reason) {
+        outcomeReason = reason == null ? OutcomeReason.NONE : reason;
+    }
+
     public void terminateFinalAnswer(String answer) {
         terminatedBy = "final_answer";
         finalAnswerLength = answer == null ? 0 : answer.length();
@@ -326,6 +331,7 @@ public class AgentExecutionTrace {
         payload.put("retrieval", retrievalMetadata());
         payload.put("toolVersions", toolVersions);
         payload.put("failureType", failureType.name());
+        payload.put("outcomeReason", outcomeReason.name());
         payload.put("runMode", runMode);
         payload.put("input", inputMetadata());
         return payload;
@@ -502,5 +508,13 @@ public class AgentExecutionTrace {
         DRAFT_VERSION_CONFLICT,
         PERMISSION_DENIED,
         INTERNAL_ERROR
+    }
+
+    public enum OutcomeReason {
+        NONE,
+        NEEDS_CLARIFICATION,
+        NO_EVIDENCE,
+        INVALID_CITATION,
+        MODEL_FAILURE
     }
 }

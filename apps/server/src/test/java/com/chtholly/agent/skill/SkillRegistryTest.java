@@ -40,6 +40,14 @@ class SkillRegistryTest {
         assertThat(registry.require("page-explain", "v1").allowedTools())
                 .contains("article_rag", "fulltext_search")
                 .doesNotContain("draft_write");
+        assertThat(registry.require("page-explain", "v1").defaultEvidencePolicy())
+                .isEqualTo(EvidencePolicy.OPTIONAL);
+        assertThat(registry.require("evidence-outline", "v1").defaultEvidencePolicy())
+                .isEqualTo(EvidencePolicy.OPTIONAL);
+        assertThat(registry.require("draft-fact-check", "v1").defaultEvidencePolicy())
+                .isEqualTo(EvidencePolicy.REQUIRED);
+        assertThat(registry.require("draft-edit", "v1").defaultEvidencePolicy())
+                .isEqualTo(EvidencePolicy.NOT_NEEDED);
     }
 
     @Test

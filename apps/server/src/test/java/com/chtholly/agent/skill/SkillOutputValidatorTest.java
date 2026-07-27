@@ -29,14 +29,16 @@ class SkillOutputValidatorTest {
     }
 
     @Test
-    void evidenceRequiredSkillWithNoEvidenceReturnsExplicitNoAnswer() {
+    void evidenceRequiredSkillWithNoEvidenceReturnsMachineStateOnly() {
         SkillOutputValidator.SkillValidationResult result = validator.validate(
                 registry.require("page-explain", "v1"),
                 "这是一个没有依据的事实。",
-                EvidenceSet.empty());
+                EvidenceSet.empty(),
+                "",
+                true);
 
         assertThat(result.status()).isEqualTo(SkillOutputValidator.Status.INSUFFICIENT_EVIDENCE);
-        assertThat(result.output()).isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        assertThat(result.output()).isBlank();
     }
 
     @Test
@@ -58,24 +60,16 @@ class SkillOutputValidatorTest {
     }
 
     @Test
-    void deterministicNoAnswerBypassesSkillSpecificSchemaChecks() {
-        EvidenceSet evidence = evidence();
-
+    void optionalOutlineCanPassWithoutEvidenceOrCitations() {
         var outline = validator.validate(
                 registry.require("evidence-outline", "v1"),
-                EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
-                evidence);
-        var factCheck = validator.validate(
-                registry.require("draft-fact-check", "v1"),
-                EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
-                evidence);
+                "# 一致性问题\n\n通用背景。\n\n## 解决路径\n\n通用方案。",
+                EvidenceSet.empty(),
+                "Redis 缓存一致性",
+                false);
 
-        assertThat(outline.status()).isEqualTo(SkillOutputValidator.Status.INSUFFICIENT_EVIDENCE);
-        assertThat(outline.output()).isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
-        assertThat(outline.errors()).containsExactly("model_no_answer");
-        assertThat(factCheck.status()).isEqualTo(SkillOutputValidator.Status.INSUFFICIENT_EVIDENCE);
-        assertThat(factCheck.output()).isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
-        assertThat(factCheck.errors()).containsExactly("model_no_answer");
+        assertThat(outline.status()).isEqualTo(SkillOutputValidator.Status.VALID);
+        assertThat(outline.output()).doesNotContain("[E");
     }
 
     @Test

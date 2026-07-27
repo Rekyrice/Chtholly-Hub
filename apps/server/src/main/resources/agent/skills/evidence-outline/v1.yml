@@ -1,21 +1,23 @@
 id: evidence-outline
 version: v1
 enabled: true
-description: 生成逐节绑定证据的结构化大纲，不写入草稿或正式内容。
+description: 为明确主题生成结构化大纲；站内资料或当前页面范围内的大纲严格绑定证据。
 supportedIntents: [evidence_outline, writing_outline]
 requiredContext: [QUESTION]
 allowedTools: [article_rag, fulltext_search, bangumi_search, bangumi_characters, bangumi_person_works]
 instructionTemplate: |
-  输出 Markdown 结构化大纲，至少两个带标题的章节；每节说明目标、要点和可用 Evidence。
+  用一句温和而简短的话回应后，输出 Markdown 结构化大纲，至少两个带标题的章节；每节说明目标和要点。
   遵守用户给出的长度、语气、结构、资料范围与剧透限制；未解决问题单列。
-  不得生成写入动作，不得引用本轮 Evidence 之外的站内事实。
+  evidencePolicy=REQUIRED 时，每个站内事实与可用资料必须引用本轮 citationId；证据为空时不要生成看似有依据的大纲。
+  evidencePolicy=OPTIONAL 时，可以根据通用知识组织主题，但要明确这不是站内资料检索结果，不得伪造引用。
+  不得生成写入动作。表达遵循角色魂，保持克制，不把结构化结果写成冷硬系统报告。
 inputSchema:
   topic: string
   spoilerScope: string
   sourceScope: string
 outputSchema:
   type: EVIDENCE_OUTLINE
-  requiresEvidence: true
+  evidencePolicy: OPTIONAL
   minSections: 2
   maxChars: 5000
 validators: [citation, outline-structure, length, spoiler-scope, source-dedup]

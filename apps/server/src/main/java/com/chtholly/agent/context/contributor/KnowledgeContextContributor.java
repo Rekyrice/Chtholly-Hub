@@ -8,6 +8,7 @@ import com.chtholly.agent.context.ContextRequest;
 import com.chtholly.agent.evidence.Evidence;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
+import com.chtholly.agent.skill.EvidencePolicy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,7 +57,16 @@ public class KnowledgeContextContributor implements ContextContributor {
         boolean degraded = appendKnownFacts(prompt, request.userQuestion());
         appendSemanticAnchors(prompt, request.anchors().semantic());
 
-        boolean retrievalRequested = isQueryIntent(request.userQuestion()) || request.evidenceRequired();
+        boolean plannedRetrieval = request.evidencePolicy() == EvidencePolicy.REQUIRED
+                || request.evidencePolicy() == EvidencePolicy.OPTIONAL;
+        boolean heuristicRetrieval = request.evidencePolicy() == EvidencePolicy.NOT_NEEDED
+                && isQueryIntent(request.userQuestion());
+        boolean retrievalRequested = plannedRetrieval || heuristicRetrieval;
+        boolean evidenceRequired = request.evidencePolicy() == EvidencePolicy.REQUIRED
+                || heuristicRetrieval;
+        String retrievalQuery = request.retrievalQuery().isBlank()
+                ? request.userQuestion()
+                : request.retrievalQuery();
         List<Evidence> evidence = new ArrayList<>();
         Map<String, String> retrievalStatuses = new LinkedHashMap<>();
         if (retrievalRequested) {
@@ -66,7 +76,7 @@ public class KnowledgeContextContributor implements ContextContributor {
             } else {
                 try {
                     HybridSearchService.HybridSearchResponse response =
-                            hybridSearchService.hybridSearch(request.userQuestion(), 5);
+                            hybridSearchService.hybridSearch(retrievalQuery, 5);
                     if (response == null) {
                         degraded = true;
                         markAllRoutesFailed(retrievalStatuses);
@@ -96,7 +106,7 @@ public class KnowledgeContextContributor implements ContextContributor {
         }
 
         return new ContextContribution(
-                name(), order(), prompt.toString(), degraded, evidence, retrievalRequested,
+                name(), order(), prompt.toString(), degraded, evidence, evidenceRequired,
                 retrievalStatuses);
     }
 

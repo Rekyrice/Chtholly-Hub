@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 /** Permission-filtered immutable evidence available to one Agent turn. */
 public final class EvidenceSet {
 
+    /** Legacy safe display fallback; validators must never use this text as a machine sentinel. */
     public static final String INSUFFICIENT_EVIDENCE_ANSWER = "当前证据不足，无法可靠回答这个问题。";
     private static final Pattern CITATION = Pattern.compile("\\[(E\\d+)]");
     private static final int MAX_EXCERPT_CHARS = 512;
@@ -91,10 +92,6 @@ public final class EvidenceSet {
     /** Validates citations for the immutable evidence snapshot used by this turn. */
     public ValidationResult validate(String answer, boolean evidenceRequired) {
         String normalized = answer == null ? "" : answer.strip();
-        if (INSUFFICIENT_EVIDENCE_ANSWER.equals(normalized)) {
-            return new ValidationResult(ValidationStatus.NO_ANSWER, normalized, List.of());
-        }
-
         Matcher matcher = CITATION.matcher(normalized);
         boolean foundCitation = false;
         LinkedHashSet<String> unknownCitationIds = new LinkedHashSet<>();
@@ -108,19 +105,19 @@ public final class EvidenceSet {
         if (!unknownCitationIds.isEmpty()) {
             return new ValidationResult(
                     ValidationStatus.UNKNOWN_CITATION,
-                    INSUFFICIENT_EVIDENCE_ANSWER,
+                    "",
                     List.copyOf(unknownCitationIds));
         }
         if (evidenceRequired && items.isEmpty()) {
             return new ValidationResult(
                     ValidationStatus.NO_EVIDENCE,
-                    INSUFFICIENT_EVIDENCE_ANSWER,
+                    "",
                     List.of());
         }
         if (evidenceRequired && !foundCitation) {
             return new ValidationResult(
                     ValidationStatus.MISSING_CITATION,
-                    INSUFFICIENT_EVIDENCE_ANSWER,
+                    "",
                     List.of());
         }
         return new ValidationResult(ValidationStatus.VALID, normalized, List.of());
@@ -172,7 +169,6 @@ public final class EvidenceSet {
 
     public enum ValidationStatus {
         VALID,
-        NO_ANSWER,
         NO_EVIDENCE,
         MISSING_CITATION,
         UNKNOWN_CITATION

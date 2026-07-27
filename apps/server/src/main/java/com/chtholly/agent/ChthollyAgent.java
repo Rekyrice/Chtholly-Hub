@@ -19,6 +19,7 @@ import com.chtholly.agent.runtime.AgentSpanAttributes;
 import com.chtholly.agent.skill.SkillDefinition;
 import com.chtholly.agent.skill.SkillExecutionContext;
 import com.chtholly.agent.skill.SkillOutputValidator;
+import com.chtholly.agent.skill.SkillRequestPlanner;
 import com.chtholly.agent.skill.SkillRegistry;
 import com.chtholly.agent.skill.SkillSelector;
 import com.chtholly.agent.trace.TracePersistenceService;
@@ -67,6 +68,7 @@ public class ChthollyAgent {
     private final AgentDomainConfig agentDomainConfig;
     private final SkillRegistry skillRegistry;
     private final SkillSelector skillSelector;
+    private final SkillRequestPlanner skillRequestPlanner;
     private final SkillOutputValidator skillOutputValidator;
 
     /**
@@ -154,7 +156,16 @@ public class ChthollyAgent {
             if (selection != null
                     && selection.status() == SkillSelector.Status.CLARIFICATION_REQUIRED) {
                 trace.markFailure(AgentExecutionTrace.FailureType.SKILL_NO_MATCH);
-                completeClarification(question, memory, sink, trace);
+                trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.NEEDS_CLARIFICATION);
+                completeBoundaryResponse(
+                        AgentExecutionTrace.OutcomeReason.NEEDS_CLARIFICATION,
+                        "",
+                        selection.reason(),
+                        question,
+                        memory,
+                        sink,
+                        trace,
+                        agentSpan);
                 return;
             }
             if (isSelected(selection)) {
@@ -164,21 +175,51 @@ public class ChthollyAgent {
 
             boolean selected = isSelected(selection);
             SkillDefinition selectedSkill = selected ? selection.definition() : null;
-            boolean skillRequiresEvidence = selectedSkill != null && selectedSkill.requiresEvidence();
+            SkillRequestPlanner.SkillRequestPlan taskPlan = selected
+                    ? skillRequestPlanner.plan(selectedSkill, question, pageContext)
+                    : null;
+            if (taskPlan != null
+                    && taskPlan.status() == SkillRequestPlanner.PlanStatus.NEEDS_CLARIFICATION) {
+                trace.recordSkillValidation("NEEDS_CLARIFICATION");
+                trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.NEEDS_CLARIFICATION);
+                completeBoundaryResponse(
+                        AgentExecutionTrace.OutcomeReason.NEEDS_CLARIFICATION,
+                        selectedSkill.id(),
+                        taskPlan.reason(),
+                        question,
+                        memory,
+                        sink,
+                        trace,
+                        agentSpan);
+                return;
+            }
             String historyBlock = memory == null ? "" : memory.formatForPrompt();
             retrievalSpan = agentObservationService.startRetrievalSpan(
                     agentSpan, AgentComponentVersions.RETRIEVAL);
-            AgentContextSnapshot contextSnapshot = contextEngine.buildSnapshot(
-                    userId,
-                    sessionId,
-                    pageContext,
-                    toolMap.values(),
-                    historyBlock,
-                    question.trim(),
-                    skillRequiresEvidence);
+            AgentContextSnapshot contextSnapshot = selected
+                    ? contextEngine.buildSnapshot(
+                            userId,
+                            sessionId,
+                            pageContext,
+                            toolMap.values(),
+                            historyBlock,
+                            question.trim(),
+                            taskPlan.evidencePolicy(),
+                            taskPlan.retrievalQuery())
+                    : contextEngine.buildSnapshot(
+                            userId,
+                            sessionId,
+                            pageContext,
+                            toolMap.values(),
+                            historyBlock,
+                            question.trim(),
+                            false);
             if (selected) {
                 contextSnapshot = contextSnapshot.withSystemPrompt(
-                        bindSkillPrompt(contextSnapshot.systemPrompt(), selection));
+                        bindSkillPrompt(
+                                contextSnapshot.systemPrompt(),
+                                selection,
+                                taskPlan.evidencePolicy()));
                 maxSteps = Math.min(maxSteps, selectedSkill.maxSteps());
             }
             trace.recordRetrieval(
@@ -186,10 +227,19 @@ public class ChthollyAgent {
             if (contextSnapshot.evidenceRequired() && contextSnapshot.evidenceSet().isEmpty()) {
                 trace.recordCitationValidation(EvidenceSet.ValidationStatus.NO_EVIDENCE.name());
                 trace.recordSkillValidation(selected ? "INSUFFICIENT_EVIDENCE" : "NOT_APPLICABLE");
+                trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.NO_EVIDENCE);
                 trace.markFailure(contextSnapshot.retrievalStatuses().containsValue("TIMEOUT")
                         ? AgentExecutionTrace.FailureType.RETRIEVAL_TIMEOUT
                         : AgentExecutionTrace.FailureType.RETRIEVAL_EMPTY);
-                completeNoAnswer(question, memory, sink, trace);
+                completeBoundaryResponse(
+                        AgentExecutionTrace.OutcomeReason.NO_EVIDENCE,
+                        selectedSkill == null ? "" : selectedSkill.id(),
+                        "retrieval_empty",
+                        question,
+                        memory,
+                        sink,
+                        trace,
+                        agentSpan);
                 return;
             }
             AgentLoopRequest request = new AgentLoopRequest(
@@ -334,37 +384,85 @@ public class ChthollyAgent {
         return selection != null && selection.status() == SkillSelector.Status.SELECTED;
     }
 
-    private String bindSkillPrompt(String system, SkillSelector.SkillSelection selection) {
+    private String bindSkillPrompt(
+            String system,
+            SkillSelector.SkillSelection selection,
+            com.chtholly.agent.skill.EvidencePolicy evidencePolicy) {
         SkillDefinition definition = selection.definition();
         return system + "\n\n## 当前领域 Skill\n\n"
                 + "skillId=" + definition.id() + "\n"
                 + "skillVersion=" + definition.version() + "\n"
                 + "outputType=" + definition.outputType() + "\n"
+                + "evidencePolicy=" + evidencePolicy.name() + "\n"
                 + "allowedTools=" + selection.allowedTools().stream().sorted()
                 .collect(java.util.stream.Collectors.joining(",")) + "\n\n"
                 + definition.instructionTemplate();
     }
 
-    private void completeClarification(
+    private void completeBoundaryResponse(
+            AgentExecutionTrace.OutcomeReason reason,
+            String skillId,
+            String detail,
             String question,
             AgentConversationMemory memory,
             Consumer<AgentEvent> sink,
-            AgentExecutionTrace trace) {
-        String answer = "请明确选择页面解释、证据大纲或草稿事实核查中的一项任务。";
-        trace.terminateFinalAnswer(answer);
-        emitFinal(sink, answer);
-        if (memory != null) {
-            memory.add(AgentTurn.user(question.trim()));
-            memory.add(AgentTurn.assistant(answer));
+            AgentExecutionTrace trace,
+            Observation agentSpan) {
+        String fallback = boundaryFallback(reason, skillId);
+        String system = characterSoulService.getSoulContent() + "\n\n"
+                + "## 当前响应边界\n\n"
+                + "reason=" + reason.name() + "\n"
+                + "skillId=" + (skillId == null ? "" : skillId) + "\n"
+                + "detail=" + (detail == null ? "" : detail) + "\n\n"
+                + "只输出一段简短自然语言。遵循角色设定，但不要堆叠语气词或卖萌。"
+                + "不得回答原任务、编造站内事实或生成引用；只说明当前边界并给出下一步。";
+        String userPrompt = "请根据稳定原因码生成对用户可见的边界提示。";
+        String answer = fallback;
+        Observation llmSpan = agentObservationService.startLlmSpan(agentSpan, properties.getModel());
+        long startedAt = System.currentTimeMillis();
+        try {
+            StringBuilder generated = new StringBuilder();
+            llmInvoker.stream(system, userPrompt, 0.2, 192)
+                    .doOnNext(chunk -> {
+                        if (chunk != null) {
+                            generated.append(chunk);
+                        }
+                    })
+                    .blockLast();
+            String candidate = truncateBoundaryAnswer(generated.toString());
+            if (boundaryAnswerSafe(reason, candidate)) {
+                answer = candidate;
+            }
+            trace.recordLlmCall(
+                    0,
+                    System.currentTimeMillis() - startedAt,
+                    system.length() + userPrompt.length(),
+                    answer.length(),
+                    null);
+            agentObservationService.finishSpan(
+                    llmSpan,
+                    AgentSpanAttributes.llm("ok"),
+                    Map.of("response.boundary_reason", reason.name()));
+        } catch (Exception exception) {
+            long durationMs = System.currentTimeMillis() - startedAt;
+            trace.recordLlmCall(
+                    0,
+                    durationMs,
+                    system.length() + userPrompt.length(),
+                    answer.length(),
+                    null);
+            if (isTimeout(exception)) {
+                trace.markFailure(AgentExecutionTrace.FailureType.LLM_TIMEOUT);
+            } else {
+                trace.markFailure(AgentExecutionTrace.FailureType.INTERNAL_ERROR);
+            }
+            agentObservationService.finishSpanError(
+                    llmSpan,
+                    isTimeout(exception) ? "boundary_timeout" : "boundary_error",
+                    AgentSpanAttributes.llm(isTimeout(exception) ? "timeout" : "error"),
+                    Map.of("response.boundary_reason", reason.name()));
+            log.warn("Agent boundary response fell back to safe copy: reason={}", reason, exception);
         }
-    }
-
-    private void completeNoAnswer(
-            String question,
-            AgentConversationMemory memory,
-            Consumer<AgentEvent> sink,
-            AgentExecutionTrace trace) {
-        String answer = EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER;
         trace.terminateFinalAnswer(answer);
         emitThrottledDelta(sink, answer);
         emitFinal(sink, answer);
@@ -372,6 +470,60 @@ public class ChthollyAgent {
             memory.add(AgentTurn.user(question.trim()));
             memory.add(AgentTurn.assistant(answer));
         }
+    }
+
+    private String truncateBoundaryAnswer(String answer) {
+        String normalized = answer == null ? "" : answer.strip();
+        return normalized.length() <= 400 ? normalized : normalized.substring(0, 400);
+    }
+
+    private boolean boundaryAnswerSafe(
+            AgentExecutionTrace.OutcomeReason reason,
+            String candidate) {
+        if (candidate == null || candidate.isBlank() || candidate.matches("(?s).*\\[E\\d+].*")) {
+            return false;
+        }
+        return switch (reason) {
+            case NEEDS_CLARIFICATION ->
+                    containsAny(candidate, "告诉", "提供", "贴", "哪", "什么", "？", "?");
+            case NO_EVIDENCE ->
+                    containsAny(candidate, "没有", "不足", "暂时", "找不到")
+                            && containsAny(candidate, "资料", "证据", "依据");
+            case INVALID_CITATION ->
+                    containsAny(candidate, "不能", "无法", "对不上", "不可靠", "不一致")
+                            && containsAny(candidate, "引用", "资料", "证据", "依据");
+            case NONE, MODEL_FAILURE -> true;
+        };
+    }
+
+    private boolean containsAny(String input, String... terms) {
+        for (String term : terms) {
+            if (input.contains(term)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String boundaryFallback(
+            AgentExecutionTrace.OutcomeReason reason,
+            String skillId) {
+        return switch (reason) {
+            case NEEDS_CLARIFICATION -> switch (skillId == null ? "" : skillId) {
+                case "evidence-outline" ->
+                        "嗯，可以呀。不过你还没有告诉我想写什么主题。给我一个主题，或者指定一篇文章，我再替你把资料和结构整理好。";
+                case "page-explain" ->
+                        "想让我解释哪一页或哪个概念呢？给我一个对象，我会陪你把它慢慢讲清楚。";
+                case "draft-fact-check" ->
+                        "把需要核查的草稿或陈述贴给我吧。我会逐条看清楚，再告诉你哪些地方有依据、哪些还不确定。";
+                default -> "先告诉我你想使用哪一种任务，或者直接说说想完成什么吧。";
+            };
+            case NO_EVIDENCE ->
+                    "我认真找过了，但站内暂时没有足够资料支撑这次回答。要不要换个主题，或者把你手头的材料交给我整理？";
+            case INVALID_CITATION ->
+                    "这次的引用和本轮资料对不上，我不能把它当成可靠答案。换一种说法，或者让我重新查一次吧。";
+            case NONE, MODEL_FAILURE -> "这次没能整理出可靠的回答。稍后再试一次吧。";
+        };
     }
 
     /**
@@ -423,17 +575,61 @@ public class ChthollyAgent {
             if (evidenceValidation.status() == EvidenceSet.ValidationStatus.UNKNOWN_CITATION
                     || evidenceValidation.status() == EvidenceSet.ValidationStatus.MISSING_CITATION) {
                 trace.markFailure(AgentExecutionTrace.FailureType.CITATION_INVALID);
+                trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.INVALID_CITATION);
             } else if (evidenceValidation.status() == EvidenceSet.ValidationStatus.NO_EVIDENCE) {
                 trace.markFailure(AgentExecutionTrace.FailureType.RETRIEVAL_EMPTY);
+                trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.NO_EVIDENCE);
             }
             answer = evidenceValidation.safeAnswer();
+            if (trace.getOutcomeReason() == AgentExecutionTrace.OutcomeReason.INVALID_CITATION
+                    || trace.getOutcomeReason() == AgentExecutionTrace.OutcomeReason.NO_EVIDENCE) {
+                streamMs = System.currentTimeMillis() - streamStart;
+                Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
+                trace.recordLlmCall(stepIndex, streamMs, inputChars, candidate.length(), ttft);
+                agentObservationService.finishSpan(
+                        llmSpan,
+                        AgentSpanAttributes.llm("ok"),
+                        Map.of());
+                completeBoundaryResponse(
+                        trace.getOutcomeReason(),
+                        selectedSkill == null ? "" : selectedSkill.id(),
+                        evidenceValidation.status().name(),
+                        question,
+                        memory,
+                        sink,
+                        trace,
+                        agentSpan);
+                return streamMs;
+            }
             if (selectedSkill != null && skillOutputValidator != null) {
                 SkillOutputValidator.SkillValidationResult skillValidation = skillOutputValidator.validate(
                         selectedSkill,
                         answer,
                         contextSnapshot.evidenceSet(),
-                        question);
+                        question,
+                        contextSnapshot.evidenceRequired());
                 trace.recordSkillValidation(skillValidation.status().name());
+                if (skillValidation.status() == SkillOutputValidator.Status.CITATION_INVALID) {
+                    trace.markFailure(AgentExecutionTrace.FailureType.CITATION_INVALID);
+                    trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.INVALID_CITATION);
+                    streamMs = System.currentTimeMillis() - streamStart;
+                    Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
+                    trace.recordLlmCall(stepIndex, streamMs, inputChars, candidate.length(), ttft);
+                    agentObservationService.finishSpan(
+                            llmSpan,
+                            AgentSpanAttributes.llm("ok"),
+                            Map.of());
+                    completeBoundaryResponse(
+                            AgentExecutionTrace.OutcomeReason.INVALID_CITATION,
+                            selectedSkill.id(),
+                            String.join(",", skillValidation.errors()),
+                            question,
+                            memory,
+                            sink,
+                            trace,
+                            agentSpan);
+                    return streamMs;
+                }
                 if (skillValidation.status() != SkillOutputValidator.Status.VALID
                         && skillValidation.status() != SkillOutputValidator.Status.INSUFFICIENT_EVIDENCE
                         && trace.getFailureType() == AgentExecutionTrace.FailureType.NONE) {
@@ -459,6 +655,7 @@ public class ChthollyAgent {
                 log.warn("Agent streaming answer timed out (>{}s)", timeoutSec);
                 trace.terminateTimeout();
                 trace.markFailure(AgentExecutionTrace.FailureType.LLM_TIMEOUT);
+                trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.MODEL_FAILURE);
                 trace.setErrorMessage(agentDomainConfig.errors().responseTimeout());
                 emitError(sink, agentDomainConfig.errors().responseTimeout());
                 return streamMs;
@@ -471,6 +668,7 @@ public class ChthollyAgent {
             log.warn("Agent streaming answer failed: {}", e.getMessage());
             trace.terminateError();
             trace.markFailure(AgentExecutionTrace.FailureType.INTERNAL_ERROR);
+            trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.MODEL_FAILURE);
             trace.setErrorMessage(agentDomainConfig.errors().responseFailed());
             emitError(sink, agentDomainConfig.errors().responseFailed());
             return streamMs;
@@ -507,10 +705,16 @@ public class ChthollyAgent {
             AgentLoopResult.Status status,
             AgentExecutionTrace trace) {
         switch (status) {
-            case LLM_TIMEOUT -> trace.markFailure(AgentExecutionTrace.FailureType.LLM_TIMEOUT);
+            case LLM_TIMEOUT -> {
+                trace.markFailure(AgentExecutionTrace.FailureType.LLM_TIMEOUT);
+                trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.MODEL_FAILURE);
+            }
             case TOOL_INTERRUPTED -> trace.markFailure(AgentExecutionTrace.FailureType.TOOL_FAILED);
-            case LLM_ERROR, LLM_INTERRUPTED, MAX_STEPS ->
-                    trace.markFailure(AgentExecutionTrace.FailureType.INTERNAL_ERROR);
+            case LLM_ERROR, LLM_INTERRUPTED -> {
+                trace.markFailure(AgentExecutionTrace.FailureType.INTERNAL_ERROR);
+                trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.MODEL_FAILURE);
+            }
+            case MAX_STEPS -> trace.markFailure(AgentExecutionTrace.FailureType.INTERNAL_ERROR);
             case FINAL_READY -> {
                 // Handled by the final-answer branch.
             }

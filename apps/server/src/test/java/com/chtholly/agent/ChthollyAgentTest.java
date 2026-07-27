@@ -19,8 +19,10 @@ import com.chtholly.agent.runtime.AgentLoopExecutor;
 import com.chtholly.agent.runtime.AgentLoopRequest;
 import com.chtholly.agent.runtime.AgentLoopResult;
 import com.chtholly.agent.skill.SkillDefinition;
+import com.chtholly.agent.skill.EvidencePolicy;
 import com.chtholly.agent.skill.SkillExecutionContext;
 import com.chtholly.agent.skill.SkillOutputValidator;
+import com.chtholly.agent.skill.SkillRequestPlanner;
 import com.chtholly.agent.skill.SkillRegistry;
 import com.chtholly.agent.skill.SkillSelector;
 import com.chtholly.agent.trace.TracePersistenceService;
@@ -112,6 +114,7 @@ class ChthollyAgentTest {
                 domainConfig,
                 skillRegistry,
                 skillSelector,
+                new SkillRequestPlanner(),
                 new SkillOutputValidator());
         events = new ArrayList<>();
     }
@@ -155,7 +158,8 @@ class ChthollyAgentTest {
                 1.0,
                 Set.of("search")));
         when(contextEngine.buildSnapshot(
-                anyLong(), anyString(), anyString(), any(), anyString(), anyString(), anyBoolean()))
+                anyLong(), anyString(), anyString(), any(), anyString(), anyString(),
+                eq(EvidencePolicy.REQUIRED), eq("文章详情")))
                 .thenReturn(groundedSnapshot("assembled system"));
         when(loopExecutor.execute(any(), any(), any(), any()))
                 .thenReturn(AgentLoopResult.terminal(
@@ -342,7 +346,9 @@ class ChthollyAgentTest {
                 "explicit_task_type",
                 1.0,
                 Set.of("search")));
-        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), eq(true)))
+        when(contextEngine.buildSnapshot(
+                anyLong(), any(), any(), any(), anyString(), anyString(),
+                eq(EvidencePolicy.REQUIRED), eq("页面")))
                 .thenReturn(groundedSnapshot("assembled system"));
         when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
                 AgentLoopResult.finalReady(List.of("current question"), 1, 10));
@@ -409,27 +415,31 @@ class ChthollyAgentTest {
                 AgentLoopResult.finalReady(List.of("current question"), 1, 10));
         when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
         when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
-                .thenReturn(Flux.just("伪造事实 [E999]"));
+                .thenReturn(
+                        Flux.just("伪造事实 [E999]"),
+                        Flux.just("这次的引用和资料对不上，我不能把它当成可靠答案。"));
 
         agent.run("帮我查站内事实", 7L, memory, events::add);
 
         assertThat(eventTypes()).containsExactly("delta", "final");
+        String safeAnswer = "这次的引用和资料对不上，我不能把它当成可靠答案。";
         assertThat(eventContents())
-                .containsOnly(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER)
+                .containsOnly(safeAnswer)
                 .noneMatch(content -> content.contains("E999") || content.contains("伪造"));
         ArgumentCaptor<AgentTurn> turnCaptor = ArgumentCaptor.forClass(AgentTurn.class);
         verify(memory, times(2)).add(turnCaptor.capture());
         assertThat(turnCaptor.getAllValues().get(1).content())
-                .isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+                .isEqualTo(safeAnswer);
         ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
         assertThat(traceCaptor.getValue().getFinalAnswerLength())
-                .isEqualTo(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER.length());
+                .isEqualTo(safeAnswer.length());
         com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
                 traceCaptor.getValue().toPayloadMap());
         assertThat(payload.path("retrieval").path("citationValidationStatus").asText())
                 .isEqualTo("UNKNOWN_CITATION");
         assertThat(payload.path("failureType").asText()).isEqualTo("CITATION_INVALID");
+        assertThat(payload.path("outcomeReason").asText()).isEqualTo("INVALID_CITATION");
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, String>> retrievalLow = ArgumentCaptor.forClass(Map.class);
         verify(observationService).finishSpanError(
@@ -448,11 +458,13 @@ class ChthollyAgentTest {
                 AgentLoopResult.finalReady(List.of("current question"), 1, 10));
         when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
         when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
-                .thenReturn(Flux.just("没有引用的站内事实"));
+                .thenReturn(
+                        Flux.just("没有引用的站内事实"),
+                        Flux.just("这次缺少可靠引用，我无法把它当成站内结论。"));
 
         agent.run("帮我查站内事实", 7L, memory, events::add);
 
-        assertThat(eventContents()).containsOnly(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        assertThat(eventContents()).containsOnly("这次缺少可靠引用，我无法把它当成站内结论。");
     }
 
     @Test
@@ -460,17 +472,20 @@ class ChthollyAgentTest {
         when(memory.formatForPrompt()).thenReturn("");
         when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(new AgentContextSnapshot("assembled system", EvidenceSet.empty(), true));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("我认真找过了，但站内暂时没有足够资料支撑这次回答。"));
 
         agent.run("帮我查站内事实", 7L, memory, events::add);
 
         verify(loopExecutor, never()).execute(any(), any(), any(), any());
-        verify(llmInvoker, never()).stream(anyString(), anyString(), anyDouble(), anyInt());
         assertThat(eventTypes()).containsExactly("delta", "final");
-        assertThat(eventContents()).containsOnly(EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+        String safeAnswer = "我认真找过了，但站内暂时没有足够资料支撑这次回答。";
+        assertThat(eventContents()).containsOnly(safeAnswer);
         ArgumentCaptor<AgentTurn> turnCaptor = ArgumentCaptor.forClass(AgentTurn.class);
         verify(memory, times(2)).add(turnCaptor.capture());
         assertThat(turnCaptor.getAllValues()).extracting(AgentTurn::content)
-                .containsExactly("帮我查站内事实", EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER);
+                .containsExactly("帮我查站内事实", safeAnswer);
         ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
         com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
@@ -478,6 +493,142 @@ class ChthollyAgentTest {
         assertThat(payload.path("retrieval").path("citationValidationStatus").asText())
                 .isEqualTo("NO_EVIDENCE");
         assertThat(payload.path("failureType").asText()).isEqualTo("RETRIEVAL_EMPTY");
+        assertThat(payload.path("outcomeReason").asText()).isEqualTo("NO_EVIDENCE");
+    }
+
+    @Test
+    void missingOutlineTopicClarifiesWithoutBuildingContextOrRunningRetrieval() {
+        SkillDefinition definition = evidenceOutlineDefinition();
+        select(definition);
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("嗯，可以呀。不过你还没告诉我想写什么主题。"));
+
+        agent.run(
+                "根据站内资料生成一份文章大纲",
+                7L,
+                memory,
+                "session",
+                "",
+                "evidence-outline",
+                events::add);
+
+        verify(contextEngine, never()).buildSnapshot(
+                anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean());
+        verify(contextEngine, never()).buildSnapshot(
+                anyLong(), any(), any(), any(), anyString(), anyString(), any(), anyString());
+        verify(loopExecutor, never()).execute(any(), any(), any(), any());
+        ArgumentCaptor<String> soulPrompt = ArgumentCaptor.forClass(String.class);
+        verify(llmInvoker).stream(soulPrompt.capture(), anyString(), anyDouble(), anyInt());
+        assertThat(soulPrompt.getValue()).contains("soul", "NEEDS_CLARIFICATION");
+        assertThat(eventContents()).containsOnly("嗯，可以呀。不过你还没告诉我想写什么主题。");
+        assertOutcomeReason("NEEDS_CLARIFICATION");
+    }
+
+    @Test
+    void generalOutlineUsesOptionalEvidenceAndCanGenerateWithoutCitations() {
+        SkillDefinition definition = evidenceOutlineDefinition();
+        select(definition);
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(
+                anyLong(),
+                anyString(),
+                anyString(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(EvidencePolicy.OPTIONAL),
+                eq("Redis 缓存一致性")))
+                .thenReturn(snapshot("assembled system"));
+        when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
+                AgentLoopResult.finalReady(List.of("current question"), 1, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("# 一致性问题\n\n通用背景。\n\n## 解决路径\n\n通用方案。"));
+
+        agent.run(
+                "给我列一个关于 Redis 缓存一致性的技术分享提纲",
+                7L,
+                memory,
+                "session",
+                "",
+                "evidence-outline",
+                events::add);
+
+        verify(loopExecutor).execute(any(), any(), any(), any());
+        assertThat(eventContents().getLast())
+                .contains("# 一致性问题", "## 解决路径")
+                .doesNotContain("[E");
+    }
+
+    @Test
+    void groundedOutlineWithoutEvidenceUsesPersonaResponseAndNoEvidenceTraceReason() {
+        SkillDefinition definition = evidenceOutlineDefinition();
+        select(definition);
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(
+                anyLong(),
+                anyString(),
+                anyString(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(EvidencePolicy.REQUIRED),
+                eq("Redis 缓存一致性")))
+                .thenReturn(new AgentContextSnapshot("assembled system", EvidenceSet.empty(), true));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("我认真找过了，但站内暂时没有足够资料支撑这份大纲。"));
+
+        agent.run(
+                "根据站内资料，生成一份关于 Redis 缓存一致性的文章大纲。",
+                7L,
+                memory,
+                "session",
+                "",
+                "evidence-outline",
+                events::add);
+
+        verify(loopExecutor, never()).execute(any(), any(), any(), any());
+        assertThat(eventContents())
+                .containsOnly("我认真找过了，但站内暂时没有足够资料支撑这份大纲。");
+        assertOutcomeReason("NO_EVIDENCE");
+    }
+
+    @Test
+    void invalidCitationUsesIndependentTraceReasonAndPersonaResponse() {
+        SkillDefinition definition = skillDefinition();
+        select(definition);
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(
+                anyLong(),
+                anyString(),
+                anyString(),
+                any(),
+                anyString(),
+                anyString(),
+                eq(EvidencePolicy.REQUIRED),
+                anyString()))
+                .thenReturn(groundedSnapshot("assembled system"));
+        when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
+                AgentLoopResult.finalReady(List.of("current question"), 1, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(
+                        Flux.just("伪造引用 [E9]"),
+                        Flux.just("这次的引用对不上，我不能把它当成可靠答案。"));
+
+        agent.run(
+                "解释这篇文章",
+                7L,
+                memory,
+                "session",
+                "标题：文章\npostSlug：article",
+                "page-explain",
+                events::add);
+
+        assertThat(eventContents()).containsOnly("这次的引用对不上，我不能把它当成可靠答案。");
+        assertOutcomeReason("INVALID_CITATION");
     }
 
     @Test
@@ -494,11 +645,13 @@ class ChthollyAgentTest {
                                 "semantic", "TIMEOUT",
                                 "keyword", "SUCCESS_EMPTY",
                                 "entity", "SUCCESS_EMPTY")));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("我认真找过了，但站内暂时没有足够资料支撑这次回答。"));
 
         agent.run("帮我查站内事实", 7L, memory, events::add);
 
         verify(loopExecutor, never()).execute(any(), any(), any(), any());
-        verify(llmInvoker, never()).stream(anyString(), anyString(), anyDouble(), anyInt());
         ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
         com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
@@ -524,7 +677,9 @@ class ChthollyAgentTest {
                 "explicit_task_type",
                 1.0,
                 Set.of("search")));
-        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), eq(true)))
+        when(contextEngine.buildSnapshot(
+                anyLong(), any(), any(), any(), anyString(), anyString(),
+                eq(EvidencePolicy.REQUIRED), eq("证据")))
                 .thenReturn(groundedSnapshot("assembled system"));
         when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
                 AgentLoopResult.finalReady(List.of("current question"), 1, 10));
@@ -557,7 +712,7 @@ class ChthollyAgentTest {
     }
 
     @Test
-    void clarificationRequiredIsClassifiedWithoutEnteringContextOrModel() {
+    void clarificationRequiredIsClassifiedWithoutEnteringContextOrLoop() {
         when(skillRegistry.enabled()).thenReturn(List.of());
         when(skillSelector.select(any(), any())).thenReturn(new SkillSelector.SkillSelection(
                 SkillSelector.Status.CLARIFICATION_REQUIRED,
@@ -565,14 +720,16 @@ class ChthollyAgentTest {
                 "unknown_or_ambiguous_task_type",
                 0.0,
                 Set.of()));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(Flux.just("先告诉我想使用哪一种任务，或者直接说说想完成什么吧。"));
 
         agent.run("执行未知任务", 7L, memory, "session", "页面", "unknown", events::add);
 
         verify(contextEngine, never()).buildSnapshot(
                 anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean());
         verify(loopExecutor, never()).execute(any(), any(), any(), any());
-        verify(llmInvoker, never()).stream(anyString(), anyString(), anyDouble(), anyInt());
-        assertThat(eventTypes()).containsExactly("final");
+        assertThat(eventTypes()).containsExactly("delta", "final");
         ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
         com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
@@ -580,6 +737,7 @@ class ChthollyAgentTest {
         assertThat(payload.path("skill").path("selectionStatus").asText())
                 .isEqualTo("CLARIFICATION_REQUIRED");
         assertThat(payload.path("failureType").asText()).isEqualTo("SKILL_NO_MATCH");
+        assertThat(payload.path("outcomeReason").asText()).isEqualTo("NEEDS_CLARIFICATION");
     }
 
     private List<String> eventTypes() {
@@ -588,6 +746,25 @@ class ChthollyAgentTest {
 
     private List<String> eventContents() {
         return events.stream().map(event -> event.data().path("content").asText()).toList();
+    }
+
+    private void assertOutcomeReason(String expected) {
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor =
+                ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("outcomeReason").asText()).isEqualTo(expected);
+    }
+
+    private void select(SkillDefinition definition) {
+        when(skillRegistry.enabled()).thenReturn(List.of(definition));
+        when(skillSelector.select(any(), any())).thenReturn(new SkillSelector.SkillSelection(
+                SkillSelector.Status.SELECTED,
+                definition,
+                "explicit_task_type",
+                1.0,
+                Set.of("search")));
     }
 
     private AgentContextSnapshot snapshot(String systemPrompt) {

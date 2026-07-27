@@ -41,19 +41,29 @@ class SkillSelectorTest {
     }
 
     @Test
-    void pageContextParticipatesInSelectionAndConflictsRequireClarification() {
-        SkillSelector.SkillSelection missingPage = selector.select(
-                registry.enabled(), context("page-explain", "解释", "", Set.of(), Set.of()));
+    void explicitConceptExplanationDoesNotRequirePageAndConflictsStillClarify() {
+        SkillSelector.SkillSelection conceptWithoutPage = selector.select(
+                registry.enabled(), context("page-explain", "解释 Redis 的缓存一致性", "", Set.of(), Set.of()));
         SkillSelector.SkillSelection withPage = selector.select(
                 registry.enabled(), context("page-explain", "解释", "页面：文章详情", Set.of(), Set.of()));
         SkillSelector.SkillSelection conflict = selector.select(
                 registry.enabled(), context("", "请核查草稿并给我证据大纲", "", Set.of(), Set.of()));
 
-        assertThat(missingPage.status()).isEqualTo(SkillSelector.Status.CLARIFICATION_REQUIRED);
-        assertThat(missingPage.reason()).isEqualTo("required_page_context_missing");
+        assertThat(conceptWithoutPage.status()).isEqualTo(SkillSelector.Status.SELECTED);
+        assertThat(conceptWithoutPage.reason()).isEqualTo("explicit_task_type");
         assertThat(withPage.status()).isEqualTo(SkillSelector.Status.SELECTED);
         assertThat(conflict.status()).isEqualTo(SkillSelector.Status.CLARIFICATION_REQUIRED);
         assertThat(conflict.reason()).isEqualTo("rule_conflict");
+    }
+
+    @Test
+    void keywordFallbackRemainsCompatibleWithoutExplicitTaskType() {
+        SkillSelector.SkillSelection selection = selector.select(
+                registry.enabled(), context("", "请给我一份 Redis 缓存一致性大纲", "", Set.of(), Set.of()));
+
+        assertThat(selection.status()).isEqualTo(SkillSelector.Status.SELECTED);
+        assertThat(selection.definition().id()).isEqualTo("evidence-outline");
+        assertThat(selection.reason()).isEqualTo("deterministic_rule");
     }
 
     @Test

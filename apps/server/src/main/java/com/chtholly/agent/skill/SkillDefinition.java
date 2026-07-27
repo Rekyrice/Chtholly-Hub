@@ -52,7 +52,24 @@ public record SkillDefinition(
     }
 
     public boolean requiresEvidence() {
-        return Boolean.parseBoolean(String.valueOf(outputSchema.getOrDefault("requiresEvidence", false)));
+        return defaultEvidencePolicy() == EvidencePolicy.REQUIRED;
+    }
+
+    /** Returns the default evidence policy, with legacy requiresEvidence compatibility. */
+    public EvidencePolicy defaultEvidencePolicy() {
+        Object configured = outputSchema.get("evidencePolicy");
+        if (configured != null) {
+            try {
+                return EvidencePolicy.valueOf(String.valueOf(configured).strip().toUpperCase());
+            } catch (IllegalArgumentException exception) {
+                throw new IllegalArgumentException(
+                        "Skill outputSchema.evidencePolicy is invalid: " + configured,
+                        exception);
+            }
+        }
+        return Boolean.parseBoolean(String.valueOf(outputSchema.getOrDefault("requiresEvidence", false)))
+                ? EvidencePolicy.REQUIRED
+                : EvidencePolicy.NOT_NEEDED;
     }
 
     private static List<String> copy(List<String> values) {

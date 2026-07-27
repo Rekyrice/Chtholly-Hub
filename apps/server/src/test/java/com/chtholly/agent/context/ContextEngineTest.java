@@ -23,6 +23,7 @@ import com.chtholly.agent.mood.SeasonService;
 import com.chtholly.agent.mood.SeasonalContextContributor;
 import com.chtholly.agent.search.HybridSearchService;
 import com.chtholly.agent.search.SearchResult;
+import com.chtholly.agent.skill.EvidencePolicy;
 import com.chtholly.agent.state.BehaviorProb;
 import com.chtholly.agent.state.CharacterState;
 import com.chtholly.agent.state.CharacterStateService;
@@ -256,6 +257,53 @@ class ContextEngineTest {
         assertThat(snapshot.evidenceRequired()).isTrue();
         assertThat(snapshot.evidenceSet().isEmpty()).isTrue();
         assertThat(snapshot.retrievalStatuses()).containsEntry("semantic", "SUCCESS_EMPTY");
+    }
+
+    @Test
+    void optionalEvidenceUsesCleanQueryWithoutBlockingOnEmptyResults() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
+        when(hybridSearchService.hybridSearch("Redis 缓存一致性", 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(List.of(), Map.of(
+                        "semantic", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY,
+                        "keyword", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY,
+                        "entity", HybridSearchService.RetrievalStatus.SUCCESS_EMPTY)));
+
+        AgentContextSnapshot snapshot = engine.buildSnapshot(
+                7L,
+                "ws-1",
+                "",
+                List.of(),
+                "",
+                "给我列一个关于 Redis 缓存一致性的技术分享提纲",
+                EvidencePolicy.OPTIONAL,
+                "Redis 缓存一致性");
+
+        assertThat(snapshot.evidenceRequired()).isFalse();
+        assertThat(snapshot.evidenceSet().isEmpty()).isTrue();
+        assertThat(snapshot.retrievalStatuses()).containsEntry("semantic", "SUCCESS_EMPTY");
+        verify(hybridSearchService).hybridSearch("Redis 缓存一致性", 5);
+    }
+
+    @Test
+    void requiredEvidenceUsesPlannerQueryAndKeepsTheRequirement() {
+        HybridSearchService hybridSearchService = mock(HybridSearchService.class);
+        ContextEngine engine = engineWith(new KnowledgeContextContributor(hybridSearchService, null));
+        when(hybridSearchService.hybridSearch("Redis 缓存一致性", 5)).thenReturn(
+                new HybridSearchService.HybridSearchResponse(List.of(), Map.of()));
+
+        AgentContextSnapshot snapshot = engine.buildSnapshot(
+                7L,
+                "ws-1",
+                "",
+                List.of(),
+                "",
+                "根据站内资料生成 Redis 提纲",
+                EvidencePolicy.REQUIRED,
+                "Redis 缓存一致性");
+
+        assertThat(snapshot.evidenceRequired()).isTrue();
+        verify(hybridSearchService).hybridSearch("Redis 缓存一致性", 5);
     }
 
     @Test

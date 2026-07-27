@@ -4,6 +4,7 @@ import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.anchor.AnchorContext;
 import com.chtholly.agent.anchor.AnchorManager;
 import com.chtholly.agent.evidence.EvidenceSet;
+import com.chtholly.agent.skill.EvidencePolicy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -81,10 +82,31 @@ public class ContextEngine {
             String conversationHistory,
             String userQuestion,
             boolean forceEvidenceRequired) {
+        return buildSnapshot(
+                userId,
+                sessionId,
+                pageContext,
+                tools,
+                conversationHistory,
+                userQuestion,
+                forceEvidenceRequired ? EvidencePolicy.REQUIRED : EvidencePolicy.NOT_NEEDED,
+                "");
+    }
+
+    /** Builds one turn from an explicit task-level evidence policy and retrieval query. */
+    public AgentContextSnapshot buildSnapshot(
+            long userId,
+            String sessionId,
+            String pageContext,
+            Iterable<AgentTool> tools,
+            String conversationHistory,
+            String userQuestion,
+            EvidencePolicy evidencePolicy,
+            String retrievalQuery) {
         AnchorContext anchors = anchorManager.buildContext(userId, sessionId);
         ContextRequest request = new ContextRequest(
                 userId, sessionId, pageContext, tools, conversationHistory, userQuestion, anchors,
-                forceEvidenceRequired);
+                evidencePolicy, retrievalQuery);
 
         List<ContextContribution> contributions = contributors.stream()
                 .map(contributor -> safeContribution(contributor, request))
@@ -96,7 +118,7 @@ public class ContextEngine {
             retrievalStatuses.putAll(contribution.retrievalStatuses());
         }
         EvidenceSet evidenceSet = EvidenceSet.of(candidates, Set.of("PUBLIC"));
-        boolean evidenceRequired = forceEvidenceRequired || contributions.stream()
+        boolean evidenceRequired = evidencePolicy == EvidencePolicy.REQUIRED || contributions.stream()
                 .anyMatch(ContextContribution::evidenceRequired);
 
         String prompt = contributions.stream()

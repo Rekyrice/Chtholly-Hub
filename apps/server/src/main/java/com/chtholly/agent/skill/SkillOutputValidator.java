@@ -42,30 +42,39 @@ public class SkillOutputValidator {
             String output,
             EvidenceSet evidenceSet,
             String userConstraints) {
+        return validate(
+                definition,
+                output,
+                evidenceSet,
+                userConstraints,
+                definition.requiresEvidence());
+    }
+
+    /** Validates output using the task-level evidence requirement for this execution. */
+    public SkillValidationResult validate(
+            SkillDefinition definition,
+            String output,
+            EvidenceSet evidenceSet,
+            String userConstraints,
+            boolean evidenceRequired) {
         String normalized = output == null ? "" : output.strip();
         EvidenceSet evidence = evidenceSet == null ? EvidenceSet.empty() : evidenceSet;
         if (normalized.isBlank()) {
             return invalid(Status.SCHEMA_INVALID, "empty_output");
         }
-        if (definition.requiresEvidence() && evidence.isEmpty()) {
+        if (evidenceRequired && evidence.isEmpty()) {
             return new SkillValidationResult(
                     Status.INSUFFICIENT_EVIDENCE,
-                    EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
+                    "",
                     List.of("evidence_required"));
-        }
-        if (EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER.equals(normalized)) {
-            return new SkillValidationResult(
-                    Status.INSUFFICIENT_EVIDENCE,
-                    EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
-                    List.of("model_no_answer"));
         }
         if (definition.validators().contains("citation")) {
             EvidenceSet.ValidationResult validation = evidence.validate(
-                    normalized, definition.requiresEvidence());
+                    normalized, evidenceRequired);
             if (validation.status() != EvidenceSet.ValidationStatus.VALID) {
                 return new SkillValidationResult(
                         Status.CITATION_INVALID,
-                        EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
+                        "",
                         List.of("citation_not_in_snapshot"));
             }
         }
@@ -181,7 +190,7 @@ public class SkillOutputValidator {
             if (upper.contains("SUPPORTED") && !CITATION.matcher(line).find()) {
                 return new SkillValidationResult(
                         Status.CITATION_INVALID,
-                        EvidenceSet.INSUFFICIENT_EVIDENCE_ANSWER,
+                        "",
                         List.of("supported_claim_without_citation"));
             }
         }
