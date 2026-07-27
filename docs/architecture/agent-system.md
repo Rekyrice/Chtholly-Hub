@@ -44,6 +44,17 @@ GET /api/v1/agent/ws?ticket=...
 
 循环返回 `FINAL_READY` 后，最终答案仍由 `ChthollyAgent` 单独流式生成。因此修改决策协议与修改最终表达风格是两个不同入口，不应把两者重新耦合回一个巨型循环。
 
+## Skill 路由、输入规划与证据策略
+
+WebSocket `chat` 消息可以在顶层携带 `taskType`。[`SkillSelector`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillSelector.java) 优先使用显式 `taskType`，未提供时才保留关键词规则作为兼容入口；显式任务不能扩大当前用户允许的工具集合。选中 Skill 后，[`SkillRequestPlanner`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillRequestPlanner.java) 在检索和 Agent loop 之前完成输入预检：
+
+- `evidence-outline` 缺少明确主题、`page-explain` 同时缺少页面与解释目标、`draft-fact-check` 缺少草稿或主张时，直接进入澄清边界，不发起检索；
+- 检索查询只使用提取后的主题、页面标题/slug、解释目标或可核查主张，不把“请根据站内资料生成……”一类任务包装文本原样送入混合检索；
+- `EvidencePolicy.REQUIRED` 表示必须有可验证证据且事实引用必须通过校验；`OPTIONAL` 允许检索增强，也允许在证据为空时用通用知识完成任务，但不得伪装成站内结论；`NOT_NEEDED` 不为任务主动检索；
+- 页面/站内范围的大纲与基于当前页面的解释会从模板默认 `OPTIONAL` 提升为 `REQUIRED`，草稿事实核查始终为 `REQUIRED`，草稿编辑为 `NOT_NEEDED`。
+
+证据状态由 [`EvidenceSet`](../../apps/server/src/main/java/com/chtholly/agent/evidence/EvidenceSet.java) 和校验状态表达，不再依赖固定中文答案字符串作为机器哨兵。`ChthollyAgent` 对澄清、无证据和无效引用统一使用角色魂生成自然语言边界回复，并在 trace 顶层记录稳定的 `outcomeReason`：`NEEDS_CLARIFICATION`、`NO_EVIDENCE`、`INVALID_CITATION` 或 `MODEL_FAILURE`。结构化 Skill 的状态值、字段与 citation 格式仍由模板和 [`SkillOutputValidator`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillOutputValidator.java) 约束，角色表达只作用于自然语言部分。
+
 ## ContextContributor 顺序与职责
 
 顺序常量以 [`ContextOrder`](../../apps/server/src/main/java/com/chtholly/agent/context/ContextOrder.java) 为准，`ContextEngine` 会按 `order()` 排序：
@@ -125,6 +136,7 @@ Core 包括交互入口、上下文合同、运行时、工具合同、会话记
 | Core/扩展开关边界 | [`AgentExtensionProperties`](../../apps/server/src/main/java/com/chtholly/agent/config/AgentExtensionProperties.java)、[`ConditionalOnAgentExtensions`](../../apps/server/src/main/java/com/chtholly/agent/config/ConditionalOnAgentExtensions.java) | [`AgentExtensionPropertiesTest`](../../apps/server/src/test/java/com/chtholly/agent/config/AgentExtensionPropertiesTest.java)、[`AgentExtensionBoundaryArchitectureTest`](../../apps/server/src/test/java/com/chtholly/agent/config/AgentExtensionBoundaryArchitectureTest.java) |
 | Redis 会话记忆 | [`AgentMemoryStore`](../../apps/server/src/main/java/com/chtholly/agent/memory/AgentMemoryStore.java) | [`AgentMemoryStoreTest`](../../apps/server/src/test/java/com/chtholly/agent/memory/AgentMemoryStoreTest.java) |
 | 主动行为 | [`ProactiveTriggerEngine`](../../apps/server/src/main/java/com/chtholly/agent/proactive/ProactiveTriggerEngine.java) | [`ProactiveTriggerEngineTest`](../../apps/server/src/test/java/com/chtholly/agent/proactive/ProactiveTriggerEngineTest.java)、[`AgentExtensionConditionTest`](../../apps/server/src/test/java/com/chtholly/agent/proactive/AgentExtensionConditionTest.java) |
+| Skill 路由、输入与证据策略 | [`SkillSelector`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillSelector.java)、[`SkillRequestPlanner`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillRequestPlanner.java)、[`SkillOutputValidator`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillOutputValidator.java) | [`SkillSelectorTest`](../../apps/server/src/test/java/com/chtholly/agent/skill/SkillSelectorTest.java)、[`SkillRequestPlannerTest`](../../apps/server/src/test/java/com/chtholly/agent/skill/SkillRequestPlannerTest.java)、[`SkillOutputValidatorTest`](../../apps/server/src/test/java/com/chtholly/agent/skill/SkillOutputValidatorTest.java) |
 | Trace 或质量回退 | [`TracePersistenceService`](../../apps/server/src/main/java/com/chtholly/agent/trace/TracePersistenceService.java)、[`LlmQualityEvaluationService`](../../apps/server/src/main/java/com/chtholly/agent/quality/LlmQualityEvaluationService.java) | [`TracePersistenceServiceTest`](../../apps/server/src/test/java/com/chtholly/agent/trace/TracePersistenceServiceTest.java)、[`HeuristicQualityEvaluationServiceTest`](../../apps/server/src/test/java/com/chtholly/agent/quality/HeuristicQualityEvaluationServiceTest.java) |
 
 跨端事件格式还应同时核对[前端架构的 Agent 路径](frontend.md#agent-路径)与[核心请求链路](request-flows.md#8-agent-websocket上下文工具与记忆)。

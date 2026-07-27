@@ -74,6 +74,8 @@ App Router 默认是 Server Component。公开读取路径优先保持服务端�
 
 [`wsUrl.ts`](../../apps/web/lib/agent/wsUrl.ts) 先经 `POST /api/v1/agent/ws-ticket` 换取 ticket，再构造 `/api/v1/agent/ws?ticket=...`；URL 优先读取 `NEXT_PUBLIC_WS_URL`，其次把 `NEXT_PUBLIC_API_SERVER_URL` 转换为 ws/wss，最后在浏览器回退到当前主机的 `:8888`。消息、重连和页面上下文集中在 [`useAgentWebSocket`](../../apps/web/components/agent/hooks/useAgentWebSocket.ts)，事件协议变更必须同步核对[Agent 系统主链](agent-system.md#一次对话的主链)。
 
+`/agent` 的 [`AgentSkillModeSelector`](../../apps/web/components/agent/AgentSkillModeSelector.tsx) 提供“页面解释”“资料大纲”“草稿事实核查”三个显式任务入口。选中状态写入 `taskType` 查询参数并随 WebSocket `chat` 消息发送；取消后回到不含 `taskType` 的普通对话，浮窗、房间与既有调用保持兼容。模式切换保留 `session` 与 `context`，每种模式给出对应输入占位提示。文章详情侧栏的“解释这篇文章”入口跳转到 `taskType=page-explain&context=post:<slug>`，hook 再把 source 与 `postSlug` 写入结构化页面上下文。
+
 ## 主题与 Live2D
 
 全局主题源是 [`app/globals.css`](../../apps/web/app/globals.css)。优先复用 `--color-sky`、`--color-violet`、`--color-sunset`、`--color-surface`、`--color-text`、`--color-border`、`--color-primary` 与 `--blog-primary` 等现有 Token；暗色值由 `[data-theme="dark"]` 覆盖。源码当前没有 `--blog-secondary`，不要引用或新增同名变量来假装已有设计合同。
