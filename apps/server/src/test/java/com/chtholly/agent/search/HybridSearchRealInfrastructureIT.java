@@ -6,6 +6,7 @@ import com.chtholly.integration.AbstractGoldenPathIT;
 import com.chtholly.llm.rag.RagIndexService;
 import com.chtholly.llm.rag.RagQueryService;
 import com.chtholly.search.index.SearchIndexService;
+import com.chtholly.search.service.SearchService;
 import com.chtholly.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,8 @@ class HybridSearchRealInfrastructureIT extends AbstractGoldenPathIT {
     private StorageService storageService;
     @Autowired
     private SearchIndexService searchIndexService;
+    @Autowired
+    private SearchService searchService;
     @Autowired
     private RagIndexService ragIndexService;
     @Autowired
@@ -104,7 +107,10 @@ class HybridSearchRealInfrastructureIT extends AbstractGoldenPathIT {
         assertThat(searchIndexService.tryUpsertPost(publicPost.id())).isTrue();
         assertThat(searchIndexService.tryUpsertPost(privatePost.id())).isTrue();
         addEntity(publicPost.id());
-        addEntity(privatePost.id());
+        addUnauthorizedEntityCandidate(privatePost.id());
+        assertThat(searchService.searchByEntityNames(List.of("原子恢复"), 10, null).items())
+                .extracting(item -> item.id())
+                .contains(String.valueOf(PUBLIC_POST_ID), String.valueOf(PRIVATE_POST_ID));
         assertThat(ragIndexService.reindexSinglePost(publicPost.id())).isGreaterThanOrEqualTo(2);
         addRejectedSemanticCandidates(privatePost, stalePost);
         List<Document> rawSemantic = vectorStore.similaritySearch(
@@ -169,6 +175,35 @@ class HybridSearchRealInfrastructureIT extends AbstractGoldenPathIT {
                         .doc(Map.of("contentAnalysis", contentAnalysis))
                         .refresh(Refresh.WaitFor),
                 Map.class);
+    }
+
+    private void addUnauthorizedEntityCandidate(long postId) throws Exception {
+        Map<String, Object> contentAnalysis = Map.of(
+                "entities", List.of(Map.of(
+                        "name", "原子恢复", "category", "TEST_ENTITY", "confidence", 1.0)));
+        Map<String, Object> staleDerivedDocument = Map.ofEntries(
+                Map.entry("content_id", postId),
+                Map.entry("content_type", "image_text"),
+                Map.entry("slug", "retrieval-" + postId),
+                Map.entry("title", "派生检索候选"),
+                Map.entry("description", "该派生候选必须由 MySQL 权威状态过滤"),
+                Map.entry("author_id", AUTHOR_ID),
+                Map.entry("author_handle", "retrieval-fixture"),
+                Map.entry("author_nickname", "检索夹具"),
+                Map.entry("status", "published"),
+                // 模拟陈旧或错误的派生投影；MySQL 中该文章仍为 private。
+                Map.entry("visible", "public"),
+                Map.entry("tags", List.of("retrieval")),
+                Map.entry("img_urls", List.of()),
+                Map.entry("like_count", 0),
+                Map.entry("favorite_count", 0),
+                Map.entry("view_count", 0),
+                Map.entry("contentAnalysis", contentAnalysis));
+        elasticsearchClient.index(request -> request
+                .index(SEARCH_INDEX)
+                .id(String.valueOf(postId))
+                .document(staleDerivedDocument)
+                .refresh(Refresh.WaitFor));
     }
 
     private void addRejectedSemanticCandidates(StoredPost privatePost, StoredPost stalePost) throws Exception {
