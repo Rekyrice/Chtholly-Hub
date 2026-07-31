@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AUTH_TOKENS_KEY } from "@/lib/auth/tokens";
 import { ApiError, apiFetch } from "@/lib/services/apiClient";
+
+const { refreshTokenMock } = vi.hoisted(() => ({
+  refreshTokenMock: vi.fn(),
+}));
+
+vi.mock("@/lib/services/authService", () => ({
+  authService: {
+    refreshToken: refreshTokenMock,
+  },
+}));
 
 function stubResponse(body: BodyInit, init: ResponseInit): void {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, init)));
@@ -18,6 +29,8 @@ async function captureApiError(request: Promise<unknown>): Promise<ApiError> {
 describe("apiFetch error messages", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    localStorage.clear();
+    refreshTokenMock.mockReset();
   });
 
   it("does not expose an HTML error page as the API error message", async () => {
@@ -216,5 +229,75 @@ describe("apiFetch error messages", () => {
     );
 
     expect(error.message).toBe("登录已过期，请重新登录");
+  });
+});
+
+describe("apiFetch access token refresh", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    localStorage.clear();
+    refreshTokenMock.mockReset();
+  });
+
+  it("refreshes before the first request when access expired but refresh remains valid", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
+    localStorage.setItem(
+      AUTH_TOKENS_KEY,
+      JSON.stringify({
+        accessToken: "expired-access",
+        accessTokenExpiresAt: "2026-07-31T23:59:00.000Z",
+        refreshToken: "valid-refresh",
+        refreshTokenExpiresAt: "2026-08-08T00:00:00.000Z",
+      }),
+    );
+    refreshTokenMock.mockResolvedValue({ accessToken: "fresh-access" });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiFetch<{ ok: boolean }>("/api/example")).resolves.toEqual({ ok: true });
+
+    expect(refreshTokenMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: expect.objectContaining({ Authorization: "Bearer fresh-access" }),
+    });
+  });
+
+  it("shares one proactive refresh across concurrent requests", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-01T00:00:00.000Z"));
+    localStorage.setItem(
+      AUTH_TOKENS_KEY,
+      JSON.stringify({
+        accessToken: "expired-access",
+        accessTokenExpiresAt: "2026-07-31T23:59:00.000Z",
+        refreshToken: "valid-refresh",
+        refreshTokenExpiresAt: "2026-08-08T00:00:00.000Z",
+      }),
+    );
+    refreshTokenMock.mockResolvedValue({ accessToken: "fresh-access" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      ),
+    );
+
+    await Promise.all([
+      apiFetch("/api/first"),
+      apiFetch("/api/second"),
+    ]);
+
+    expect(refreshTokenMock).toHaveBeenCalledTimes(1);
   });
 });

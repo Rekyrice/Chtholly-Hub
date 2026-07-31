@@ -1,7 +1,12 @@
 /** 相对路径，经 Next.js rewrites 代理到后端 */
 const BASE_URL = "";
 
-import { clearAuth, getAccessToken, getStoredAuth } from "@/lib/auth/tokens";
+import {
+  clearAuth,
+  getAccessToken,
+  getStoredAuth,
+  isRefreshTokenValid,
+} from "@/lib/auth/tokens";
 
 export type ApiFetchOptions = {
   method?: string;
@@ -157,7 +162,16 @@ async function apiFetchInternal<TResponse>(
   };
 
   // accessToken 为 null 时不附带 Authorization；undefined 时从本地存储读取（含过期校验）
-  const token = accessToken === undefined ? getAccessToken() : accessToken;
+  let token = accessToken === undefined ? getAccessToken() : accessToken;
+  if (
+    accessToken === undefined
+    && !token
+    && !skipAuthRefresh
+    && typeof window !== "undefined"
+    && isRefreshTokenValid(getStoredAuth())
+  ) {
+    token = await refreshAccessTokenOnce();
+  }
   if (token) {
     mergedHeaders.Authorization = `Bearer ${token}`;
   }

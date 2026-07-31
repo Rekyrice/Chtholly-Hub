@@ -101,9 +101,27 @@ describe("DeferredAgentRuntime", () => {
     expect(screen.queryByTestId("authenticated-agent-runtime")).not.toBeInTheDocument();
   });
 
+  it("keeps the runtime mounted when access auth is invalid but refresh auth is valid", () => {
+    localStorage.setItem(
+      AUTH_TOKENS_KEY,
+      JSON.stringify({ ...validStoredAuthWithoutUser, accessTokenExpiresAt: "not-a-date" }),
+    );
+
+    render(<DeferredAgentRuntime />);
+
+    expect(screen.getByTestId("authenticated-agent-runtime")).toBeInTheDocument();
+  });
+
   it.each([
     ["damaged JSON", "{not-json"],
-    ["an invalid expiry", JSON.stringify({ ...validStoredAuthWithoutUser, accessTokenExpiresAt: "not-a-date" })],
+    [
+      "invalid access and refresh expiries",
+      JSON.stringify({
+        ...validStoredAuthWithoutUser,
+        accessTokenExpiresAt: "not-a-date",
+        refreshTokenExpiresAt: "not-a-date",
+      }),
+    ],
     ["an invalid token shape", JSON.stringify({ accessToken: 123 })],
   ])("does not load for %s", (_label, storedValue) => {
     localStorage.setItem(AUTH_TOKENS_KEY, storedValue);

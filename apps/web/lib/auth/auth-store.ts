@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useSyncExternalStore } from "react";
-import { AUTH_TOKENS_KEY, isAccessTokenValid } from "@/lib/auth/tokens";
+import { AUTH_TOKENS_KEY, isAuthSessionValid } from "@/lib/auth/tokens";
 import { authService } from "@/lib/services/authService";
 import type { AuthUser, StoredAuth } from "@/lib/types/auth";
 
@@ -67,7 +67,7 @@ export function useStoredAuth(): StoredAuth | null {
     if (!snapshot) return null;
     try {
       const auth = JSON.parse(snapshot) as StoredAuth;
-      return isAccessTokenValid(auth) ? auth : null;
+      return isAuthSessionValid(auth) ? auth : null;
     } catch {
       return null;
     }
