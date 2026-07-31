@@ -383,9 +383,18 @@
   }
 
   .agent-bubble-assistant .agent-rich-markdown,
-  .agent-bubble-assistant > span,
+  .agent-bubble-assistant > span {
+    font-family: var(--blog-font);
+  }
+
   .agent-live2d-typewriter {
     font-family: var(--font-jp);
+  }
+
+  .agent-bubble-assistant--rich {
+    font-size: 0.95rem;
+    line-height: 1.75;
+    letter-spacing: 0.01em;
   }
 
   .agent-bubble-assistant--speaking {
@@ -1839,7 +1848,7 @@
   }
 
   .agent-rich-markdown p {
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.9rem;
   }
 
   .agent-rich-markdown p:last-child {
@@ -1875,7 +1884,20 @@
   .agent-rich-markdown ul,
   .agent-rich-markdown ol {
     padding-left: 1.25rem;
-    margin: 0.5rem 0;
+    margin: 0.65rem 0 0.9rem;
+  }
+
+  .agent-rich-markdown li + li {
+    margin-top: 0.3rem;
+  }
+
+  .agent-rich-markdown h1,
+  .agent-rich-markdown h2,
+  .agent-rich-markdown h3 {
+    margin: 1rem 0 0.55rem;
+    font-family: var(--blog-font);
+    font-weight: 700;
+    line-height: 1.4;
   }
 
   .agent-rich-markdown blockquote {

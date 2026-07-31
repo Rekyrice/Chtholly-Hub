@@ -270,8 +270,7 @@ const ChthollyLive2D = forwardRef<Live2DHandle, ChthollyLive2DProps>(function Ch
         canvasEl.style.touchAction = "manipulation";
         mount.appendChild(canvasEl);
 
-        app.stage.eventMode = "none";
-        app.stage.interactiveChildren = false;
+        detachFromPixiEvents(app.stage as unknown as PixiEventDetachTarget);
 
         const model = await Live2DModel.from(CHTHOLLY_MODEL_URL, {
           autoUpdate: false,
@@ -442,15 +441,17 @@ function applyBodyLean(model: Live2DModelInstance, lean: BodyLean) {
   addLive2DParam(model, "PARAM_BODY_ANGLE_Z", lean.z);
 }
 
-/** 将 Live2D 子树从 Pixi 7 命中检测中排除，避免 isInteractive 报错 */
+/** 同时兼容 Pixi 6/7，将 Live2D 子树从 Pixi 命中检测中排除。 */
 type PixiEventDetachTarget = {
   eventMode?: string;
+  interactive?: boolean;
   interactiveChildren?: boolean;
   children?: PixiEventDetachTarget[];
 };
 
 function detachFromPixiEvents(displayObject: PixiEventDetachTarget) {
   displayObject.eventMode = "none";
+  displayObject.interactive = false;
   displayObject.interactiveChildren = false;
   for (const child of displayObject.children ?? []) {
     detachFromPixiEvents(child);

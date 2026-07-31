@@ -94,6 +94,7 @@ function MessageBubble({
         ref={isSpeaking ? bubbleRef : undefined}
         className={cn(
           "agent-bubble-assistant max-w-full text-sm leading-relaxed",
+          rich && !msg.streaming && "agent-bubble-assistant--rich",
           isSpeaking && "agent-bubble-assistant--speaking",
         )}
       >

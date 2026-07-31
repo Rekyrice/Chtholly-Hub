@@ -144,3 +144,27 @@ describe("AgentMessageList compact assistant replies", () => {
     );
   });
 });
+
+describe("AgentMessageList rich assistant replies", () => {
+  it("marks completed markdown replies with the reading typography variant", () => {
+    const message: ChatMessage = {
+      id: "rich-reply",
+      role: "assistant",
+      content: "第一段。\n\n- 证据一\n- 证据二",
+    };
+
+    render(
+      <AgentMessageList
+        messages={[message]}
+        busy={false}
+        showSteps={false}
+        liveSteps={[]}
+        rich
+      />,
+    );
+
+    const bubble = screen.getByText("第一段。").closest(".agent-bubble-assistant");
+    expect(bubble).toHaveClass("agent-bubble-assistant--rich");
+    expect(screen.getByRole("list")).toBeInTheDocument();
+  });
+});
