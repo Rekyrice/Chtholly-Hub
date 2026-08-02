@@ -41,19 +41,21 @@ class SkillSelectorTest {
     }
 
     @Test
-    void explicitConceptExplanationDoesNotRequirePageAndConflictsStillClarify() {
+    void explicitConceptExplanationDoesNotRequirePageAndOverridesImplicitRules() {
         SkillSelector.SkillSelection conceptWithoutPage = selector.select(
-                registry.enabled(), context("page-explain", "解释 Redis 的缓存一致性", "", Set.of(), Set.of()));
+                registry.enabled(), context(
+                        "page-explain",
+                        "请事实核查这份大纲并解释 Redis 的缓存一致性",
+                        "",
+                        Set.of(),
+                        Set.of()));
         SkillSelector.SkillSelection withPage = selector.select(
                 registry.enabled(), context("page-explain", "解释", "页面：文章详情", Set.of(), Set.of()));
-        SkillSelector.SkillSelection conflict = selector.select(
-                registry.enabled(), context("", "请核查草稿并给我证据大纲", "", Set.of(), Set.of()));
 
         assertThat(conceptWithoutPage.status()).isEqualTo(SkillSelector.Status.SELECTED);
+        assertThat(conceptWithoutPage.definition().id()).isEqualTo("page-explain");
         assertThat(conceptWithoutPage.reason()).isEqualTo("explicit_task_type");
         assertThat(withPage.status()).isEqualTo(SkillSelector.Status.SELECTED);
-        assertThat(conflict.status()).isEqualTo(SkillSelector.Status.CLARIFICATION_REQUIRED);
-        assertThat(conflict.reason()).isEqualTo("rule_conflict");
     }
 
     @Test
@@ -82,6 +84,44 @@ class SkillSelectorTest {
     }
 
     @Test
+    void implicitRulesUseFactCheckThenOutlineThenExplanationPriority() {
+        SkillSelector.SkillSelection factCheck = selector.select(
+                registry.enabled(),
+                context("", "请验证真假，并把核查结果整理成证据大纲", "", Set.of(), Set.of()));
+        SkillSelector.SkillSelection outline = selector.select(
+                registry.enabled(),
+                context("", "先总结材料，再给出章节安排和论证框架", "", Set.of(), Set.of()));
+        SkillSelector.SkillSelection explanation = selector.select(
+                registry.enabled(),
+                context("", "概括本文的核心观点", "source: post:test", Set.of(), Set.of()));
+
+        assertThat(factCheck.status()).isEqualTo(SkillSelector.Status.SELECTED);
+        assertThat(factCheck.definition().id()).isEqualTo("draft-fact-check");
+        assertThat(outline.status()).isEqualTo(SkillSelector.Status.SELECTED);
+        assertThat(outline.definition().id()).isEqualTo("evidence-outline");
+        assertThat(explanation.status()).isEqualTo(SkillSelector.Status.SELECTED);
+        assertThat(explanation.definition().id()).isEqualTo("page-explain");
+    }
+
+    @Test
+    void implicitRulesRecognizeNaturalChineseVariants() {
+        assertThat(selectImplicit("请帮我求证这段资料是否属实").definition().id())
+                .isEqualTo("draft-fact-check");
+        assertThat(selectImplicit("给这个主题设计一份目录").definition().id())
+                .isEqualTo("evidence-outline");
+        assertThat(selectImplicit("梳理一下作者的三个主要观点").definition().id())
+                .isEqualTo("page-explain");
+    }
+
+    @Test
+    void standaloneWhatIsQuestionDoesNotImplicitlySelectPageExplain() {
+        SkillSelector.SkillSelection selection = selectImplicit("《迷宫饭》的评分是什么");
+
+        assertThat(selection.status()).isEqualTo(SkillSelector.Status.NO_MATCH);
+        assertThat(selection.reason()).isEqualTo("no_deterministic_match");
+    }
+
+    @Test
     void controlledWriteSkillCannotEnterGeneralAgentToolLoop() {
         SkillDefinition draftEdit = new SkillDefinition(
                 "draft-edit", "v1", true, "test", List.of("draft_edit"),
@@ -104,5 +144,11 @@ class SkillSelectorTest {
                                           Set<String> enabled) {
         return new SkillExecutionContext(
                 7L, "chat-1", taskType, question, pageContext, permitted, enabled);
+    }
+
+    private SkillSelector.SkillSelection selectImplicit(String question) {
+        return selector.select(
+                registry.enabled(),
+                context("", question, "source: post:test", Set.of(), Set.of()));
     }
 }

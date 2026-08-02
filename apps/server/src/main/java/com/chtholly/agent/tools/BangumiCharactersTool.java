@@ -1,6 +1,7 @@
 package com.chtholly.agent.tools;
 
 import com.chtholly.agent.AgentTool;
+import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.memory.AgentContextUtil;
 import com.chtholly.bangumi.service.BangumiService;
@@ -35,6 +36,13 @@ public class BangumiCharactersTool implements AgentTool {
                 查询 Bangumi 条目的登场角色列表（主役/配角等）。
                 适用于「主要人物有哪些」「宿舍伙伴是谁」等角色类问题；追问时需结合对话历史传入作品 keyword。
                 input: {"keyword":"条目名或系列简称"}""";
+    }
+
+    @Override
+    public Map<String, ParamDef> parameterSchema() {
+        return Map.of(
+                "keyword", ParamDef.string(
+                        "条目名或系列简称；追问时可从对话历史推断", false, 1, 120));
     }
 
     @Override

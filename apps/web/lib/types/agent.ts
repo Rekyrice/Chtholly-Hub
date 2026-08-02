@@ -1,4 +1,6 @@
 export type AgentEventType =
+  | "accepted"
+  | "rejected"
   | "think"
   | "act"
   | "observe"
@@ -19,6 +21,8 @@ export type AgentSendOptions = {
 
 export interface AgentWsEnvelope {
   type: AgentEventType;
+  requestId?: string;
+  turnId?: string;
   data: Record<string, unknown>;
 }
 

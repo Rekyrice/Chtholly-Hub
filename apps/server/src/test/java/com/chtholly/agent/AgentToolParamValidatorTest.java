@@ -2,6 +2,7 @@ package com.chtholly.agent;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -47,6 +48,44 @@ class AgentToolParamValidatorTest {
                 SCHEMA);
         assertThat(err).isPresent();
         assertThat(err.get()).isEqualTo("Invalid type for parameter: topK");
+    }
+
+    @Test
+    void enforcesStringLengthBounds() {
+        Map<String, ParamDef> schema = Map.of(
+                "query", ParamDef.string("查询文本", true, 2, 5));
+
+        assertThat(AgentToolParamValidator.validate(Map.of("query", "a"), schema))
+                .contains("Parameter query must contain at least 2 characters");
+        assertThat(AgentToolParamValidator.validate(Map.of("query", "abcdef"), schema))
+                .contains("Parameter query must contain at most 5 characters");
+        assertThat(AgentToolParamValidator.validate(Map.of("query", "  迷宫饭  "), schema))
+                .isEmpty();
+    }
+
+    @Test
+    void enforcesIntegerBoundsAndRejectsFractionalNumbers() {
+        Map<String, ParamDef> schema = Map.of(
+                "topK", ParamDef.integer("返回条数", false, 1, 10));
+
+        assertThat(AgentToolParamValidator.validate(Map.of("topK", 0), schema))
+                .contains("Parameter topK must be at least 1");
+        assertThat(AgentToolParamValidator.validate(Map.of("topK", 11), schema))
+                .contains("Parameter topK must be at most 10");
+        assertThat(AgentToolParamValidator.validate(Map.of("topK", 1.5), schema))
+                .contains("Invalid type for parameter: topK");
+    }
+
+    @Test
+    void enforcesDeclaredEnumValues() {
+        Map<String, ParamDef> schema = Map.of(
+                "work_type", ParamDef.enumString(
+                        "作品类型", false, List.of("book", "anime", "all")));
+
+        assertThat(AgentToolParamValidator.validate(Map.of("work_type", "game"), schema))
+                .contains("Parameter work_type must be one of: book, anime, all");
+        assertThat(AgentToolParamValidator.validate(Map.of("work_type", " anime "), schema))
+                .isEmpty();
     }
 
     @Test

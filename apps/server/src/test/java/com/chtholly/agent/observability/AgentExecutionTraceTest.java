@@ -2,6 +2,7 @@ package com.chtholly.agent.observability;
 
 import com.chtholly.agent.evidence.Evidence;
 import com.chtholly.agent.evidence.EvidenceSet;
+import com.chtholly.agent.runtime.AgentTurnControl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -148,5 +150,85 @@ class AgentExecutionTraceTest {
         assertThat(payload.path("llmCallCount").asInt()).isEqualTo(2);
         assertThat(payload.path("llmCalls").isArray()).isTrue();
         assertThat(payload.path("llmCalls")).hasSize(2);
+    }
+
+    @Test
+    void payloadCarriesTurnBudgetToolPlanAndSafeAnswerTimingWithoutContent() {
+        AgentTurnControl control = AgentTurnControl.create(
+                "request-sensitive-id",
+                "turn-1234",
+                "sess-page-explain",
+                "ws-connection-1",
+                Duration.ofSeconds(45));
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, control, 5);
+        trace.recordTurnContext("private question", "private page", "test-model", "candidate");
+        trace.recordToolPlan("skill_evidence_auto", Set.of("bangumi_search"));
+        trace.recordAnswerTiming(120L, 800L, 805L);
+        trace.recordTimeoutStage("citation_repair");
+        control.cancel();
+        trace.recordCancellation(control.isCancelled());
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+
+        assertThat(trace.getCorrelationId()).isEqualTo("turn1234");
+        assertThat(payload.path("turn").path("requestId").asText())
+                .isEqualTo("request-sensitive-id");
+        assertThat(payload.path("turn").path("turnId").asText()).isEqualTo("turn-1234");
+        assertThat(payload.path("turn").path("chatSessionId").asText())
+                .isEqualTo("sess-page-explain");
+        assertThat(payload.path("turn").path("connectionId").asText())
+                .isEqualTo("ws-connection-1");
+        assertThat(payload.path("turn").path("budgetMs").asLong()).isEqualTo(45_000L);
+        assertThat(payload.path("turn").path("timeoutStage").asText())
+                .isEqualTo("citation_repair");
+        assertThat(payload.path("turn").path("cancelled").asBoolean()).isTrue();
+        assertThat(payload.path("toolPlan").path("reason").asText())
+                .isEqualTo("skill_evidence_auto");
+        assertThat(payload.path("toolPlan").path("effectiveTools"))
+                .containsExactly(objectMapper.valueToTree("bangumi_search"));
+        assertThat(payload.path("answerTiming").path("modelFirstTokenMs").asLong())
+                .isEqualTo(120L);
+        assertThat(payload.path("answerTiming").path("safeAnswerReadyMs").asLong())
+                .isEqualTo(800L);
+        assertThat(payload.path("answerTiming").path("firstClientDeltaMs").asLong())
+                .isEqualTo(805L);
+        assertThat(payload.path("components").path("traceSchema").asText())
+                .isEqualTo("agent-trace-v3");
+        assertThat(payload.toString()).doesNotContain("private question", "private page");
+    }
+
+    @Test
+    void failedTerminalDeliveryReconcilesAnOtherwiseSuccessfulTrace() {
+        AgentTurnControl control = AgentTurnControl.create(
+                "request-1", "turn-delivery", "session-1", "connection-1", Duration.ofSeconds(30));
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, control, 5);
+        trace.terminateFinalAnswer("answer");
+        trace.finish();
+        control.completeClientDelivery(false, "final", "CLIENT_DELIVERY_FAILED");
+
+        trace.resolveClientDelivery();
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+
+        assertThat(trace.getStatus()).isEqualTo(com.chtholly.agent.trace.TraceStatus.FAILURE);
+        assertThat(trace.getFailureType())
+                .isEqualTo(AgentExecutionTrace.FailureType.CLIENT_DELIVERY_FAILED);
+        assertThat(payload.path("turn").path("clientDeliveryStatus").asText()).isEqualTo("FAILED");
+        assertThat(payload.path("turn").path("clientTerminalType").asText()).isEqualTo("final");
+    }
+
+    @Test
+    void coordinationErrorTerminalReconcilesSuccessfulExecution() {
+        AgentTurnControl control = AgentTurnControl.create(
+                "request-1", "turn-coordination", "session-1", "connection-1", Duration.ofSeconds(30));
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, control, 5);
+        trace.terminateFinalAnswer("answer");
+        trace.finish();
+        control.completeClientDelivery(true, "error", "TURN_COORDINATION_UNAVAILABLE");
+
+        trace.resolveClientDelivery();
+
+        assertThat(trace.getStatus()).isEqualTo(com.chtholly.agent.trace.TraceStatus.FAILURE);
+        assertThat(trace.getFailureType())
+                .isEqualTo(AgentExecutionTrace.FailureType.TURN_COORDINATION_FAILED);
     }
 }

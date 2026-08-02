@@ -2,6 +2,7 @@ package com.chtholly.agent;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 /** Validates LLM-provided tool input against {@link AgentTool#parameterSchema()}. */
 public final class AgentToolParamValidator {
@@ -31,6 +32,43 @@ public final class AgentToolParamValidator {
             if (!isMissing(value) && !matchesType(value, def.type())) {
                 return Optional.of("Invalid type for parameter: " + name);
             }
+            if (!isMissing(value)) {
+                Optional<String> constraintError = validateConstraints(name, value, def);
+                if (constraintError.isPresent()) {
+                    return constraintError;
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> validateConstraints(String name, Object value, ParamDef def) {
+        if (value instanceof String text) {
+            String normalized = text.strip();
+            int length = normalized.codePointCount(0, normalized.length());
+            if (def.minLength() != null && length < def.minLength()) {
+                return Optional.of("Parameter " + name + " must contain at least "
+                        + def.minLength() + " characters");
+            }
+            if (def.maxLength() != null && length > def.maxLength()) {
+                return Optional.of("Parameter " + name + " must contain at most "
+                        + def.maxLength() + " characters");
+            }
+            if (!def.enumValues().isEmpty() && !def.enumValues().contains(normalized)) {
+                return Optional.of("Parameter " + name + " must be one of: "
+                        + String.join(", ", def.enumValues()));
+            }
+        }
+
+        OptionalLong integer = integerValue(value);
+        if (integer.isPresent()) {
+            long numericValue = integer.getAsLong();
+            if (def.minimum() != null && numericValue < def.minimum()) {
+                return Optional.of("Parameter " + name + " must be at least " + def.minimum());
+            }
+            if (def.maximum() != null && numericValue > def.maximum()) {
+                return Optional.of("Parameter " + name + " must be at most " + def.maximum());
+            }
         }
         return Optional.empty();
     }
@@ -47,21 +85,10 @@ public final class AgentToolParamValidator {
 
     private static boolean matchesType(Object value, Class<?> expected) {
         if (expected == String.class) {
-            return true;
+            return value instanceof String;
         }
         if (expected == Integer.class || expected == int.class) {
-            if (value instanceof Number) {
-                return true;
-            }
-            if (value instanceof String s) {
-                try {
-                    Integer.parseInt(s.trim());
-                    return true;
-                } catch (NumberFormatException e) {
-                    return false;
-                }
-            }
-            return false;
+            return integerValue(value).isPresent();
         }
         if (expected == Boolean.class || expected == boolean.class) {
             if (value instanceof Boolean) {
@@ -74,5 +101,33 @@ public final class AgentToolParamValidator {
             return false;
         }
         return expected.isInstance(value);
+    }
+
+    private static OptionalLong integerValue(Object value) {
+        if (value instanceof Byte || value instanceof Short
+                || value instanceof Integer || value instanceof Long) {
+            long number = ((Number) value).longValue();
+            return number >= Integer.MIN_VALUE && number <= Integer.MAX_VALUE
+                    ? OptionalLong.of(number)
+                    : OptionalLong.empty();
+        }
+        if (value instanceof Number number) {
+            double decimal = number.doubleValue();
+            if (Double.isFinite(decimal)
+                    && decimal == Math.rint(decimal)
+                    && decimal >= Integer.MIN_VALUE
+                    && decimal <= Integer.MAX_VALUE) {
+                return OptionalLong.of((long) decimal);
+            }
+            return OptionalLong.empty();
+        }
+        if (value instanceof String text) {
+            try {
+                return OptionalLong.of(Integer.parseInt(text.strip()));
+            } catch (NumberFormatException exception) {
+                return OptionalLong.empty();
+            }
+        }
+        return OptionalLong.empty();
     }
 }

@@ -1,6 +1,7 @@
 package com.chtholly.agent.tools;
 
 import com.chtholly.agent.AgentTool;
+import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.search.SearchResult;
 import com.chtholly.llm.rag.RagQueryService;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,13 @@ public class ArticleRagTool implements AgentTool {
     public String description() {
         return "按语义检索当前公开且内容指纹有效的站内帖子片段。"
                 + " input: {\"query\":\"问题或关键词\",\"topK\":5}";
+    }
+
+    @Override
+    public Map<String, ParamDef> parameterSchema() {
+        return Map.of(
+                "query", ParamDef.string("问题或检索关键词", true, 1, 200),
+                "topK", ParamDef.integer("返回片段数量", false, 1, 10));
     }
 
     @Override

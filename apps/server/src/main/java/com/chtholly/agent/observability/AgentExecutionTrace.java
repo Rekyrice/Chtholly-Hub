@@ -1,6 +1,7 @@
 package com.chtholly.agent.observability;
 
 import com.chtholly.agent.evidence.EvidenceSet;
+import com.chtholly.agent.runtime.AgentTurnControl;
 import com.chtholly.agent.trace.TraceStatus;
 import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,10 +10,10 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 
-import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -31,6 +32,11 @@ public class AgentExecutionTrace {
     private final long userId;
     private final String sessionId;
     private final int maxSteps;
+    private final String requestId;
+    private final String turnId;
+    private final String connectionId;
+    private final AgentTurnControl turnControl;
+    private long turnBudgetMs;
     private final long startedAtMs = System.currentTimeMillis();
     private final Instant startedAt = Instant.ofEpochMilli(startedAtMs);
 
@@ -58,6 +64,18 @@ public class AgentExecutionTrace {
     private List<Map<String, String>> evidenceMetadata = List.of();
     private String citationValidationStatus = "NOT_RUN";
     private Map<String, String> toolVersions = Map.of();
+    private String toolPlanReason = "not_planned";
+    private List<String> effectiveTools = List.of();
+    private String timeoutStage = "";
+    private boolean cancelled;
+    private Long modelFirstTokenMs;
+    private Long safeAnswerReadyMs;
+    private Long firstClientDeltaMs;
+    private String clientDeliveryStatus;
+    private String clientTerminalType = "";
+    private String clientDeliveryCode = "";
+    private String memoryWriteStatus = "NOT_ATTEMPTED";
+    private String memoryFailureCode = "";
     private FailureType failureType = FailureType.NONE;
     private OutcomeReason outcomeReason = OutcomeReason.NONE;
 
@@ -79,6 +97,27 @@ public class AgentExecutionTrace {
         this.userId = userId;
         this.sessionId = sessionId;
         this.maxSteps = maxSteps;
+        this.requestId = "";
+        this.turnId = "";
+        this.connectionId = "";
+        this.turnControl = null;
+        this.turnBudgetMs = 0;
+        this.clientDeliveryStatus = AgentTurnControl.ClientDeliveryStatus.NOT_APPLICABLE.name();
+    }
+
+    /** Creates a trace rooted at a canonical server turn identity. */
+    public AgentExecutionTrace(long userId, AgentTurnControl control, int maxSteps) {
+        AgentTurnControl safeControl = java.util.Objects.requireNonNull(control, "control");
+        this.correlationId = normalizeTurnId(safeControl.turnId());
+        this.userId = userId;
+        this.sessionId = safeControl.chatSessionId();
+        this.maxSteps = maxSteps;
+        this.requestId = safeControl.requestId();
+        this.turnId = safeControl.turnId();
+        this.connectionId = safeControl.connectionId();
+        this.turnControl = safeControl;
+        this.turnBudgetMs = safeControl.budget().totalBudget().toMillis();
+        this.clientDeliveryStatus = safeControl.clientDeliveryStatus().name();
     }
 
     private static String resolveCorrelationId() {
@@ -87,6 +126,11 @@ public class AgentExecutionTrace {
             return mdcId.replace("-", "");
         }
         return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private static String normalizeTurnId(String turnId) {
+        String normalized = turnId == null ? "" : turnId.replaceAll("[^A-Za-z0-9]", "");
+        return normalized.isBlank() ? resolveCorrelationId() : normalized;
     }
 
     public void recordLlmCall(long durationMs, int inputChars, int outputChars) {
@@ -242,6 +286,88 @@ public class AgentExecutionTrace {
         toolVersions = Map.copyOf(versions);
     }
 
+    /** Records the deterministic tool-planning decision without raw question text. */
+    public void recordToolPlan(String reason, Set<String> toolNames) {
+        toolPlanReason = safe(reason, "not_planned");
+        effectiveTools = toolNames == null
+                ? List.of()
+                : toolNames.stream()
+                .filter(name -> name != null && !name.isBlank())
+                .sorted()
+                .toList();
+    }
+
+    /** Updates the effective whole-turn budget after a selected Skill tightens the global limit. */
+    public void recordTurnBudget(java.time.Duration budget) {
+        turnBudgetMs = budget == null ? 0 : Math.max(0, budget.toMillis());
+    }
+
+    /** Records the stage that exhausted the shared turn budget. */
+    public void recordTimeoutStage(String stage) {
+        timeoutStage = safe(stage, "unknown");
+    }
+
+    /** Records cooperative cancellation state at trace finalization. */
+    public void recordCancellation(boolean cancelled) {
+        this.cancelled = cancelled;
+    }
+
+    /** Records the low-cardinality outcome of the fenced conversation-memory write. */
+    public void recordMemoryWrite(String status, String failureCode) {
+        memoryWriteStatus = safe(status, "UNKNOWN");
+        memoryFailureCode = failureCode == null ? "" : failureCode.strip();
+    }
+
+    /** Reconciles a completed transport terminal outcome before logging or persistence. */
+    public void resolveClientDelivery() {
+        if (turnControl == null) {
+            return;
+        }
+        AgentTurnControl.ClientDeliveryStatus deliveryStatus = turnControl.clientDeliveryStatus();
+        if (deliveryStatus == AgentTurnControl.ClientDeliveryStatus.PENDING) {
+            throw new IllegalStateException("Client delivery is unresolved for turn " + turnId);
+        }
+        clientDeliveryStatus = deliveryStatus.name();
+        clientTerminalType = turnControl.clientTerminalType();
+        clientDeliveryCode = turnControl.clientDeliveryCode();
+
+        boolean deliveryInvalidatesSuccess = status == TraceStatus.SUCCESS
+                && (deliveryStatus == AgentTurnControl.ClientDeliveryStatus.FAILED
+                        || "error".equals(clientTerminalType));
+        if (!deliveryInvalidatesSuccess) {
+            return;
+        }
+        terminatedBy = "error";
+        status = TraceStatus.FAILURE;
+        if ("TURN_COORDINATION_UNAVAILABLE".equals(clientDeliveryCode)) {
+            failureType = FailureType.TURN_COORDINATION_FAILED;
+        } else {
+            failureType = FailureType.CLIENT_DELIVERY_FAILED;
+        }
+        if (errorMessage == null || errorMessage.isBlank()) {
+            errorMessage = clientDeliveryCode.isBlank()
+                    ? "CLIENT_DELIVERY_FAILED"
+                    : clientDeliveryCode;
+        }
+    }
+
+    /** Rejects persistence before the transport boundary has reconciled this trace. */
+    public void requireClientDeliveryResolved() {
+        if (AgentTurnControl.ClientDeliveryStatus.PENDING.name().equals(clientDeliveryStatus)) {
+            throw new IllegalStateException("Client delivery was not reconciled for turn " + turnId);
+        }
+    }
+
+    /** Records model, validation, and client-visible answer milestones relative to turn start. */
+    public void recordAnswerTiming(
+            Long modelFirstTokenMs,
+            Long safeAnswerReadyMs,
+            Long firstClientDeltaMs) {
+        this.modelFirstTokenMs = nonNegative(modelFirstTokenMs);
+        this.safeAnswerReadyMs = nonNegative(safeAnswerReadyMs);
+        this.firstClientDeltaMs = nonNegative(firstClientDeltaMs);
+    }
+
     public void markFailure(FailureType type) {
         failureType = type == null ? FailureType.INTERNAL_ERROR : type;
     }
@@ -261,6 +387,10 @@ public class AgentExecutionTrace {
 
     public void terminateTimeout() {
         terminatedBy = "timeout";
+    }
+
+    public void terminateCancelled() {
+        terminatedBy = "cancelled";
     }
 
     public void terminateError() {
@@ -330,6 +460,10 @@ public class AgentExecutionTrace {
         payload.put("skill", skillMetadata());
         payload.put("retrieval", retrievalMetadata());
         payload.put("toolVersions", toolVersions);
+        payload.put("turn", turnMetadata());
+        payload.put("memory", memoryMetadata());
+        payload.put("toolPlan", toolPlanMetadata());
+        payload.put("answerTiming", answerTimingMetadata());
         payload.put("failureType", failureType.name());
         payload.put("outcomeReason", outcomeReason.name());
         payload.put("runMode", runMode);
@@ -379,6 +513,49 @@ public class AgentExecutionTrace {
         return Map.copyOf(input);
     }
 
+    private Map<String, Object> turnMetadata() {
+        Map<String, Object> turn = new LinkedHashMap<>();
+        turn.put("requestId", requestId);
+        turn.put("turnId", turnId);
+        turn.put("chatSessionId", sessionId == null ? "" : sessionId);
+        turn.put("connectionId", connectionId);
+        turn.put("budgetMs", turnBudgetMs);
+        turn.put("timeoutStage", timeoutStage);
+        turn.put("cancelled", cancelled);
+        turn.put("clientDeliveryStatus", clientDeliveryStatus);
+        turn.put("clientTerminalType", clientTerminalType);
+        turn.put("clientDeliveryCode", clientDeliveryCode);
+        return Map.copyOf(turn);
+    }
+
+    private Map<String, Object> toolPlanMetadata() {
+        Map<String, Object> plan = new LinkedHashMap<>();
+        plan.put("reason", toolPlanReason);
+        plan.put("effectiveTools", effectiveTools);
+        return Map.copyOf(plan);
+    }
+
+    private Map<String, String> memoryMetadata() {
+        Map<String, String> memory = new LinkedHashMap<>();
+        memory.put("writeStatus", memoryWriteStatus);
+        memory.put("failureCode", memoryFailureCode);
+        return Map.copyOf(memory);
+    }
+
+    private Map<String, Object> answerTimingMetadata() {
+        Map<String, Object> timing = new LinkedHashMap<>();
+        if (modelFirstTokenMs != null) {
+            timing.put("modelFirstTokenMs", modelFirstTokenMs);
+        }
+        if (safeAnswerReadyMs != null) {
+            timing.put("safeAnswerReadyMs", safeAnswerReadyMs);
+        }
+        if (firstClientDeltaMs != null) {
+            timing.put("firstClientDeltaMs", firstClientDeltaMs);
+        }
+        return Map.copyOf(timing);
+    }
+
     private Map<String, Object> buildSummaryMap() {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("event", "agent_execution_complete");
@@ -403,7 +580,7 @@ public class AgentExecutionTrace {
         return switch (terminatedBy) {
             case "final_answer" -> TraceStatus.SUCCESS;
             case "timeout" -> TraceStatus.TIMEOUT;
-            case "max_steps" -> TraceStatus.ABORTED;
+            case "max_steps", "cancelled" -> TraceStatus.ABORTED;
             default -> TraceStatus.FAILURE;
         };
     }
@@ -417,6 +594,10 @@ public class AgentExecutionTrace {
 
     private static String safe(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.strip();
+    }
+
+    private static Long nonNegative(Long value) {
+        return value == null || value < 0 ? null : value;
     }
 
     private static String sha256(String value) {
@@ -504,6 +685,11 @@ public class AgentExecutionTrace {
         SKILL_VALIDATION_FAILED,
         TOOL_FAILED,
         LLM_TIMEOUT,
+        TURN_TIMEOUT,
+        TURN_CANCELLED,
+        TURN_COORDINATION_FAILED,
+        CLIENT_DELIVERY_FAILED,
+        MEMORY_WRITE_FAILED,
         CITATION_INVALID,
         DRAFT_VERSION_CONFLICT,
         PERMISSION_DENIED,

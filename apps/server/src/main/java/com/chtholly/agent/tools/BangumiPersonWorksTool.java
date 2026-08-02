@@ -1,6 +1,7 @@
 package com.chtholly.agent.tools;
 
 import com.chtholly.agent.AgentTool;
+import com.chtholly.agent.ParamDef;
 import com.chtholly.bangumi.service.BangumiService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -38,6 +39,15 @@ public class BangumiPersonWorksTool implements AgentTool {
                 适用于「某作者有哪些漫画」「某作品的作者还画过什么」。
                 用户限定漫画/动画时请在 work_type 传 book 或 anime，否则传 all。
                 input: {"keyword":"人名或笔名","work_title":"作品名(可选)","work_type":"book|anime|all"}""";
+    }
+
+    @Override
+    public Map<String, ParamDef> parameterSchema() {
+        return Map.of(
+                "keyword", ParamDef.string("人名或笔名", false, 1, 120),
+                "work_title", ParamDef.string("用于反查作者的作品名", false, 1, 120),
+                "work_type", ParamDef.enumString(
+                        "作品类型", false, List.of("book", "anime", "all")));
     }
 
     @Override

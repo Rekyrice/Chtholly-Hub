@@ -74,6 +74,10 @@ App Router 默认是 Server Component。公开读取路径优先保持服务端�
 
 [`wsUrl.ts`](../../apps/web/lib/agent/wsUrl.ts) 先经 `POST /api/v1/agent/ws-ticket` 换取 ticket，再构造 `/api/v1/agent/ws?ticket=...`；URL 优先读取 `NEXT_PUBLIC_WS_URL`，其次把 `NEXT_PUBLIC_API_SERVER_URL` 转换为 ws/wss，最后在浏览器回退到当前主机的 `:8888`。消息、重连和页面上下文集中在 [`useAgentWebSocket`](../../apps/web/components/agent/hooks/useAgentWebSocket.ts)，事件协议变更必须同步核对[Agent 系统主链](agent-system.md#一次对话的主链)。
 
+`useAgentWebSocket` 在每次真正发送 `chat` 时生成新 `requestId`，并等待服务端 `accepted` 绑定 `turnId`。只有来自当前 socket、且同时匹配当前 request/turn 的执行事件才会更新聊天状态；旧连接、旧 turn 或重复事件会被忽略。发送锁与 busy 锁防止建连窗口中重复投递，连接失败或 `socket.send` 异常会回滚本轮状态。连接建立还绑定 generation；组件卸载或登录态消失后才返回的 ticket 会被丢弃，不会创建迟到 socket 或反向恢复已失效连接状态。
+
+生成期间发生 `close/error` 时，hook 只收尾一次：保留已到达的助手文本与步骤、取消 streaming/busy、清理当前 request/turn，并追加“连接已中断”提示。下一次人工重发会创建新 `requestId`；前端不假定可以续传旧 turn。`proactive` 和 `cleared` 不属于聊天 turn：前者只接受当前 socket，后者为每次 clear 生成独立 `requestId`、由服务端回显，并结合本地 turn generation 阻止迟到确认清空更新的对话。无 ID 的旧 `cleared` 仅在当前 socket 恰有一个待确认 clear 时兼容。
+
 `/agent` 的 [`AgentSkillModeSelector`](../../apps/web/components/agent/AgentSkillModeSelector.tsx) 提供“页面解释”“资料大纲”“草稿事实核查”三个显式任务入口。选中状态写入 `taskType` 查询参数并随 WebSocket `chat` 消息发送；取消后回到不含 `taskType` 的普通对话，浮窗、房间与既有调用保持兼容。模式切换保留 `session` 与 `context`，每种模式给出对应输入占位提示。文章详情侧栏的“解释这篇文章”入口跳转到 `taskType=page-explain&context=post:<slug>`，hook 再把 source 与 `postSlug` 写入结构化页面上下文。
 
 ## 主题与 Live2D

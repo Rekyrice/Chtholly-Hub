@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -69,6 +70,27 @@ public class AgentToolExecutor {
      * @return structured execution result and observation text
      */
     public AgentToolResult execute(AgentTool tool, Map<String, Object> input, long userId) {
+        return execute(
+                tool,
+                input,
+                userId,
+                Duration.ofSeconds(Math.max(1, properties.getToolTimeoutSeconds())));
+    }
+
+    /**
+     * Executes one validated tool within both the configured limit and turn remainder.
+     *
+     * @param tool tool to execute
+     * @param input tool input parameters
+     * @param userId authenticated user identifier
+     * @param turnRemainder remaining whole-turn budget
+     * @return structured execution result and observation text
+     */
+    public AgentToolResult execute(
+            AgentTool tool,
+            Map<String, Object> input,
+            long userId,
+            Duration turnRemainder) {
         Objects.requireNonNull(tool, "tool");
         Objects.requireNonNull(input, "input");
 
@@ -77,15 +99,15 @@ public class AgentToolExecutor {
             return new AgentToolResult(validationError.get(), AgentToolResult.Status.VALIDATION_ERROR);
         }
 
-        int timeoutSeconds = Math.max(1, properties.getToolTimeoutSeconds());
+        Duration timeout = effectiveTimeout(turnRemainder);
         Future<String> future = executor.submit(() -> tool.execute(input, userId));
         try {
             return new AgentToolResult(
-                    future.get(timeoutSeconds, TimeUnit.SECONDS),
+                    future.get(timeout.toNanos(), TimeUnit.NANOSECONDS),
                     AgentToolResult.Status.SUCCESS);
         } catch (TimeoutException e) {
             future.cancel(true);
-            log.warn("Tool {} execution timed out (>{}s)", tool.name(), timeoutSeconds);
+            log.warn("Tool {} execution timed out (>{}ms)", tool.name(), timeout.toMillis());
             return new AgentToolResult(TOOL_TIMEOUT_MESSAGE, AgentToolResult.Status.TIMEOUT);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
@@ -111,5 +133,13 @@ public class AgentToolExecutor {
         if (ownsExecutor) {
             executor.shutdownNow();
         }
+    }
+
+    private Duration effectiveTimeout(Duration turnRemainder) {
+        Duration configured = Duration.ofSeconds(Math.max(1, properties.getToolTimeoutSeconds()));
+        if (turnRemainder == null || turnRemainder.isZero() || turnRemainder.isNegative()) {
+            return Duration.ofNanos(1);
+        }
+        return turnRemainder.compareTo(configured) < 0 ? turnRemainder : configured;
     }
 }

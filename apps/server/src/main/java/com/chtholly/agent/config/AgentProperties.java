@@ -19,8 +19,8 @@ public class AgentProperties {
     private int memoryMaxTurns = 20;
     /** 会话记忆 Redis TTL（分钟，滑动过期：每次读写刷新）。 */
     private int memoryTtlMinutes = 120;
-    /** 流式输出每个字符间隔毫秒（0 表示不节流）。 */
-    private int streamCharDelayMs = 50;
     /** 单次工具执行超时（秒）。 */
     private int toolTimeoutSeconds = 30;
+    /** 单轮 Agent 请求绝对超时（秒）。 */
+    private int turnTimeoutSeconds = 60;
 }

@@ -155,6 +155,52 @@ function TraceMetadataSection({ metadata }: { metadata: TracePayloadMetadata }) 
             />
           </>
         )}
+        {metadata.turn && (
+          <>
+            <SummaryItem label="Turn ID" value={metadata.turn.turnId ?? "-"} mono />
+            <SummaryItem label="Request ID" value={metadata.turn.requestId ?? "-"} mono />
+            <SummaryItem label="单轮预算" value={formatMs(metadata.turn.budgetMs)} />
+            <SummaryItem
+              label="客户端终态"
+              value={formatClientDelivery(metadata.turn)}
+              mono
+            />
+            {metadata.turn.clientDeliveryCode && (
+              <SummaryItem label="交付异常" value={metadata.turn.clientDeliveryCode} mono />
+            )}
+            <SummaryItem
+              label="中止位置"
+              value={metadata.turn.timeoutStage ?? (metadata.turn.cancelled ? "cancelled" : "-")}
+              mono
+            />
+          </>
+        )}
+        {metadata.memory && (
+          <>
+            <SummaryItem label="记忆写入" value={metadata.memory.writeStatus ?? "-"} mono />
+            {metadata.memory.failureCode && (
+              <SummaryItem label="记忆异常" value={metadata.memory.failureCode} mono />
+            )}
+          </>
+        )}
+        {metadata.toolPlan && (
+          <>
+            <SummaryItem label="工具规划" value={metadata.toolPlan.reason ?? "-"} mono />
+            <SummaryItem
+              label="本轮工具"
+              value={metadata.toolPlan.effectiveTools.length > 0
+                ? metadata.toolPlan.effectiveTools.join(", ")
+                : "无"}
+              mono
+            />
+          </>
+        )}
+        {metadata.answerTiming && (
+          <SummaryItem
+            label="模型 / 校验 / 可见"
+            value={formatAnswerTiming(metadata.answerTiming)}
+          />
+        )}
       </dl>
 
       {metadata.retrieval && metadata.retrieval.statuses.length > 0 && (
@@ -312,6 +358,29 @@ type TracePayloadMetadata = {
       sourceHash: string | null;
     }>;
   } | null;
+  turn: {
+    requestId: string | null;
+    turnId: string | null;
+    budgetMs: number | null;
+    timeoutStage: string | null;
+    cancelled: boolean | null;
+    clientDeliveryStatus: string | null;
+    clientTerminalType: string | null;
+    clientDeliveryCode: string | null;
+  } | null;
+  memory: {
+    writeStatus: string | null;
+    failureCode: string | null;
+  } | null;
+  toolPlan: {
+    reason: string | null;
+    effectiveTools: string[];
+  } | null;
+  answerTiming: {
+    modelFirstTokenMs: number | null;
+    safeAnswerReadyMs: number | null;
+    firstClientDeltaMs: number | null;
+  } | null;
   hasStructuredMetadata: boolean;
 };
 
@@ -375,6 +444,53 @@ function projectTracePayload(payload: unknown): TracePayloadMetadata {
     || retrieval.evidence.length > 0
   ) ? retrieval : null;
 
+  const turnRecord = asRecord(root?.turn);
+  const turn = turnRecord ? {
+    requestId: boundedString(turnRecord.requestId),
+    turnId: boundedString(turnRecord.turnId),
+    budgetMs: nonNegativeInteger(turnRecord.budgetMs),
+    timeoutStage: boundedString(turnRecord.timeoutStage),
+    cancelled: typeof turnRecord.cancelled === "boolean" ? turnRecord.cancelled : null,
+    clientDeliveryStatus: boundedString(turnRecord.clientDeliveryStatus),
+    clientTerminalType: boundedString(turnRecord.clientTerminalType),
+    clientDeliveryCode: boundedString(turnRecord.clientDeliveryCode),
+  } : null;
+  const projectedTurn = turn && Object.values(turn).some((value) => value != null) ? turn : null;
+
+  const memoryRecord = asRecord(root?.memory);
+  const memory = memoryRecord ? {
+    writeStatus: boundedString(memoryRecord.writeStatus),
+    failureCode: boundedString(memoryRecord.failureCode),
+  } : null;
+  const projectedMemory = memory && Object.values(memory).some((value) => value != null)
+    ? memory
+    : null;
+
+  const toolPlanRecord = asRecord(root?.toolPlan);
+  const effectiveTools = Array.isArray(toolPlanRecord?.effectiveTools)
+    ? toolPlanRecord.effectiveTools.slice(0, 20).flatMap((value) => {
+        const tool = boundedString(value);
+        return tool ? [tool] : [];
+      })
+    : [];
+  const toolPlan = toolPlanRecord ? {
+    reason: boundedString(toolPlanRecord.reason),
+    effectiveTools,
+  } : null;
+  const projectedToolPlan = toolPlan && (
+    toolPlan.reason != null || toolPlan.effectiveTools.length > 0
+  ) ? toolPlan : null;
+
+  const answerTimingRecord = asRecord(root?.answerTiming);
+  const answerTiming = answerTimingRecord ? {
+    modelFirstTokenMs: nonNegativeInteger(answerTimingRecord.modelFirstTokenMs),
+    safeAnswerReadyMs: nonNegativeInteger(answerTimingRecord.safeAnswerReadyMs),
+    firstClientDeltaMs: nonNegativeInteger(answerTimingRecord.firstClientDeltaMs),
+  } : null;
+  const projectedAnswerTiming = answerTiming && Object.values(answerTiming).some(
+    (value) => value != null,
+  ) ? answerTiming : null;
+
   return {
     runMode: boundedString(root?.runMode),
     failureType: boundedString(root?.failureType),
@@ -383,7 +499,17 @@ function projectTracePayload(payload: unknown): TracePayloadMetadata {
     components,
     skill: projectedSkill,
     retrieval: projectedRetrieval,
-    hasStructuredMetadata: components.length > 0 || projectedSkill != null || projectedRetrieval != null,
+    turn: projectedTurn,
+    memory: projectedMemory,
+    toolPlan: projectedToolPlan,
+    answerTiming: projectedAnswerTiming,
+    hasStructuredMetadata: components.length > 0
+      || projectedSkill != null
+      || projectedRetrieval != null
+      || projectedTurn != null
+      || projectedMemory != null
+      || projectedToolPlan != null
+      || projectedAnswerTiming != null,
   };
 }
 
@@ -411,4 +537,15 @@ function formatCallCount(metadata: TracePayloadMetadata) {
 function formatSkill(skill: NonNullable<TracePayloadMetadata["skill"]>) {
   if (skill.id && skill.version) return `${skill.id} · ${skill.version}`;
   return skill.id ?? skill.version ?? "-";
+}
+
+function formatAnswerTiming(timing: NonNullable<TracePayloadMetadata["answerTiming"]>) {
+  return [timing.modelFirstTokenMs, timing.safeAnswerReadyMs, timing.firstClientDeltaMs]
+    .map(formatMs)
+    .join(" / ");
+}
+
+function formatClientDelivery(turn: NonNullable<TracePayloadMetadata["turn"]>) {
+  if (!turn.clientDeliveryStatus && !turn.clientTerminalType) return "-";
+  return [turn.clientDeliveryStatus, turn.clientTerminalType].filter(Boolean).join(" / ");
 }

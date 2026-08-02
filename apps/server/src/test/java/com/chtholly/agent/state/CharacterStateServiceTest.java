@@ -11,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -23,6 +24,8 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static java.util.Map.entry;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -98,34 +101,19 @@ class CharacterStateServiceTest {
 
     @Test
     void recordInteractionIncrementsCountAndGrowsIntimacyLogarithmically() {
-        stubHashOps();
-        when(hashOps.entries("agent:character-state:9")).thenReturn(Map.ofEntries(
-                entry("personality.warmth", "0.7"),
-                entry("personality.curiosity", "0.8"),
-                entry("personality.playfulness", "0.5"),
-                entry("mood.valence", "0.0"),
-                entry("mood.arousal", "0.5"),
-                entry("mood.baseline", "0.0"),
-                entry("relationship.intimacy", "0.0"),
-                entry("relationship.interactionCount", "1"),
-                entry("relationship.lastSeen", "2026-07-03T00:00:00Z"),
-                entry("needs.social", "0.0"),
-                entry("needs.creative", "0.0"),
-                entry("needs.knowledge", "0.0"),
-                entry("behaviorProb.proactiveGreet", "0.5"),
-                entry("behaviorProb.shareObservation", "0.3"),
-                entry("behaviorProb.recommendPost", "0.3")
-        ));
+        org.mockito.Mockito.doReturn(2L).when(redis)
+                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
 
         service.recordInteraction(9L);
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, String>> entriesCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(hashOps).putAll(eq("agent:character-state:9"), entriesCaptor.capture());
-        assertThat(entriesCaptor.getValue().get("relationship.interactionCount")).isEqualTo("2");
-        assertThat(Double.parseDouble(entriesCaptor.getValue().get("relationship.intimacy")))
-                .isEqualTo(0.1 * Math.log(3));
-        verify(redis).expire("agent:character-state:9", Duration.ofDays(30));
+        ArgumentCaptor<DefaultRedisScript<Long>> scriptCaptor = ArgumentCaptor.forClass(DefaultRedisScript.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass(List.class);
+        verify(redis).execute(scriptCaptor.capture(), keysCaptor.capture(), any(Object[].class));
+        assertThat(scriptCaptor.getValue().getScriptAsString())
+                .contains("HINCRBY", "relationship.intimacy", "PEXPIRE");
+        assertThat(keysCaptor.getValue()).containsExactly("agent:character-state:9");
     }
 
     @ParameterizedTest
@@ -179,19 +167,20 @@ class CharacterStateServiceTest {
                 redis,
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-07-05T03:00:00Z"), ZoneOffset.UTC));
-        stubHashOps();
+        org.mockito.Mockito.doReturn(1L).when(redis)
+                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
 
         clockedService.updateEmotion(7L, "这个角色为什么会这样？我有点好奇");
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, String>> entriesCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(hashOps).putAll(eq("character:state:emotion"), entriesCaptor.capture());
-        assertThat(entriesCaptor.getValue())
-                .containsEntry("label", "好奇")
-                .containsEntry("triggeredAt", "2026-07-05T03:00:00Z")
-                .containsEntry("trigger", "user-interaction");
-        assertThat(Double.parseDouble(entriesCaptor.getValue().get("intensity"))).isBetween(0.4, 1.0);
-        verify(redis).expire("character:state:emotion", Duration.ofMinutes(30));
+        ArgumentCaptor<DefaultRedisScript<Long>> scriptCaptor = ArgumentCaptor.forClass(DefaultRedisScript.class);
+        ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
+        verify(redis).execute(scriptCaptor.capture(), eq(List.of("character:state:emotion")), argsCaptor.capture());
+        assertThat(scriptCaptor.getValue().getScriptAsString())
+                .contains("triggeredAtEpochMs", "PEXPIRE");
+        assertThat(argsCaptor.getValue()[0]).isEqualTo("1783220400000");
+        assertThat(argsCaptor.getValue()[1]).isEqualTo("好奇");
+        assertThat(Double.parseDouble(argsCaptor.getValue()[2].toString())).isBetween(0.4, 1.0);
     }
 
     @Test

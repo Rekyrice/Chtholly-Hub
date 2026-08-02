@@ -24,25 +24,26 @@ POST /api/v1/agent/ws-ticket
   → 一次性短期 ticket
 GET /api/v1/agent/ws?ticket=...
   → AgentWebSocketHandler
-  → 会话 ID 校验、限流、心跳、页面上下文与 AgentMemoryStore
+  → requestId 校验 → Redis 单飞/去重 → accepted(requestId, turnId)
+  → 会话 ID、心跳、页面上下文与 AgentMemoryStore
   → ChthollyAgent
   → ContextEngine
   → AgentLoopExecutor
        ├─ AgentLlmInvoker：生成 Think / Act / Final 决策
        └─ AgentToolExecutor：校验并限时执行 AgentTool
-  → ChthollyAgent 流式生成最终自然语言答案
-  → think / act / observe / delta / final / error 事件
+  → ChthollyAgent 完整生成并校验最终答案
+  → think / act / observe / delta / final / error(requestId, turnId)
   → Redis 会话记忆与异步 trace 持久化
 ```
 
 - [`AgentWsTicketController`](../../apps/server/src/main/java/com/chtholly/agent/api/AgentWsTicketController.java) 为已认证用户签发短期、一次性 WebSocket ticket；[`AgentWebSocketConfig`](../../apps/server/src/main/java/com/chtholly/agent/config/AgentWebSocketConfig.java) 注册 `/api/v1/agent/ws`。
-- [`AgentWebSocketHandler`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentWebSocketHandler.java) 消费 ticket、解析消息与页面上下文，管理心跳、会话限流和连接状态；[`AgentChatSessionSupport`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentChatSessionSupport.java) 只负责前端会话 ID 的格式校验，不是独立存储层。
-- [`ChthollyAgent`](../../apps/server/src/main/java/com/chtholly/agent/ChthollyAgent.java) 是单轮编排边界：建立 trace、收集工具、构造上下文、调用有界循环、流式生成最终答案并更新会话记忆。
+- [`AgentWebSocketHandler`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentWebSocketHandler.java) 消费 ticket、解析消息与页面上下文，管理心跳、会话限流和连接状态。`chat` 必须携带客户端 `requestId`；取得所有权后服务端生成 `turnId` 并先返回 `accepted`。[`AgentTurnCoordinator`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentTurnCoordinator.java) 用 Redis Lua 保证同一 `(userId, chatSessionId)` 跨实例单飞与 request 短期去重；Redis 不可用时失败关闭，不会退回无保护的并发执行。`final/error` 终态事件会等 Agent 返回、Memory 收尾且 active lease 释放后再发送，避免客户端收到终态后立即追问却被误判为上一轮仍在执行。[`AgentChatSessionSupport`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentChatSessionSupport.java) 只负责前端会话 ID 的格式校验，不是独立存储层。
+- [`ChthollyAgent`](../../apps/server/src/main/java/com/chtholly/agent/ChthollyAgent.java) 是单轮编排边界：建立 trace、收紧工具集、构造上下文、调用有界循环、完整生成并校验最终答案，最后更新会话记忆。[`AgentTurnControl`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentTurnControl.java) 携带轮次身份、取消信号和全轮 deadline；连接断开会取消本连接所有的 turn、中断任务并拒绝迟到事件。
 - [`ContextEngine`](../../apps/server/src/main/java/com/chtholly/agent/context/ContextEngine.java) 按稳定顺序合成 system prompt，并拒绝重复名称或重复顺序的贡献者。
-- [`AgentLoopExecutor`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentLoopExecutor.java) 执行有最大步数的 Think-Act-Observe；[`AgentLlmInvoker`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentLlmInvoker.java) 统一模型选项、超时与同步/流式调用。
-- [`AgentToolExecutor`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentToolExecutor.java) 负责参数校验、用户上下文传播、工具超时和结果归一化；工具契约是 [`AgentTool`](../../apps/server/src/main/java/com/chtholly/agent/AgentTool.java)，当前站内/RAG/Bangumi 实现在 [`agent/tools`](../../apps/server/src/main/java/com/chtholly/agent/tools)。
+- [`AgentLoopExecutor`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentLoopExecutor.java) 执行有最大步数的 Think-Act-Observe；[`AgentLlmInvoker`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentLlmInvoker.java) 统一模型选项、单次上限与整轮剩余预算。[`AgentTurnBudget`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentTurnBudget.java) 基于单调时钟，Skill 使用 `min(全局上限, timeoutBudgetMs)` 收紧轮次截止时间。
+- [`AgentToolExecutor`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentToolExecutor.java) 负责参数校验、用户上下文传播、工具超时和结果归一化；实际超时取工具上限与整轮剩余预算的较小值。工具契约是 [`AgentTool`](../../apps/server/src/main/java/com/chtholly/agent/AgentTool.java)，当前站内/RAG/Bangumi 实现在 [`agent/tools`](../../apps/server/src/main/java/com/chtholly/agent/tools)。
 
-循环返回 `FINAL_READY` 后，最终答案仍由 `ChthollyAgent` 单独流式生成。因此修改决策协议与修改最终表达风格是两个不同入口，不应把两者重新耦合回一个巨型循环。
+循环返回 `FINAL_READY` 后，最终答案仍由 `ChthollyAgent` 单独生成。它会先缓冲完整候选答案，再通过 Evidence 引用与 Skill 输出校验；只有安全答案才会发送一次完整 `delta` 和 `final`，服务端不再按字符人工延时。因此修改决策协议与修改最终表达风格是两个不同入口，不应把两者重新耦合回一个巨型循环。
 
 ## Skill 路由、输入规划与证据策略
 
@@ -52,6 +53,10 @@ WebSocket `chat` 消息可以在顶层携带 `taskType`。[`SkillSelector`](../.
 - 检索查询只使用提取后的主题、页面标题/slug、解释目标或可核查主张，不把“请根据站内资料生成……”一类任务包装文本原样送入混合检索；
 - `EvidencePolicy.REQUIRED` 表示必须有可验证证据且事实引用必须通过校验；`OPTIONAL` 允许检索增强，也允许在证据为空时用通用知识完成任务，但不得伪装成站内结论；`NOT_NEEDED` 不为任务主动检索；
 - 页面/站内范围的大纲与基于当前页面的解释会从模板默认 `OPTIONAL` 提升为 `REQUIRED`，草稿事实核查始终为 `REQUIRED`，草稿编辑为 `NOT_NEEDED`。
+
+未提供 `taskType` 时，隐式路由按“事实核查 → 证据大纲 → 页面解释”的固定优先级选择，单独的“是什么”不会触发页面解释。Skill 及 Evidence 计划确定后，[`AgentToolPlanner`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentToolPlanner.java) 再从已授权集合中做确定性收紧：Evidence Skill 移除重复的 `article_rag` / `fulltext_search`，评分等作品信息仅保留 `bangumi_search`，角色问题再加 `bangumi_characters`，人物作品问题使用 `bangumi_person_works`。未命中 Skill 的通用对话保留既有五个工具，规划器只能收紧、不能扩大权限。
+
+[`ParamDef`](../../apps/server/src/main/java/com/chtholly/agent/ParamDef.java) 的 schema 现在可声明字符串长度、数值范围和枚举约束；[`AgentToolParamValidator`](../../apps/server/src/main/java/com/chtholly/agent/AgentToolParamValidator.java) 与注入 prompt 的工具协议共用这一契约。运行时校验仍是权威边界，不依赖模型自觉遵守提示。
 
 证据状态由 [`EvidenceSet`](../../apps/server/src/main/java/com/chtholly/agent/evidence/EvidenceSet.java) 和校验状态表达，不再依赖固定中文答案字符串作为机器哨兵。`ChthollyAgent` 对澄清、无证据和无效引用统一使用角色魂生成自然语言边界回复，并在 trace 顶层记录稳定的 `outcomeReason`：`NEEDS_CLARIFICATION`、`NO_EVIDENCE`、`INVALID_CITATION` 或 `MODEL_FAILURE`。结构化 Skill 的状态值、字段与 citation 格式仍由模板和 [`SkillOutputValidator`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillOutputValidator.java) 约束，角色表达只作用于自然语言部分。
 
@@ -96,20 +101,20 @@ Core 包括交互入口、上下文合同、运行时、工具合同、会话记
 
 ### Memory 与 Experience
 
-- [`AgentMemoryStore`](../../apps/server/src/main/java/com/chtholly/agent/memory/AgentMemoryStore.java) 以 `userId + chatSessionId` 为键，Redis List 是跨进程会话数据，Caffeine 只加速热会话；写入用 `RPUSH + LTRIM`，写入和 Redis 冷读会刷新 Redis TTL。Caffeine 热读只刷新本地 `expireAfterAccess`，不访问 Redis，因此持续命中本地缓存时 Redis key 仍可能过期。它仅在 `llm.enabled=true` 时注册，并直接依赖 Redis，没有另一套内存持久化降级实现。
+- [`AgentMemoryStore`](../../apps/server/src/main/java/com/chtholly/agent/memory/AgentMemoryStore.java) 以 `userId + chatSessionId` 为键，Redis List 是跨进程会话数据，Caffeine 只加速热会话。WebSocket 单轮写入由一个 Redis Lua 同时校验 active lease、使用 Redis `TIME` 校验绝对 deadline，并完成 user/assistant 成对追加、`LTRIM` 与 `PEXPIRE`；只有返回 `COMMITTED` 后答案才允许发往客户端。lease 已换轮或 deadline 已过会返回 `REJECTED`，网络异常等无法确认是否提交的情况记为 `UNKNOWN` 并失效本地缓存。Caffeine 热读只刷新本地 `expireAfterAccess`，不访问 Redis，因此持续命中本地缓存时 Redis key 仍可能过期。它仅在 `llm.enabled=true` 时注册，并直接依赖 Redis，没有另一套内存持久化降级实现。
 - [`AgentConversationMemory`](../../apps/server/src/main/java/com/chtholly/agent/memory/AgentConversationMemory.java) 是单轮使用的会话视图；长期程序性知识由 [`ProceduralMemoryService`](../../apps/server/src/main/java/com/chtholly/agent/memory/ProceduralMemoryService.java) 承担并受 Learning 扩展控制。
 - Experience 是可选的长期经历域，入口包括 [`ExperienceGenerator`](../../apps/server/src/main/java/com/chtholly/agent/experience/ExperienceGenerator.java)、[`ExperienceService`](../../apps/server/src/main/java/com/chtholly/agent/cognitive/ExperienceService.java) 与 [`AgentExperienceController`](../../apps/server/src/main/java/com/chtholly/agent/api/AgentExperienceController.java)。它与聊天历史不是同一存储概念。
 
 ### Knowledge Graph、Mood 与 Proactive
 
 - Knowledge Graph 由 [`KnowledgeGraphService`](../../apps/server/src/main/java/com/chtholly/agent/graph/KnowledgeGraphService.java) 与 [`KnowledgeGraphRepository`](../../apps/server/src/main/java/com/chtholly/agent/graph/KnowledgeGraphRepository.java) 管理；`GraphContextContributor` 只把相关邻域投影进 prompt。
-- Mood 由 [`MoodEngine`](../../apps/server/src/main/java/com/chtholly/agent/mood/MoodEngine.java)、[`SeasonService`](../../apps/server/src/main/java/com/chtholly/agent/mood/SeasonService.java) 和季节上下文协作，不属于 Core 必需链路。
+- Mood 由 [`MoodEngine`](../../apps/server/src/main/java/com/chtholly/agent/mood/MoodEngine.java)、[`SeasonService`](../../apps/server/src/main/java/com/chtholly/agent/mood/SeasonService.java) 和季节上下文协作，不属于 Core 必需链路。[`CharacterStateService`](../../apps/server/src/main/java/com/chtholly/agent/state/CharacterStateService.java) 使用 Redis Lua 原子递增互动次数与亲密度，并用交互发生时间阻止多实例中的迟到情绪更新覆盖较新状态。
 - Proactive 的调度门面是 [`ProactiveTriggerEngine`](../../apps/server/src/main/java/com/chtholly/agent/proactive/ProactiveTriggerEngine.java)，情绪、内容、社交决策拆分到同包服务；消息通过 [`NotificationService`](../../apps/server/src/main/java/com/chtholly/agent/notification/NotificationService.java) 与 WebSocket 待发通知协作。
 
 ### Trace 与 Quality
 
 - `ChthollyAgent` 为一次运行建立 [`AgentExecutionTrace`](../../apps/server/src/main/java/com/chtholly/agent/observability/AgentExecutionTrace.java)，[`AgentObservationService`](../../apps/server/src/main/java/com/chtholly/agent/observability/AgentObservationService.java) 建立 Agent 父 Span，以及 LLM、Tool、Skill 选择、三路检索和草稿预览/应用子 Span；[`TracePersistenceService`](../../apps/server/src/main/java/com/chtholly/agent/trace/TracePersistenceService.java) 异步落库并定时挖掘失败模式。
-- `trace_payload` 保存组件版本、Skill 选择/校验、三路检索状态、Evidence 标识、引用校验、固定失败类型、运行模式和脱敏输入指纹。完整问题、页面上下文、回答、草稿正文和工具原始输入/输出不进入新增字段；工具摘要只保存 SHA-256 与字符数。
+- `trace_payload` 使用 `agent-trace-v3`，保存组件版本、Skill 选择/校验、三路检索状态、Evidence 标识、引用校验、固定失败类型、运行模式和脱敏输入指纹。`turn` 组记录 `requestId` / `turnId` / 逻辑会话 / 连接 ID、有效预算、超时阶段、取消状态，以及客户端终态交付状态、事件类型和固定错误码；`memory` 组记录写入状态与低基数失败码。Trace 不在 Agent worker 内等待 Handler，而是在客户端终态决议回调中统一完成 Span、日志、指标和异步持久化，因此 final 写入失败或 lease 释放失败不会留下伪成功 Trace，也不会因线程池回退到调用线程而自等待。`toolPlan` 记录收紧原因和有效工具；`answerTiming` 区分模型首内容、安全答案就绪和客户端首次可见时延。完整问题、页面上下文、回答、草稿正文和工具原始输入/输出不进入新增字段；工具摘要只保存 SHA-256 与字符数。
 - [`trace-replay.ps1`](../../scripts/benchmark/trace-replay.ps1) 从固定历史提交创建归档，只注入同一测试观察层，并实际执行历史 `HybridSearchService`、`ChthollyAgent`、MySQL Trace 持久化与查询回读。检索上游、LLM 和 Observation 使用确定性替身且外部模型调用为 0；manifest 绑定 subject tree、生产源码摘要、harness/dataset blob、回归测试日志和输入指纹。四次观测全部满足约束时证据等级为 `REAL_TRACE`，但样本仍保持 `CANDIDATE_REQUIRES_OWNER_REVIEW / COLLECTED_UNREVIEWED`。具体边界和命令见[最小基准与评测入口](../../benchmarks/README.md)。
 - Quality 不是聊天循环的一步。[`LlmQualityEvaluationService`](../../apps/server/src/main/java/com/chtholly/agent/quality/LlmQualityEvaluationService.java) 优先使用可用 `ChatClient`，不可用或失败时退回 [`HeuristicQualityEvaluationService`](../../apps/server/src/main/java/com/chtholly/agent/quality/HeuristicQualityEvaluationService.java)，所以调用者不应假设一定发生 LLM 请求。
 
@@ -117,7 +122,7 @@ Core 包括交互入口、上下文合同、运行时、工具合同、会话记
 
 | 来源 | 负责内容 |
 |------|----------|
-| [`application.yml`](../../apps/server/src/main/resources/application.yml) | `LLM_ENABLED` 同时绑定 `llm.enabled` 与 `rag.enabled`；`agent.model`、超时、最大步数、响应长度、memory 上限/TTL、流式节流、工具超时 |
+| [`application.yml`](../../apps/server/src/main/resources/application.yml) | `LLM_ENABLED` 同时绑定 `llm.enabled` 与 `rag.enabled`；`agent.model`、整轮/LLM/工具超时、最大步数、响应长度、memory 上限/TTL |
 | [`agent-domain.yml`](../../apps/server/src/main/resources/agent-domain.yml) | `agent.domain.*` 的系统提示词、错误消息、Bangumi 文案与上下文标签 |
 | [`AgentDomainConfig`](../../apps/server/src/main/java/com/chtholly/agent/config/AgentDomainConfig.java) | 对 `agent.domain.*` 的类型化绑定和占位符渲染 |
 | [`AgentExtensionProperties`](../../apps/server/src/main/java/com/chtholly/agent/config/AgentExtensionProperties.java) | `agent.extensions.<group>.enabled`，七组缺省均为 `true` |
@@ -128,15 +133,15 @@ Core 包括交互入口、上下文合同、运行时、工具合同、会话记
 
 | 修改场景 | 先看实现 | 代表性测试 |
 |----------|----------|------------|
-| WebSocket 鉴权、消息或会话 | [`AgentWebSocketHandler`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentWebSocketHandler.java)、[`AgentWsTicketStore`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentWsTicketStore.java) | [`AgentWebSocketHandlerTest`](../../apps/server/src/test/java/com/chtholly/agent/ws/AgentWebSocketHandlerTest.java)、[`AgentChatSessionSupportTest`](../../apps/server/src/test/java/com/chtholly/agent/ws/AgentChatSessionSupportTest.java) |
+| WebSocket 鉴权、轮次协议或单飞 | [`AgentWebSocketHandler`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentWebSocketHandler.java)、[`AgentWsTicketStore`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentWsTicketStore.java)、[`AgentTurnCoordinator`](../../apps/server/src/main/java/com/chtholly/agent/ws/AgentTurnCoordinator.java) | [`AgentWebSocketHandlerTest`](../../apps/server/src/test/java/com/chtholly/agent/ws/AgentWebSocketHandlerTest.java)、[`AgentChatSessionSupportTest`](../../apps/server/src/test/java/com/chtholly/agent/ws/AgentChatSessionSupportTest.java)、[`AgentTurnCoordinatorTest`](../../apps/server/src/test/java/com/chtholly/agent/ws/AgentTurnCoordinatorTest.java) |
 | 单轮编排与最终流式回答 | [`ChthollyAgent`](../../apps/server/src/main/java/com/chtholly/agent/ChthollyAgent.java) | [`ChthollyAgentTest`](../../apps/server/src/test/java/com/chtholly/agent/ChthollyAgentTest.java) |
 | Think-Act-Observe 协议 | [`AgentLoopExecutor`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentLoopExecutor.java) | [`AgentLoopExecutorTest`](../../apps/server/src/test/java/com/chtholly/agent/runtime/AgentLoopExecutorTest.java) |
-| LLM 或工具超时/参数 | [`AgentLlmInvoker`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentLlmInvoker.java)、[`AgentToolExecutor`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentToolExecutor.java) | [`AgentLlmInvokerTest`](../../apps/server/src/test/java/com/chtholly/agent/runtime/AgentLlmInvokerTest.java)、[`AgentToolExecutorTest`](../../apps/server/src/test/java/com/chtholly/agent/runtime/AgentToolExecutorTest.java) |
+| 整轮、LLM 或工具超时/参数 | [`AgentTurnBudget`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentTurnBudget.java)、[`AgentLlmInvoker`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentLlmInvoker.java)、[`AgentToolExecutor`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentToolExecutor.java) | [`AgentTurnBudgetTest`](../../apps/server/src/test/java/com/chtholly/agent/runtime/AgentTurnBudgetTest.java)、[`AgentLlmInvokerTest`](../../apps/server/src/test/java/com/chtholly/agent/runtime/AgentLlmInvokerTest.java)、[`AgentToolExecutorTest`](../../apps/server/src/test/java/com/chtholly/agent/runtime/AgentToolExecutorTest.java) |
 | Prompt 顺序或贡献者 | [`ContextEngine`](../../apps/server/src/main/java/com/chtholly/agent/context/ContextEngine.java)、[`ContextOrder`](../../apps/server/src/main/java/com/chtholly/agent/context/ContextOrder.java) | [`ContextEngineTest`](../../apps/server/src/test/java/com/chtholly/agent/context/ContextEngineTest.java)、[`ContextContributorContractTest`](../../apps/server/src/test/java/com/chtholly/agent/context/ContextContributorContractTest.java) |
 | Core/扩展开关边界 | [`AgentExtensionProperties`](../../apps/server/src/main/java/com/chtholly/agent/config/AgentExtensionProperties.java)、[`ConditionalOnAgentExtensions`](../../apps/server/src/main/java/com/chtholly/agent/config/ConditionalOnAgentExtensions.java) | [`AgentExtensionPropertiesTest`](../../apps/server/src/test/java/com/chtholly/agent/config/AgentExtensionPropertiesTest.java)、[`AgentExtensionBoundaryArchitectureTest`](../../apps/server/src/test/java/com/chtholly/agent/config/AgentExtensionBoundaryArchitectureTest.java) |
 | Redis 会话记忆 | [`AgentMemoryStore`](../../apps/server/src/main/java/com/chtholly/agent/memory/AgentMemoryStore.java) | [`AgentMemoryStoreTest`](../../apps/server/src/test/java/com/chtholly/agent/memory/AgentMemoryStoreTest.java) |
 | 主动行为 | [`ProactiveTriggerEngine`](../../apps/server/src/main/java/com/chtholly/agent/proactive/ProactiveTriggerEngine.java) | [`ProactiveTriggerEngineTest`](../../apps/server/src/test/java/com/chtholly/agent/proactive/ProactiveTriggerEngineTest.java)、[`AgentExtensionConditionTest`](../../apps/server/src/test/java/com/chtholly/agent/proactive/AgentExtensionConditionTest.java) |
-| Skill 路由、输入与证据策略 | [`SkillSelector`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillSelector.java)、[`SkillRequestPlanner`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillRequestPlanner.java)、[`SkillOutputValidator`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillOutputValidator.java) | [`SkillSelectorTest`](../../apps/server/src/test/java/com/chtholly/agent/skill/SkillSelectorTest.java)、[`SkillRequestPlannerTest`](../../apps/server/src/test/java/com/chtholly/agent/skill/SkillRequestPlannerTest.java)、[`SkillOutputValidatorTest`](../../apps/server/src/test/java/com/chtholly/agent/skill/SkillOutputValidatorTest.java) |
+| Skill 路由、输入、证据与工具计划 | [`SkillSelector`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillSelector.java)、[`SkillRequestPlanner`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillRequestPlanner.java)、[`AgentToolPlanner`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentToolPlanner.java)、[`SkillOutputValidator`](../../apps/server/src/main/java/com/chtholly/agent/skill/SkillOutputValidator.java) | [`SkillSelectorTest`](../../apps/server/src/test/java/com/chtholly/agent/skill/SkillSelectorTest.java)、[`SkillRequestPlannerTest`](../../apps/server/src/test/java/com/chtholly/agent/skill/SkillRequestPlannerTest.java)、[`AgentToolPlannerTest`](../../apps/server/src/test/java/com/chtholly/agent/runtime/AgentToolPlannerTest.java)、[`SkillOutputValidatorTest`](../../apps/server/src/test/java/com/chtholly/agent/skill/SkillOutputValidatorTest.java) |
 | Trace 或质量回退 | [`TracePersistenceService`](../../apps/server/src/main/java/com/chtholly/agent/trace/TracePersistenceService.java)、[`LlmQualityEvaluationService`](../../apps/server/src/main/java/com/chtholly/agent/quality/LlmQualityEvaluationService.java) | [`TracePersistenceServiceTest`](../../apps/server/src/test/java/com/chtholly/agent/trace/TracePersistenceServiceTest.java)、[`HeuristicQualityEvaluationServiceTest`](../../apps/server/src/test/java/com/chtholly/agent/quality/HeuristicQualityEvaluationServiceTest.java) |
 
 跨端事件格式还应同时核对[前端架构的 Agent 路径](frontend.md#agent-路径)与[核心请求链路](request-flows.md#8-agent-websocket上下文工具与记忆)。

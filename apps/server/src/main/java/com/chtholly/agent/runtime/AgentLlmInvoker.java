@@ -77,7 +77,32 @@ public class AgentLlmInvoker {
             String userPrompt,
             double temperature,
             int maxTokens) throws Exception {
-        int timeoutSeconds = Math.max(1, properties.getLlmTimeoutSeconds());
+        return call(
+                system,
+                userPrompt,
+                temperature,
+                maxTokens,
+                Duration.ofSeconds(Math.max(1, properties.getLlmTimeoutSeconds())));
+    }
+
+    /**
+     * Performs a blocking model call within both the configured limit and turn remainder.
+     *
+     * @param system system prompt
+     * @param userPrompt user prompt
+     * @param temperature sampling temperature
+     * @param maxTokens maximum generated tokens
+     * @param turnRemainder remaining whole-turn budget
+     * @return model response content
+     * @throws Exception when the invocation fails, times out, or is interrupted
+     */
+    public String call(
+            String system,
+            String userPrompt,
+            double temperature,
+            int maxTokens,
+            Duration turnRemainder) throws Exception {
+        Duration timeout = effectiveTimeout(turnRemainder);
         Future<String> future = executor.submit(() -> chatClient.prompt()
                 .system(system)
                 .user(userPrompt)
@@ -85,7 +110,7 @@ public class AgentLlmInvoker {
                 .call()
                 .content());
         try {
-            return future.get(timeoutSeconds, TimeUnit.SECONDS);
+            return future.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
             throw e;
@@ -116,8 +141,31 @@ public class AgentLlmInvoker {
             String userPrompt,
             double temperature,
             int maxTokens) {
-        int timeoutSeconds = Math.max(1, properties.getLlmTimeoutSeconds());
-        long timeoutNanos = Duration.ofSeconds(timeoutSeconds).toNanos();
+        return stream(
+                system,
+                userPrompt,
+                temperature,
+                maxTokens,
+                Duration.ofSeconds(Math.max(1, properties.getLlmTimeoutSeconds())));
+    }
+
+    /**
+     * Streams model chunks within both the configured limit and turn remainder.
+     *
+     * @param system system prompt
+     * @param userPrompt user prompt
+     * @param temperature sampling temperature
+     * @param maxTokens maximum generated tokens
+     * @param turnRemainder remaining whole-turn budget
+     * @return response chunk publisher
+     */
+    public Flux<String> stream(
+            String system,
+            String userPrompt,
+            double temperature,
+            int maxTokens,
+            Duration turnRemainder) {
+        long timeoutNanos = effectiveTimeout(turnRemainder).toNanos();
         return Flux.defer(() -> {
             // 普通 timeout 会被每个 chunk 重置；共享绝对截止点可防止持续输出无限续期。
             long deadlineNanos = System.nanoTime() + timeoutNanos;
@@ -154,6 +202,14 @@ public class AgentLlmInvoker {
                 .temperature(temperature)
                 .maxTokens(maxTokens)
                 .build();
+    }
+
+    private Duration effectiveTimeout(Duration turnRemainder) {
+        Duration configured = Duration.ofSeconds(Math.max(1, properties.getLlmTimeoutSeconds()));
+        if (turnRemainder == null || turnRemainder.isZero() || turnRemainder.isNegative()) {
+            return Duration.ofNanos(1);
+        }
+        return turnRemainder.compareTo(configured) < 0 ? turnRemainder : configured;
     }
 
     private Mono<Long> deadlineSignal(long deadlineNanos) {

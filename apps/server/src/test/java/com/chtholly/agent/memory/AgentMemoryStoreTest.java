@@ -1,6 +1,7 @@
 package com.chtholly.agent.memory;
 
 import com.chtholly.agent.config.AgentProperties;
+import com.chtholly.agent.runtime.AgentTurnControl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,12 +11,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.ListOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,18 +47,70 @@ class AgentMemoryStoreTest {
     }
 
     @Test
-    void addTurnUsesRpushLtrimAndExpire() throws Exception {
-        when(redis.opsForList()).thenReturn(listOps);
+    void addTurnUsesOneAtomicAppendTrimAndExpireScript() {
+        stubScriptResult(1L);
         AgentTurn turn = AgentTurn.user("hello");
 
         store.addTurn(42L, CHAT_SESSION, turn);
 
-        ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-        verify(listOps).rightPush(eq("agent:memory:42:" + CHAT_SESSION), jsonCaptor.capture());
-        assertThat(jsonCaptor.getValue()).contains("\"role\":\"USER\"");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<DefaultRedisScript<Long>> scriptCaptor = ArgumentCaptor.forClass(DefaultRedisScript.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
+        verify(redis).execute(scriptCaptor.capture(), keysCaptor.capture(), argsCaptor.capture());
+        assertThat(scriptCaptor.getValue().getScriptAsString())
+                .contains("RPUSH", "LTRIM", "PEXPIRE", "TIME", "GET");
+        assertThat(keysCaptor.getValue().get(0)).isEqualTo("agent:memory:42:" + CHAT_SESSION);
+        assertThat(argsCaptor.getValue()[4].toString()).contains("\"role\":\"USER\"");
+    }
 
-        verify(listOps).trim("agent:memory:42:" + CHAT_SESSION, -20, -1);
-        verify(redis).expire("agent:memory:42:" + CHAT_SESSION, Duration.ofMinutes(120));
+    @Test
+    void addTurnsAppendsExchangeInOneRedisCommand() {
+        stubScriptResult(1L);
+
+        assertThat(store.addTurns(42L, CHAT_SESSION, List.of(
+                AgentTurn.user("question"),
+                AgentTurn.assistant("answer")))).isTrue();
+
+        ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
+        verify(redis).execute(any(DefaultRedisScript.class), anyList(), argsCaptor.capture());
+        assertThat(argsCaptor.getValue()[4].toString()).contains("\"role\":\"USER\"");
+        assertThat(argsCaptor.getValue()[5].toString()).contains("\"role\":\"ASSISTANT\"");
+    }
+
+    @Test
+    void fencedExchangeRejectsAStaleTurn() {
+        stubScriptResult(-2L);
+        AgentTurnControl control = AgentTurnControl.create(
+                "request-1", "turn-1", CHAT_SESSION, "connection-1", Duration.ofSeconds(30));
+
+        AgentMemoryStore.MemoryWriteResult result = store.addTurns(
+                42L,
+                CHAT_SESSION,
+                List.of(AgentTurn.user("question"), AgentTurn.assistant("answer")),
+                control);
+
+        assertThat(result.status()).isEqualTo(AgentMemoryStore.MemoryWriteStatus.REJECTED);
+        assertThat(result.failureCode()).isEqualTo("STALE_TURN");
+        ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
+        verify(redis).execute(any(DefaultRedisScript.class), anyList(), argsCaptor.capture());
+        assertThat(argsCaptor.getValue()[3]).isEqualTo("turn-1");
+    }
+
+    @Test
+    void transportFailureReturnsUnknownOutcome() {
+        doThrow(new IllegalStateException("redis unavailable"))
+                .when(redis).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+
+        AgentMemoryStore.MemoryWriteResult result = store.addTurns(
+                42L,
+                CHAT_SESSION,
+                List.of(AgentTurn.user("question"), AgentTurn.assistant("answer")),
+                null);
+
+        assertThat(result.status()).isEqualTo(AgentMemoryStore.MemoryWriteStatus.UNKNOWN);
+        assertThat(result.failureCode()).isEqualTo("REDIS_UNAVAILABLE");
     }
 
     @Test
@@ -88,5 +145,11 @@ class AgentMemoryStoreTest {
         AgentMemoryStats stats = store.getStats();
         assertThat(stats.activeSessions()).isEqualTo(2);
         assertThat(stats.totalTurns()).isEqualTo(3);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubScriptResult(long result) {
+        doReturn(result).when(redis)
+                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
     }
 }

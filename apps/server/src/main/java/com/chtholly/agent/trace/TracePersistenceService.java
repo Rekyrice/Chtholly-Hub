@@ -26,7 +26,6 @@ public class TracePersistenceService {
 
     private static final int MINING_BATCH_SIZE = 200;
     private static final int MAX_SAMPLE_TRACES = 5;
-
     private final TraceMapper traceMapper;
     private final FailurePatternMapper failurePatternMapper;
     private final ObjectMapper objectMapper;
@@ -40,6 +39,7 @@ public class TracePersistenceService {
             return;
         }
         try {
+            trace.requireClientDeliveryResolved();
             ExecutionTraceRow row = toRow(trace);
             traceMapper.insert(row);
         } catch (Exception e) {

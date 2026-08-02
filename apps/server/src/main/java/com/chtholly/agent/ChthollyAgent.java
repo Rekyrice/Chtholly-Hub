@@ -6,6 +6,7 @@ import com.chtholly.agent.context.AgentContextSnapshot;
 import com.chtholly.agent.context.ContextEngine;
 import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.memory.AgentConversationMemory;
+import com.chtholly.agent.memory.AgentMemoryStore;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentComponentVersions;
@@ -16,6 +17,9 @@ import com.chtholly.agent.runtime.AgentLoopExecutor;
 import com.chtholly.agent.runtime.AgentLoopRequest;
 import com.chtholly.agent.runtime.AgentLoopResult;
 import com.chtholly.agent.runtime.AgentSpanAttributes;
+import com.chtholly.agent.runtime.AgentToolPlanner;
+import com.chtholly.agent.runtime.AgentTurnBudget;
+import com.chtholly.agent.runtime.AgentTurnControl;
 import com.chtholly.agent.skill.SkillDefinition;
 import com.chtholly.agent.skill.SkillExecutionContext;
 import com.chtholly.agent.skill.SkillOutputValidator;
@@ -32,10 +36,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -57,6 +66,7 @@ public class ChthollyAgent {
 
     private final AgentLlmInvoker llmInvoker;
     private final AgentLoopExecutor loopExecutor;
+    private final AgentToolPlanner toolPlanner;
     private final AgentProperties properties;
     private final ObjectMapper objectMapper;
     private final List<AgentTool> tools;
@@ -107,21 +117,231 @@ public class ChthollyAgent {
     /** Runs one turn with an optional server-validated product task type. */
     public void run(String question, long userId, AgentConversationMemory memory, String sessionId,
                     String pageContext, String taskType, Consumer<AgentEvent> sink) {
+        AgentTurnControl control = AgentTurnControl.standalone(
+                sessionId,
+                Duration.ofSeconds(Math.max(1, properties.getTurnTimeoutSeconds())));
+        runControlled(
+                question, userId, memory, control, sessionId, pageContext, taskType, sink);
+    }
+
+    /**
+     * Runs one WebSocket turn with canonical request identity and cancellation state.
+     *
+     * @param question user question
+     * @param userId authenticated user identifier
+     * @param memory logical conversation memory
+     * @param turnControl canonical turn identity and budget
+     * @param pageContext current page context
+     * @param taskType optional explicit product task type
+     * @param sink event sink
+     */
+    public void run(
+            String question,
+            long userId,
+            AgentConversationMemory memory,
+            AgentTurnControl turnControl,
+            String pageContext,
+            String taskType,
+            Consumer<AgentEvent> sink) {
+        AgentTurnControl control = turnControl == null
+                ? AgentTurnControl.standalone(
+                        null,
+                        Duration.ofSeconds(Math.max(1, properties.getTurnTimeoutSeconds())))
+                : turnControl;
+        runControlled(
+                question,
+                userId,
+                memory,
+                control,
+                control.chatSessionId(),
+                pageContext,
+                taskType,
+                sink);
+    }
+
+    private void runControlled(
+            String question,
+            long userId,
+            AgentConversationMemory memory,
+            AgentTurnControl control,
+            String contextSessionId,
+            String pageContext,
+            String taskType,
+            Consumer<AgentEvent> sink) {
         int maxSteps = Math.max(1, properties.getMaxSteps());
-        AgentExecutionTrace trace = new AgentExecutionTrace(userId, sessionId, maxSteps);
+        AgentExecutionTrace trace = new AgentExecutionTrace(userId, control, maxSteps);
         trace.recordTurnContext(question, pageContext, properties.getModel(), "candidate");
         Observation agentSpan = agentObservationService.startAgentSpan(trace.getCorrelationId(), userId);
         try (Observation.Scope ignored = agentSpan.openScope()) {
             runInternal(
-                    question, userId, memory, sessionId, pageContext, taskType,
-                    sink, maxSteps, trace, agentSpan);
+                    question,
+                    userId,
+                    memory,
+                    contextSessionId,
+                    pageContext,
+                    taskType,
+                    sink,
+                    maxSteps,
+                    trace,
+                    agentSpan,
+                    control.budget());
+        } catch (AgentTurnBudget.UnavailableException unavailable) {
+            handleTurnUnavailable(unavailable, control, sink, trace);
         } finally {
+            trace.recordCancellation(control.isCancelled());
+            control.onClientDeliveryResolved(() -> finalizeTrace(trace, agentSpan, control));
+        }
+    }
+
+    private void finalizeTrace(
+            AgentExecutionTrace trace,
+            Observation agentSpan,
+            AgentTurnControl control) {
+        try {
+            trace.recordCancellation(control.isCancelled());
             trace.finish();
+            trace.resolveClientDelivery();
+        } catch (RuntimeException exception) {
+            log.warn("Agent trace delivery resolution failed correlationId={}: {}",
+                    trace.getCorrelationId(), exception.getMessage(), exception);
+            return;
+        }
+        try {
             agentObservationService.finishSpan(
                     agentSpan, AgentSpanAttributes.agent(trace), Map.of());
-            trace.finishAndLog(objectMapper, agentMetrics);
-            tracePersistenceService.persist(trace);
+        } catch (RuntimeException exception) {
+            log.warn("Agent observation finalization failed correlationId={}: {}",
+                    trace.getCorrelationId(), exception.getMessage(), exception);
         }
+        try {
+            trace.finishAndLog(objectMapper, agentMetrics);
+        } catch (RuntimeException exception) {
+            log.warn("Agent metrics finalization failed correlationId={}: {}",
+                    trace.getCorrelationId(), exception.getMessage(), exception);
+        }
+        try {
+            tracePersistenceService.persist(trace);
+        } catch (RuntimeException exception) {
+            log.warn("Agent trace submission failed correlationId={}: {}",
+                    trace.getCorrelationId(), exception.getMessage(), exception);
+        }
+    }
+
+    private void handleTurnUnavailable(
+            AgentTurnBudget.UnavailableException unavailable,
+            AgentTurnControl control,
+            Consumer<AgentEvent> sink,
+            AgentExecutionTrace trace) {
+        trace.recordCancellation(control.isCancelled());
+        if (unavailable.reason() == AgentTurnBudget.UnavailableReason.TIMEOUT
+                && trace.getTimeoutStage().isBlank()) {
+            trace.recordTimeoutStage(unavailable.stage());
+        }
+        if (unavailable.reason() == AgentTurnBudget.UnavailableReason.CANCELLED) {
+            trace.terminateCancelled();
+            trace.markFailure(AgentExecutionTrace.FailureType.TURN_CANCELLED);
+            trace.setErrorMessage("TURN_CANCELLED");
+            return;
+        }
+        trace.terminateTimeout();
+        trace.markFailure(AgentExecutionTrace.FailureType.TURN_TIMEOUT);
+        trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.MODEL_FAILURE);
+        trace.setErrorMessage(agentDomainConfig.errors().responseTimeout());
+        emitError(sink, agentDomainConfig.errors().responseTimeout());
+    }
+
+    private <T> T runWithinBudget(
+            Callable<T> work,
+            AgentTurnBudget budget,
+            String stage) {
+        Duration remaining = budget.remaining(stage, budget.totalBudget());
+        FutureTask<T> task = new FutureTask<>(work);
+        Thread worker = Thread.ofVirtual().name("agent-" + stage + "-").start(task);
+        try {
+            T result = task.get(Math.max(1, remaining.toNanos()), TimeUnit.NANOSECONDS);
+            budget.check(stage);
+            return result;
+        } catch (TimeoutException exception) {
+            task.cancel(true);
+            throw AgentTurnBudget.unavailableForStage(
+                    budget.isCancelled()
+                            ? AgentTurnBudget.UnavailableReason.CANCELLED
+                            : AgentTurnBudget.UnavailableReason.TIMEOUT,
+                    stage);
+        } catch (InterruptedException exception) {
+            task.cancel(true);
+            worker.interrupt();
+            Thread.currentThread().interrupt();
+            throw AgentTurnBudget.unavailableForStage(
+                    budget.isCancelled()
+                            ? AgentTurnBudget.UnavailableReason.CANCELLED
+                            : AgentTurnBudget.UnavailableReason.TIMEOUT,
+                    stage);
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof AgentTurnBudget.UnavailableException unavailable) {
+                throw unavailable;
+            }
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IllegalStateException("Agent stage failed: " + stage, cause);
+        }
+    }
+
+    private void persistMemoryExchange(
+            AgentConversationMemory memory,
+            String question,
+            String answer,
+            AgentTurnBudget budget,
+            AgentTurnControl control,
+            AgentExecutionTrace trace) {
+        if (memory == null || answer == null || answer.isBlank()) {
+            return;
+        }
+        AgentMemoryStore.MemoryWriteResult result;
+        try {
+            result = runWithinBudget(
+                    () -> {
+                        AgentTurn userTurn = AgentTurn.user(question.trim());
+                        AgentTurn assistantTurn = AgentTurn.assistant(answer);
+                        if ("direct".equals(control.connectionId())) {
+                            boolean committed = memory.addExchange(userTurn, assistantTurn);
+                            return new AgentMemoryStore.MemoryWriteResult(
+                                    committed
+                                            ? AgentMemoryStore.MemoryWriteStatus.COMMITTED
+                                            : AgentMemoryStore.MemoryWriteStatus.REJECTED,
+                                    committed ? "" : "STORE_REJECTED");
+                        }
+                        return memory.addExchange(
+                                userTurn,
+                                assistantTurn,
+                                control,
+                                budget.deadlineEpochMillis());
+                    },
+                    budget,
+                    "memory_write");
+        } catch (AgentTurnBudget.UnavailableException unavailable) {
+            trace.recordMemoryWrite(
+                    "UNKNOWN",
+                    unavailable.reason() == AgentTurnBudget.UnavailableReason.TIMEOUT
+                            ? "CALL_TIMEOUT"
+                            : "TURN_CANCELLED");
+            throw unavailable;
+        }
+        trace.recordMemoryWrite(result.status().name(), result.failureCode());
+        if (result.committed()) {
+            return;
+        }
+        if ("DEADLINE_EXPIRED".equals(result.failureCode())) {
+            throw AgentTurnBudget.unavailableForStage(
+                    AgentTurnBudget.UnavailableReason.TIMEOUT,
+                    "memory_write");
+        }
+        throw new MemoryWriteException(result.failureCode());
     }
 
     private void runInternal(String question,
@@ -133,10 +353,12 @@ public class ChthollyAgent {
                              Consumer<AgentEvent> sink,
                              int maxSteps,
                              AgentExecutionTrace trace,
-                             Observation agentSpan) {
+                             Observation agentSpan,
+                             AgentTurnBudget turnBudget) {
         Observation skillSpan = null;
         Observation retrievalSpan = null;
         try {
+            turnBudget.check("turn_start");
             if (question == null || question.isBlank()) {
                 trace.terminateError();
                 trace.markFailure(AgentExecutionTrace.FailureType.INVALID_INPUT);
@@ -151,8 +373,10 @@ public class ChthollyAgent {
             }
 
             skillSpan = agentObservationService.startSkillSpan(agentSpan);
+            turnBudget.check("skill_selection");
             SkillSelector.SkillSelection selection = selectSkill(
                     userId, sessionId, taskType, question, pageContext, toolMap.keySet(), trace);
+            turnBudget.check("skill_selection");
             if (selection != null
                     && selection.status() == SkillSelector.Status.CLARIFICATION_REQUIRED) {
                 trace.markFailure(AgentExecutionTrace.FailureType.SKILL_NO_MATCH);
@@ -165,19 +389,27 @@ public class ChthollyAgent {
                         memory,
                         sink,
                         trace,
-                        agentSpan);
+                        agentSpan,
+                        turnBudget);
                 return;
             }
-            if (isSelected(selection)) {
-                toolMap.keySet().retainAll(selection.allowedTools());
-            }
+            AgentToolPlanner.ToolPlan toolPlan = toolPlanner.plan(
+                    selection, question, toolMap.keySet());
+            toolMap.keySet().retainAll(toolPlan.effectiveTools());
+            trace.recordToolPlan(toolPlan.reason(), toolMap.keySet());
             trace.recordTools(toolMap.keySet());
 
             boolean selected = isSelected(selection);
             SkillDefinition selectedSkill = selected ? selection.definition() : null;
+            AgentTurnBudget effectiveBudget = selectedSkill == null
+                    ? turnBudget
+                    : turnBudget.limitFromStart(Duration.ofMillis(selectedSkill.timeoutBudgetMs()));
+            trace.recordTurnBudget(effectiveBudget.totalBudget());
+            effectiveBudget.check("skill_planning");
             SkillRequestPlanner.SkillRequestPlan taskPlan = selected
                     ? skillRequestPlanner.plan(selectedSkill, question, pageContext)
                     : null;
+            effectiveBudget.check("skill_planning");
             if (taskPlan != null
                     && taskPlan.status() == SkillRequestPlanner.PlanStatus.NEEDS_CLARIFICATION) {
                 trace.recordSkillValidation("NEEDS_CLARIFICATION");
@@ -190,36 +422,44 @@ public class ChthollyAgent {
                         memory,
                         sink,
                         trace,
-                        agentSpan);
+                        agentSpan,
+                        effectiveBudget);
                 return;
             }
-            String historyBlock = memory == null ? "" : memory.formatForPrompt();
+            String historyBlock = memory == null
+                    ? ""
+                    : runWithinBudget(memory::formatForPrompt, effectiveBudget, "memory_read");
             retrievalSpan = agentObservationService.startRetrievalSpan(
                     agentSpan, AgentComponentVersions.RETRIEVAL);
-            AgentContextSnapshot contextSnapshot = selected
-                    ? contextEngine.buildSnapshot(
-                            userId,
-                            sessionId,
-                            pageContext,
-                            toolMap.values(),
-                            historyBlock,
-                            question.trim(),
-                            taskPlan.evidencePolicy(),
-                            taskPlan.retrievalQuery())
-                    : contextEngine.buildSnapshot(
-                            userId,
-                            sessionId,
-                            pageContext,
-                            toolMap.values(),
-                            historyBlock,
-                            question.trim(),
-                            false);
+            AgentTurnBudget budget = effectiveBudget;
+            AgentContextSnapshot contextSnapshot = runWithinBudget(
+                    () -> selected
+                            ? contextEngine.buildSnapshot(
+                                    userId,
+                                    sessionId,
+                                    pageContext,
+                                    toolMap.values(),
+                                    historyBlock,
+                                    question.trim(),
+                                    taskPlan.evidencePolicy(),
+                                    taskPlan.retrievalQuery())
+                            : contextEngine.buildSnapshot(
+                                    userId,
+                                    sessionId,
+                                    pageContext,
+                                    toolMap.values(),
+                                    historyBlock,
+                                    question.trim(),
+                                    false),
+                    budget,
+                    "retrieval");
             if (selected) {
                 contextSnapshot = contextSnapshot.withSystemPrompt(
                         bindSkillPrompt(
                                 contextSnapshot.systemPrompt(),
                                 selection,
-                                taskPlan.evidencePolicy()));
+                                taskPlan.evidencePolicy(),
+                                toolMap.keySet()));
                 maxSteps = Math.min(maxSteps, selectedSkill.maxSteps());
             }
             trace.recordRetrieval(
@@ -239,7 +479,8 @@ public class ChthollyAgent {
                         memory,
                         sink,
                         trace,
-                        agentSpan);
+                        agentSpan,
+                        effectiveBudget);
                 return;
             }
             AgentLoopRequest request = new AgentLoopRequest(
@@ -248,7 +489,8 @@ public class ChthollyAgent {
                     userId,
                     historyBlock,
                     toolMap,
-                    maxSteps);
+                    maxSteps,
+                    effectiveBudget);
             AgentLoopResult result = loopExecutor.execute(request, trace, agentSpan, sink);
             if (result.status() == AgentLoopResult.Status.FINAL_READY) {
                 long streamLlmMs = streamFinalAnswer(
@@ -260,15 +502,29 @@ public class ChthollyAgent {
                         agentSpan,
                         result.finalStepIndex(),
                         contextSnapshot,
-                        selectedSkill);
+                        selectedSkill,
+                        effectiveBudget);
                 trace.recordStep(
                         result.finalStepIndex(),
                         "final_answer",
                         result.finalDecisionLlmMs() + streamLlmMs,
                         0);
+            } else if (result.status() == AgentLoopResult.Status.TURN_TIMEOUT) {
+                throw AgentTurnBudget.unavailableForStage(
+                        AgentTurnBudget.UnavailableReason.TIMEOUT, "agent_loop");
+            } else if (result.status() == AgentLoopResult.Status.CANCELLED) {
+                throw AgentTurnBudget.unavailableForStage(
+                        AgentTurnBudget.UnavailableReason.CANCELLED, "agent_loop");
             } else {
                 classifyLoopFailure(result.status(), trace);
             }
+        } catch (AgentTurnBudget.UnavailableException unavailable) {
+            throw unavailable;
+        } catch (MemoryWriteException exception) {
+            trace.terminateError();
+            trace.markFailure(AgentExecutionTrace.FailureType.MEMORY_WRITE_FAILED);
+            trace.setErrorMessage(AgentExecutionTrace.FailureType.MEMORY_WRITE_FAILED.name());
+            throw exception;
         } catch (RuntimeException e) {
             trace.terminateError();
             trace.markFailure(AgentExecutionTrace.FailureType.INTERNAL_ERROR);
@@ -387,14 +643,15 @@ public class ChthollyAgent {
     private String bindSkillPrompt(
             String system,
             SkillSelector.SkillSelection selection,
-            com.chtholly.agent.skill.EvidencePolicy evidencePolicy) {
+            com.chtholly.agent.skill.EvidencePolicy evidencePolicy,
+            Set<String> effectiveTools) {
         SkillDefinition definition = selection.definition();
         return system + "\n\n## 当前领域 Skill\n\n"
                 + "skillId=" + definition.id() + "\n"
                 + "skillVersion=" + definition.version() + "\n"
                 + "outputType=" + definition.outputType() + "\n"
                 + "evidencePolicy=" + evidencePolicy.name() + "\n"
-                + "allowedTools=" + selection.allowedTools().stream().sorted()
+                + "allowedTools=" + effectiveTools.stream().sorted()
                 .collect(java.util.stream.Collectors.joining(",")) + "\n\n"
                 + definition.instructionTemplate();
     }
@@ -407,7 +664,9 @@ public class ChthollyAgent {
             AgentConversationMemory memory,
             Consumer<AgentEvent> sink,
             AgentExecutionTrace trace,
-            Observation agentSpan) {
+            Observation agentSpan,
+            AgentTurnBudget turnBudget) {
+        turnBudget.check("boundary_response");
         String fallback = boundaryFallback(reason, skillId);
         String system = characterSoulService.getSoulContent() + "\n\n"
                 + "## 当前响应边界\n\n"
@@ -422,7 +681,14 @@ public class ChthollyAgent {
         long startedAt = System.currentTimeMillis();
         try {
             StringBuilder generated = new StringBuilder();
-            llmInvoker.stream(system, userPrompt, 0.2, 192)
+            llmInvoker.stream(
+                            system,
+                            userPrompt,
+                            0.2,
+                            192,
+                            turnBudget.remaining(
+                                    "boundary_response",
+                                    Duration.ofSeconds(Math.max(1, properties.getLlmTimeoutSeconds()))))
                     .doOnNext(chunk -> {
                         if (chunk != null) {
                             generated.append(chunk);
@@ -443,7 +709,28 @@ public class ChthollyAgent {
                     llmSpan,
                     AgentSpanAttributes.llm("ok"),
                     Map.of("response.boundary_reason", reason.name()));
+        } catch (AgentTurnBudget.UnavailableException unavailable) {
+            agentObservationService.finishSpanError(
+                    llmSpan,
+                    unavailable.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                            ? "boundary_cancelled"
+                            : "boundary_turn_timeout",
+                    AgentSpanAttributes.llm("aborted"),
+                    Map.of("response.boundary_reason", reason.name()));
+            throw unavailable;
         } catch (Exception exception) {
+            if (turnBudget.isCancelled() || turnBudget.isExpired()) {
+                agentObservationService.finishSpanError(
+                        llmSpan,
+                        turnBudget.isCancelled() ? "boundary_cancelled" : "boundary_turn_timeout",
+                        AgentSpanAttributes.llm("aborted"),
+                        Map.of("response.boundary_reason", reason.name()));
+                throw AgentTurnBudget.unavailableForStage(
+                        turnBudget.isCancelled()
+                                ? AgentTurnBudget.UnavailableReason.CANCELLED
+                                : AgentTurnBudget.UnavailableReason.TIMEOUT,
+                        "boundary_response");
+            }
             long durationMs = System.currentTimeMillis() - startedAt;
             trace.recordLlmCall(
                     0,
@@ -463,13 +750,13 @@ public class ChthollyAgent {
                     Map.of("response.boundary_reason", reason.name()));
             log.warn("Agent boundary response fell back to safe copy: reason={}", reason, exception);
         }
+        persistMemoryExchange(memory, question, answer, turnBudget, trace.getTurnControl(), trace);
         trace.terminateFinalAnswer(answer);
-        emitThrottledDelta(sink, answer);
+        turnBudget.check("client_delivery");
+        emitDelta(sink, answer);
+        long clientVisibleMs = System.currentTimeMillis() - trace.getStartedAtMs();
+        trace.recordAnswerTiming(null, clientVisibleMs, clientVisibleMs);
         emitFinal(sink, answer);
-        if (memory != null) {
-            memory.add(AgentTurn.user(question.trim()));
-            memory.add(AgentTurn.assistant(answer));
-        }
     }
 
     private String truncateBoundaryAnswer(String answer) {
@@ -540,7 +827,8 @@ public class ChthollyAgent {
             Observation agentSpan,
             int stepIndex,
             AgentContextSnapshot contextSnapshot,
-            SkillDefinition selectedSkill) {
+            SkillDefinition selectedSkill,
+            AgentTurnBudget turnBudget) {
         String context = String.join("\n\n", transcript);
         String finalInstructions = agentDomainConfig.render(
                 agentDomainConfig.systemPrompt().finalAnswerSystem(),
@@ -557,8 +845,16 @@ public class ChthollyAgent {
         AtomicLong firstTokenMs = new AtomicLong(-1);
         String answer;
         long streamMs;
+        boolean llmCallRecorded = false;
+        boolean llmSpanClosed = false;
         try {
-            Flux<String> flux = llmInvoker.stream(system, userPrompt, 0.3, 1024);
+            turnBudget.check("final_answer");
+            Flux<String> flux = llmInvoker.stream(
+                    system,
+                    userPrompt,
+                    0.3,
+                    1024,
+                    turnBudget.remaining("final_answer", Duration.ofSeconds(timeoutSec)));
 
             StringBuilder full = new StringBuilder();
             flux.doOnNext(chunk -> {
@@ -577,7 +873,8 @@ public class ChthollyAgent {
                         candidate,
                         contextSnapshot.evidenceSet(),
                         trace,
-                        stepIndex);
+                        stepIndex,
+                        turnBudget);
                 evidenceValidation = contextSnapshot.evidenceSet()
                         .validate(candidate, contextSnapshot.evidenceRequired());
             }
@@ -596,10 +893,12 @@ public class ChthollyAgent {
                 streamMs = System.currentTimeMillis() - streamStart;
                 Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
                 trace.recordLlmCall(stepIndex, streamMs, inputChars, candidate.length(), ttft);
+                llmCallRecorded = true;
                 agentObservationService.finishSpan(
                         llmSpan,
                         AgentSpanAttributes.llm("ok"),
                         Map.of());
+                llmSpanClosed = true;
                 completeBoundaryResponse(
                         trace.getOutcomeReason(),
                         selectedSkill == null ? "" : selectedSkill.id(),
@@ -608,7 +907,8 @@ public class ChthollyAgent {
                         memory,
                         sink,
                         trace,
-                        agentSpan);
+                        agentSpan,
+                        turnBudget);
                 return streamMs;
             }
             if (selectedSkill != null && skillOutputValidator != null) {
@@ -625,10 +925,12 @@ public class ChthollyAgent {
                     streamMs = System.currentTimeMillis() - streamStart;
                     Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
                     trace.recordLlmCall(stepIndex, streamMs, inputChars, candidate.length(), ttft);
+                    llmCallRecorded = true;
                     agentObservationService.finishSpan(
                             llmSpan,
                             AgentSpanAttributes.llm("ok"),
                             Map.of());
+                    llmSpanClosed = true;
                     completeBoundaryResponse(
                             AgentExecutionTrace.OutcomeReason.INVALID_CITATION,
                             selectedSkill.id(),
@@ -637,7 +939,8 @@ public class ChthollyAgent {
                             memory,
                             sink,
                             trace,
-                            agentSpan);
+                            agentSpan,
+                            turnBudget);
                     return streamMs;
                 }
                 if (skillValidation.status() != SkillOutputValidator.Status.VALID
@@ -649,19 +952,55 @@ public class ChthollyAgent {
             } else {
                 trace.recordSkillValidation("NOT_APPLICABLE");
             }
+            turnBudget.check("safe_answer_validation");
             streamMs = System.currentTimeMillis() - streamStart;
             Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
             trace.recordLlmCall(stepIndex, streamMs, inputChars, answer.length(), ttft);
+            llmCallRecorded = true;
+        } catch (AgentTurnBudget.UnavailableException unavailable) {
+            streamMs = System.currentTimeMillis() - streamStart;
+            Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
+            if (!llmCallRecorded) {
+                trace.recordLlmCall(stepIndex, streamMs, inputChars, 0, ttft);
+            }
+            if (!llmSpanClosed) {
+                agentObservationService.finishSpanError(
+                        llmSpan,
+                        unavailable.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                                ? "stream_cancelled"
+                                : "stream_turn_timeout",
+                        AgentSpanAttributes.llm("aborted"),
+                        Map.of());
+            }
+            throw unavailable;
         } catch (Exception e) {
             streamMs = System.currentTimeMillis() - streamStart;
             Long ttft = firstTokenMs.get() >= 0 ? firstTokenMs.get() : null;
-            trace.recordLlmCall(stepIndex, streamMs, inputChars, 0, ttft);
+            if (!llmCallRecorded) {
+                trace.recordLlmCall(stepIndex, streamMs, inputChars, 0, ttft);
+            }
+            if (turnBudget.isCancelled() || turnBudget.isExpired()) {
+                if (!llmSpanClosed) {
+                    agentObservationService.finishSpanError(
+                            llmSpan,
+                            turnBudget.isCancelled() ? "stream_cancelled" : "stream_turn_timeout",
+                            AgentSpanAttributes.llm("aborted"),
+                            Map.of());
+                }
+                throw AgentTurnBudget.unavailableForStage(
+                        turnBudget.isCancelled()
+                                ? AgentTurnBudget.UnavailableReason.CANCELLED
+                                : AgentTurnBudget.UnavailableReason.TIMEOUT,
+                        "final_answer");
+            }
             if (isTimeout(e)) {
-                agentObservationService.finishSpanError(
-                        llmSpan,
-                        "stream_timeout",
-                        AgentSpanAttributes.llm("timeout"),
-                        Map.of());
+                if (!llmSpanClosed) {
+                    agentObservationService.finishSpanError(
+                            llmSpan,
+                            "stream_timeout",
+                            AgentSpanAttributes.llm("timeout"),
+                            Map.of());
+                }
                 log.warn("Agent streaming answer timed out (>{}s)", timeoutSec);
                 trace.terminateTimeout();
                 trace.markFailure(AgentExecutionTrace.FailureType.LLM_TIMEOUT);
@@ -670,11 +1009,13 @@ public class ChthollyAgent {
                 emitError(sink, agentDomainConfig.errors().responseTimeout());
                 return streamMs;
             }
-            agentObservationService.finishSpanError(
-                    llmSpan,
-                    "stream_error",
-                    AgentSpanAttributes.llm("error"),
-                    Map.of());
+            if (!llmSpanClosed) {
+                agentObservationService.finishSpanError(
+                        llmSpan,
+                        "stream_error",
+                        AgentSpanAttributes.llm("error"),
+                        Map.of());
+            }
             log.warn("Agent streaming answer failed: {}", e.getMessage());
             trace.terminateError();
             trace.markFailure(AgentExecutionTrace.FailureType.INTERNAL_ERROR);
@@ -688,15 +1029,19 @@ public class ChthollyAgent {
                 llmSpan,
                 AgentSpanAttributes.llm("ok"),
                 Map.of());
+        turnBudget.check("client_delivery");
+        long safeAnswerReadyMs = System.currentTimeMillis() - trace.getStartedAtMs();
+        persistMemoryExchange(memory, question, answer, turnBudget, trace.getTurnControl(), trace);
         trace.terminateFinalAnswer(answer);
+        turnBudget.check("client_delivery");
         if (!answer.isBlank()) {
-            emitThrottledDelta(sink, answer);
+            emitDelta(sink, answer);
+            trace.recordAnswerTiming(
+                    firstTokenMs.get() >= 0 ? firstTokenMs.get() : null,
+                    safeAnswerReadyMs,
+                    System.currentTimeMillis() - trace.getStartedAtMs());
         }
         emitFinal(sink, answer);
-        if (memory != null && !answer.isBlank()) {
-            memory.add(AgentTurn.user(question.trim()));
-            memory.add(AgentTurn.assistant(answer));
-        }
         return streamMs;
     }
 
@@ -704,7 +1049,8 @@ public class ChthollyAgent {
             String candidate,
             EvidenceSet evidenceSet,
             AgentExecutionTrace trace,
-            int stepIndex) {
+            int stepIndex,
+            AgentTurnBudget turnBudget) {
         String allowedIds = evidenceSet.items().stream()
                 .map(com.chtholly.agent.evidence.Evidence::citationId)
                 .collect(java.util.stream.Collectors.joining(", "));
@@ -718,7 +1064,10 @@ public class ChthollyAgent {
                 + "\n\n待修复答案：\n" + candidate;
         long startedAt = System.currentTimeMillis();
         try {
-            String repaired = truncateAnswer(llmInvoker.call(system, userPrompt, 0.0, 1024));
+            String repaired = truncateAnswer(runWithinBudget(
+                    () -> llmInvoker.call(system, userPrompt, 0.0, 1024),
+                    turnBudget,
+                    "citation_repair"));
             trace.recordLlmCall(
                     stepIndex,
                     System.currentTimeMillis() - startedAt,
@@ -726,6 +1075,14 @@ public class ChthollyAgent {
                     repaired.length(),
                     null);
             return sameContentExceptCitations(candidate, repaired) ? repaired : candidate;
+        } catch (AgentTurnBudget.UnavailableException unavailable) {
+            trace.recordLlmCall(
+                    stepIndex,
+                    System.currentTimeMillis() - startedAt,
+                    system.length() + userPrompt.length(),
+                    0,
+                    null);
+            throw unavailable;
         } catch (Exception exception) {
             trace.recordLlmCall(
                     stepIndex,
@@ -774,6 +1131,14 @@ public class ChthollyAgent {
                 trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.MODEL_FAILURE);
             }
             case MAX_STEPS -> trace.markFailure(AgentExecutionTrace.FailureType.INTERNAL_ERROR);
+            case TURN_TIMEOUT -> {
+                trace.terminateTimeout();
+                trace.markFailure(AgentExecutionTrace.FailureType.TURN_TIMEOUT);
+            }
+            case CANCELLED -> {
+                trace.terminateCancelled();
+                trace.markFailure(AgentExecutionTrace.FailureType.TURN_CANCELLED);
+            }
             case FINAL_READY -> {
                 // Handled by the final-answer branch.
             }
@@ -795,29 +1160,6 @@ public class ChthollyAgent {
         return false;
     }
 
-    /** Emits delta chunks character-by-character for typewriter UX on WebSocket clients. */
-    private void emitThrottledDelta(Consumer<AgentEvent> sink, String chunk) {
-        int delayMs = Math.max(0, properties.getStreamCharDelayMs());
-        if (delayMs == 0) {
-            emitDelta(sink, chunk);
-            return;
-        }
-        int i = 0;
-        while (i < chunk.length()) {
-            int cp = chunk.codePointAt(i);
-            emitDelta(sink, new String(Character.toChars(cp)));
-            i += Character.charCount(cp);
-            if (i < chunk.length()) {
-                try {
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-        }
-    }
-
     private void emitDelta(Consumer<AgentEvent> sink, String content) {
         ObjectNode data = objectMapper.createObjectNode();
         data.put("content", content);
@@ -834,6 +1176,12 @@ public class ChthollyAgent {
         ObjectNode data = objectMapper.createObjectNode();
         data.put("message", message);
         AgentEvent.send(sink, "error", data);
+    }
+
+    private static final class MemoryWriteException extends RuntimeException {
+        private MemoryWriteException(String code) {
+            super(code == null || code.isBlank() ? "MEMORY_WRITE_FAILED" : code);
+        }
     }
 
 }

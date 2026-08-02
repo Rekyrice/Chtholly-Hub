@@ -23,8 +23,9 @@ class PromptTailRendererTest {
                 ### lookup
                 查询资料
                   参数：
-                    - keyword (string, 必填): 关键词
-                    - limit (integer, 可选): 数量
+                    - keyword (string, 必填, 长度 1..80): 关键词
+                    - limit (integer, 可选, 范围 1..10): 数量
+                    - scope (string, 可选, 可选值 article|comment): 范围
 
                 ## 工具使用准则
 
@@ -98,8 +99,10 @@ class PromptTailRendererTest {
             @Override
             public Map<String, ParamDef> parameterSchema() {
                 Map<String, ParamDef> schema = new LinkedHashMap<>();
-                schema.put("keyword", new ParamDef("关键词", String.class, true));
-                schema.put("limit", new ParamDef("数量", Integer.class, false));
+                schema.put("keyword", ParamDef.string("关键词", true, 1, 80));
+                schema.put("limit", ParamDef.integer("数量", false, 1, 10));
+                schema.put("scope", ParamDef.enumString(
+                        "范围", false, List.of("article", "comment")));
                 return schema;
             }
 

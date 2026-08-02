@@ -3,7 +3,6 @@ package com.chtholly.agent.skill;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -13,6 +12,11 @@ import java.util.Set;
 @Component
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 public class SkillSelector {
+
+    private static final List<String> IMPLICIT_PRIORITY = List.of(
+            "draft-fact-check",
+            "evidence-outline",
+            "page-explain");
 
     public SkillSelection select(List<SkillDefinition> candidates, SkillExecutionContext context) {
         List<SkillDefinition> allowedCandidates = candidates == null ? List.of() : List.copyOf(candidates);
@@ -28,19 +32,22 @@ public class SkillSelector {
         }
 
         String question = context.question().toLowerCase(Locale.ROOT);
-        List<SkillDefinition> matched = new ArrayList<>();
-        for (SkillDefinition definition : allowedCandidates) {
-            if (matches(definition.id(), question)) {
-                matched.add(definition);
+        for (String skillId : IMPLICIT_PRIORITY) {
+            if (!matches(skillId, question)) {
+                continue;
+            }
+            List<SkillDefinition> matched = allowedCandidates.stream()
+                    .filter(definition -> definition.id().equals(skillId))
+                    .toList();
+            if (matched.size() > 1) {
+                return SkillSelection.terminal(
+                        Status.CLARIFICATION_REQUIRED, "ambiguous_skill_version");
+            }
+            if (matched.size() == 1) {
+                return selected(matched.getFirst(), "deterministic_rule", context);
             }
         }
-        if (matched.size() > 1) {
-            return SkillSelection.terminal(Status.CLARIFICATION_REQUIRED, "rule_conflict");
-        }
-        if (matched.isEmpty()) {
-            return SkillSelection.terminal(Status.NO_MATCH, "no_deterministic_match");
-        }
-        return selected(matched.getFirst(), "deterministic_rule", context);
+        return SkillSelection.terminal(Status.NO_MATCH, "no_deterministic_match");
     }
 
     private SkillSelection selected(
@@ -64,11 +71,13 @@ public class SkillSelector {
     private boolean matches(String skillId, String question) {
         return switch (skillId) {
             case "page-explain" -> containsAny(
-                    question, "解释", "是什么", "这个页面", "这篇文章", "当前文章",
-                    "只依据本文", "主要观点", "讲了什么");
-            case "evidence-outline" -> containsAny(question, "大纲", "提纲", "文章结构", "写作结构");
+                    question, "解释", "说明", "讲讲", "解读", "总结", "概括", "归纳", "梳理",
+                    "主要观点", "核心观点", "讲了什么");
+            case "evidence-outline" -> containsAny(
+                    question, "大纲", "提纲", "框架", "目录", "章节安排", "文章结构", "写作结构", "论证结构");
             case "draft-fact-check" -> containsAny(
-                    question, "事实核查", "核查", "查证", "是否准确", "草稿事实");
+                    question, "事实核查", "核查", "查证", "求证", "验证真假", "是否属实", "是否准确",
+                    "草稿事实");
             default -> false;
         };
     }

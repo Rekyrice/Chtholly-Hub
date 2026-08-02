@@ -34,7 +34,7 @@ public class FulltextSearchTool implements AgentTool {
     @Override
     public Map<String, ParamDef> parameterSchema() {
         return Map.of(
-                "q", new ParamDef("搜索关键词", String.class, true)
+                "q", ParamDef.string("搜索关键词", true, 1, 120)
         );
     }
 

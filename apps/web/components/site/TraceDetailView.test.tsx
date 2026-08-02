@@ -32,7 +32,7 @@ describe("TraceDetailView", () => {
           model: "deepseek-chat",
           retrieval: "document-rrf-v1",
           tools: "agent-tool-v1",
-          traceSchema: "agent-trace-v1",
+          traceSchema: "agent-trace-v3",
         },
         skill: {
           id: "page-explain",
@@ -58,6 +58,31 @@ describe("TraceDetailView", () => {
             sourceVersion: "content-v3",
             sourceHash: "source-sha256",
           }],
+        },
+        turn: {
+          requestId: "request-42",
+          turnId: "turn-42",
+          chatSessionId: "room-session",
+          connectionId: "connection-7",
+          budgetMs: 30000,
+          timeoutStage: "",
+          cancelled: false,
+          clientDeliveryStatus: "DELIVERED",
+          clientTerminalType: "final",
+          clientDeliveryCode: "",
+        },
+        memory: {
+          writeStatus: "COMMITTED",
+          failureCode: "",
+        },
+        toolPlan: {
+          reason: "selected_skill_bangumi_subject",
+          effectiveTools: ["bangumi_search"],
+        },
+        answerTiming: {
+          modelFirstTokenMs: 120,
+          safeAnswerReadyMs: 310,
+          firstClientDeltaMs: 312,
         },
       },
       steps: [
@@ -153,6 +178,13 @@ describe("TraceDetailView", () => {
     expect(screen.getByText("keyword: TIMEOUT")).toBeInTheDocument();
     expect(screen.getByText("E1 · post:42")).toBeInTheDocument();
     expect(screen.getByText("VALID", { selector: "dd" })).toBeInTheDocument();
+    expect(screen.getByText("turn-42")).toBeInTheDocument();
+    expect(screen.getByText("30.0s")).toBeInTheDocument();
+    expect(screen.getByText("DELIVERED / final")).toBeInTheDocument();
+    expect(screen.getByText("COMMITTED")).toBeInTheDocument();
+    expect(screen.getByText("selected_skill_bangumi_subject")).toBeInTheDocument();
+    expect(screen.getByText("bangumi_search")).toBeInTheDocument();
+    expect(screen.getByText("120ms / 310ms / 312ms")).toBeInTheDocument();
     expect(within(metadata).queryByText("must-not-project")).not.toBeInTheDocument();
   });
 

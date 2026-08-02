@@ -1,6 +1,7 @@
 package com.chtholly.agent.trace;
 
 import com.chtholly.agent.observability.AgentExecutionTrace;
+import com.chtholly.agent.runtime.AgentTurnControl;
 import com.chtholly.agent.trace.TraceStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -58,6 +60,19 @@ class TracePersistenceServiceTest {
         assertThat(row.getStatus()).isEqualTo(TraceStatus.SUCCESS.name());
         assertThat(row.getStepsCount()).isEqualTo(1);
         assertThat(row.getTracePayload()).contains("agent_execution_complete");
+    }
+
+    @Test
+    void persistRefusesPendingClientDeliveryInsteadOfStoringSuccess() {
+        AgentTurnControl control = AgentTurnControl.create(
+                "request-1", "turn-1", "session-1", "connection-1", Duration.ofSeconds(30));
+        AgentExecutionTrace trace = new AgentExecutionTrace(7L, control, 5);
+        trace.terminateFinalAnswer("answer");
+        trace.finish();
+
+        service.persist(trace);
+
+        verify(traceMapper, never()).insert(any());
     }
 
     @Test

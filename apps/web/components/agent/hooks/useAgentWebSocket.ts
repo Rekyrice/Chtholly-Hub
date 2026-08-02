@@ -13,6 +13,8 @@ import type {
 } from "@/lib/types/agent";
 import type { AgentLivePhase } from "@/lib/types/live2d";
 
+const TURN_INTERRUPTED_MESSAGE = "Agent 连接已中断，请重新发送。";
+
 type UseAgentWebSocketOptions = {
   loggedIn: boolean;
   hydrated: boolean;
@@ -32,6 +34,25 @@ type BuildAgentChatPayloadInput = {
   taskType?: AgentTaskType;
   sessionContext?: AgentSessionContext | null;
 };
+
+type BackendClearIntent = {
+  kind: "backend" | "user";
+  socket: WebSocket;
+  requestId: string;
+  turnGenerationAtSend: number;
+};
+
+function createRequestId() {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  cryptoApi.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 export function buildAgentChatPayload({
   sessionId,
@@ -56,6 +77,7 @@ export function buildAgentChatPayload({
   if (sessionContext?.postId) context.postId = sessionContext.postId;
   return {
     type: "chat" as const,
+    requestId: createRequestId(),
     sessionId,
     message,
     ...(taskType ? { taskType } : {}),
@@ -90,10 +112,18 @@ export function useAgentWebSocket({
   const [visibleProactiveNotification, setVisibleProactiveNotification] =
     useState<ProactiveNotificationItem | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const connectionPromiseRef = useRef<Promise<WebSocket | null> | null>(null);
+  const connectionGenerationRef = useRef(0);
   const streamingIdRef = useRef<string | null>(null);
+  const currentRequestIdRef = useRef<string | null>(null);
+  const currentTurnIdRef = useRef<string | null>(null);
+  const currentTurnSocketRef = useRef<WebSocket | null>(null);
+  const busyRef = useRef(false);
+  const sendLockRef = useRef(false);
+  const turnGenerationRef = useRef(0);
   const proactiveInstanceSequenceRef = useRef(0);
   const stepsRef = useRef<string[]>([]);
-  const backendClearIntentRef = useRef<"none" | "backend" | "user">("none");
+  const backendClearIntentsRef = useRef(new Map<string, BackendClearIntent>());
 
   const pushStep = useCallback((line: string) => {
     stepsRef.current = [...stepsRef.current, line];
@@ -120,23 +150,140 @@ export function useAgentWebSocket({
   }, []);
 
   const resetTransient = useCallback(() => {
+    turnGenerationRef.current += 1;
     stepsRef.current = [];
     setLiveSteps([]);
     streamingIdRef.current = null;
-    backendClearIntentRef.current = "none";
+    currentRequestIdRef.current = null;
+    currentTurnIdRef.current = null;
+    currentTurnSocketRef.current = null;
+    busyRef.current = false;
+    backendClearIntentsRef.current.clear();
     setBusy(false);
     setLivePhase("idle");
     setLastError(null);
   }, []);
 
+  const interruptCurrentTurn = useCallback((socket: WebSocket) => {
+    if (!busyRef.current || currentTurnSocketRef.current !== socket) return;
+
+    busyRef.current = false;
+    currentRequestIdRef.current = null;
+    currentTurnIdRef.current = null;
+    currentTurnSocketRef.current = null;
+    const streamId = streamingIdRef.current;
+    const steps = [...stepsRef.current];
+    streamingIdRef.current = null;
+    stepsRef.current = [];
+    for (const [requestId, intent] of backendClearIntentsRef.current) {
+      if (intent.socket === socket) backendClearIntentsRef.current.delete(requestId);
+    }
+    setMessages((previous) => [
+      ...previous.map((message) => (
+        message.id === streamId
+          ? { ...message, streaming: false, steps }
+          : message
+      )),
+      {
+        id: `s-${Date.now()}`,
+        role: "system",
+        content: TURN_INTERRUPTED_MESSAGE,
+      },
+    ]);
+    setLiveSteps([]);
+    setBusy(false);
+    setLivePhase("idle");
+    setLastError(null);
+  }, [setMessages]);
+
+  const finishTurnWithError = useCallback((data: Record<string, unknown>) => {
+    const code = String(data.code ?? data.reason ?? "");
+    const message = code === "RATE_LIMITED"
+      ? "发送过于频繁，请稍后再试。"
+      : String(data.message ?? "出错了");
+    const streamId = streamingIdRef.current;
+    const steps = [...stepsRef.current];
+    setLivePhase("error");
+    setLastError(message);
+    if (streamId) {
+      setMessages((previous) => previous.filter((item) => item.id !== streamId));
+    }
+    streamingIdRef.current = null;
+    currentRequestIdRef.current = null;
+    currentTurnIdRef.current = null;
+    currentTurnSocketRef.current = null;
+    busyRef.current = false;
+    setMessages((previous) => [
+      ...previous,
+      { id: `e-${Date.now()}`, role: "system", content: message, steps },
+    ]);
+    stepsRef.current = [];
+    setLiveSteps([]);
+    setBusy(false);
+    const completedGeneration = turnGenerationRef.current;
+    window.setTimeout(() => {
+      if (turnGenerationRef.current !== completedGeneration || busyRef.current) return;
+      setLivePhase("idle");
+      setLastError(null);
+    }, 3000);
+  }, [setMessages]);
+
   const handleEnvelope = useCallback(
-    (envelope: AgentWsEnvelope) => {
+    (envelope: AgentWsEnvelope, sourceSocket: WebSocket) => {
       const type = envelope.type as AgentEventType;
       const data = envelope.data ?? {};
       if (type === "proactive") {
+        if (sourceSocket !== wsRef.current) return;
         pushProactiveNotification(data);
         return;
       }
+      if (type === "cleared") {
+        if (wsRef.current !== sourceSocket) return;
+        let intent: BackendClearIntent | undefined;
+        if (typeof envelope.requestId === "string" && envelope.requestId) {
+          intent = backendClearIntentsRef.current.get(envelope.requestId);
+          if (!intent || intent.socket !== sourceSocket) return;
+          backendClearIntentsRef.current.delete(envelope.requestId);
+        } else {
+          const candidates = [...backendClearIntentsRef.current.values()]
+            .filter((candidate) => candidate.socket === sourceSocket);
+          if (candidates.length !== 1) return;
+          [intent] = candidates;
+          backendClearIntentsRef.current.delete(intent.requestId);
+        }
+        if (intent.kind !== "user") return;
+        if (busyRef.current || turnGenerationRef.current !== intent.turnGenerationAtSend) return;
+        setMessages([]);
+        resetTransient();
+        return;
+      }
+      if (type === "rejected") {
+        if (
+          sourceSocket !== currentTurnSocketRef.current
+          || envelope.requestId !== currentRequestIdRef.current
+          || currentTurnIdRef.current
+        ) return;
+        finishTurnWithError(data);
+        return;
+      }
+      if (type === "accepted") {
+        if (
+          sourceSocket !== currentTurnSocketRef.current
+          || envelope.requestId !== currentRequestIdRef.current
+          || typeof envelope.turnId !== "string"
+          || !envelope.turnId
+        ) return;
+        if (currentTurnIdRef.current && currentTurnIdRef.current !== envelope.turnId) return;
+        currentTurnIdRef.current = envelope.turnId;
+        return;
+      }
+      if (
+        sourceSocket !== currentTurnSocketRef.current
+        || !currentRequestIdRef.current
+        || !currentTurnIdRef.current
+        || envelope.requestId !== currentRequestIdRef.current
+        || envelope.turnId !== currentTurnIdRef.current
+      ) return;
       if (type === "think") {
         setLivePhase("think");
         pushStep(`💭 ${String(data.content ?? "")}`);
@@ -191,82 +338,113 @@ export function useAgentWebSocket({
             : [...previous, { id: `a-${Date.now()}`, role: "assistant", content, steps }],
         );
         streamingIdRef.current = null;
+        currentRequestIdRef.current = null;
+        currentTurnIdRef.current = null;
+        currentTurnSocketRef.current = null;
+        busyRef.current = false;
         stepsRef.current = [];
         setLiveSteps([]);
         setBusy(false);
-        window.setTimeout(() => setLivePhase("idle"), 2500);
+        const completedGeneration = turnGenerationRef.current;
+        window.setTimeout(() => {
+          if (turnGenerationRef.current === completedGeneration && !busyRef.current) {
+            setLivePhase("idle");
+          }
+        }, 2500);
         return;
       }
       if (type === "error") {
-        const reason = String(data.reason ?? "");
-        const message = reason === "RATE_LIMITED"
-          ? "发送过于频繁，请稍后再试。"
-          : String(data.message ?? "出错了");
-        const streamId = streamingIdRef.current;
-        const steps = [...stepsRef.current];
-        setLivePhase("error");
-        setLastError(message);
-        if (streamId) {
-          setMessages((previous) => previous.filter((item) => item.id !== streamId));
-        }
-        streamingIdRef.current = null;
-        setMessages((previous) => [
-          ...previous,
-          { id: `e-${Date.now()}`, role: "system", content: message, steps },
-        ]);
-        stepsRef.current = [];
-        setLiveSteps([]);
-        setBusy(false);
-        window.setTimeout(() => {
-          setLivePhase("idle");
-          setLastError(null);
-        }, 3000);
+        finishTurnWithError(data);
         return;
       }
-      if (type === "cleared") {
-        if (backendClearIntentRef.current === "user") setMessages([]);
-        resetTransient();
-      }
     },
-    [pushProactiveNotification, pushStep, resetTransient, setMessages],
+    [finishTurnWithError, pushProactiveNotification, pushStep, resetTransient, setMessages],
   );
 
   const attachHandlers = useCallback(
     (socket: WebSocket) => {
-      socket.onopen = () => setConnected(true);
-      socket.onclose = () => setConnected(false);
-      socket.onerror = () => setConnected(false);
+      socket.onopen = () => {
+        if (wsRef.current === socket) setConnected(true);
+        else socket.close();
+      };
+      const handleDisconnect = () => {
+        if (wsRef.current === socket) {
+          wsRef.current = null;
+          setConnected(false);
+        }
+        for (const [requestId, intent] of backendClearIntentsRef.current) {
+          if (intent.socket === socket) backendClearIntentsRef.current.delete(requestId);
+        }
+        interruptCurrentTurn(socket);
+      };
+      socket.onclose = handleDisconnect;
+      socket.onerror = handleDisconnect;
       socket.onmessage = (event) => {
         try {
-          handleEnvelope(JSON.parse(event.data) as AgentWsEnvelope);
+          handleEnvelope(JSON.parse(event.data) as AgentWsEnvelope, socket);
         } catch {
           // 非协议消息不应打断后续流式事件。
         }
       };
     },
-    [handleEnvelope],
+    [handleEnvelope, interruptCurrentTurn],
   );
 
-  const connect = useCallback(async () => {
-    const url = await getAgentWsUrl();
-    if (!url) return null;
-    const socket = new WebSocket(url);
-    attachHandlers(socket);
-    return socket;
+  const connect = useCallback(() => {
+    const currentSocket = wsRef.current;
+    if (
+      currentSocket
+      && (
+        currentSocket.readyState === WebSocket.CONNECTING
+        || currentSocket.readyState === WebSocket.OPEN
+      )
+    ) return Promise.resolve(currentSocket);
+    if (connectionPromiseRef.current) return connectionPromiseRef.current;
+
+    const connectionGeneration = connectionGenerationRef.current;
+    const connection = getAgentWsUrl().then((url) => {
+      if (!url || connectionGenerationRef.current !== connectionGeneration) return null;
+      const socket = new WebSocket(url);
+      attachHandlers(socket);
+      return socket;
+    });
+    connectionPromiseRef.current = connection;
+    const clearPendingConnection = () => {
+      if (connectionPromiseRef.current === connection) {
+        connectionPromiseRef.current = null;
+      }
+    };
+    void connection.then(clearPendingConnection, clearPendingConnection);
+    return connection;
   }, [attachHandlers]);
 
   useEffect(() => {
     if (!loggedIn || !hydrated) {
+      connectionGenerationRef.current += 1;
+      connectionPromiseRef.current = null;
       wsRef.current?.close();
       wsRef.current = null;
       return;
     }
     let disposed = false;
     void connect().then((socket) => {
-      if (!disposed && socket) wsRef.current = socket;
+      if (!disposed && socket) {
+        const activeTurnSocket = currentTurnSocketRef.current;
+        const registeredSocket = wsRef.current;
+        if (
+          (!activeTurnSocket || activeTurnSocket === socket)
+          && (
+            !registeredSocket
+            || registeredSocket === socket
+            || registeredSocket.readyState !== WebSocket.OPEN
+          )
+        ) wsRef.current = socket;
+      }
     });
     return () => {
       disposed = true;
+      connectionGenerationRef.current += 1;
+      connectionPromiseRef.current = null;
       wsRef.current?.close();
       wsRef.current = null;
       setConnected(false);
@@ -276,18 +454,44 @@ export function useAgentWebSocket({
   const waitUntilOpen = useCallback(async (socket: WebSocket) => {
     if (socket.readyState === WebSocket.OPEN) return true;
     return new Promise<boolean>((resolve) => {
-      socket.onopen = () => {
-        setConnected(true);
-        resolve(true);
+      const previousOnOpen = socket.onopen;
+      const previousOnError = socket.onerror;
+      const previousOnClose = socket.onclose;
+      let settled = false;
+      const cleanup = () => {
+        if (socket.onopen === handleOpen) socket.onopen = previousOnOpen;
+        if (socket.onerror === handleError) socket.onerror = previousOnError;
+        if (socket.onclose === handleClose) socket.onclose = previousOnClose;
       };
-      socket.onerror = () => resolve(false);
+      const settle = (opened: boolean) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(opened);
+      };
+      const handleOpen: NonNullable<WebSocket["onopen"]> = (event) => {
+        previousOnOpen?.call(socket, event);
+        setConnected(true);
+        settle(true);
+      };
+      const handleError: NonNullable<WebSocket["onerror"]> = (event) => {
+        previousOnError?.call(socket, event);
+        settle(false);
+      };
+      const handleClose: NonNullable<WebSocket["onclose"]> = (event) => {
+        previousOnClose?.call(socket, event);
+        settle(false);
+      };
+      socket.onopen = handleOpen;
+      socket.onerror = handleError;
+      socket.onclose = handleClose;
     });
   }, []);
 
   const sendMessage = useCallback(
     async (text: string, options?: AgentSendOptions) => {
       const trimmed = text.trim();
-      if (!trimmed || busy) return;
+      if (!trimmed || busyRef.current || sendLockRef.current) return;
       if (!loggedIn) {
         setMessages((previous) => [
           ...previous,
@@ -295,56 +499,75 @@ export function useAgentWebSocket({
         ]);
         return;
       }
-      let socket = wsRef.current;
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
-        socket = await connect();
-        if (!socket) {
-          setMessages((previous) => [
-            ...previous,
-            { id: `s-${Date.now()}`, role: "system", content: "无法连接 Agent 服务。" },
-          ]);
-          return;
+      sendLockRef.current = true;
+      try {
+        let socket = wsRef.current;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          socket = await connect();
+          if (!socket) {
+            setMessages((previous) => [
+              ...previous,
+              { id: `s-${Date.now()}`, role: "system", content: "无法连接 Agent 服务。" },
+            ]);
+            return;
+          }
+          wsRef.current = socket;
+          if (!(await waitUntilOpen(socket))) {
+            setMessages((previous) => [
+              ...previous,
+              {
+                id: `s-${Date.now()}`,
+                role: "system",
+                content: "Agent 连接失败，请确认后端已启动且 LLM_ENABLED=true。",
+              },
+            ]);
+            return;
+          }
         }
-        wsRef.current = socket;
-        if (!(await waitUntilOpen(socket))) {
-          setMessages((previous) => [
-            ...previous,
-            {
-              id: `s-${Date.now()}`,
-              role: "system",
-              content: "Agent 连接失败，请确认后端已启动且 LLM_ENABLED=true。",
-            },
-          ]);
-          return;
+        const sessionId = activeSessionIdRef.current;
+        if (!sessionId || socket.readyState !== WebSocket.OPEN) return;
+        turnGenerationRef.current += 1;
+        setMessages((previous) => [
+          ...previous,
+          { id: `u-${Date.now()}`, role: "user", content: trimmed },
+        ]);
+        onInputConsumed();
+        setLastError(null);
+        const payload = buildAgentChatPayload({
+          sessionId,
+          message: trimmed,
+          pathname: window.location.pathname,
+          title: document.title,
+          search: window.location.search,
+          taskType: options?.taskType,
+          sessionContext: activeSessionContextRef.current,
+        });
+        currentRequestIdRef.current = payload.requestId;
+        currentTurnIdRef.current = null;
+        currentTurnSocketRef.current = socket;
+        busyRef.current = true;
+        setBusy(true);
+        stepsRef.current = [];
+        setLiveSteps([]);
+        streamingIdRef.current = null;
+        try {
+          socket.send(JSON.stringify(payload));
+        } catch {
+          if (wsRef.current === socket) {
+            wsRef.current = null;
+            setConnected(false);
+          }
+          interruptCurrentTurn(socket);
         }
+      } finally {
+        sendLockRef.current = false;
       }
-      const sessionId = activeSessionIdRef.current;
-      if (!sessionId || socket.readyState !== WebSocket.OPEN) return;
-      setMessages((previous) => [
-        ...previous,
-        { id: `u-${Date.now()}`, role: "user", content: trimmed },
-      ]);
-      onInputConsumed();
-      setLastError(null);
-      setBusy(true);
-      stepsRef.current = [];
-      setLiveSteps([]);
-      streamingIdRef.current = null;
-      socket.send(JSON.stringify(buildAgentChatPayload({
-        sessionId,
-        message: trimmed,
-        pathname: window.location.pathname,
-        title: document.title,
-        search: window.location.search,
-        taskType: options?.taskType,
-        sessionContext: activeSessionContextRef.current,
-      })));
     },
     [
       activeSessionContextRef,
       activeSessionIdRef,
-      busy,
       connect,
+      interruptCurrentTurn,
       loggedIn,
       onInputConsumed,
       setMessages,
@@ -355,21 +578,41 @@ export function useAgentWebSocket({
   const clearBackendMemory = useCallback((sessionId: string) => {
     const socket = wsRef.current;
     if (!sessionId || !socket || socket.readyState !== WebSocket.OPEN) return;
-    backendClearIntentRef.current = "backend";
-    socket.send(JSON.stringify({ type: "clear", sessionId }));
+    const requestId = createRequestId();
+    backendClearIntentsRef.current.set(requestId, {
+      kind: "backend",
+      socket,
+      requestId,
+      turnGenerationAtSend: turnGenerationRef.current,
+    });
+    try {
+      socket.send(JSON.stringify({ type: "clear", requestId, sessionId }));
+    } catch {
+      backendClearIntentsRef.current.delete(requestId);
+    }
   }, []);
 
   const clearConversation = useCallback(() => {
     const sessionId = activeSessionIdRef.current;
-    if (!sessionId) return;
+    if (!sessionId || busyRef.current) return;
     const socket = wsRef.current;
-    backendClearIntentRef.current = "user";
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       setMessages([]);
       resetTransient();
       return;
     }
-    socket.send(JSON.stringify({ type: "clear", sessionId }));
+    const requestId = createRequestId();
+    backendClearIntentsRef.current.set(requestId, {
+      kind: "user",
+      socket,
+      requestId,
+      turnGenerationAtSend: turnGenerationRef.current,
+    });
+    try {
+      socket.send(JSON.stringify({ type: "clear", requestId, sessionId }));
+    } catch {
+      backendClearIntentsRef.current.delete(requestId);
+    }
   }, [activeSessionIdRef, resetTransient, setMessages]);
 
   const streaming = useMemo(

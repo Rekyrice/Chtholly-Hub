@@ -1,5 +1,7 @@
 package com.chtholly.agent.memory;
 
+import com.chtholly.agent.runtime.AgentTurnControl;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,6 +32,49 @@ public class AgentConversationMemory {
         while (turns.size() > max) {
             turns.remove(0);
         }
+    }
+
+    /** Atomically persists and locally appends one user/assistant exchange. */
+    public boolean addExchange(AgentTurn userTurn, AgentTurn assistantTurn) {
+        return addExchange(userTurn, assistantTurn, null).committed();
+    }
+
+    /** Persists one exchange with the Redis-side deadline and lease fence of a WebSocket turn. */
+    public AgentMemoryStore.MemoryWriteResult addExchange(
+            AgentTurn userTurn,
+            AgentTurn assistantTurn,
+            AgentTurnControl control) {
+        long deadlineEpochMs = control == null
+                ? Long.MAX_VALUE
+                : control.budget().deadlineEpochMillis();
+        return addExchange(userTurn, assistantTurn, control, deadlineEpochMs);
+    }
+
+    /** Persists one exchange using the effective Skill-tightened turn deadline. */
+    public AgentMemoryStore.MemoryWriteResult addExchange(
+            AgentTurn userTurn,
+            AgentTurn assistantTurn,
+            AgentTurnControl control,
+            long deadlineEpochMs) {
+        if (userTurn == null || assistantTurn == null
+                || userTurn.content() == null || userTurn.content().isBlank()
+                || assistantTurn.content() == null || assistantTurn.content().isBlank()) {
+            return new AgentMemoryStore.MemoryWriteResult(
+                    AgentMemoryStore.MemoryWriteStatus.REJECTED,
+                    "INVALID_EXCHANGE");
+        }
+        List<AgentTurn> exchange = List.of(userTurn, assistantTurn);
+        AgentMemoryStore.MemoryWriteResult result = store.addTurns(
+                userId, chatSessionId, exchange, control, deadlineEpochMs);
+        if (!result.committed()) {
+            return result;
+        }
+        turns.addAll(exchange);
+        int max = store.maxTurns();
+        while (turns.size() > max) {
+            turns.remove(0);
+        }
+        return result;
     }
 
     public boolean isEmpty() {

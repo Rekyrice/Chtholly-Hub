@@ -21,11 +21,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.ResourceAccessException;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -248,6 +250,108 @@ class AgentLoopExecutorTest {
         assertThat(trace.getErrorMessage()).isEqualTo("MODEL_TIMEOUT");
         verify(observationService).finishSpanError(
                 eq(childSpan), eq("llm_timeout"), anyMap(), anyMap());
+    }
+
+    @Test
+    void turnBudgetIsPassedToLlmAndCanExpireBeforeFirstStep() throws Exception {
+        AtomicBoolean cancelled = new AtomicBoolean();
+        AgentTurnBudget expired = AgentTurnBudget.start(
+                Duration.ofNanos(1), cancelled::get);
+        Thread.sleep(1);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt",
+                "What happened?",
+                42L,
+                "Earlier conversation",
+                Map.of(),
+                3,
+                expired);
+        AgentExecutionTrace trace = trace(3);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.TURN_TIMEOUT);
+        assertThat(trace.getTerminatedBy()).isEqualTo("timeout");
+        verify(llmInvoker, never()).call(
+                anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class));
+    }
+
+    @Test
+    void activeTurnBudgetBoundsLlmInvocation() throws Exception {
+        when(llmInvoker.call(
+                anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn("{\"action\":\"final\"}");
+        AgentTurnBudget budget = AgentTurnBudget.start(
+                Duration.ofSeconds(10), () -> false);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt",
+                "What happened?",
+                42L,
+                "Earlier conversation",
+                Map.of(),
+                3,
+                budget);
+
+        AgentLoopResult result = executor.execute(request, trace(3), agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        ArgumentCaptor<Duration> timeout = ArgumentCaptor.forClass(Duration.class);
+        verify(llmInvoker).call(
+                anyString(), anyString(), anyDouble(), anyInt(), timeout.capture());
+        assertThat(timeout.getValue()).isPositive().isLessThanOrEqualTo(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void cancelledTurnStopsBeforeCallingLlm() throws Exception {
+        AgentTurnBudget cancelled = AgentTurnBudget.start(
+                Duration.ofSeconds(10), () -> true);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt",
+                "What happened?",
+                42L,
+                "Earlier conversation",
+                Map.of(),
+                3,
+                cancelled);
+
+        AgentLoopResult result = executor.execute(request, trace(3), agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.CANCELLED);
+        verify(llmInvoker, never()).call(
+                anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class));
+    }
+
+    @Test
+    void interruptedLlmIsClassifiedAsCancellationWhenTheTurnWasCancelled() throws Exception {
+        AtomicBoolean cancelled = new AtomicBoolean();
+        AgentTurnBudget budget = AgentTurnBudget.start(
+                Duration.ofSeconds(10), cancelled::get);
+        when(llmInvoker.call(
+                anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenAnswer(invocation -> {
+                    cancelled.set(true);
+                    throw new InterruptedException("socket closed");
+                });
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt",
+                "What happened?",
+                42L,
+                "",
+                Map.of(),
+                3,
+                budget);
+
+        try {
+            AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+            assertThat(result.status()).isEqualTo(AgentLoopResult.Status.CANCELLED);
+            assertThat(trace.getTerminatedBy()).isEqualTo("cancelled");
+            assertThat(trace.getTimeoutStage()).isEmpty();
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted();
+        }
     }
 
     @Test

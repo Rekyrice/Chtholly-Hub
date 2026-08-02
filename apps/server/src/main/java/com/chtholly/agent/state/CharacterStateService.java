@@ -3,6 +3,7 @@ package com.chtholly.agent.state;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -30,6 +31,30 @@ public class CharacterStateService {
     private static final String EMOTION_KEY = "character:state:emotion";
     private static final Duration TTL = Duration.ofDays(30);
     private static final Duration EMOTION_TTL = Duration.ofMinutes(30);
+    private static final DefaultRedisScript<Long> RECORD_INTERACTION_SCRIPT = longScript("""
+            local count = redis.call('HINCRBY', KEYS[1], 'relationship.interactionCount', 1)
+            local intimacy = math.min(1.0, 0.1 * math.log(1 + count))
+            redis.call('HSET', KEYS[1],
+                'relationship.intimacy', tostring(intimacy),
+                'relationship.lastSeen', ARGV[1])
+            redis.call('PEXPIRE', KEYS[1], ARGV[2])
+            return count
+            """);
+    private static final DefaultRedisScript<Long> UPDATE_EMOTION_SCRIPT = longScript("""
+            local occurredAt = tonumber(ARGV[1])
+            local current = tonumber(redis.call('HGET', KEYS[1], 'triggeredAtEpochMs') or '-1')
+            if current >= occurredAt then
+              return 0
+            end
+            redis.call('HSET', KEYS[1],
+                'triggeredAtEpochMs', ARGV[1],
+                'label', ARGV[2],
+                'intensity', ARGV[3],
+                'triggeredAt', ARGV[4],
+                'trigger', ARGV[5])
+            redis.call('PEXPIRE', KEYS[1], ARGV[6])
+            return 1
+            """);
 
     private final StringRedisTemplate redis;
     @SuppressWarnings("unused")
@@ -93,16 +118,11 @@ public class CharacterStateService {
      * @param userId User ID.
      */
     public void recordInteraction(long userId) {
-        CharacterState state = load(userId, false);
-        long nextCount = state.relationship().interactionCount() + 1;
-        double intimacy = Math.min(1.0, 0.1 * Math.log(1 + nextCount));
-        CharacterState updated = new CharacterState(
-                state.personality(),
-                state.mood(),
-                new Relationship(intimacy, nextCount, Instant.now()),
-                state.needs(),
-                state.behaviorProb());
-        save(userId, updated);
+        redis.execute(
+                RECORD_INTERACTION_SCRIPT,
+                List.of(key(userId)),
+                clock.instant().toString(),
+                Long.toString(TTL.toMillis()));
     }
 
     /**
@@ -242,13 +262,26 @@ public class CharacterStateService {
      * @param messageContent User message content.
      */
     public void updateEmotion(Long userId, String messageContent) {
+        updateEmotion(userId, messageContent, clock.instant());
+    }
+
+    /** Updates emotion only when the interaction is newer than the currently stored event. */
+    public void updateEmotion(Long userId, String messageContent, Instant occurredAt) {
+        Instant safeOccurredAt = occurredAt == null ? clock.instant() : occurredAt;
         EmotionState emotion = new EmotionState(
                 detectEmotion(messageContent),
                 calculateIntensity(messageContent),
-                clock.instant(),
+                safeOccurredAt,
                 "user-interaction");
-        redis.opsForHash().putAll(EMOTION_KEY, serializeEmotion(emotion));
-        redis.expire(EMOTION_KEY, EMOTION_TTL);
+        redis.execute(
+                UPDATE_EMOTION_SCRIPT,
+                List.of(EMOTION_KEY),
+                Long.toString(safeOccurredAt.toEpochMilli()),
+                emotion.label(),
+                Double.toString(clamp(emotion.intensity(), 0.0, 1.0)),
+                safeOccurredAt.toString(),
+                emotion.trigger(),
+                Long.toString(EMOTION_TTL.toMillis()));
     }
 
     /**
@@ -444,5 +477,12 @@ public class CharacterStateService {
 
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static DefaultRedisScript<Long> longScript(String source) {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(source);
+        script.setResultType(Long.class);
+        return script;
     }
 }

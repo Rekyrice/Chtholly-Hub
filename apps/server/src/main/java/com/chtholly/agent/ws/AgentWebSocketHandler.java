@@ -1,9 +1,9 @@
 package com.chtholly.agent.ws;
 
-import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.ChthollyAgent;
 import com.chtholly.agent.cognitive.CognitiveEngine;
+import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.learning.InsightService;
 import com.chtholly.agent.memory.AgentConversationMemory;
 import com.chtholly.agent.memory.AgentMemoryStore;
@@ -11,7 +11,10 @@ import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.notification.Notification;
 import com.chtholly.agent.notification.NotificationService;
 import com.chtholly.agent.observability.AgentMetrics;
+import com.chtholly.agent.runtime.AgentTurnBudget;
+import com.chtholly.agent.runtime.AgentTurnControl;
 import com.chtholly.agent.state.CharacterStateService;
+import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -29,13 +32,20 @@ import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorato
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.net.URI;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 /** Agent WebSocket：客户端发送 chat，服务端推送 ReAct 事件流。 */
 @Slf4j
@@ -46,6 +56,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     /** 与 {@link com.chtholly.agent.config.AgentWebSocketConfig} 中 sendTimeLimit 一致。 */
     private static final int SEND_TIME_LIMIT_MS = 10_000;
     private static final int SEND_BUFFER_SIZE_LIMIT = 512 * 1024;
+    private static final int TURN_LEASE_GRACE_SECONDS = 15;
+    private static final Pattern REQUEST_ID_PATTERN = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
 
     private final ChthollyAgent agent;
     private final ObjectMapper objectMapper;
@@ -58,6 +70,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final ObjectProvider<InsightService> insightServiceProvider;
     private final ObjectProvider<CognitiveEngine> cognitiveEngineProvider;
     private final ObjectProvider<NotificationService> proactiveNotificationServiceProvider;
+    private final AgentTurnCoordinator turnCoordinator;
+    private final AgentProperties properties;
     private final Executor executor;
 
     /** 原始 sessionId -> 线程安全装饰 session（并发 send 串行化）。 */
@@ -65,6 +79,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, Long> sessionUsers = new ConcurrentHashMap<>();
     private final Map<String, Long> sessionConnectedAt = new ConcurrentHashMap<>();
     private final Map<String, String> sessionChatSessionIds = new ConcurrentHashMap<>();
+    private final Map<String, Set<FutureTask<Void>>> connectionTasks = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, ActiveTurn>> connectionTurns = new ConcurrentHashMap<>();
 
     /**
      * Creates the production WebSocket handler with a virtual-thread executor.
@@ -80,6 +96,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
      * @param insightServiceProvider Optional conversation reflection service provider.
      * @param cognitiveEngineProvider Optional cognitive engine provider.
      * @param proactiveNotificationServiceProvider Optional proactive notification service provider.
+     * @param turnCoordinator cross-instance turn ownership coordinator
+     * @param properties agent runtime properties
      */
     @Autowired
     public AgentWebSocketHandler(ChthollyAgent agent,
@@ -92,11 +110,14 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                                  CharacterStateService characterStateService,
                                  ObjectProvider<InsightService> insightServiceProvider,
                                  ObjectProvider<CognitiveEngine> cognitiveEngineProvider,
-                                 ObjectProvider<NotificationService> proactiveNotificationServiceProvider) {
+                                 ObjectProvider<NotificationService> proactiveNotificationServiceProvider,
+                                 AgentTurnCoordinator turnCoordinator,
+                                 AgentProperties properties) {
         // 生产环境继续使用虚拟线程，避免长耗时 Agent 调用阻塞 WebSocket 处理线程。
         this(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat, agentMetrics,
                 characterStateService, insightServiceProvider, cognitiveEngineProvider,
                 proactiveNotificationServiceProvider,
+                turnCoordinator, properties,
                 Executors.newVirtualThreadPerTaskExecutor());
     }
 
@@ -112,6 +133,26 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                           ObjectProvider<CognitiveEngine> cognitiveEngineProvider,
                           ObjectProvider<NotificationService> proactiveNotificationServiceProvider,
                           Executor executor) {
+        this(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat, agentMetrics,
+                characterStateService, insightServiceProvider, cognitiveEngineProvider,
+                proactiveNotificationServiceProvider,
+                AgentTurnCoordinator.inMemory(), new AgentProperties(), executor);
+    }
+
+    AgentWebSocketHandler(ChthollyAgent agent,
+                          ObjectMapper objectMapper,
+                          AgentMemoryStore memoryStore,
+                          AgentWsTicketStore ticketStore,
+                          AgentSessionRateLimiter rateLimiter,
+                          AgentWebSocketHeartbeat heartbeat,
+                          AgentMetrics agentMetrics,
+                          CharacterStateService characterStateService,
+                          ObjectProvider<InsightService> insightServiceProvider,
+                          ObjectProvider<CognitiveEngine> cognitiveEngineProvider,
+                          ObjectProvider<NotificationService> proactiveNotificationServiceProvider,
+                          AgentTurnCoordinator turnCoordinator,
+                          AgentProperties properties,
+                          Executor executor) {
         this.agent = agent;
         this.objectMapper = objectMapper;
         this.memoryStore = memoryStore;
@@ -123,6 +164,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         this.insightServiceProvider = insightServiceProvider;
         this.cognitiveEngineProvider = cognitiveEngineProvider;
         this.proactiveNotificationServiceProvider = proactiveNotificationServiceProvider;
+        this.turnCoordinator = turnCoordinator;
+        this.properties = properties;
         this.executor = executor;
     }
 
@@ -158,13 +201,25 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         if (userId == null) {
             return;
         }
-        executor.execute(() -> {
+        Set<FutureTask<Void>> tasks = connectionTasks.computeIfAbsent(
+                session.getId(), ignored -> ConcurrentHashMap.newKeySet());
+        FutureTask<Void> task = new FutureTask<>(() -> {
             String correlationId = CorrelationIdSupport.generate();
             String path = session.getUri() == null ? "/api/v1/agent/ws" : session.getUri().getPath();
             CorrelationIdSupport.runWithContext(
                     CorrelationIdSupport.context(correlationId, "WS", path),
                     () -> handlePayload(session, userId, message.getPayload()));
-        });
+        }, null) {
+            @Override
+            protected void done() {
+                tasks.remove(this);
+                if (tasks.isEmpty()) {
+                    connectionTasks.remove(session.getId(), tasks);
+                }
+            }
+        };
+        tasks.add(task);
+        executor.execute(task);
     }
 
     @Override
@@ -177,6 +232,8 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         Long userId = sessionUsers.remove(session.getId());
         Long connectedAt = sessionConnectedAt.remove(session.getId());
         String chatSessionId = sessionChatSessionIds.remove(session.getId());
+        cancelConnectionTurns(session.getId());
+        cancelConnectionTasks(session.getId());
         reflectOnConversation(userId, chatSessionId);
         triggerCognitiveCycleIfDue();
         NotificationService proactiveNotificationService = proactiveNotificationServiceProvider.getIfAvailable();
@@ -207,7 +264,12 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                     return;
                 }
                 memoryStore.clearMemory(userId, chatSessionId);
-                sendJson(safe, "cleared", objectMapper.createObjectNode().put("message", "对话记忆已清空"));
+                sendJson(
+                        safe,
+                        "cleared",
+                        objectMapper.createObjectNode().put("message", "对话记忆已清空"),
+                        requestId(root),
+                        null);
                 return;
             }
 
@@ -216,46 +278,163 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
 
+            String requestId = requestId(root);
+            if (!isValidRequestId(requestId)) {
+                sendRejected(safe, requestId, "INVALID_REQUEST_ID", "requestId 格式无效");
+                return;
+            }
+
             if (!rateLimiter.tryAcquireChat(session.getId())) {
-                sendJson(safe, "error", objectMapper.createObjectNode().put("reason", "RATE_LIMITED"));
+                sendRejected(safe, requestId, "RATE_LIMITED", "发送过于频繁，请稍后重试");
                 return;
             }
 
             String text = root.path("message").asText("").trim();
             if (text.isEmpty()) {
-                sendJson(safe, "error", objectMapper.createObjectNode().put("message", "消息不能为空"));
+                sendRejected(safe, requestId, "EMPTY_MESSAGE", "消息不能为空");
                 return;
             }
 
             String chatSessionId = root.path("sessionId").asText("").trim();
             if (!AgentChatSessionSupport.isValid(chatSessionId)) {
-                sendJson(safe, "error", objectMapper.createObjectNode().put("message", "缺少或无效的 sessionId"));
+                sendRejected(safe, requestId, "INVALID_SESSION_ID", "缺少或无效的 sessionId");
                 return;
             }
             sessionChatSessionIds.put(session.getId(), chatSessionId);
 
-            AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId, chatSessionId);
-            String pageContext = formatPageContext(root.path("context"));
-            String taskType = root.path("taskType").asText("").strip();
+            String turnId = UUID.randomUUID().toString();
+            int timeoutSeconds = Math.max(1, properties.getTurnTimeoutSeconds());
+            Duration turnTimeout = Duration.ofSeconds(timeoutSeconds);
+            AgentTurnCoordinator.AcquireResult acquisition = turnCoordinator.acquire(
+                    userId,
+                    chatSessionId,
+                    requestId,
+                    turnId,
+                    turnTimeout.plusSeconds(TURN_LEASE_GRACE_SECONDS));
+            if (acquisition.status() != AgentTurnCoordinator.AcquireStatus.ACQUIRED) {
+                String reason = switch (acquisition.status()) {
+                    case TURN_IN_PROGRESS -> "TURN_IN_PROGRESS";
+                    case DUPLICATE_REQUEST -> "DUPLICATE_REQUEST";
+                    case UNAVAILABLE -> "TURN_COORDINATION_UNAVAILABLE";
+                    case ACQUIRED -> throw new IllegalStateException("unreachable acquire status");
+                };
+                sendRejected(safe, requestId, reason, rejectionMessage(reason));
+                return;
+            }
+
+            AgentTurnControl turnControl = AgentTurnControl.create(
+                    requestId,
+                    turnId,
+                    chatSessionId,
+                    session.getId(),
+                    turnTimeout);
+            ActiveTurn activeTurn = new ActiveTurn(userId, chatSessionId, turnControl);
+            connectionTurns.computeIfAbsent(
+                            session.getId(), ignored -> new ConcurrentHashMap<>())
+                    .put(turnId, activeTurn);
+
+            AtomicReference<AgentEvent> terminalEvent = new AtomicReference<>();
+            boolean acceptedSent = false;
+            boolean leaseReleased = false;
             try {
+                sendJson(
+                        safe,
+                        "accepted",
+                        objectMapper.createObjectNode().put("status", "accepted"),
+                        requestId,
+                        turnId);
+                acceptedSent = true;
+                AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId, chatSessionId);
+                String pageContext = formatPageContext(root.path("context"));
+                String taskType = root.path("taskType").asText("").strip();
                 Consumer<AgentEvent> eventSink = event -> {
+                    if (!isActiveTurn(session.getId(), turnId, activeTurn) || !safe.isOpen()) {
+                        turnControl.cancel();
+                        throw AgentTurnBudget.unavailableForStage(
+                                AgentTurnBudget.UnavailableReason.CANCELLED,
+                                "client_delivery");
+                    }
+                    if ("final".equals(event.type()) || "error".equals(event.type())) {
+                        terminalEvent.set(event);
+                        return;
+                    }
                     try {
-                        if (safe.isOpen()) {
-                            sendJson(safe, event.type(), event.data());
-                        }
+                        sendJson(safe, event.type(), event.data(), requestId, turnId);
                     } catch (Exception e) {
                         log.warn("WebSocket 发送失败: {}", e.getMessage());
+                        turnControl.cancel();
+                        throw AgentTurnBudget.unavailableForStage(
+                                AgentTurnBudget.UnavailableReason.CANCELLED,
+                                "client_delivery");
                     }
                 };
-                if (taskType.isBlank()) {
-                    agent.run(text, userId, memory, session.getId(), pageContext, eventSink);
+                String path = session.getUri() == null
+                        ? "/api/v1/agent/ws"
+                        : session.getUri().getPath();
+                CorrelationIdSupport.runWithContext(
+                        CorrelationIdSupport.context(turnId, "WS", path),
+                        () -> agent.run(
+                                text,
+                                userId,
+                                memory,
+                                turnControl,
+                                pageContext,
+                                taskType,
+                                eventSink));
+            } catch (Exception exception) {
+                log.warn("Agent turn failed turnId={}: {}", turnId, exception.getMessage());
+                if (acceptedSent && !turnControl.isCancelled()) {
+                    terminalEvent.set(new AgentEvent(
+                            "error",
+                            objectMapper.createObjectNode()
+                                    .put("code", "TURN_FAILED")
+                                    .put("message", "处理失败，请稍后重试")));
                 } else {
-                    agent.run(text, userId, memory, session.getId(), pageContext, taskType, eventSink);
+                    turnControl.cancel();
                 }
             } finally {
-                characterStateService.updateEmotion(userId, text);
-                characterStateService.recordInteraction(userId);
+                leaseReleased = turnCoordinator.release(userId, chatSessionId, turnId);
+                if (leaseReleased) {
+                    removeActiveTurn(session.getId(), turnId, activeTurn);
+                }
             }
+            AgentEvent terminal = terminalEvent.get();
+            if (!leaseReleased) {
+                turnControl.cancel();
+                terminal = new AgentEvent(
+                        "error",
+                        objectMapper.createObjectNode()
+                                .put("code", "TURN_COORDINATION_UNAVAILABLE")
+                                .put("message", "回答已停止，请稍后重试"));
+            } else if (terminal == null && acceptedSent && !turnControl.isCancelled()) {
+                terminal = new AgentEvent(
+                        "error",
+                        objectMapper.createObjectNode()
+                                .put("code", "TURN_FAILED")
+                                .put("message", "处理失败，请稍后重试"));
+            }
+            if (terminal != null && safe.isOpen()) {
+                try {
+                    sendJson(safe, terminal.type(), terminal.data(), requestId, turnId);
+                    turnControl.completeClientDelivery(
+                            true,
+                            terminal.type(),
+                            terminal.data() == null ? null : terminal.data().path("code").asText(""));
+                } catch (Exception exception) {
+                    turnControl.cancel();
+                    turnControl.completeClientDelivery(false, terminal.type(), "CLIENT_DELIVERY_FAILED");
+                    agentMetrics.recordError("client_delivery");
+                    log.warn("WebSocket 终态发送失败 turnId={}: {}", turnId, exception.getMessage());
+                    closeAfterTerminalFailure(safe, turnId);
+                }
+            } else if (terminal != null || turnControl.isCancelled()) {
+                turnControl.completeClientDelivery(false, terminal == null ? "" : terminal.type(), "CLIENT_DELIVERY_FAILED");
+            }
+            if (!leaseReleased) {
+                agentMetrics.recordError("turn_coordination_release");
+                closeAfterTerminalFailure(safe, turnId);
+            }
+            scheduleCharacterStateUpdate(userId, text);
         } catch (Exception e) {
             log.warn("Agent WS 处理失败: {}", e.getMessage());
             try {
@@ -382,10 +561,126 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
         return safeSessions.getOrDefault(session.getId(), session);
     }
 
+    private boolean isActiveTurn(String connectionId, String turnId, ActiveTurn expected) {
+        if (expected.control().isCancelled()) {
+            return false;
+        }
+        Map<String, ActiveTurn> turns = connectionTurns.get(connectionId);
+        return turns != null && turns.get(turnId) == expected;
+    }
+
+    private void removeActiveTurn(String connectionId, String turnId, ActiveTurn expected) {
+        Map<String, ActiveTurn> turns = connectionTurns.get(connectionId);
+        if (turns == null) {
+            return;
+        }
+        turns.remove(turnId, expected);
+        if (turns.isEmpty()) {
+            connectionTurns.remove(connectionId, turns);
+        }
+    }
+
+    private void cancelConnectionTurns(String connectionId) {
+        Map<String, ActiveTurn> turns = connectionTurns.remove(connectionId);
+        if (turns == null) {
+            return;
+        }
+        for (ActiveTurn active : turns.values()) {
+            active.control().cancel();
+            active.control().completeClientDelivery(false, "", "CLIENT_DISCONNECTED");
+            turnCoordinator.release(active.userId(), active.chatSessionId(), active.control().turnId());
+        }
+    }
+
+    private void scheduleCharacterStateUpdate(long userId, String text) {
+        Instant occurredAt = Instant.now();
+        try {
+            executor.execute(() -> {
+                try {
+                    characterStateService.updateEmotion(userId, text, occurredAt);
+                    characterStateService.recordInteraction(userId);
+                } catch (RuntimeException exception) {
+                    log.warn("Agent character state update failed: {}", exception.getMessage());
+                }
+            });
+        } catch (RuntimeException exception) {
+            log.warn("Agent character state update scheduling failed: {}", exception.getMessage());
+        }
+    }
+
+    private void closeAfterTerminalFailure(WebSocketSession session, String turnId) {
+        try {
+            if (session.isOpen()) {
+                session.close(CloseStatus.SERVER_ERROR.withReason("Agent turn delivery failed"));
+            }
+        } catch (Exception closeException) {
+            log.warn("WebSocket 关闭失败 turnId={}: {}", turnId, closeException.getMessage());
+        }
+    }
+
+    private void cancelConnectionTasks(String connectionId) {
+        Set<FutureTask<Void>> tasks = connectionTasks.remove(connectionId);
+        if (tasks == null) {
+            return;
+        }
+        for (FutureTask<Void> task : tasks) {
+            task.cancel(true);
+        }
+    }
+
+    private String requestId(JsonNode root) {
+        return root.path("requestId").asText("").strip();
+    }
+
+    private boolean isValidRequestId(String requestId) {
+        return requestId != null && REQUEST_ID_PATTERN.matcher(requestId).matches();
+    }
+
+    private void sendRejected(
+            WebSocketSession session,
+            String requestId,
+            String code,
+            String message) throws Exception {
+        ObjectNode data = objectMapper.createObjectNode();
+        data.put("code", code);
+        data.put("message", message);
+        sendJson(session, "rejected", data, requestId, null);
+    }
+
+    private String rejectionMessage(String code) {
+        return switch (code) {
+            case "TURN_IN_PROGRESS" -> "当前对话仍有回答正在生成";
+            case "DUPLICATE_REQUEST" -> "该请求已经处理过，请勿重复发送";
+            case "TURN_COORDINATION_UNAVAILABLE" -> "暂时无法建立回答任务，请稍后重试";
+            default -> "请求未被接受";
+        };
+    }
+
     private void sendJson(WebSocketSession session, String type, JsonNode data) throws Exception {
+        sendJson(session, type, data, null, null);
+    }
+
+    private void sendJson(
+            WebSocketSession session,
+            String type,
+            JsonNode data,
+            String requestId,
+            String turnId) throws Exception {
         ObjectNode envelope = objectMapper.createObjectNode();
         envelope.put("type", type);
+        if (requestId != null && !requestId.isBlank()) {
+            envelope.put("requestId", requestId);
+        }
+        if (turnId != null && !turnId.isBlank()) {
+            envelope.put("turnId", turnId);
+        }
         envelope.set("data", data);
         session.sendMessage(new TextMessage(objectMapper.writeValueAsString(envelope)));
+    }
+
+    private record ActiveTurn(
+            long userId,
+            String chatSessionId,
+            AgentTurnControl control) {
     }
 }

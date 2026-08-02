@@ -42,7 +42,8 @@ public class BangumiSearchTool implements AgentTool {
     @Override
     public Map<String, ParamDef> parameterSchema() {
         return Map.of(
-                "keyword", new ParamDef(agentDomainConfig.bangumi().keywordParam(), String.class, true)
+                "keyword", ParamDef.string(
+                        agentDomainConfig.bangumi().keywordParam(), true, 1, 120)
         );
     }
 

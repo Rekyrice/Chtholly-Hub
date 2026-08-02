@@ -14,6 +14,7 @@ import java.util.Map;
  * @param historyBlock formatted conversation history
  * @param tools tools addressable by action name
  * @param maxSteps maximum number of model decisions
+ * @param turnBudget shared whole-turn budget, or {@code null} for legacy callers
  */
 public record AgentLoopRequest(
         String systemPrompt,
@@ -21,7 +22,8 @@ public record AgentLoopRequest(
         long userId,
         String historyBlock,
         Map<String, AgentTool> tools,
-        int maxSteps
+        int maxSteps,
+        AgentTurnBudget turnBudget
 ) {
     public AgentLoopRequest {
         systemPrompt = systemPrompt == null ? "" : systemPrompt;
@@ -29,5 +31,16 @@ public record AgentLoopRequest(
         historyBlock = historyBlock == null ? "" : historyBlock;
         tools = tools == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(tools));
         maxSteps = Math.max(1, maxSteps);
+    }
+
+    /** Creates a request without a whole-turn deadline for legacy and isolated tests. */
+    public AgentLoopRequest(
+            String systemPrompt,
+            String question,
+            long userId,
+            String historyBlock,
+            Map<String, AgentTool> tools,
+            int maxSteps) {
+        this(systemPrompt, question, userId, historyBlock, tools, maxSteps, null);
     }
 }

@@ -84,8 +84,28 @@ public final class PromptTailRenderer {
             ParamDef definition = entry.getValue();
             prompt.append("\n    - ").append(entry.getKey())
                     .append(" (").append(schemaType(definition.type()))
-                    .append(definition.required() ? ", 必填" : ", 可选")
-                    .append("): ").append(definition.description());
+                    .append(definition.required() ? ", 必填" : ", 可选");
+            appendConstraints(prompt, definition);
+            prompt.append(')')
+                    .append(": ").append(definition.description());
+        }
+    }
+
+    private void appendConstraints(StringBuilder prompt, ParamDef definition) {
+        if (definition.minLength() != null || definition.maxLength() != null) {
+            prompt.append(", 长度 ")
+                    .append(definition.minLength() == null ? "0" : definition.minLength())
+                    .append("..")
+                    .append(definition.maxLength() == null ? "∞" : definition.maxLength());
+        }
+        if (definition.minimum() != null || definition.maximum() != null) {
+            prompt.append(", 范围 ")
+                    .append(definition.minimum() == null ? "-∞" : definition.minimum())
+                    .append("..")
+                    .append(definition.maximum() == null ? "∞" : definition.maximum());
+        }
+        if (!definition.enumValues().isEmpty()) {
+            prompt.append(", 可选值 ").append(String.join("|", definition.enumValues()));
         }
     }
 

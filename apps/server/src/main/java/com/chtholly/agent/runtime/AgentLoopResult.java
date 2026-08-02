@@ -77,6 +77,8 @@ public record AgentLoopResult(
         LLM_ERROR,
         LLM_INTERRUPTED,
         TOOL_INTERRUPTED,
+        TURN_TIMEOUT,
+        CANCELLED,
         MAX_STEPS
     }
 }

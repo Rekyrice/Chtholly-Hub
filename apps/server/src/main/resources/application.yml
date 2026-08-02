@@ -148,8 +148,8 @@ agent:
   max-steps: ${AGENT_MAX_STEPS:5}
   memory-max-turns: ${AGENT_MEMORY_MAX_TURNS:20}
   memory-ttl-minutes: ${AGENT_MEMORY_TTL_MINUTES:120}
-  stream-char-delay-ms: ${AGENT_STREAM_CHAR_DELAY_MS:50}
   tool-timeout-seconds: ${AGENT_TOOL_TIMEOUT_SECONDS:30}
+  turn-timeout-seconds: ${AGENT_TURN_TIMEOUT_SECONDS:60}
   skills:
     page-explain:
       enabled: ${AGENT_SKILL_PAGE_EXPLAIN_ENABLED:true}

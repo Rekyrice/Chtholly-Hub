@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildAgentChatPayload } from "@/components/agent/hooks/useAgentWebSocket";
 
 describe("buildAgentChatPayload", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it("includes explicit taskType and structured article context for Skill requests", () => {
     expect(
       buildAgentChatPayload({
@@ -14,6 +19,7 @@ describe("buildAgentChatPayload", () => {
       }),
     ).toEqual({
       type: "chat",
+      requestId: expect.any(String),
       sessionId: "session-1",
       message: "解释时间的重量",
       taskType: "page-explain",
@@ -37,6 +43,7 @@ describe("buildAgentChatPayload", () => {
 
     expect(payload).toEqual({
       type: "chat",
+      requestId: expect.any(String),
       sessionId: "session-2",
       message: "今天过得怎么样？",
       context: {
@@ -45,6 +52,46 @@ describe("buildAgentChatPayload", () => {
       },
     });
     expect(payload).not.toHaveProperty("taskType");
+  });
+
+  it("uses a fresh crypto.randomUUID value for every payload", () => {
+    const randomUUID = vi.spyOn(globalThis.crypto, "randomUUID")
+      .mockReturnValueOnce("11111111-1111-4111-8111-111111111111")
+      .mockReturnValueOnce("22222222-2222-4222-8222-222222222222");
+    const input = {
+      sessionId: "session-uuid",
+      message: "继续",
+      pathname: "/agent",
+      title: "Agent",
+      search: "",
+    };
+
+    const first = buildAgentChatPayload(input);
+    const second = buildAgentChatPayload(input);
+
+    expect(first.requestId).toBe("11111111-1111-4111-8111-111111111111");
+    expect(second.requestId).toBe("22222222-2222-4222-8222-222222222222");
+    expect(randomUUID).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to a compatible UUID when crypto.randomUUID is unavailable", () => {
+    const getRandomValues = vi.fn((bytes: Uint8Array) => bytes.fill(0));
+    vi.stubGlobal("crypto", { getRandomValues });
+
+    try {
+      const payload = buildAgentChatPayload({
+        sessionId: "session-fallback",
+        message: "兼容旧浏览器",
+        pathname: "/agent",
+        title: "Agent",
+        search: "",
+      });
+
+      expect(payload.requestId).toBe("00000000-0000-4000-8000-000000000000");
+      expect(getRandomValues).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("uses the active session context and ignores stale context query parameters", () => {

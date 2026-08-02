@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -57,6 +58,10 @@ public class AgentLoopExecutor {
         boolean bangumiCharactersCompleted = false;
 
         for (int step = 0; step < request.maxSteps(); step++) {
+            AgentLoopResult unavailable = stopIfTurnUnavailable(request, trace, sink, transcript);
+            if (unavailable != null) {
+                return unavailable;
+            }
             String userPrompt = String.join("\n\n", transcript);
             int inputChars = request.systemPrompt().length() + userPrompt.length();
             Observation llmSpan = agentObservationService.startLlmSpan(agentSpan, llmInvoker.modelName());
@@ -64,10 +69,33 @@ public class AgentLoopExecutor {
             String llmOut;
             try {
                 llmOut = invokeDecisionWithRetry(
-                        request.systemPrompt(), userPrompt, inputChars, step, trace);
+                        request.systemPrompt(), userPrompt, inputChars, step, trace,
+                        request.turnBudget());
+            } catch (AgentTurnBudget.UnavailableException exception) {
+                agentObservationService.finishSpanError(
+                        llmSpan,
+                        exception.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                                ? "turn_cancelled"
+                                : "turn_timeout",
+                        AgentSpanAttributes.llm(exception.reason().name().toLowerCase()),
+                        Map.of());
+                return terminateUnavailable(exception, transcript, trace, sink);
             } catch (InterruptedException e) {
-                long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
                 Thread.currentThread().interrupt();
+                if (request.turnBudget() != null && request.turnBudget().isCancelled()) {
+                    agentObservationService.finishSpanError(
+                            llmSpan,
+                            "turn_cancelled",
+                            AgentSpanAttributes.llm("cancelled"),
+                            Map.of());
+                    return terminateUnavailable(
+                            AgentTurnBudget.unavailableForStage(
+                                    AgentTurnBudget.UnavailableReason.CANCELLED,
+                                    "loop_llm"),
+                            transcript,
+                            trace,
+                            sink);
+                }
                 agentObservationService.finishSpanError(
                         llmSpan,
                         "llm_interrupted",
@@ -89,6 +117,14 @@ public class AgentLoopExecutor {
                         AgentSpanAttributes.llm("timeout"),
                         Map.of());
                 log.warn("Agent LLM call timed out (>{}s)", llmInvoker.timeoutSeconds());
+                if (request.turnBudget() != null && request.turnBudget().isExpired()) {
+                    return terminateUnavailable(
+                            AgentTurnBudget.unavailableForStage(
+                                    AgentTurnBudget.UnavailableReason.TIMEOUT, "loop_llm"),
+                            transcript,
+                            trace,
+                            sink);
+                }
                 return terminate(
                         AgentLoopResult.Status.LLM_TIMEOUT,
                         transcript,
@@ -169,7 +205,23 @@ public class AgentLoopExecutor {
             long toolStart = System.currentTimeMillis();
             AgentToolResult toolResult;
             try {
-                toolResult = agentToolExecutor.execute(tool, inputMap, request.userId());
+                toolResult = request.turnBudget() == null
+                        ? agentToolExecutor.execute(tool, inputMap, request.userId())
+                        : agentToolExecutor.execute(
+                                tool,
+                                inputMap,
+                                request.userId(),
+                                request.turnBudget().remaining(
+                                        "loop_tool", request.turnBudget().totalBudget()));
+            } catch (AgentTurnBudget.UnavailableException exception) {
+                agentObservationService.finishSpanError(
+                        toolSpan,
+                        exception.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                                ? "turn_cancelled"
+                                : "turn_timeout",
+                        Map.of("status", exception.reason().name().toLowerCase()),
+                        Map.of());
+                return terminateUnavailable(exception, transcript, trace, sink);
             } catch (RuntimeException e) {
                 agentObservationService.finishSpanError(
                         toolSpan,
@@ -198,6 +250,17 @@ public class AgentLoopExecutor {
             observation = augmentObservation(tool.name(), observation, toolResult.status());
             emitObserve(sink, observation);
             trace.recordStep(step, tool.name(), stepLlmMs, stepToolMs);
+            if (request.turnBudget() != null
+                    && (request.turnBudget().isCancelled() || request.turnBudget().isExpired())) {
+                AgentTurnBudget.UnavailableReason reason = request.turnBudget().isCancelled()
+                        ? AgentTurnBudget.UnavailableReason.CANCELLED
+                        : AgentTurnBudget.UnavailableReason.TIMEOUT;
+                return terminateUnavailable(
+                        AgentTurnBudget.unavailableForStage(reason, "loop_tool"),
+                        transcript,
+                        trace,
+                        sink);
+            }
             if (toolResult.status() == AgentToolResult.Status.INTERRUPTED) {
                 return terminate(
                         AgentLoopResult.Status.TOOL_INTERRUPTED,
@@ -227,11 +290,21 @@ public class AgentLoopExecutor {
             String userPrompt,
             int inputChars,
             int step,
-            AgentExecutionTrace trace) throws Exception {
+            AgentExecutionTrace trace,
+            AgentTurnBudget turnBudget) throws Exception {
         for (int attempt = 0; attempt < 2; attempt++) {
             long attemptStartedAt = System.currentTimeMillis();
             try {
-                String output = llmInvoker.call(systemPrompt, userPrompt, 0.1, 1024);
+                String output = turnBudget == null
+                        ? llmInvoker.call(systemPrompt, userPrompt, 0.1, 1024)
+                        : llmInvoker.call(
+                                systemPrompt,
+                                userPrompt,
+                                0.1,
+                                1024,
+                                turnBudget.remaining(
+                                        "loop_llm",
+                                        Duration.ofSeconds(llmInvoker.timeoutSeconds())));
                 trace.recordLlmCall(
                         step,
                         System.currentTimeMillis() - attemptStartedAt,
@@ -306,6 +379,43 @@ public class AgentLoopExecutor {
         trace.setErrorMessage(message);
         emitError(sink, message);
         return AgentLoopResult.terminal(status, transcript, message);
+    }
+
+    private AgentLoopResult stopIfTurnUnavailable(
+            AgentLoopRequest request,
+            AgentExecutionTrace trace,
+            Consumer<AgentEvent> sink,
+            List<String> transcript) {
+        if (request.turnBudget() == null) {
+            return null;
+        }
+        try {
+            request.turnBudget().check("loop");
+            return null;
+        } catch (AgentTurnBudget.UnavailableException exception) {
+            return terminateUnavailable(exception, transcript, trace, sink);
+        }
+    }
+
+    private AgentLoopResult terminateUnavailable(
+            AgentTurnBudget.UnavailableException exception,
+            List<String> transcript,
+            AgentExecutionTrace trace,
+            Consumer<AgentEvent> sink) {
+        boolean cancelled = exception.reason() == AgentTurnBudget.UnavailableReason.CANCELLED;
+        if (!cancelled) {
+            trace.recordTimeoutStage(exception.stage());
+        }
+        trace.recordCancellation(cancelled);
+        return terminate(
+                cancelled ? AgentLoopResult.Status.CANCELLED : AgentLoopResult.Status.TURN_TIMEOUT,
+                transcript,
+                cancelled
+                        ? agentDomainConfig.errors().modelCallInterrupted()
+                        : agentDomainConfig.errors().responseTimeout(),
+                trace,
+                sink,
+                cancelled ? trace::terminateCancelled : trace::terminateTimeout);
     }
 
     private void appendExchange(List<String> transcript, String llmOut, String observation) {

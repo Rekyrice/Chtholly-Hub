@@ -8,6 +8,7 @@ import com.chtholly.agent.config.AgentProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -77,6 +78,32 @@ class AgentToolExecutorTest {
         assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
         assertThat(result.status()).isEqualTo(AgentToolResult.Status.TIMEOUT);
         assertThat(result.observation()).isEqualTo("Tool execution timed out");
+        assertThat(interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
+    void toolUsesTurnRemainderWhenItIsShorterThanConfiguredTimeout() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch interrupted = new CountDownLatch(1);
+        AgentTool blockingTool = tool("blocking", Map.of(), input -> {
+            started.countDown();
+            try {
+                Thread.sleep(30_000);
+                return "late";
+            } catch (InterruptedException exception) {
+                interrupted.countDown();
+                Thread.currentThread().interrupt();
+                return "interrupted";
+            }
+        });
+
+        long startedAt = System.nanoTime();
+        AgentToolResult result = executor(5).execute(
+                blockingTool, Map.of(), 7L, Duration.ofMillis(100));
+
+        assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(2));
+        assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(result.status()).isEqualTo(AgentToolResult.Status.TIMEOUT);
         assertThat(interrupted.await(1, TimeUnit.SECONDS)).isTrue();
     }
 

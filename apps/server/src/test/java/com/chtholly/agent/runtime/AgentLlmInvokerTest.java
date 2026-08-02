@@ -96,6 +96,33 @@ class AgentLlmInvokerTest {
     }
 
     @Test
+    void callUsesTurnRemainderWhenItIsShorterThanConfiguredTimeout() throws Exception {
+        properties.setLlmTimeoutSeconds(5);
+        CountDownLatch started = new CountDownLatch(1);
+        AtomicBoolean interrupted = new AtomicBoolean();
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
+                .thenAnswer(invocation -> {
+                    started.countDown();
+                    try {
+                        Thread.sleep(10_000);
+                        return "late";
+                    } catch (InterruptedException exception) {
+                        interrupted.set(true);
+                        throw exception;
+                    }
+                });
+
+        long startedAt = System.nanoTime();
+        assertThatThrownBy(() -> invoker.call(
+                "system", "user", 0.1, 1024, Duration.ofMillis(100)))
+                .isInstanceOf(TimeoutException.class);
+
+        assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(2));
+        assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(waitUntilTrue(interrupted, Duration.ofSeconds(1))).isTrue();
+    }
+
+    @Test
     void callUnwrapsExecutionExceptionCause() {
         IllegalStateException failure = new IllegalStateException("model failed");
         when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).call().content())
@@ -161,6 +188,18 @@ class AgentLlmInvokerTest {
         StepVerifier.create(invoker.stream("system", "user", 0.3, 1024))
                 .expectError(TimeoutException.class)
                 .verify(Duration.ofSeconds(3));
+    }
+
+    @Test
+    void streamUsesTurnRemainderWhenItIsShorterThanConfiguredTimeout() {
+        properties.setLlmTimeoutSeconds(5);
+        when(chatClient.prompt().system(anyString()).user(anyString()).options(any()).stream().content())
+                .thenReturn(Flux.never());
+
+        StepVerifier.create(invoker.stream(
+                        "system", "user", 0.3, 1024, Duration.ofMillis(100)))
+                .expectError(TimeoutException.class)
+                .verify(Duration.ofSeconds(2));
     }
 
     @Test
