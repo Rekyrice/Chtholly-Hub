@@ -103,7 +103,7 @@
         </where>
     </select>
 
-    <select id="findUnanalyzedByStatus" resultType="com.chtholly.agent.trace.ExecutionTraceRow">
+    <select id="findUnanalyzedFailureCandidates" resultType="com.chtholly.agent.trace.ExecutionTraceRow">
         SELECT
             id,
             correlation_id AS correlationId,
@@ -122,8 +122,14 @@
             pattern_analyzed AS patternAnalyzed,
             created_at AS createdAt
         FROM execution_traces
-        WHERE status = #{status}
-          AND pattern_analyzed = 0
+        WHERE pattern_analyzed = 0
+          AND (
+              status != 'SUCCESS'
+              OR COALESCE(
+                  NULLIF(JSON_UNQUOTE(JSON_EXTRACT(trace_payload, '$.failureType')), 'null'),
+                  'NONE'
+              ) != 'NONE'
+          )
         ORDER BY started_at ASC
         LIMIT #{limit}
     </select>

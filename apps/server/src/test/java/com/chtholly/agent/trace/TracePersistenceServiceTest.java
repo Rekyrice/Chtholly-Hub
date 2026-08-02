@@ -19,7 +19,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -85,8 +84,7 @@ class TracePersistenceServiceTest {
         )));
         failure.setTracePayload("{\"terminatedBy\":\"error\"}");
 
-        when(traceMapper.findUnanalyzedByStatus(eq(TraceStatus.FAILURE.name()), anyInt()))
-                .thenReturn(List.of(failure));
+        when(traceMapper.findUnanalyzedFailureCandidates(anyInt())).thenReturn(List.of(failure));
         when(failurePatternMapper.findByPatternKey(anyString())).thenReturn(null);
 
         service.mineFailurePatterns();
@@ -112,18 +110,76 @@ class TracePersistenceServiceTest {
     }
 
     @Test
+    void extractPatternKeyPrefersStepLimitOverFailureTypeAndStructuredToolFailure() {
+        ExecutionTraceRow row = new ExecutionTraceRow();
+        row.setTracePayload("{\"terminatedBy\":\"max_steps\",\"failureType\":\"INTERNAL_ERROR\"}");
+        row.setToolCalls("""
+                [{"tool":"bangumi_search","success":false,"status":"ERROR",
+                  "error_code":"TOOL_EXECUTION_ERROR","duration_ms":6000}]
+                """);
+
+        assertThat(service.extractPatternKey(row)).isEqualTo("step:limit:exceeded");
+    }
+
+    @Test
     void extractPatternKeyUsesFixedFailureTypeWithoutFreeText() {
         ExecutionTraceRow row = new ExecutionTraceRow();
         row.setErrorMessage("用户正文和任意异常不应成为模式键");
-        row.setToolCalls("[{\"tool\":\"unbounded-user-value\",\"success\":false}]");
+        row.setToolCalls("""
+                [{"tool":"bangumi_search","success":false,"status":"TIMEOUT",
+                  "error_code":"TOOL_TIMEOUT","duration_ms":1}]
+                """);
         row.setTracePayload("{\"failureType\":\"CITATION_INVALID\"}");
 
         assertThat(service.extractPatternKey(row)).isEqualTo("failure:citation_invalid");
     }
 
     @Test
+    void extractPatternKeyUsesStructuredToolTimeoutWithoutDurationGuessing() {
+        ExecutionTraceRow row = new ExecutionTraceRow();
+        row.setToolCalls("""
+                [{"tool":"bangumi_search","success":false,"status":"TIMEOUT",
+                  "error_code":"TOOL_TIMEOUT","duration_ms":1}]
+                """);
+
+        assertThat(service.extractPatternKey(row)).isEqualTo("tool:bangumi_search:timeout");
+    }
+
+    @Test
+    void extractPatternKeyPrefersStructuredToolErrorOverDurationAndFreeText() {
+        ExecutionTraceRow row = new ExecutionTraceRow();
+        row.setErrorMessage("request timeout");
+        row.setToolCalls("""
+                [{"tool":"bangumi_search","success":false,"status":"ERROR",
+                  "error_code":"TOOL_EXECUTION_ERROR","duration_ms":6000}]
+                """);
+
+        assertThat(service.extractPatternKey(row)).isEqualTo("tool:bangumi_search:tool_execution_error");
+    }
+
+    @Test
+    void extractPatternKeyDoesNotUseDurationForMalformedStructuredToolCodes() {
+        ExecutionTraceRow row = new ExecutionTraceRow();
+        row.setToolCalls("""
+                [{"tool":"../../raw-user-tool","success":false,"status":"ERROR",
+                  "error_code":"RAW/USER/VALUE","duration_ms":6000}]
+                """);
+
+        assertThat(service.extractPatternKey(row)).isEqualTo("tool:unknown:failure");
+    }
+
+    @Test
+    void extractPatternKeyHandlesMalformedPayloadAndNullToolCall() {
+        ExecutionTraceRow row = new ExecutionTraceRow();
+        row.setTracePayload("{");
+        row.setToolCalls("[null]");
+
+        assertThat(service.extractPatternKey(row)).isEqualTo("execution:unknown:failure");
+    }
+
+    @Test
     void mineFailurePatternsSkipsWhenEmpty() {
-        when(traceMapper.findUnanalyzedByStatus(anyString(), anyInt())).thenReturn(List.of());
+        when(traceMapper.findUnanalyzedFailureCandidates(anyInt())).thenReturn(List.of());
 
         service.mineFailurePatterns();
 

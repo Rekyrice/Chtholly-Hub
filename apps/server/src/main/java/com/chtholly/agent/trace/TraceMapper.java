@@ -27,7 +27,7 @@ public interface TraceMapper {
                @Param("to") Instant to,
                @Param("correlationId") String correlationId);
 
-    List<ExecutionTraceRow> findUnanalyzedByStatus(@Param("status") String status, @Param("limit") int limit);
+    List<ExecutionTraceRow> findUnanalyzedFailureCandidates(@Param("limit") int limit);
 
     int markPatternAnalyzed(@Param("ids") List<Long> ids);
 

@@ -3,6 +3,7 @@ package com.chtholly.agent.trace;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -52,13 +54,12 @@ public class TracePersistenceService {
      */
     @Scheduled(fixedDelay = 21_600_000L, initialDelay = 600_000L)
     public void mineFailurePatterns() {
-        List<ExecutionTraceRow> failures = traceMapper.findUnanalyzedByStatus(
-                TraceStatus.FAILURE.name(), MINING_BATCH_SIZE);
-        if (failures.isEmpty()) {
+        List<ExecutionTraceRow> candidates = traceMapper.findUnanalyzedFailureCandidates(MINING_BATCH_SIZE);
+        if (candidates.isEmpty()) {
             return;
         }
 
-        Map<String, List<ExecutionTraceRow>> grouped = failures.stream()
+        Map<String, List<ExecutionTraceRow>> grouped = candidates.stream()
                 .collect(Collectors.groupingBy(this::extractPatternKey));
 
         Instant now = Instant.now();
@@ -66,12 +67,12 @@ public class TracePersistenceService {
             upsertPattern(entry.getKey(), entry.getValue(), now);
         }
 
-        List<Long> ids = failures.stream().map(ExecutionTraceRow::getId).toList();
+        List<Long> ids = candidates.stream().map(ExecutionTraceRow::getId).toList();
         if (!ids.isEmpty()) {
             traceMapper.markPatternAnalyzed(ids);
         }
-        log.info("失败模式挖掘完成：处理 {} 条 FAILURE trace，聚合为 {} 个模式",
-                failures.size(), grouped.size());
+        log.info("失败模式挖掘完成：处理 {} 条失败候选 trace，聚合为 {} 个模式",
+                candidates.size(), grouped.size());
     }
 
     private ExecutionTraceRow toRow(AgentExecutionTrace trace) throws JsonProcessingException {
@@ -123,17 +124,33 @@ public class TracePersistenceService {
      * 从失败 trace 提取模式键，格式：{category}:{detail}:{failure_type}
      */
     String extractPatternKey(ExecutionTraceRow trace) {
-        String fixedFailure = fixedFailureType(trace.getTracePayload());
-        if (fixedFailure != null) {
-            return "failure:" + fixedFailure.toLowerCase(java.util.Locale.ROOT);
+        JsonNode payload = readTracePayload(trace.getTracePayload());
+        if ("max_steps".equals(payload.path("terminatedBy").asText())) {
+            return "step:limit:exceeded";
         }
-        String error = trace.getErrorMessage() == null ? "" : trace.getErrorMessage().toLowerCase();
+
+        String fixedFailure = fixedFailureType(payload);
+        if (fixedFailure != null) {
+            return "failure:" + fixedFailure.toLowerCase(Locale.ROOT);
+        }
+
+        List<Map<String, Object>> toolCalls = readToolCalls(trace.getToolCalls());
+        String structuredToolFailure = structuredToolFailure(toolCalls);
+        if (structuredToolFailure != null) {
+            return structuredToolFailure;
+        }
+
+        String error = trace.getErrorMessage() == null
+                ? ""
+                : trace.getErrorMessage().toLowerCase(Locale.ROOT);
         if (error.contains("timeout") || error.contains("超时")) {
             return "execution:llm:timeout";
         }
 
-        List<Map<String, Object>> toolCalls = readToolCalls(trace.getToolCalls());
         for (Map<String, Object> call : toolCalls) {
+            if (call == null || hasStructuredOutcome(call)) {
+                continue;
+            }
             Object success = call.get("success");
             if (Boolean.FALSE.equals(success)) {
                 String tool = boundedToolName(call.get("tool"));
@@ -145,32 +162,91 @@ public class TracePersistenceService {
             }
         }
 
-        String payload = trace.getTracePayload() == null ? "" : trace.getTracePayload();
-        if (payload.contains("max_steps") || payload.contains("\"terminatedBy\":\"max_steps\"")) {
-            return "step:limit:exceeded";
-        }
-        if (payload.contains("parse_error")) {
+        if (hasParseError(payload)) {
             return "step:parse:error";
         }
         return "execution:unknown:failure";
     }
 
-    private String fixedFailureType(String payload) {
+    private String structuredToolFailure(List<Map<String, Object>> toolCalls) {
+        for (Map<String, Object> call : toolCalls) {
+            if (call == null || !hasStructuredOutcome(call)) {
+                continue;
+            }
+            String status = boundedToolStatus(call.get("status"));
+            if ("SUCCESS".equals(status)) {
+                continue;
+            }
+            String tool = boundedToolName(call.get("tool"));
+            String errorCode = boundedErrorCode(call.get("error_code"));
+            if ("TIMEOUT".equals(status) || "TOOL_TIMEOUT".equals(errorCode)) {
+                return "tool:" + tool + ":timeout";
+            }
+            if (!errorCode.isEmpty()) {
+                return "tool:" + tool + ":" + errorCode.toLowerCase(Locale.ROOT);
+            }
+            String failure = switch (status) {
+                case "VALIDATION_ERROR" -> "validation_error";
+                case "INTERRUPTED" -> "interrupted";
+                default -> "failure";
+            };
+            return "tool:" + tool + ":" + failure;
+        }
+        return null;
+    }
+
+    private boolean hasStructuredOutcome(Map<String, Object> call) {
+        return call.containsKey("status") || call.containsKey("error_code");
+    }
+
+    private String fixedFailureType(JsonNode payload) {
+        String value = payload.path("failureType").asText("");
+        for (AgentExecutionTrace.FailureType type : AgentExecutionTrace.FailureType.values()) {
+            if (type.name().equals(value)) {
+                return type == AgentExecutionTrace.FailureType.NONE ? null : type.name();
+            }
+        }
+        return null;
+    }
+
+    private JsonNode readTracePayload(String payload) {
         if (payload == null || payload.isBlank()) {
-            return null;
+            return objectMapper.createObjectNode();
         }
         try {
-            String value = objectMapper.readTree(payload).path("failureType").asText("");
-            AgentExecutionTrace.FailureType type = AgentExecutionTrace.FailureType.valueOf(value);
-            return type == AgentExecutionTrace.FailureType.NONE ? null : type.name();
-        } catch (Exception ignored) {
-            return null;
+            JsonNode parsed = objectMapper.readTree(payload);
+            return parsed == null ? objectMapper.createObjectNode() : parsed;
+        } catch (JsonProcessingException e) {
+            log.debug("解析 Agent trace payload 失败，按空 payload 处理", e);
+            return objectMapper.createObjectNode();
         }
     }
 
     private String boundedToolName(Object value) {
         String tool = value == null ? "" : String.valueOf(value);
         return tool.matches("[a-z0-9_]{1,64}") ? tool : "unknown";
+    }
+
+    private String boundedToolStatus(Object value) {
+        String status = value == null ? "" : String.valueOf(value);
+        return switch (status) {
+            case "SUCCESS", "VALIDATION_ERROR", "TIMEOUT", "ERROR", "INTERRUPTED" -> status;
+            default -> "";
+        };
+    }
+
+    private String boundedErrorCode(Object value) {
+        String errorCode = value == null ? "" : String.valueOf(value);
+        return errorCode.matches("[A-Z0-9_]{1,64}") ? errorCode : "";
+    }
+
+    private boolean hasParseError(JsonNode payload) {
+        for (JsonNode step : payload.path("steps")) {
+            if ("parse_error".equals(step.path("action").asText())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String defaultResolutionHint(String patternKey) {
@@ -191,8 +267,10 @@ public class TracePersistenceService {
             return List.of();
         }
         try {
-            return objectMapper.readValue(json, new TypeReference<>() {});
+            List<Map<String, Object>> toolCalls = objectMapper.readValue(json, new TypeReference<>() {});
+            return toolCalls == null ? List.of() : toolCalls;
         } catch (Exception e) {
+            log.debug("解析 Agent tool calls 失败，按空列表处理", e);
             return List.of();
         }
     }
