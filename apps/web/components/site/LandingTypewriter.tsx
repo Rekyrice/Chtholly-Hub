@@ -5,19 +5,17 @@ import { cn } from "@/lib/utils";
 
 type LandingLine = {
   text: string;
-  translation?: string;
 };
 
 const LINES: readonly LandingLine[] = [
   {
-    text: "私は世界で一番幸せな女の子",
-    translation: "我是世界上最幸福的女孩",
+    text: "場所がどことか関係ない。私は、君と一緒にいたいだけなんだから。",
   },
   {
-    text: "每一个故事都值得被记住",
+    text: "ただいま、帰りました……やっと言えた……",
   },
   {
-    text: "今天仓库里也很安静呢",
+    text: "世界一、幸せな女の子だ。",
   },
 ] as const;
 
@@ -65,9 +63,6 @@ export default function LandingTypewriter() {
           |
         </span>
       </p>
-      {current.translation && (
-        <p className="landing-typewriter__translation">{current.translation}</p>
-      )}
     </div>
   );
 }
