@@ -17,14 +17,14 @@
 - WebSocket 断开时取消该连接拥有的 turn，前端解除 busy 状态并允许用户重新发送；不伪装成旧流可以续传。
 - 建立整轮绝对 deadline，并让检索、循环 LLM、工具、最终生成和引用修复共同消费剩余预算。
 - 保留“完整生成后验证引用”的安全门，删除服务端逐字符等待，使通过校验的答案立即可见。
-- Trace 记录请求/轮次身份、预算、超时阶段、取消状态、实际工具计划和答案可见时序，但不记录问题正文、答案正文或工具原始结果。
-- 补齐工具 schema，降低 Skill 隐式误触发，并按问题意图收窄模型实际可调用的工具。
+- Trace 在 ADMIN 边界内记录请求/轮次身份、预算、超时阶段、取消状态、实际工具计划、答案可见时序，以及复盘所需的原始问题、页面上下文、LLM 输入输出、工具输入输出和最终答案；只过滤基础设施凭证，并用容量与完整度字段显式标记截断。
+- 补齐工具 schema，降低 Skill 隐式误触发，按问题意图收窄模型实际可调用的工具，并增加无需新密钥的受控公网搜索与抓取能力。
 
 ## 非目标
 
 - 不实现断线后续传旧 token、跨实例回放已完成答案或持久任务队列；断线语义是取消并恢复到可重试状态。
 - 不新增用户侧“查看 Trace”入口，也不新增演示预检页面。
-- 不在本次加入新的外部工具或写操作工具；工具扩展另行按明确用户工作流设计。
+- 不加入登录态浏览、任意浏览器操作或站外写操作工具；公网扩展只覆盖可审计的只读搜索与正文抓取。
 - 不把 `agent-evaluation-v2` 做成用户页面；它仍是开发阶段的离线评测数据集与报告。
 
 ## 协议
@@ -115,14 +115,16 @@ Trace 将区分：
 
 ## Trace 扩展
 
-在现有 JSON payload 中新增结构化元数据，不新增数据库列：
+在现有 JSON payload 中升级为 `agent-trace-v4`，不新增数据库列：
 
 - `turn.requestId`、`turn.turnId`、`turn.chatSessionId`、`turn.connectionId`；
 - `turn.budgetMs`、`turn.timeoutStage`、`turn.cancelled`；
 - `toolPlan.reason`、`toolPlan.effectiveTools`；
-- `answerTiming.modelFirstTokenMs`、`safeAnswerReadyMs`、`firstClientDeltaMs`。
+- `answerTiming.modelFirstTokenMs`、`safeAnswerReadyMs`、`firstClientDeltaMs`；
+- 顶层 `steps`、`events`、`llmCalls`、`toolCalls`，以及 ADMIN 归档所需的原始问题、页面上下文、每次模型调用、工具输入/Observation、最终答案和失败因果链；
+- `privacy` 与 `capture` 中的事件丢弃、工具预览截断、正文截断和凭证过滤计数。
 
-Trace 的 `correlationId` 使用规范化 `turnId`，使协议事件、日志、Observation 与持久 Trace 可以稳定关联。所有正文仍只保存指纹或长度。
+Trace 的 `correlationId` 使用规范化 `turnId`，使协议事件、日志、Observation 与持久 Trace 可以稳定关联。详情接口保持 ADMIN-only；管理员能看到完整捕获正文与对应指纹、长度和 SHA-256，普通用户没有 Trace 入口。
 
 ## Skill 路由与工具规划
 
@@ -143,15 +145,17 @@ Trace 的 `correlationId` 使用规范化 `turnId`，使协议事件、日志、
 - 评分、集数、放送、季数：`bangumi_search`；
 - 角色、人物、声优、配角：`bangumi_search` + `bangumi_characters`；
 - 作者、漫画家及其他作品：`bangumi_person_works`；
-- 没有外部资料意图：不给已选 Skill 暴露 Bangumi 工具。
+- 明确 URL：`web_fetch`；明确联网、外部资料或时效意图：`web_search` + `web_fetch`；
+- 没有外部资料意图：不给已选 Skill 暴露 Bangumi 或公网工具；“只依据当前文章/站内”与“不要联网”优先排除公网工具。
 
-普通对话未命中 Skill 时保留现有五工具集合，避免在本次引入不可解释的通用意图分类器。Trace 记录最终集合和规划原因。
+普通对话未命中 Skill 且没有公网意图时保留原有五工具集合；只有确定性命中 URL、联网研究或时效关键词时才增加公网工具，常见的“别联网/不联网”等否定表达具有更高优先级。`web_search` 结果只用于发现候选，必须抓取本轮累计候选中的至少一个页面并生成动态 Evidence 后才能结束；同 URL 内容变化会更新原 citation 的版本绑定。最终生成使用 canonical Evidence 快照，工具 transcript 只保留未附加动态 Evidence 的 canonical Observation；工具决策过程、客户端 Observation 和 ADMIN Trace 仍保留完整旧/新版本历史。Trace 记录最终集合、规划原因、候选/抓取关系和每个外部步骤的诊断元数据。
 
 ### 参数 schema
 
 - `article_rag`：`query` 必填字符串，`topK` 可选整数；
 - `bangumi_characters`：`keyword` 可选字符串，允许结合问题和历史推断；
 - `bangumi_person_works`：`keyword`、`work_title`、`work_type` 均声明为可选，运行时继续要求 `keyword/work_title` 至少一个，并校验 `work_type`。
+- `web_search`：`query` 必填、`maxResults` 有界；`web_fetch`：`url` 必填、`maxChars` 有界，运行时继续执行逐跳 URL/DNS/robots/媒体类型/体积/charset 校验。
 
 ## 前端状态机
 

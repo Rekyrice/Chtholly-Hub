@@ -2,9 +2,9 @@
 
 > 本计划在 `codex/agent-turn-reliability` 独立 worktree 中执行，遵循测试驱动开发：每项行为先得到正确原因的失败测试，再写最小实现。
 
-**目标：** 为 Agent 单轮请求建立稳定身份、跨实例单飞、断线取消、整轮 deadline、快速安全输出与最小工具计划，并把关键运行元数据写入 Trace。
+**目标：** 为 Agent 单轮请求建立稳定身份、跨实例单飞、断线取消、整轮 deadline、快速安全输出与最小工具计划；把可复盘的完整运行链写入 ADMIN Trace，并增加无需新配置的受控公网调研工具。
 
-**架构：** WebSocket handler 负责协议、所有权与连接生命周期；`AgentTurnCoordinator` 用 Redis 保证跨实例互斥/去重；`AgentTurnBudget` 贯穿 Agent、循环、LLM、工具和检索；`AgentToolPlanner` 在 Skill/Evidence 规划后决定最终工具集合；Trace 只记录结构化元数据与指纹。
+**架构：** WebSocket handler 负责协议、所有权与连接生命周期；`AgentTurnCoordinator` 用 Redis 保证跨实例互斥/去重；`AgentTurnBudget` 贯穿 Agent、循环、LLM、工具和检索；`AgentToolPlanner` 在 Skill/Evidence 规划后决定最终工具集合；ADMIN Trace 用类型化投影记录完整输入输出和外部条件；公网研究以 `web_search → web_fetch → Evidence` 为受控只读链路。
 
 **技术栈：** Java 21、Spring Boot 3.2.4、Spring Data Redis、Reactor、JUnit 5/Mockito、Next.js 16、React、TypeScript、Vitest/Testing Library。
 
@@ -148,21 +148,59 @@
 3. 实现幂等 `interruptActiveTurn`，清理 request/turn、steps、streaming 与 busy；下一次 send 建立新连接和新 request。
 4. 重跑 Agent 前端定向测试。
 
-## 任务 8：更新架构文档并做完整验证
+## 任务 8：升级 ADMIN Trace 归档与展示
+
+**文件：**
+
+- 修改：`apps/server/src/main/java/com/chtholly/agent/observability/`
+- 修改：`apps/server/src/main/java/com/chtholly/agent/trace/`
+- 修改：`apps/web/components/site/TraceDetailView.tsx`
+- 修改：`apps/web/lib/types/trace.ts`
+- 修改对应 Trace 后端与前端测试
+
+**步骤：**
+
+1. 先写投影与 UI 失败测试，覆盖原始问题/上下文、LLM 输入输出、工具输入/Observation、外部条件、最终答案、步骤摘要和完整度。
+2. 把 payload 升级为 `agent-trace-v4`，保持旧版本兼容读取，详情接口保持 ADMIN-only。
+3. 只遮蔽基础设施凭证；记录每段正文的长度、SHA-256、截断状态和整轮容量计数。
+4. 用类型化 DTO 和前端类型投影展示，不透传未知数据库 JSON。
+
+## 任务 9：增加受控公网研究与动态 Evidence
+
+**文件：**
+
+- 新增：`apps/server/src/main/java/com/chtholly/agent/tools/WebSearchTool.java`
+- 新增：`apps/server/src/main/java/com/chtholly/agent/tools/WebFetchTool.java`
+- 新增：`apps/server/src/main/java/com/chtholly/agent/web/`
+- 修改：`apps/server/src/main/java/com/chtholly/agent/runtime/AgentToolPlanner.java`
+- 修改：`apps/server/src/main/java/com/chtholly/agent/runtime/AgentLoopExecutor.java`
+- 修改：`apps/server/src/main/java/com/chtholly/agent/evidence/`
+- 新增/修改对应工具、安全、循环和 Evidence 测试
+
+**步骤：**
+
+1. 写工具规划失败测试：站内限定优先排除公网；URL 只开放抓取；显式联网/时效意图开放搜索与抓取；普通闲聊不出站。
+2. 实现 discovery-only `web_search` 和 `web_fetch`，不新增密钥、端口或必需配置。
+3. 为抓取链增加连接级 DNS pinning、逐 hop URL/redirect/robots 校验、用户与 host 配额、媒体类型/体积/charset 边界。
+4. 让成功抓取生成绑定 final URL 与正文哈希的 PUBLIC Evidence；搜索摘要不得直接获得 citation。
+5. 循环累计本轮所有搜索候选 URL，只有抓取命中任一可见候选且产出 Evidence 才允许结束；不得用独立总量上限丢弃模型仍可见的候选，同 URL 新哈希原位更新 citation 并重新注入；最终答案 transcript 保留工具元数据但不重复注入历史动态 Evidence，只使用最终 canonical Evidence 快照。
+6. 把 provider HTTP 元数据、每跳安全决策、实际编码和抽取结果写入 Trace。
+
+## 任务 10：更新架构文档并做完整验证
 
 **文件：**
 
 - 修改：`docs/architecture/agent-system.md`
 - 修改：`docs/architecture/request-flows.md`
-- 修改：`docs/development/configuration.md`
-- 按需修改：`.env.example`
+- 修改：`docs/architecture/backend.md`
+- 修改：本设计与实施计划
 
 **步骤：**
 
-1. 更新 WebSocket envelope、单飞/取消语义、deadline、Trace 字段和最小工具计划；只记录真实已实现行为。
+1. 更新 WebSocket envelope、单飞/取消语义、deadline、Trace v4、动态 Evidence 与公网工具边界；只记录真实已实现行为。
 2. 后端执行定向测试集合。
 3. 后端执行 `mvn test`。
 4. 前端执行 `npm run test:run`。
 5. 前端执行 `npm run build`。
-6. 执行 `git diff --check` 与 `git status --short`，检查只包含本任务文件。
+6. 执行 `git diff --check`、配置/端口零改动检查与 `git status --short`，检查只包含本任务文件。
 7. 分职责提交中文 Conventional Commits；每次提交前执行新增忽略文件审计。
