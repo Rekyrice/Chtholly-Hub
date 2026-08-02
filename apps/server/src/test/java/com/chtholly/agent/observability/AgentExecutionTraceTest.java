@@ -3,6 +3,7 @@ package com.chtholly.agent.observability;
 import com.chtholly.agent.evidence.Evidence;
 import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.runtime.AgentTurnControl;
+import com.chtholly.agent.runtime.AgentToolResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -193,8 +194,300 @@ class AgentExecutionTraceTest {
         assertThat(payload.path("answerTiming").path("firstClientDeltaMs").asLong())
                 .isEqualTo(805L);
         assertThat(payload.path("components").path("traceSchema").asText())
-                .isEqualTo("agent-trace-v3");
+                .isEqualTo("agent-trace-v4");
         assertThat(payload.toString()).doesNotContain("private question", "private page");
+    }
+
+    @Test
+    void recordsCompleteLlmContractAndUnifiedEventWithoutContent() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+
+        trace.recordLlmCall(
+                2,
+                "ANSWER",
+                "deepseek-chat",
+                "TIMEOUT",
+                "LLM_DEADLINE_EXCEEDED",
+                3,
+                9_000,
+                7_500,
+                1_500,
+                2_048,
+                512,
+                180L);
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+        JsonNode call = payload.path("llmCalls").path(0);
+        JsonNode event = payload.path("events").path(0);
+
+        assertThat(call.path("purpose").asText()).isEqualTo("ANSWER");
+        assertThat(call.path("model").asText()).isEqualTo("deepseek-chat");
+        assertThat(call.path("status").asText()).isEqualTo("TIMEOUT");
+        assertThat(call.path("error_code").asText()).isEqualTo("LLM_DEADLINE_EXCEEDED");
+        assertThat(call.path("attempt").asInt()).isEqualTo(3);
+        assertThat(call.path("budget_before_ms").asLong()).isEqualTo(9_000L);
+        assertThat(call.path("budget_after_ms").asLong()).isEqualTo(7_500L);
+        assertThat(call.path("duration_ms").asLong()).isEqualTo(1_500L);
+        assertThat(event.path("sequence").asInt()).isEqualTo(call.path("sequence").asInt());
+        assertThat(event.path("phase").asText()).isEqualTo("llm");
+        assertThat(event.path("type").asText()).isEqualTo("llm");
+        assertThat(event.path("name").asText()).isEqualTo("llm_call");
+        assertThat(event.path("status").asText()).isEqualTo("TIMEOUT");
+        assertThat(event.path("step_index").asInt()).isEqualTo(2);
+        assertThat(event.path("attempt").asInt()).isEqualTo(3);
+        assertThat(event.path("started_offset_ms").asLong()).isGreaterThanOrEqualTo(0L);
+        assertThat(event.path("details").fieldNames()).toIterable()
+                .containsExactly("purpose", "model", "input_chars", "output_chars", "first_token_ms");
+        assertThat(call.fieldNames()).toIterable().doesNotContain("prompt", "output");
+        assertThat(event.path("details").fieldNames()).toIterable().doesNotContain("prompt", "output");
+    }
+
+    @Test
+    void recordsAllToolStatusesDiagnosticsAndLegacySuccess() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        int index = 0;
+        for (AgentToolResult.Status status : AgentToolResult.Status.values()) {
+            AgentToolDiagnostics diagnostics = new AgentToolDiagnostics(
+                    "article_search",
+                    "mysql",
+                    "public_only",
+                    Map.of("query", "safe query"),
+                    "bounded output",
+                    "a".repeat(64),
+                    14,
+                    status == AgentToolResult.Status.TIMEOUT,
+                    2,
+                    List.of("post:1", "post:2"),
+                    status == AgentToolResult.Status.SUCCESS ? "" : "TOOL_" + status.name());
+            AgentToolResult result = new AgentToolResult(
+                    "raw observation must not be copied",
+                    status,
+                    diagnostics.errorCode(),
+                    diagnostics);
+            trace.recordToolCall(index++, "article_rag", 50, 4_000, 3_950, result);
+        }
+        trace.recordToolCall("legacy_tool", 20, "secret=input", "secret=observation", true);
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+        JsonNode calls = payload.path("toolCalls");
+        JsonNode events = payload.path("events");
+
+        assertThat(calls).hasSize(6);
+        for (int statusIndex = 0; statusIndex < AgentToolResult.Status.values().length; statusIndex++) {
+            AgentToolResult.Status expected = AgentToolResult.Status.values()[statusIndex];
+            JsonNode call = calls.path(statusIndex);
+            JsonNode event = events.path(statusIndex);
+            assertThat(call.path("success").asBoolean())
+                    .isEqualTo(expected == AgentToolResult.Status.SUCCESS);
+            assertThat(call.path("status").asText()).isEqualTo(expected.name());
+            assertThat(call.path("budget_before_ms").asLong()).isEqualTo(4_000L);
+            assertThat(call.path("budget_after_ms").asLong()).isEqualTo(3_950L);
+            assertThat(event.path("phase").asText()).isEqualTo("tool");
+            assertThat(event.path("details").path("operation").asText()).isEqualTo("article_search");
+            assertThat(event.path("details").path("provider").asText()).isEqualTo("mysql");
+            assertThat(event.path("details").path("sourcePolicy").asText()).isEqualTo("public_only");
+            assertThat(event.path("details").path("sanitizedInput").path("query").asText())
+                    .isEqualTo("safe query");
+            assertThat(event.path("details").path("outputPreview").asText()).isEqualTo("bounded output");
+            assertThat(event.path("details").path("outputSha256").asText()).isEqualTo("a".repeat(64));
+            assertThat(event.path("details").path("outputChars").asInt()).isEqualTo(14);
+            assertThat(event.path("details").path("resultCount").asInt()).isEqualTo(2);
+            assertThat(event.path("details").path("selectedIds")).hasSize(2);
+        }
+        assertThat(calls.path(5).path("success").asBoolean()).isTrue();
+        assertThat(calls.path(5).path("status").asText()).isEqualTo("SUCCESS");
+        assertThat(events.path(5).path("phase").asText()).isEqualTo("tool");
+        assertThat(calls.path(5).path("input_summary").asText()).startsWith("sha256=");
+        assertThat(calls.path(5).path("observation_summary").asText()).startsWith("sha256=");
+        assertThat(payload.toString()).doesNotContain("raw observation must not be copied", "secret=input");
+    }
+
+    @Test
+    void sharesMonotonicSequenceAndClampsOffsetsDurationsAndBudgets() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        trace.recordTurnContext("question", "page", "model", "candidate");
+        trace.recordLlmCall(-2, "PLAN", "model", "SUCCESS", "", 0, -1, -2, -3, -4, -5, -6L);
+        trace.recordToolCall(
+                -3,
+                "tool",
+                -10,
+                -20,
+                -30,
+                new AgentToolResult("ok", AgentToolResult.Status.SUCCESS));
+        trace.recordToolCall(-5, "legacy_tool", -11, "input", "observation", false);
+        trace.recordStep(
+                -4,
+                "https://malicious.example/path token=step-secret _conversationHistory=hidden",
+                -40,
+                -50);
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+        JsonNode events = payload.path("events");
+
+        assertThat(events).hasSize(4);
+        assertThat(events.path(0).path("sequence").asInt()).isEqualTo(1);
+        assertThat(events.path(1).path("sequence").asInt()).isEqualTo(2);
+        assertThat(events.path(2).path("sequence").asInt()).isEqualTo(3);
+        assertThat(events.path(3).path("sequence").asInt()).isEqualTo(4);
+        events.forEach(event -> {
+            assertThat(event.path("started_offset_ms").asLong()).isGreaterThanOrEqualTo(0L);
+            assertThat(event.path("duration_ms").asLong()).isGreaterThanOrEqualTo(0L);
+        });
+        assertThat(events.path(1).path("attempt").asInt()).isEqualTo(1);
+        assertThat(events.path(1).path("budget_before_ms").asLong()).isZero();
+        assertThat(events.path(1).path("budget_after_ms").asLong()).isZero();
+        assertThat(events.path(2).path("budget_before_ms").asLong()).isZero();
+        assertThat(events.path(2).path("budget_after_ms").asLong()).isZero();
+        assertThat(payload.path("llmCalls").path(0).path("step_index").asInt()).isZero();
+        assertThat(payload.path("toolCalls").path(0).path("step_index").asInt()).isZero();
+        assertThat(payload.path("toolCalls").path(1).path("step_index").asInt()).isZero();
+        assertThat(events.path(1).path("step_index").asInt()).isZero();
+        assertThat(events.path(2).path("step_index").asInt()).isZero();
+        assertThat(events.path(3).path("step_index").asInt()).isZero();
+        assertThat(payload.path("steps").path(0).path("stepIndex").asInt()).isZero();
+        assertThat(payload.path("steps").path(0).path("llmMs").asLong()).isZero();
+        assertThat(payload.path("steps").path(0).path("toolMs").asLong()).isZero();
+        assertThat(payload.path("steps").path(0).path("action").asText()).isEqualTo("[REDACTED]");
+        assertThat(payload.path("steps").toString())
+                .doesNotContain("step-secret", "malicious.example", "_conversationHistory");
+    }
+
+    @Test
+    void lifecycleMethodsEmitSafeOrderedInstantEvents() {
+        AgentTurnControl control = AgentTurnControl.create(
+                "request-1", "turn-lifecycle", "session-1", "connection-1", Duration.ofSeconds(30));
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, control, 5);
+        trace.recordTurnContext("private question", "private page", "model", "candidate");
+        trace.recordSkillSelection("SELECTED", "page-explain", "v1");
+        trace.recordSkillValidation("VALID");
+        trace.recordToolPlan("skill_evidence_auto", Set.of("article_rag"));
+        trace.recordRetrieval(Map.of("semantic", "SUCCESS_RESULTS"), EvidenceSet.empty());
+        trace.recordCitationValidation("VALID");
+        trace.recordMemoryWrite("SUCCESS", "");
+        trace.recordAnswerTiming(20L, 30L, 40L);
+        trace.markFailure(AgentExecutionTrace.FailureType.NONE);
+        control.completeClientDelivery(false, "error", "CLIENT_DELIVERY_FAILED");
+        trace.resolveClientDelivery();
+        trace.terminateFinalAnswer("private final answer");
+
+        JsonNode events = objectMapper.valueToTree(trace.toPayloadMap()).path("events");
+
+        assertThat(events).extracting(event -> event.path("name").asText()).containsExactly(
+                "turn_context",
+                "skill_selection",
+                "skill_validation",
+                "tool_plan",
+                "retrieval",
+                "citation_validation",
+                "memory_write",
+                "answer_timing",
+                "failure_classification",
+                "client_delivery",
+                "terminal");
+        assertThat(events).allSatisfy(event -> assertThat(event.path("duration_ms").asLong()).isZero());
+        assertThat(events).extracting(event -> event.path("phase").asText()).containsOnly(
+                "accepted", "skill", "plan", "retrieval", "validation", "memory", "delivery");
+        assertThat(objectMapper.valueToTree(trace.toPayloadMap()).toString())
+                .doesNotContain("private question", "private page", "private final answer");
+    }
+
+    @Test
+    void privacyMetadataCountsDroppedEventsAndTruncatedToolOutputs() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        AgentToolDiagnostics diagnostics = AgentToolDiagnostics.fallback("search", "x".repeat(2_000));
+        trace.recordToolCall(
+                0,
+                "search",
+                5,
+                100,
+                95,
+                new AgentToolResult("x".repeat(2_000), AgentToolResult.Status.SUCCESS, "", diagnostics));
+        for (int index = 0; index < 260; index++) {
+            trace.recordSkillValidation("VALID");
+        }
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+        JsonNode privacy = payload.path("privacy");
+
+        assertThat(payload.path("events")).hasSize(256);
+        assertThat(privacy.path("captureLevel").asText()).isEqualTo("STANDARD");
+        assertThat(privacy.path("policyVersion").asText()).isEqualTo("trace-standard-v1");
+        assertThat(privacy.path("contentBounded").asBoolean()).isTrue();
+        assertThat(privacy.path("maxInputStringChars").asInt())
+                .isEqualTo(AgentTraceSanitizer.MAX_INPUT_STRING_CHARS);
+        assertThat(privacy.path("maxOutputPreviewChars").asInt())
+                .isEqualTo(AgentTraceSanitizer.MAX_OUTPUT_PREVIEW_CHARS);
+        assertThat(privacy.path("maxCollectionItems").asInt())
+                .isEqualTo(AgentTraceSanitizer.MAX_COLLECTION_ITEMS);
+        assertThat(privacy.path("eventLimit").asInt()).isEqualTo(256);
+        assertThat(privacy.path("droppedEvents").asInt()).isEqualTo(5);
+        assertThat(privacy.path("truncatedToolOutputs").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void eventProjectionBoundsAndRedactsUntrustedMarkers() throws Exception {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        String secret = "never-store-this-secret";
+        AgentToolDiagnostics diagnostics = new AgentToolDiagnostics(
+                "operation token=" + secret,
+                "https://malicious.example/path",
+                "_conversationHistory=" + secret,
+                Map.of("authorization", "Bearer " + secret, "items", List.of("password=" + secret)),
+                "authorization=Bearer " + secret + " https://malicious.example/output",
+                "b".repeat(64),
+                4_000,
+                true,
+                1,
+                List.of("token=" + secret),
+                "error_code=" + secret);
+        trace.recordLlmCall(
+                0,
+                "purpose token=" + secret,
+                "https://malicious.example/model",
+                "status token=" + secret,
+                "error_code=" + secret,
+                1,
+                10,
+                5,
+                5,
+                10,
+                5,
+                1L);
+        trace.recordToolCall(
+                0,
+                "https://malicious.example/tool",
+                5,
+                10,
+                5,
+                new AgentToolResult("authorization=Bearer " + secret, AgentToolResult.Status.ERROR,
+                        "error_code=" + secret, diagnostics));
+
+        String payload = objectMapper.writeValueAsString(trace.toPayloadMap());
+
+        assertThat(payload).doesNotContain(secret, "malicious.example", "Bearer", "_conversationHistory");
+        assertThat(payload.length()).isLessThan(20_000);
+    }
+
+    @Test
+    void legacyOverloadsPopulateV4EventsAndCounters() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        trace.recordLlmCall(10, 40, 20);
+        trace.recordLlmCall(11, 44, 22, 3L);
+        trace.recordLlmCall(1, 12, 48, 24, 4L);
+        trace.recordToolCall("legacy", 5, "input", "output", true);
+        trace.recordToolCall(1, "legacy-step", 6, "input", "output", false);
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+
+        assertThat(payload.path("llmCallCount").asInt()).isEqualTo(3);
+        assertThat(payload.path("llmCalls")).hasSize(3);
+        assertThat(payload.path("toolCalls")).hasSize(2);
+        assertThat(payload.path("events")).hasSize(5);
+        assertThat(payload.path("llmCalls").path(0).path("purpose").asText()).isEqualTo("LEGACY");
+        assertThat(payload.path("llmCalls").path(0).path("status").asText()).isEqualTo("SUCCESS");
+        assertThat(payload.path("llmCalls").path(0).path("attempt").asInt()).isEqualTo(1);
+        assertThat(trace.getLlmDurationMs()).isEqualTo(33L);
+        assertThat(trace.getToolDurationMs()).isEqualTo(11L);
     }
 
     @Test

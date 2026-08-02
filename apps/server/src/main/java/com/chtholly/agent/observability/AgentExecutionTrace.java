@@ -2,6 +2,7 @@ package com.chtholly.agent.observability;
 
 import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.runtime.AgentTurnControl;
+import com.chtholly.agent.runtime.AgentToolResult;
 import com.chtholly.agent.trace.TraceStatus;
 import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +16,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,6 +30,9 @@ import java.util.TreeMap;
 @Slf4j
 @Getter
 public class AgentExecutionTrace {
+
+    private static final int EVENT_LIMIT = 256;
+    private static final int MAX_EVENT_TEXT_CHARS = AgentTraceSanitizer.MAX_INPUT_STRING_CHARS;
 
     private final String correlationId;
     private final long userId;
@@ -48,6 +54,8 @@ public class AgentExecutionTrace {
     private long outputTokenEstimate;
     private int finalAnswerLength;
     private int eventSequence;
+    private int droppedEvents;
+    private int truncatedToolOutputs;
     private String terminatedBy = "error";
     private String modelVersion = "unknown";
     private String runMode = "candidate";
@@ -91,6 +99,7 @@ public class AgentExecutionTrace {
     private final List<TraceStepInfo> steps = new ArrayList<>();
     private final List<TraceToolCallInfo> toolCallDetails = new ArrayList<>();
     private final List<TraceLlmCallInfo> llmCallDetails = new ArrayList<>();
+    private final List<TraceEventInfo> events = new ArrayList<>();
 
     public AgentExecutionTrace(long userId, String sessionId, int maxSteps) {
         this.correlationId = resolveCorrelationId();
@@ -156,17 +165,104 @@ public class AgentExecutionTrace {
             int inputChars,
             int outputChars,
             Long firstTokenMs) {
-        llmCalls++;
-        llmDurationMs += durationMs;
-        inputTokenEstimate += estimateTokens(inputChars);
-        outputTokenEstimate += estimateTokens(outputChars);
-        llmCallDetails.add(new TraceLlmCallInfo(
-                nextEventSequence(),
+        recordLlmCall(
                 stepIndex,
+                "LEGACY",
+                modelVersion,
+                "SUCCESS",
+                "",
+                1,
+                0,
+                0,
                 durationMs,
                 inputChars,
                 outputChars,
-                firstTokenMs));
+                firstTokenMs);
+    }
+
+    /**
+     * Records one model invocation using the Trace v4 duration event contract.
+     *
+     * @param stepIndex zero-based loop step, or {@code null} when unavailable
+     * @param purpose stable invocation purpose
+     * @param model model identifier
+     * @param status stable invocation status
+     * @param errorCode stable low-cardinality error code
+     * @param attempt one-based attempt number
+     * @param budgetBeforeMs remaining turn budget before the invocation
+     * @param budgetAfterMs remaining turn budget after the invocation
+     * @param durationMs invocation duration
+     * @param inputChars model input size
+     * @param outputChars model output size
+     * @param firstTokenMs first-token latency, or {@code null}
+     */
+    public void recordLlmCall(
+            Integer stepIndex,
+            String purpose,
+            String model,
+            String status,
+            String errorCode,
+            int attempt,
+            long budgetBeforeMs,
+            long budgetAfterMs,
+            long durationMs,
+            int inputChars,
+            int outputChars,
+            Long firstTokenMs) {
+        long safeDurationMs = nonNegative(durationMs);
+        long safeBudgetBeforeMs = nonNegative(budgetBeforeMs);
+        long safeBudgetAfterMs = nonNegative(budgetAfterMs);
+        int safeInputChars = Math.max(0, inputChars);
+        int safeOutputChars = Math.max(0, outputChars);
+        int safeAttempt = Math.max(1, attempt);
+        Integer safeStepIndex = nonNegativeStepIndex(stepIndex);
+        Long safeFirstTokenMs = nonNegative(firstTokenMs);
+        String safePurpose = eventText(purpose, "UNKNOWN");
+        String safeModel = eventText(model, "unknown");
+        String safeStatus = stableCode(status, "UNKNOWN");
+        String safeErrorCode = stableCode(errorCode, "");
+        int sequence = nextEventSequence();
+
+        llmCalls++;
+        llmDurationMs += safeDurationMs;
+        inputTokenEstimate += estimateTokens(safeInputChars);
+        outputTokenEstimate += estimateTokens(safeOutputChars);
+        llmCallDetails.add(new TraceLlmCallInfo(
+                sequence,
+                safeStepIndex,
+                safePurpose,
+                safeModel,
+                safeStatus,
+                safeErrorCode,
+                safeAttempt,
+                safeBudgetBeforeMs,
+                safeBudgetAfterMs,
+                safeDurationMs,
+                safeInputChars,
+                safeOutputChars,
+                safeFirstTokenMs));
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("purpose", safePurpose);
+        details.put("model", safeModel);
+        details.put("input_chars", safeInputChars);
+        details.put("output_chars", safeOutputChars);
+        if (safeFirstTokenMs != null) {
+            details.put("first_token_ms", safeFirstTokenMs);
+        }
+        recordDurationEvent(
+                sequence,
+                "llm",
+                "llm",
+                "llm_call",
+                safeStatus,
+                safeStepIndex,
+                safeAttempt,
+                safeBudgetBeforeMs,
+                safeBudgetAfterMs,
+                safeErrorCode,
+                safeDurationMs,
+                details);
     }
 
     public void recordToolCall(
@@ -195,26 +291,126 @@ public class AgentExecutionTrace {
             String inputSummary,
             String observation,
             boolean success) {
-        if (toolName != null && !toolName.isBlank()) {
-            toolsCalled.add(toolName);
+        String safeToolName = eventText(toolName, "unknown");
+        long safeDurationMs = nonNegative(durationMs);
+        Integer safeStepIndex = nonNegativeStepIndex(stepIndex);
+        int sequence = nextEventSequence();
+        if (!safeToolName.isBlank()) {
+            toolsCalled.add(safeToolName);
         }
-        toolDurationMs += durationMs;
+        toolDurationMs += safeDurationMs;
         toolCallDetails.add(new TraceToolCallInfo(
-                nextEventSequence(),
-                stepIndex,
-                toolName,
+                sequence,
+                safeStepIndex,
+                safeToolName,
                 fingerprintSummary(inputSummary),
                 fingerprintSummary(observation),
-                durationMs,
-                success));
+                safeDurationMs,
+                success,
+                success ? AgentToolResult.Status.SUCCESS.name() : AgentToolResult.Status.ERROR.name(),
+                success ? "" : "TOOL_FAILED",
+                0,
+                0));
+        recordDurationEvent(
+                sequence,
+                "tool",
+                "tool",
+                safeToolName,
+                success ? "SUCCESS" : "ERROR",
+                safeStepIndex,
+                1,
+                0L,
+                0L,
+                success ? "" : "TOOL_FAILED",
+                safeDurationMs,
+                Map.of());
+    }
+
+    /**
+     * Records one structured tool result without retaining its raw observation.
+     *
+     * @param stepIndex zero-based loop step, or {@code null} when unavailable
+     * @param toolName tool identifier
+     * @param durationMs tool duration
+     * @param budgetBeforeMs remaining turn budget before the call
+     * @param budgetAfterMs remaining turn budget after the call
+     * @param result structured tool result with bounded diagnostics
+     */
+    public void recordToolCall(
+            Integer stepIndex,
+            String toolName,
+            long durationMs,
+            long budgetBeforeMs,
+            long budgetAfterMs,
+            AgentToolResult result) {
+        AgentToolResult safeResult = java.util.Objects.requireNonNull(result, "result");
+        AgentToolDiagnostics diagnostics = safeResult.diagnostics();
+        String safeToolName = eventText(toolName, "unknown");
+        String safeStatus = safeResult.status().name();
+        String safeErrorCode = stableCode(safeResult.errorCode(), "");
+        long safeDurationMs = nonNegative(durationMs);
+        long safeBudgetBeforeMs = nonNegative(budgetBeforeMs);
+        long safeBudgetAfterMs = nonNegative(budgetAfterMs);
+        Integer safeStepIndex = nonNegativeStepIndex(stepIndex);
+        int sequence = nextEventSequence();
+        boolean success = safeResult.status() == AgentToolResult.Status.SUCCESS;
+
+        toolsCalled.add(safeToolName);
+        toolDurationMs += safeDurationMs;
+        toolCallDetails.add(new TraceToolCallInfo(
+                sequence,
+                safeStepIndex,
+                safeToolName,
+                fingerprintSummary(String.valueOf(diagnostics.sanitizedInput())),
+                fingerprintSummary(safeResult.observation()),
+                safeDurationMs,
+                success,
+                safeStatus,
+                safeErrorCode,
+                safeBudgetBeforeMs,
+                safeBudgetAfterMs));
+        if (diagnostics.outputTruncated()) {
+            truncatedToolOutputs++;
+        }
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("operation", diagnostics.operation());
+        details.put("provider", diagnostics.provider());
+        details.put("sourcePolicy", diagnostics.sourcePolicy());
+        details.put("sanitizedInput", diagnostics.sanitizedInput());
+        details.put("outputPreview", diagnostics.outputPreview());
+        details.put("outputSha256", diagnostics.outputSha256());
+        details.put("outputChars", diagnostics.outputChars());
+        details.put("outputTruncated", diagnostics.outputTruncated());
+        if (diagnostics.resultCount() != null) {
+            details.put("resultCount", diagnostics.resultCount());
+        }
+        details.put("selectedIds", diagnostics.selectedIds());
+        recordDurationEvent(
+                sequence,
+                "tool",
+                "tool",
+                safeToolName,
+                safeStatus,
+                safeStepIndex,
+                1,
+                safeBudgetBeforeMs,
+                safeBudgetAfterMs,
+                safeErrorCode,
+                safeDurationMs,
+                details);
     }
 
     public void recordStep(int stepIndex, String action, long stepLlmMs, long stepToolMs) {
-        totalSteps = stepIndex + 1;
-        stepActions.add(action);
-        steps.add(new TraceStepInfo(stepIndex, action, stepLlmMs, stepToolMs));
+        int safeStepIndex = Math.max(0, stepIndex);
+        String safeAction = eventText(action, "unknown");
+        long safeStepLlmMs = nonNegative(stepLlmMs);
+        long safeStepToolMs = nonNegative(stepToolMs);
+        totalSteps = safeStepIndex + 1;
+        stepActions.add(safeAction);
+        steps.add(new TraceStepInfo(safeStepIndex, safeAction, safeStepLlmMs, safeStepToolMs));
         log.info("[Agent] Step {}/{}: action={}, llm_ms={}, tool_ms={}",
-                stepIndex + 1, maxSteps, action, stepLlmMs, stepToolMs);
+                safeStepIndex + 1, maxSteps, safeAction, safeStepLlmMs, safeStepToolMs);
     }
 
     /** Records bounded replay input plus stable component mode without placing it on OTel spans. */
@@ -235,16 +431,34 @@ public class AgentExecutionTrace {
             case "baseline", "replay" -> normalizedRunMode;
             default -> "candidate";
         };
+        recordInstantEvent(
+                "accepted",
+                "lifecycle",
+                "turn_context",
+                "ACCEPTED",
+                Map.of("model", this.modelVersion, "run_mode", this.runMode));
     }
 
     public void recordSkillSelection(String status, String id, String version) {
         skillSelectionStatus = safe(status, "NOT_EVALUATED");
         skillId = safe(id, "");
         skillVersion = safe(version, "");
+        recordInstantEvent(
+                "skill",
+                "lifecycle",
+                "skill_selection",
+                stableCode(skillSelectionStatus, "UNKNOWN"),
+                Map.of("skill_id", skillId, "skill_version", skillVersion));
     }
 
     public void recordSkillValidation(String status) {
         skillValidationStatus = safe(status, "NOT_RUN");
+        recordInstantEvent(
+                "skill",
+                "lifecycle",
+                "skill_validation",
+                stableCode(skillValidationStatus, "UNKNOWN"),
+                Map.of());
     }
 
     /** Records retrieval metadata and version-bound Evidence without persisting titles or excerpts. */
@@ -263,17 +477,31 @@ public class AgentExecutionTrace {
         evidenceSnapshotHash = evidence.contentHash();
         evidenceMetadata = evidence.items().stream().map(item -> {
             Map<String, String> metadata = new LinkedHashMap<>();
-            metadata.put("citationId", item.citationId());
-            metadata.put("documentId", item.documentId());
-            metadata.put("source", item.retrievalSource());
-            metadata.put("sourceVersion", item.sourceVersion());
-            metadata.put("sourceHash", item.sourceHash());
+            metadata.put("citationId", safe(item.citationId(), ""));
+            metadata.put("documentId", safe(item.documentId(), ""));
+            metadata.put("source", safe(item.retrievalSource(), ""));
+            metadata.put("sourceVersion", safe(item.sourceVersion(), ""));
+            metadata.put("sourceHash", safe(item.sourceHash(), ""));
             return Map.copyOf(metadata);
         }).toList();
+        recordInstantEvent(
+                "retrieval",
+                "lifecycle",
+                "retrieval",
+                retrievalStatuses.values().stream().anyMatch(value -> "FAILED".equals(value) || "TIMEOUT".equals(value))
+                        ? "DEGRADED"
+                        : "COMPLETE",
+                Map.of("source_count", retrievalStatuses.size(), "evidence_count", evidenceCount));
     }
 
     public void recordCitationValidation(String status) {
         citationValidationStatus = safe(status, "NOT_RUN");
+        recordInstantEvent(
+                "validation",
+                "lifecycle",
+                "citation_validation",
+                stableCode(citationValidationStatus, "UNKNOWN"),
+                Map.of());
     }
 
     public void recordTools(Set<String> toolNames) {
@@ -281,6 +509,7 @@ public class AgentExecutionTrace {
         if (toolNames != null) {
             toolNames.stream()
                     .filter(name -> name != null && !name.isBlank())
+                    .map(name -> eventText(name, "unknown"))
                     .forEach(name -> versions.put(name, AgentComponentVersions.TOOLS));
         }
         toolVersions = Map.copyOf(versions);
@@ -293,34 +522,71 @@ public class AgentExecutionTrace {
                 ? List.of()
                 : toolNames.stream()
                 .filter(name -> name != null && !name.isBlank())
+                .map(name -> eventText(name, "unknown"))
                 .sorted()
                 .toList();
+        recordInstantEvent(
+                "plan",
+                "lifecycle",
+                "tool_plan",
+                "PLANNED",
+                Map.of("reason", toolPlanReason, "tool_count", effectiveTools.size()));
     }
 
     /** Updates the effective whole-turn budget after a selected Skill tightens the global limit. */
     public void recordTurnBudget(java.time.Duration budget) {
         turnBudgetMs = budget == null ? 0 : Math.max(0, budget.toMillis());
+        recordInstantEvent(
+                "accepted",
+                "lifecycle",
+                "turn_budget",
+                "UPDATED",
+                Map.of("budget_ms", turnBudgetMs));
     }
 
     /** Records the stage that exhausted the shared turn budget. */
     public void recordTimeoutStage(String stage) {
         timeoutStage = safe(stage, "unknown");
+        recordInstantEvent(
+                "delivery",
+                "lifecycle",
+                "timeout_stage",
+                "TIMEOUT",
+                Map.of("stage", timeoutStage));
     }
 
     /** Records cooperative cancellation state at trace finalization. */
     public void recordCancellation(boolean cancelled) {
         this.cancelled = cancelled;
+        recordInstantEvent(
+                "delivery",
+                "lifecycle",
+                "cancellation",
+                cancelled ? "CANCELLED" : "ACTIVE",
+                Map.of());
     }
 
     /** Records the low-cardinality outcome of the fenced conversation-memory write. */
     public void recordMemoryWrite(String status, String failureCode) {
         memoryWriteStatus = safe(status, "UNKNOWN");
-        memoryFailureCode = failureCode == null ? "" : failureCode.strip();
+        memoryFailureCode = stableCode(failureCode, "");
+        recordInstantEvent(
+                "memory",
+                "lifecycle",
+                "memory_write",
+                stableCode(memoryWriteStatus, "UNKNOWN"),
+                memoryFailureCode.isBlank() ? Map.of() : Map.of("error_code", memoryFailureCode));
     }
 
     /** Reconciles a completed transport terminal outcome before logging or persistence. */
     public void resolveClientDelivery() {
         if (turnControl == null) {
+            recordInstantEvent(
+                    "delivery",
+                    "lifecycle",
+                    "client_delivery",
+                    AgentTurnControl.ClientDeliveryStatus.NOT_APPLICABLE.name(),
+                    Map.of());
             return;
         }
         AgentTurnControl.ClientDeliveryStatus deliveryStatus = turnControl.clientDeliveryStatus();
@@ -335,6 +601,7 @@ public class AgentExecutionTrace {
                 && (deliveryStatus == AgentTurnControl.ClientDeliveryStatus.FAILED
                         || "error".equals(clientTerminalType));
         if (!deliveryInvalidatesSuccess) {
+            recordClientDeliveryEvent();
             return;
         }
         terminatedBy = "error";
@@ -349,6 +616,7 @@ public class AgentExecutionTrace {
                     ? "CLIENT_DELIVERY_FAILED"
                     : clientDeliveryCode;
         }
+        recordClientDeliveryEvent();
     }
 
     /** Rejects persistence before the transport boundary has reconciled this trace. */
@@ -366,35 +634,63 @@ public class AgentExecutionTrace {
         this.modelFirstTokenMs = nonNegative(modelFirstTokenMs);
         this.safeAnswerReadyMs = nonNegative(safeAnswerReadyMs);
         this.firstClientDeltaMs = nonNegative(firstClientDeltaMs);
+        Map<String, Object> details = new LinkedHashMap<>();
+        if (this.modelFirstTokenMs != null) {
+            details.put("model_first_token_ms", this.modelFirstTokenMs);
+        }
+        if (this.safeAnswerReadyMs != null) {
+            details.put("safe_answer_ready_ms", this.safeAnswerReadyMs);
+        }
+        if (this.firstClientDeltaMs != null) {
+            details.put("first_client_delta_ms", this.firstClientDeltaMs);
+        }
+        recordInstantEvent("delivery", "lifecycle", "answer_timing", "RECORDED", details);
     }
 
     public void markFailure(FailureType type) {
         failureType = type == null ? FailureType.INTERNAL_ERROR : type;
+        recordInstantEvent(
+                "validation",
+                "lifecycle",
+                "failure_classification",
+                failureType.name(),
+                Map.of());
     }
 
     public void recordOutcomeReason(OutcomeReason reason) {
         outcomeReason = reason == null ? OutcomeReason.NONE : reason;
+        recordInstantEvent(
+                "validation",
+                "lifecycle",
+                "outcome_reason",
+                outcomeReason.name(),
+                Map.of());
     }
 
     public void terminateFinalAnswer(String answer) {
         terminatedBy = "final_answer";
         finalAnswerLength = answer == null ? 0 : answer.length();
+        recordTerminalEvent("SUCCESS", Map.of("answer_chars", finalAnswerLength));
     }
 
     public void terminateMaxSteps() {
         terminatedBy = "max_steps";
+        recordTerminalEvent("ABORTED", Map.of("reason", "max_steps"));
     }
 
     public void terminateTimeout() {
         terminatedBy = "timeout";
+        recordTerminalEvent("TIMEOUT", Map.of("reason", "timeout"));
     }
 
     public void terminateCancelled() {
         terminatedBy = "cancelled";
+        recordTerminalEvent("ABORTED", Map.of("reason", "cancelled"));
     }
 
     public void terminateError() {
         terminatedBy = "error";
+        recordTerminalEvent("FAILURE", Map.of("reason", "error"));
     }
 
     /** 计算终态与耗时，供持久化使用。 */
@@ -448,7 +744,7 @@ public class AgentExecutionTrace {
         Map<String, Object> payload = buildSummaryMap();
         payload.put("correlationId", correlationId);
         payload.put("status", status == null ? mapStatus(terminatedBy).name() : status.name());
-        payload.put("errorMessage", errorMessage);
+        payload.put("errorMessage", errorMessage == null ? null : AgentTraceSanitizer.safeMessage(errorMessage));
         payload.put("startedAt", startedAt.toString());
         if (finishedAtMs != null) {
             payload.put("finishedAt", Instant.ofEpochMilli(finishedAtMs).toString());
@@ -456,6 +752,8 @@ public class AgentExecutionTrace {
         payload.put("steps", steps.stream().map(TraceStepInfo::toMap).toList());
         payload.put("toolCalls", toolCallDetails.stream().map(TraceToolCallInfo::toMap).toList());
         payload.put("llmCalls", llmCallDetails.stream().map(TraceLlmCallInfo::toMap).toList());
+        payload.put("events", events.stream().map(TraceEventInfo::toMap).toList());
+        payload.put("privacy", privacyMetadata());
         payload.put("components", componentVersions());
         payload.put("skill", skillMetadata());
         payload.put("retrieval", retrievalMetadata());
@@ -469,6 +767,20 @@ public class AgentExecutionTrace {
         payload.put("runMode", runMode);
         payload.put("input", inputMetadata());
         return payload;
+    }
+
+    private Map<String, Object> privacyMetadata() {
+        Map<String, Object> privacy = new LinkedHashMap<>();
+        privacy.put("captureLevel", "STANDARD");
+        privacy.put("policyVersion", "trace-standard-v1");
+        privacy.put("contentBounded", true);
+        privacy.put("maxInputStringChars", AgentTraceSanitizer.MAX_INPUT_STRING_CHARS);
+        privacy.put("maxOutputPreviewChars", AgentTraceSanitizer.MAX_OUTPUT_PREVIEW_CHARS);
+        privacy.put("maxCollectionItems", AgentTraceSanitizer.MAX_COLLECTION_ITEMS);
+        privacy.put("eventLimit", EVENT_LIMIT);
+        privacy.put("droppedEvents", droppedEvents);
+        privacy.put("truncatedToolOutputs", truncatedToolOutputs);
+        return Collections.unmodifiableMap(privacy);
     }
 
     private Map<String, String> componentVersions() {
@@ -593,11 +905,44 @@ public class AgentExecutionTrace {
     }
 
     private static String safe(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value.strip();
+        String selected = value == null || value.isBlank() ? fallback : value.strip();
+        return boundedEventText(selected, MAX_EVENT_TEXT_CHARS);
+    }
+
+    private static String boundedEventText(String value, int limit) {
+        String selected = value == null ? "" : value;
+        String normalized = selected.toLowerCase(java.util.Locale.ROOT);
+        if (normalized.contains("_conversationhistory") || normalized.contains("_userquestion")) {
+            return "[REDACTED]";
+        }
+        return AgentTraceSanitizer.boundedRedactedText(selected, limit);
     }
 
     private static Long nonNegative(Long value) {
         return value == null || value < 0 ? null : value;
+    }
+
+    private static Integer nonNegativeStepIndex(Integer value) {
+        return value == null ? null : Math.max(0, value);
+    }
+
+    private static long nonNegative(long value) {
+        return Math.max(0, value);
+    }
+
+    private static String eventText(String value, String fallback) {
+        return safe(value, fallback);
+    }
+
+    private static String stableCode(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        String candidate = AgentTraceSanitizer.boundedRedactedText(value.strip(), 128);
+        if (candidate.isBlank() || !candidate.matches("[A-Za-z0-9_.:-]+")) {
+            return fallback;
+        }
+        return candidate;
     }
 
     private static String sha256(String value) {
@@ -619,6 +964,187 @@ public class AgentExecutionTrace {
         return ++eventSequence;
     }
 
+    private void recordInstantEvent(
+            String phase,
+            String type,
+            String name,
+            String status,
+            Map<String, ?> details) {
+        recordEvent(
+                nextEventSequence(),
+                phase,
+                type,
+                name,
+                status,
+                null,
+                null,
+                null,
+                null,
+                "",
+                elapsedMs(),
+                0,
+                details);
+    }
+
+    private void recordDurationEvent(
+            int sequence,
+            String phase,
+            String type,
+            String name,
+            String status,
+            Integer stepIndex,
+            Integer attempt,
+            Long budgetBeforeMs,
+            Long budgetAfterMs,
+            String errorCode,
+            long durationMs,
+            Map<String, ?> details) {
+        long safeDurationMs = nonNegative(durationMs);
+        long startedOffsetMs = Math.max(0, elapsedMs() - safeDurationMs);
+        recordEvent(
+                sequence,
+                phase,
+                type,
+                name,
+                status,
+                stepIndex,
+                attempt,
+                budgetBeforeMs,
+                budgetAfterMs,
+                errorCode,
+                startedOffsetMs,
+                safeDurationMs,
+                details);
+    }
+
+    private void recordEvent(
+            int sequence,
+            String phase,
+            String type,
+            String name,
+            String status,
+            Integer stepIndex,
+            Integer attempt,
+            Long budgetBeforeMs,
+            Long budgetAfterMs,
+            String errorCode,
+            long startedOffsetMs,
+            long durationMs,
+            Map<String, ?> details) {
+        if (events.size() >= EVENT_LIMIT) {
+            droppedEvents++;
+            return;
+        }
+        events.add(new TraceEventInfo(
+                sequence,
+                eventText(phase, "delivery"),
+                eventText(type, "lifecycle"),
+                eventText(name, "unknown"),
+                stableCode(status, "UNKNOWN"),
+                Math.max(0, startedOffsetMs),
+                nonNegative(durationMs),
+                stepIndex == null ? null : Math.max(0, stepIndex),
+                attempt == null ? null : Math.max(1, attempt),
+                budgetBeforeMs == null ? null : nonNegative(budgetBeforeMs),
+                budgetAfterMs == null ? null : nonNegative(budgetAfterMs),
+                stableCode(errorCode, ""),
+                safeDetails(details)));
+    }
+
+    private long elapsedMs() {
+        return Math.max(0, System.currentTimeMillis() - startedAtMs);
+    }
+
+    private void recordClientDeliveryEvent() {
+        Map<String, Object> details = new LinkedHashMap<>();
+        if (clientTerminalType != null && !clientTerminalType.isBlank()) {
+            details.put("terminal_type", clientTerminalType);
+        }
+        if (clientDeliveryCode != null && !clientDeliveryCode.isBlank()) {
+            details.put("delivery_code", clientDeliveryCode);
+        }
+        recordInstantEvent(
+                "delivery",
+                "lifecycle",
+                "client_delivery",
+                stableCode(clientDeliveryStatus, "UNKNOWN"),
+                details);
+    }
+
+    private void recordTerminalEvent(String terminalStatus, Map<String, ?> details) {
+        recordInstantEvent("delivery", "lifecycle", "terminal", terminalStatus, details);
+    }
+
+    private static Map<String, Object> safeDetails(Map<String, ?> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> projected = new LinkedHashMap<>();
+        for (Map.Entry<String, ?> entry : source.entrySet()) {
+            if (projected.size() >= AgentTraceSanitizer.MAX_COLLECTION_ITEMS) {
+                break;
+            }
+            String key = eventText(entry.getKey(), "unknown");
+            if (AgentTraceSanitizer.isInternalKey(key)) {
+                continue;
+            }
+            projected.put(key, AgentTraceSanitizer.isSensitiveKey(key) && isContentValue(entry.getValue())
+                    ? "[REDACTED]"
+                    : safeDetailValue(key, entry.getValue(), 0));
+        }
+        return Collections.unmodifiableMap(projected);
+    }
+
+    private static Object safeDetailValue(String key, Object value, int depth) {
+        if (value == null || value instanceof Boolean) {
+            return value;
+        }
+        if (value instanceof Number number) {
+            return AgentTraceSanitizer.snapshotNumber(number);
+        }
+        if (value instanceof CharSequence || value instanceof Character || value instanceof Enum<?>) {
+            int limit = "outputPreview".equals(key)
+                    ? AgentTraceSanitizer.MAX_OUTPUT_PREVIEW_CHARS
+                    : MAX_EVENT_TEXT_CHARS;
+            return boundedEventText(String.valueOf(value), limit);
+        }
+        if (depth >= 3) {
+            return "[UNSUPPORTED]";
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> projected = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (projected.size() >= AgentTraceSanitizer.MAX_COLLECTION_ITEMS) {
+                    break;
+                }
+                String nestedKey = eventText(String.valueOf(entry.getKey()), "unknown");
+                if (AgentTraceSanitizer.isInternalKey(nestedKey)) {
+                    continue;
+                }
+                projected.put(nestedKey, AgentTraceSanitizer.isSensitiveKey(nestedKey)
+                                && isContentValue(entry.getValue())
+                        ? "[REDACTED]"
+                        : safeDetailValue(nestedKey, entry.getValue(), depth + 1));
+            }
+            return Collections.unmodifiableMap(projected);
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Object> projected = new ArrayList<>();
+            for (Object item : collection) {
+                if (projected.size() >= AgentTraceSanitizer.MAX_COLLECTION_ITEMS) {
+                    break;
+                }
+                projected.add(safeDetailValue(key, item, depth + 1));
+            }
+            return Collections.unmodifiableList(projected);
+        }
+        return "[UNSUPPORTED]";
+    }
+
+    private static boolean isContentValue(Object value) {
+        return !(value == null || value instanceof Number || value instanceof Boolean);
+    }
+
     public record TraceStepInfo(int stepIndex, String action, long llmMs, long toolMs) {
         public Map<String, Object> toMap() {
             Map<String, Object> map = new LinkedHashMap<>();
@@ -637,7 +1163,11 @@ public class AgentExecutionTrace {
             String inputSummary,
             String observationSummary,
             long durationMs,
-            boolean success) {
+            boolean success,
+            String status,
+            String errorCode,
+            long budgetBeforeMs,
+            long budgetAfterMs) {
         public Map<String, Object> toMap() {
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("sequence", sequence);
@@ -649,6 +1179,12 @@ public class AgentExecutionTrace {
             map.put("observation_summary", observationSummary);
             map.put("duration_ms", durationMs);
             map.put("success", success);
+            map.put("status", status);
+            if (errorCode != null && !errorCode.isBlank()) {
+                map.put("error_code", errorCode);
+            }
+            map.put("budget_before_ms", budgetBeforeMs);
+            map.put("budget_after_ms", budgetAfterMs);
             return map;
         }
     }
@@ -656,6 +1192,13 @@ public class AgentExecutionTrace {
     public record TraceLlmCallInfo(
             Integer sequence,
             Integer stepIndex,
+            String purpose,
+            String model,
+            String status,
+            String errorCode,
+            int attempt,
+            long budgetBeforeMs,
+            long budgetAfterMs,
             long durationMs,
             int inputChars,
             int outputChars,
@@ -666,11 +1209,65 @@ public class AgentExecutionTrace {
             if (stepIndex != null) {
                 map.put("step_index", stepIndex);
             }
+            map.put("purpose", purpose);
+            map.put("model", model);
+            map.put("status", status);
+            if (errorCode != null && !errorCode.isBlank()) {
+                map.put("error_code", errorCode);
+            }
+            map.put("attempt", attempt);
+            map.put("budget_before_ms", budgetBeforeMs);
+            map.put("budget_after_ms", budgetAfterMs);
             map.put("duration_ms", durationMs);
             map.put("input_chars", inputChars);
             map.put("output_chars", outputChars);
             if (firstTokenMs != null) {
                 map.put("first_token_ms", firstTokenMs);
+            }
+            return map;
+        }
+    }
+
+    public record TraceEventInfo(
+            int sequence,
+            String phase,
+            String type,
+            String name,
+            String status,
+            long startedOffsetMs,
+            long durationMs,
+            Integer stepIndex,
+            Integer attempt,
+            Long budgetBeforeMs,
+            Long budgetAfterMs,
+            String errorCode,
+            Map<String, Object> details) {
+        public Map<String, Object> toMap() {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("sequence", sequence);
+            map.put("phase", phase);
+            map.put("type", type);
+            map.put("name", name);
+            map.put("status", status);
+            map.put("started_offset_ms", startedOffsetMs);
+            map.put("duration_ms", durationMs);
+            if (stepIndex != null) {
+                map.put("step_index", stepIndex);
+            }
+            if (attempt != null) {
+                map.put("attempt", attempt);
+            }
+            if (budgetBeforeMs != null) {
+                map.put("budget_before_ms", budgetBeforeMs);
+            }
+            if (budgetAfterMs != null) {
+                map.put("budget_after_ms", budgetAfterMs);
+            }
+            if (errorCode != null && !errorCode.isBlank()) {
+                map.put("error_code", errorCode);
+            }
+            if (details != null && !details.isEmpty()) {
+                map.put("details", details);
             }
             return map;
         }
