@@ -47,9 +47,9 @@ describe("Chtholly quote copy", () => {
 
   it("uses three full Japanese quotes in the blog hero", () => {
     expect(siteConfig.heroQuotes).toEqual([
-      "だから、きっと……今の私は……誰がなんと言おうと……世界一、幸せな女の子だ。",
-      "私……もう、とっくに幸せだったんだって。",
       "私のことは、忘れてくれると嬉しいかな。",
+      "私……もう、とっくに幸せだったんだって。",
+      "だから、きっと……今の私は……誰がなんと言おうと……世界一、幸せな女の子だ。",
     ]);
   });
 });
