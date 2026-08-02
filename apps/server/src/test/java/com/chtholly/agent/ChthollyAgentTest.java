@@ -46,6 +46,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -326,14 +327,18 @@ class ChthollyAgentTest {
 
     @Test
     void finalReadyStreamsAnswerWritesMemoryAndPersistsSuccessfulTrace() {
+        properties.setMaxResponseChars(5);
         when(memory.formatForPrompt()).thenReturn("history");
         when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(snapshot("assembled system"));
         when(loopExecutor.execute(any(), any(), any(), any()))
-                .thenReturn(AgentLoopResult.finalReady(
-                        List.of("history", "current question"),
-                        2,
-                        123));
+                .thenAnswer(invocation -> {
+                    Thread.sleep(80);
+                    return AgentLoopResult.finalReady(
+                            List.of("history", "current question"),
+                            2,
+                            123);
+                });
         when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
         when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
                 .thenReturn(Flux.just("final ", "answer"));
@@ -358,7 +363,7 @@ class ChthollyAgentTest {
         verify(memory).addExchange(userTurnCaptor.capture(), assistantTurnCaptor.capture());
         assertThat(List.of(userTurnCaptor.getValue(), assistantTurnCaptor.getValue()))
                 .extracting(AgentTurn::content)
-                .containsExactly("question", "final answer");
+                .containsExactly("question", "final");
         assertThat(eventTypes()).containsExactly("delta", "final");
         assertThat(lifecycle).containsExactly(
                 "memory:user", "memory:assistant", "event:delta", "event:final");
@@ -370,12 +375,25 @@ class ChthollyAgentTest {
         verify(tracePersistenceService).persist(traceCaptor.capture());
         assertThat(traceCaptor.getValue().getTerminatedBy()).isEqualTo("final_answer");
         assertThat(traceCaptor.getValue().getStatus()).isNotNull();
-        com.fasterxml.jackson.databind.JsonNode steps = new ObjectMapper().valueToTree(
-                traceCaptor.getValue().toPayloadMap().get("steps"));
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        com.fasterxml.jackson.databind.JsonNode steps = payload.path("steps");
         assertThat(steps).hasSize(1);
         assertThat(steps.path(0).path("action").asText()).isEqualTo("final_answer");
         assertThat(steps.path(0).path("stepIndex").asInt()).isEqualTo(2);
         assertThat(steps.path(0).path("llmMs").asLong()).isGreaterThanOrEqualTo(123);
+        com.fasterxml.jackson.databind.JsonNode finalCall = payload.path("llmCalls").path(0);
+        assertThat(finalCall.path("purpose").asText()).isEqualTo("FINAL_ANSWER");
+        assertThat(finalCall.path("model").asText()).isEqualTo("test-model");
+        assertThat(finalCall.path("status").asText()).isEqualTo("SUCCESS");
+        assertThat(finalCall.path("attempt").asInt()).isEqualTo(1);
+        assertThat(finalCall.path("output_chars").asInt()).isEqualTo("final answer".length());
+        assertThat(finalCall.path("budget_before_ms").asLong())
+                .isGreaterThanOrEqualTo(finalCall.path("budget_after_ms").asLong());
+        assertThat(finalCall.path("first_token_ms").asLong())
+                .isLessThanOrEqualTo(finalCall.path("duration_ms").asLong() + 25L);
+        assertThat(payload.path("answerTiming").path("modelFirstTokenMs").asLong())
+                .isGreaterThan(finalCall.path("first_token_ms").asLong());
     }
 
     @Test
@@ -686,6 +704,112 @@ class ChthollyAgentTest {
 
         assertThat(eventContents()).containsOnly("没有引用的站内事实 [E1]");
         verify(llmInvoker, times(1)).call(anyString(), anyString(), eq(0.0), eq(1024));
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode calls = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap().get("llmCalls"));
+        assertThat(calls).hasSize(2);
+        assertThat(calls).extracting(call -> call.path("purpose").asText())
+                .containsExactly("FINAL_ANSWER", "CITATION_REPAIR");
+        assertThat(calls).extracting(call -> call.path("status").asText())
+                .containsOnly("SUCCESS");
+    }
+
+    @Test
+    void failedBoundaryModelCallRecordsErrorWithoutCountingFallbackAsModelOutput() {
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new AgentContextSnapshot("assembled system", EvidenceSet.empty(), true));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(Flux.error(new IllegalStateException("provider failed")));
+
+        agent.run("question", 7L, memory, events::add);
+
+        assertThat(eventTypes()).containsExactly("delta", "final");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode call = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap().get("llmCalls")).path(0);
+        assertThat(call.path("purpose").asText()).isEqualTo("BOUNDARY_RESPONSE");
+        assertThat(call.path("status").asText()).isEqualTo("ERROR");
+        assertThat(call.path("error_code").asText()).isEqualTo("LLM_ERROR");
+        assertThat(call.path("output_chars").asInt()).isZero();
+    }
+
+    @Test
+    void partiallyFailedBoundaryModelCallKeepsStepIndexAndCountsRawOutput() {
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new AgentContextSnapshot("assembled system", EvidenceSet.empty(), true));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(Flux.concat(
+                        Flux.just("partial"),
+                        Flux.error(new TimeoutException("provider timeout"))));
+
+        agent.run("question", 7L, memory, events::add);
+
+        assertThat(eventTypes()).containsExactly("delta", "final");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode call = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap().get("llmCalls")).path(0);
+        assertThat(call.path("step_index").asInt()).isZero();
+        assertThat(call.path("purpose").asText()).isEqualTo("BOUNDARY_RESPONSE");
+        assertThat(call.path("status").asText()).isEqualTo("TIMEOUT");
+        assertThat(call.path("error_code").asText()).isEqualTo("LLM_TIMEOUT");
+        assertThat(call.path("output_chars").asInt()).isEqualTo("partial".length());
+        assertThat(call.path("first_token_ms").asLong()).isGreaterThanOrEqualTo(0L);
+    }
+
+    @Test
+    void boundaryTraceCountsRawModelOutputBeforeVisibleTruncation() {
+        String modelOutput = "暂时没有足够资料" + "补".repeat(500);
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new AgentContextSnapshot("assembled system", EvidenceSet.empty(), true));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(Flux.just(modelOutput));
+
+        agent.run("question", 7L, memory, events::add);
+
+        assertThat(eventContents().getFirst()).hasSize(400);
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode call = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap().get("llmCalls")).path(0);
+        assertThat(call.path("purpose").asText()).isEqualTo("BOUNDARY_RESPONSE");
+        assertThat(call.path("status").asText()).isEqualTo("SUCCESS");
+        assertThat(call.path("output_chars").asInt()).isEqualTo(modelOutput.length());
+    }
+
+    @Test
+    void timedOutFinalModelCallRecordsStructuredTimeout() {
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("assembled system"));
+        when(loopExecutor.execute(any(), any(), any(), any()))
+                .thenReturn(AgentLoopResult.finalReady(List.of("current question"), 1, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(Flux.concat(
+                        Flux.just("partial"),
+                        Flux.error(new TimeoutException("provider timeout"))));
+
+        agent.run("question", 7L, memory, events::add);
+
+        assertThat(eventTypes()).containsExactly("error");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode call = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap().get("llmCalls")).path(0);
+        assertThat(call.path("purpose").asText()).isEqualTo("FINAL_ANSWER");
+        assertThat(call.path("status").asText()).isEqualTo("TIMEOUT");
+        assertThat(call.path("error_code").asText()).isEqualTo("LLM_TIMEOUT");
+        assertThat(call.path("output_chars").asInt()).isEqualTo("partial".length());
+        assertThat(call.path("first_token_ms").asLong()).isGreaterThanOrEqualTo(0L);
     }
 
     @Test
