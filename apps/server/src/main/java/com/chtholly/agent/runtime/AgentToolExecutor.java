@@ -2,8 +2,11 @@ package com.chtholly.agent.runtime;
 
 import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.AgentToolParamValidator;
+import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.config.AgentProperties;
+import com.chtholly.agent.observability.AgentToolDiagnostics;
+import com.chtholly.agent.observability.AgentTraceSanitizer;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +36,11 @@ import java.util.concurrent.TimeoutException;
 public class AgentToolExecutor {
 
     private static final String TOOL_TIMEOUT_MESSAGE = "Tool execution timed out";
+    private static final String TOOL_VALIDATION_ERROR = "TOOL_VALIDATION_ERROR";
+    private static final String TOOL_TIMEOUT = "TOOL_TIMEOUT";
+    private static final String TOOL_EXECUTION_ERROR = "TOOL_EXECUTION_ERROR";
+    private static final String TOOL_INTERRUPTED = "TOOL_INTERRUPTED";
+    private static final long DIAGNOSTICS_TIMEOUT_MILLIS = 250;
 
     private final AgentProperties properties;
     private final AgentDomainConfig agentDomainConfig;
@@ -94,37 +102,94 @@ public class AgentToolExecutor {
         Objects.requireNonNull(tool, "tool");
         Objects.requireNonNull(input, "input");
 
-        Optional<String> validationError = AgentToolParamValidator.validate(input, tool.parameterSchema());
+        Map<String, ParamDef> parameterSchema = tool.parameterSchema();
+        Optional<String> validationError = AgentToolParamValidator.validate(input, parameterSchema);
         if (validationError.isPresent()) {
-            return new AgentToolResult(validationError.get(), AgentToolResult.Status.VALIDATION_ERROR);
+            return result(tool, parameterSchema, input, validationError.get(),
+                    AgentToolResult.Status.VALIDATION_ERROR, TOOL_VALIDATION_ERROR);
         }
 
         Duration timeout = effectiveTimeout(turnRemainder);
         Future<String> future = executor.submit(() -> tool.execute(input, userId));
         try {
-            return new AgentToolResult(
+            return result(tool, parameterSchema, input,
                     future.get(timeout.toNanos(), TimeUnit.NANOSECONDS),
-                    AgentToolResult.Status.SUCCESS);
+                    AgentToolResult.Status.SUCCESS, "");
         } catch (TimeoutException e) {
             future.cancel(true);
-            log.warn("Tool {} execution timed out (>{}ms)", tool.name(), timeout.toMillis());
-            return new AgentToolResult(TOOL_TIMEOUT_MESSAGE, AgentToolResult.Status.TIMEOUT);
+            log.warn("Tool {} execution timed out (>{}ms)", safeToolName(tool), timeout.toMillis());
+            return result(tool, parameterSchema, input, TOOL_TIMEOUT_MESSAGE,
+                    AgentToolResult.Status.TIMEOUT, TOOL_TIMEOUT);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
-            String message = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
-            log.warn("Tool {} execution failed: {}", tool.name(), message, cause);
+            String rawMessage = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
+            String message = AgentTraceSanitizer.safeMessage(rawMessage);
+            log.warn("Tool {} execution failed ({})", safeToolName(tool), cause.getClass().getSimpleName());
             String observation = agentDomainConfig.render(
                     agentDomainConfig.errors().toolFailed(),
                     "message",
                     message);
-            return new AgentToolResult(observation, AgentToolResult.Status.ERROR);
+            return result(tool, parameterSchema, input, observation,
+                    AgentToolResult.Status.ERROR, TOOL_EXECUTION_ERROR);
         } catch (InterruptedException e) {
             future.cancel(true);
-            log.warn("Tool {} execution interrupted", tool.name(), e);
+            log.warn("Tool {} execution interrupted", safeToolName(tool));
             Thread.currentThread().interrupt();
-            return new AgentToolResult(
-                    agentDomainConfig.errors().toolInterrupted(),
-                    AgentToolResult.Status.INTERRUPTED);
+            return result(tool, parameterSchema, input, agentDomainConfig.errors().toolInterrupted(),
+                    AgentToolResult.Status.INTERRUPTED, TOOL_INTERRUPTED);
+        }
+    }
+
+    private AgentToolResult result(
+            AgentTool tool,
+            Map<String, ParamDef> parameterSchema,
+            Map<String, Object> input,
+            String observation,
+            AgentToolResult.Status status,
+            String errorCode) {
+        AgentToolDiagnostics diagnostics = null;
+        Future<AgentToolDiagnostics> diagnosticsFuture = null;
+        try {
+            diagnosticsFuture = executor.submit(() -> tool.traceDiagnostics(input, observation));
+            diagnostics = diagnosticsFuture.get(DIAGNOSTICS_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException | ExecutionException diagnosticsFailure) {
+            log.debug("Tool {} diagnostics projection failed", safeToolName(tool));
+        } catch (InterruptedException diagnosticsInterrupted) {
+            Thread.currentThread().interrupt();
+            log.debug("Tool {} diagnostics projection interrupted", safeToolName(tool));
+        } catch (RuntimeException diagnosticsFailure) {
+            log.debug("Tool {} diagnostics projection unavailable", safeToolName(tool));
+        } finally {
+            if (diagnosticsFuture != null && !diagnosticsFuture.isDone()) {
+                diagnosticsFuture.cancel(true);
+            }
+        }
+        if (diagnostics == null) {
+            diagnostics = fallbackDiagnostics(tool, parameterSchema, input, observation);
+        }
+        diagnostics = diagnostics.withErrorCode(errorCode);
+        return new AgentToolResult(observation, status, errorCode, diagnostics);
+    }
+
+    private AgentToolDiagnostics fallbackDiagnostics(
+            AgentTool tool,
+            Map<String, ParamDef> parameterSchema,
+            Map<String, Object> input,
+            String observation) {
+        try {
+            return AgentToolDiagnostics.standard(
+                    safeToolName(tool), parameterSchema, input, observation);
+        } catch (Throwable ignored) {
+            return AgentToolDiagnostics.fallback(safeToolName(tool), observation);
+        }
+    }
+
+    private String safeToolName(AgentTool tool) {
+        try {
+            String name = tool.name();
+            return name == null || name.isBlank() ? "unknown" : name;
+        } catch (Throwable ignored) {
+            return "unknown";
         }
     }
 

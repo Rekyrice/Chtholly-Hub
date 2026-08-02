@@ -1,5 +1,7 @@
 package com.chtholly.agent;
 
+import com.chtholly.agent.observability.AgentToolDiagnostics;
+
 import java.util.Collections;
 import java.util.Map;
 
@@ -15,6 +17,11 @@ public interface AgentTool {
     /** LLM 可见参数的 schema；默认空 map 表示不做声明式校验。 */
     default Map<String, ParamDef> parameterSchema() {
         return Collections.emptyMap();
+    }
+
+    /** Builds a bounded STANDARD trace projection for this execution. */
+    default AgentToolDiagnostics traceDiagnostics(Map<String, Object> input, String observation) {
+        return AgentToolDiagnostics.standard(name(), parameterSchema(), input, observation);
     }
 
     /** 执行工具并返回观察结果（纯文本）。 */
