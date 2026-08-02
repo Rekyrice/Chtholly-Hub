@@ -535,9 +535,19 @@
   .agent-page-background__layer {
     position: absolute;
     inset: 0;
+    opacity: 1;
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
+  }
+
+  .agent-page-background__layer--current {
+    z-index: 0;
+    opacity: 1;
+  }
+
+  .agent-page-background__layer--incoming {
+    z-index: 1;
     animation: agent-wallpaper-fade-in 1s ease-in-out;
   }
 
@@ -555,6 +565,7 @@
     content: "";
     position: absolute;
     inset: 0;
+    z-index: 2;
     background: rgb(255 255 255 / 40%);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -2178,6 +2189,11 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .agent-page-background__layer--incoming {
+      opacity: 1;
+      animation: none;
+    }
+
     .chtholly-illustration,
     .chtholly-illustration__image,
     .agent-message-row--assistant-enter,
