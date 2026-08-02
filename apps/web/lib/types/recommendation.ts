@@ -1,6 +1,6 @@
 /** 个性化推荐条目 */
 export type RecommendedPostItem = {
-  postId: number;
+  postId: string;
   title: string;
   score: number;
   reason: string;

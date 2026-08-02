@@ -15,7 +15,7 @@ public record RecommendationListResponse(
     public static RecommendationListResponse from(List<RecommendedPost> posts, boolean personalized) {
         List<RecommendedPostItem> items = posts.stream()
                 .map(post -> new RecommendedPostItem(
-                        post.postId(),
+                        String.valueOf(post.postId()),
                         post.title(),
                         post.score(),
                         post.reason()))
@@ -24,7 +24,7 @@ public record RecommendationListResponse(
     }
 
     public record RecommendedPostItem(
-            long postId,
+            String postId,
             String title,
             double score,
             String reason

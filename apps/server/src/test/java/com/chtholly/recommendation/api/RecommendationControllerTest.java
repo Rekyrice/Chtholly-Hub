@@ -28,17 +28,18 @@ class RecommendationControllerTest {
 
     @Test
     void given_authenticatedUser_when_recommend_then_returnsPersonalizedFlag() {
+        long postId = 335475888558837761L;
         Jwt jwt = mock(Jwt.class);
         when(jwtService.extractUserId(jwt)).thenReturn(42L);
         when(recommendationService.recommend(42L, 10)).thenReturn(
                 new RecommendationService.RecommendationResult(
-                        List.of(new RecommendedPost(1L, "测试文章", 0.8, "兴趣标签匹配")),
+                        List.of(new RecommendedPost(postId, "测试文章", 0.8, "兴趣标签匹配")),
                         true));
 
         RecommendationListResponse response = controller.recommend(10, jwt);
 
         assertThat(response.personalized()).isTrue();
         assertThat(response.items()).hasSize(1);
-        assertThat(response.items().getFirst().postId()).isEqualTo(1L);
+        assertThat(response.items().getFirst().postId()).isEqualTo(String.valueOf(postId));
     }
 }
