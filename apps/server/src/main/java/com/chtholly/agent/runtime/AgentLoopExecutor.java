@@ -7,6 +7,7 @@ import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentObservationService;
+import com.chtholly.agent.observability.AgentToolDiagnostics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -18,9 +19,12 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
@@ -101,7 +105,7 @@ public class AgentLoopExecutor {
                         "llm_interrupted",
                         AgentSpanAttributes.llm("interrupted"),
                         Map.of());
-                log.warn("Agent LLM call interrupted", e);
+                log.warn("Agent LLM call interrupted: {}", e.getClass().getName());
                 return terminate(
                         AgentLoopResult.Status.LLM_INTERRUPTED,
                         transcript,
@@ -139,7 +143,7 @@ public class AgentLoopExecutor {
                         "llm_error",
                         AgentSpanAttributes.llm("error"),
                         Map.of());
-                log.warn("Agent LLM call failed: {}", e.getMessage());
+                log.warn("Agent LLM call failed: {}", e.getClass().getName());
                 return terminate(
                         AgentLoopResult.Status.LLM_ERROR,
                         transcript,
@@ -203,6 +207,7 @@ public class AgentLoopExecutor {
             emitAct(sink, tool.name(), action.input());
             Observation toolSpan = agentObservationService.startToolSpan(agentSpan, tool.name());
             long toolStart = System.currentTimeMillis();
+            long toolBudgetBeforeMs = remainingBudgetMs(request.turnBudget());
             AgentToolResult toolResult;
             try {
                 toolResult = request.turnBudget() == null
@@ -214,6 +219,24 @@ public class AgentLoopExecutor {
                                 request.turnBudget().remaining(
                                         "loop_tool", request.turnBudget().totalBudget()));
             } catch (AgentTurnBudget.UnavailableException exception) {
+                long toolDurationMs = elapsedMillis(toolStart);
+                long toolBudgetAfterMs = remainingBudgetMs(request.turnBudget());
+                AgentToolResult failureResult = safeToolFailureResult(
+                        tool,
+                        inputMap,
+                        exception.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                                ? AgentToolResult.Status.INTERRUPTED
+                                : AgentToolResult.Status.TIMEOUT,
+                        exception.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                                ? "TURN_CANCELLED"
+                                : "TURN_TIMEOUT");
+                trace.recordToolCall(
+                        step,
+                        tool.name(),
+                        toolDurationMs,
+                        toolBudgetBeforeMs,
+                        toolBudgetAfterMs,
+                        failureResult);
                 agentObservationService.finishSpanError(
                         toolSpan,
                         exception.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
@@ -223,6 +246,19 @@ public class AgentLoopExecutor {
                         Map.of());
                 return terminateUnavailable(exception, transcript, trace, sink);
             } catch (RuntimeException e) {
+                long toolDurationMs = elapsedMillis(toolStart);
+                long toolBudgetAfterMs = remainingBudgetMs(request.turnBudget());
+                trace.recordToolCall(
+                        step,
+                        tool.name(),
+                        toolDurationMs,
+                        toolBudgetBeforeMs,
+                        toolBudgetAfterMs,
+                        safeToolFailureResult(
+                                tool,
+                                inputMap,
+                                AgentToolResult.Status.ERROR,
+                                "TOOL_EXECUTOR_ERROR"));
                 agentObservationService.finishSpanError(
                         toolSpan,
                         "tool_executor_error",
@@ -232,14 +268,15 @@ public class AgentLoopExecutor {
             }
             String observation = toolResult.observation();
             long stepToolMs = System.currentTimeMillis() - toolStart;
+            long toolBudgetAfterMs = remainingBudgetMs(request.turnBudget());
             finishToolSpan(toolSpan, toolResult.status());
             trace.recordToolCall(
                     step,
                     tool.name(),
                     stepToolMs,
-                    summarizeToolInput(action.input()),
-                    observation,
-                    toolResult.status() == AgentToolResult.Status.SUCCESS);
+                    toolBudgetBeforeMs,
+                    toolBudgetAfterMs,
+                    normalizedToolResult(toolResult));
             if ("bangumi_search".equals(tool.name())
                     && toolResult.status() == AgentToolResult.Status.SUCCESS) {
                 bangumiSearchCompleted = true;
@@ -294,6 +331,7 @@ public class AgentLoopExecutor {
             AgentTurnBudget turnBudget) throws Exception {
         for (int attempt = 0; attempt < 2; attempt++) {
             long attemptStartedAt = System.currentTimeMillis();
+            long budgetBeforeMs = remainingBudgetMs(turnBudget);
             try {
                 String output = turnBudget == null
                         ? llmInvoker.call(systemPrompt, userPrompt, 0.1, 1024)
@@ -307,22 +345,41 @@ public class AgentLoopExecutor {
                                         Duration.ofSeconds(llmInvoker.timeoutSeconds())));
                 trace.recordLlmCall(
                         step,
-                        System.currentTimeMillis() - attemptStartedAt,
+                        "LOOP_DECISION",
+                        llmInvoker.modelName(),
+                        "SUCCESS",
+                        "",
+                        attempt + 1,
+                        budgetBeforeMs,
+                        remainingBudgetMs(turnBudget),
+                        elapsedMillis(attemptStartedAt),
                         inputChars,
                         output == null ? 0 : output.length(),
                         null);
                 return output;
             } catch (Exception exception) {
+                LlmFailure traceFailure = classifyLlmFailure(exception, turnBudget);
                 trace.recordLlmCall(
                         step,
-                        System.currentTimeMillis() - attemptStartedAt,
+                        "LOOP_DECISION",
+                        llmInvoker.modelName(),
+                        traceFailure.status(),
+                        traceFailure.errorCode(),
+                        attempt + 1,
+                        budgetBeforeMs,
+                        remainingBudgetMs(turnBudget),
+                        elapsedMillis(attemptStartedAt),
                         inputChars,
                         0,
                         null);
+                Exception terminalFailure = terminalLlmFailure(exception);
+                if (terminalFailure != null) {
+                    throw terminalFailure;
+                }
                 if (attempt == 0 && isRetryableModelFailure(exception)) {
                     log.warn(
                             "Agent LLM call failed transiently; retrying once: {}",
-                            exception.getMessage());
+                            exception.getClass().getName());
                     continue;
                 }
                 throw exception;
@@ -332,8 +389,15 @@ public class AgentLoopExecutor {
     }
 
     private boolean isRetryableModelFailure(Throwable failure) {
-        Throwable current = failure;
-        while (current != null) {
+        List<Throwable> causes = causeChain(failure);
+        for (Throwable current : causes) {
+            if (current instanceof AgentTurnBudget.UnavailableException
+                    || current instanceof InterruptedException
+                    || current instanceof TimeoutException) {
+                return false;
+            }
+        }
+        for (Throwable current : causes) {
             String className = current.getClass().getName();
             String message = current.getMessage() == null
                     ? ""
@@ -350,12 +414,125 @@ public class AgentLoopExecutor {
                     || message.contains("connection refused")) {
                 return true;
             }
-            if (current instanceof TimeoutException || current instanceof InterruptedException) {
-                return false;
-            }
-            current = current.getCause();
         }
         return false;
+    }
+
+    private LlmFailure classifyLlmFailure(Throwable failure, AgentTurnBudget turnBudget) {
+        List<Throwable> causes = causeChain(failure);
+        for (Throwable current : causes) {
+            if (current instanceof AgentTurnBudget.UnavailableException unavailable) {
+                return unavailable.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                        ? new LlmFailure("CANCELLED", "TURN_CANCELLED")
+                        : new LlmFailure("TIMEOUT", "TURN_TIMEOUT");
+            }
+        }
+        for (Throwable current : causes) {
+            if (current instanceof InterruptedException) {
+                return turnBudget != null && turnBudget.isCancelled()
+                        ? new LlmFailure("CANCELLED", "TURN_CANCELLED")
+                        : new LlmFailure("INTERRUPTED", "LLM_INTERRUPTED");
+            }
+        }
+        for (Throwable current : causes) {
+            if (current instanceof TimeoutException) {
+                return turnBudget != null && turnBudget.isExpired()
+                        ? new LlmFailure("TIMEOUT", "TURN_TIMEOUT")
+                        : new LlmFailure("TIMEOUT", "LLM_TIMEOUT");
+            }
+        }
+        return isRetryableModelFailure(failure)
+                ? new LlmFailure("ERROR", "LLM_TRANSIENT_ERROR")
+                : new LlmFailure("ERROR", "LLM_ERROR");
+    }
+
+    private Exception terminalLlmFailure(Throwable failure) {
+        List<Throwable> causes = causeChain(failure);
+        for (Throwable current : causes) {
+            if (current instanceof AgentTurnBudget.UnavailableException unavailable) {
+                return unavailable;
+            }
+        }
+        for (Throwable current : causes) {
+            if (current instanceof InterruptedException interrupted) {
+                return interrupted;
+            }
+        }
+        for (Throwable current : causes) {
+            if (current instanceof TimeoutException timeout) {
+                return timeout;
+            }
+        }
+        return null;
+    }
+
+    private List<Throwable> causeChain(Throwable failure) {
+        List<Throwable> causes = new ArrayList<>();
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        Throwable current = failure;
+        while (current != null && seen.add(current)) {
+            causes.add(current);
+            current = current.getCause();
+        }
+        return causes;
+    }
+
+    private AgentToolResult normalizedToolResult(AgentToolResult result) {
+        if (result.errorCode() != null && !result.errorCode().isBlank()) {
+            return result;
+        }
+        String errorCode = switch (result.status()) {
+            case SUCCESS -> "";
+            case VALIDATION_ERROR -> "TOOL_VALIDATION_ERROR";
+            case TIMEOUT -> "TOOL_TIMEOUT";
+            case ERROR -> "TOOL_EXECUTION_ERROR";
+            case INTERRUPTED -> "TOOL_INTERRUPTED";
+        };
+        return new AgentToolResult(
+                result.observation(),
+                result.status(),
+                errorCode,
+                result.diagnostics().withErrorCode(errorCode));
+    }
+
+    private AgentToolResult safeToolFailureResult(
+            AgentTool tool,
+            Map<String, Object> input,
+            AgentToolResult.Status status,
+            String errorCode) {
+        AgentToolDiagnostics diagnostics;
+        String operation = "unknown";
+        try {
+            operation = tool == null || tool.name() == null ? "unknown" : tool.name();
+            diagnostics = AgentToolDiagnostics.standard(
+                    operation,
+                    tool == null ? Map.of() : tool.parameterSchema(),
+                    input,
+                    "");
+        } catch (RuntimeException diagnosticsFailure) {
+            log.debug(
+                    "Agent tool trace diagnostics fallback: {}",
+                    diagnosticsFailure.getClass().getName());
+            diagnostics = AgentToolDiagnostics.fallback(operation, "");
+        }
+        return new AgentToolResult(
+                "",
+                status,
+                errorCode,
+                diagnostics.withErrorCode(errorCode));
+    }
+
+    private long remainingBudgetMs(AgentTurnBudget turnBudget) {
+        if (turnBudget == null) {
+            return 0;
+        }
+        long totalNanos = turnBudget.totalBudget().toNanos();
+        long elapsedNanos = turnBudget.elapsed().toNanos();
+        return Math.max(0, totalNanos - elapsedNanos) / 1_000_000L;
+    }
+
+    private long elapsedMillis(long startedAtMs) {
+        return Math.max(0, System.currentTimeMillis() - startedAtMs);
     }
 
     private List<String> initialTranscript(AgentLoopRequest request) {
@@ -556,5 +733,8 @@ public class AgentLoopExecutor {
             return normalized;
         }
         return normalized.substring(0, maxLen) + "...";
+    }
+
+    private record LlmFailure(String status, String errorCode) {
     }
 }

@@ -3,12 +3,14 @@ package com.chtholly.agent.runtime;
 import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.AgentJsonExtractor;
 import com.chtholly.agent.AgentTool;
+import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.config.AgentContextLabels;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.config.AgentErrorMessages;
 import com.chtholly.agent.config.AgentSystemPromptConfig;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentObservationService;
+import com.chtholly.agent.observability.AgentToolDiagnostics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.observation.Observation;
@@ -28,6 +30,8 @@ import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -107,6 +111,23 @@ class AgentLoopExecutorTest {
         assertThat(result.finalStepIndex()).isZero();
         assertThat(result.finalDecisionLlmMs()).isGreaterThanOrEqualTo(0);
         assertThat(trace.getStepActions()).isEmpty();
+
+        JsonNode llmCall = objectMapper.valueToTree(trace.toPayloadMap().get("llmCalls")).path(0);
+        JsonNode llmEvent = traceEvents(trace, "llm").getFirst();
+        String expectedUserPrompt = "Earlier conversation\n\n"
+                + "## Current question\nUser: What happened?";
+        assertThat(llmCall.path("purpose").asText()).isEqualTo("LOOP_DECISION");
+        assertThat(llmCall.path("model").asText()).isEqualTo("test-model");
+        assertThat(llmCall.path("status").asText()).isEqualTo("SUCCESS");
+        assertThat(llmCall.path("attempt").asInt()).isEqualTo(1);
+        assertThat(llmCall.path("budget_before_ms").asLong()).isZero();
+        assertThat(llmCall.path("budget_after_ms").asLong()).isZero();
+        assertThat(llmCall.path("input_chars").asInt())
+                .isEqualTo("system prompt".length() + expectedUserPrompt.length());
+        assertThat(llmCall.path("output_chars").asInt())
+                .isEqualTo("{\"action\":\"final\",\"answer\":\"draft\"}".length());
+        assertThat(llmEvent.path("phase").asText()).isEqualTo("llm");
+        assertThat(llmEvent.path("details").path("purpose").asText()).isEqualTo("LOOP_DECISION");
     }
 
     @Test
@@ -115,8 +136,14 @@ class AgentLoopExecutorTest {
         when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("{\"action\":\"search\",\"input\":{\"query\":\"re0\"}}")
                 .thenReturn("{\"action\":\"final\"}");
+        AgentToolDiagnostics diagnostics = AgentToolDiagnostics.standard(
+                "search",
+                Map.of("query", ParamDef.string("query", true, 1, 100)),
+                Map.of("query", "re0"),
+                "tool result");
         when(toolExecutor.execute(any(), anyMap(), anyLong()))
-                .thenReturn(new AgentToolResult("tool result", AgentToolResult.Status.SUCCESS));
+                .thenReturn(new AgentToolResult(
+                        "tool result", AgentToolResult.Status.SUCCESS, "", diagnostics));
         AgentExecutionTrace trace = trace(3);
 
         AgentLoopResult result = executor.execute(
@@ -137,6 +164,15 @@ class AgentLoopExecutorTest {
         assertThat(trace.getToolsCalled()).containsExactly("search");
         JsonNode toolCalls = objectMapper.valueToTree(trace.toPayloadMap().get("toolCalls"));
         assertThat(toolCalls.path(0).path("success").asBoolean()).isTrue();
+        JsonNode toolEvent = traceEvents(trace, "tool").getFirst();
+        assertThat(toolEvent.path("status").asText()).isEqualTo("SUCCESS");
+        assertThat(toolEvent.path("budget_before_ms").asLong()).isZero();
+        assertThat(toolEvent.path("budget_after_ms").asLong()).isZero();
+        assertThat(toolEvent.path("details").path("operation").asText()).isEqualTo("search");
+        assertThat(toolEvent.path("details").path("sanitizedInput").path("query").asText())
+                .isEqualTo("re0");
+        assertThat(toolEvent.path("details").path("outputPreview").asText())
+                .isEqualTo("tool result");
     }
 
     @Test
@@ -248,6 +284,10 @@ class AgentLoopExecutorTest {
         assertThat(events.getFirst().data().path("message").asText()).isEqualTo("MODEL_TIMEOUT");
         assertThat(trace.getTerminatedBy()).isEqualTo("timeout");
         assertThat(trace.getErrorMessage()).isEqualTo("MODEL_TIMEOUT");
+        JsonNode llmEvent = traceEvents(trace, "llm").getFirst();
+        assertThat(llmEvent.path("status").asText()).isEqualTo("TIMEOUT");
+        assertThat(llmEvent.path("error_code").asText()).isEqualTo("LLM_TIMEOUT");
+        assertThat(llmEvent.path("attempt").asInt()).isEqualTo(1);
         verify(observationService).finishSpanError(
                 eq(childSpan), eq("llm_timeout"), anyMap(), anyMap());
     }
@@ -292,13 +332,63 @@ class AgentLoopExecutorTest {
                 3,
                 budget);
 
-        AgentLoopResult result = executor.execute(request, trace(3), agentSpan, events::add);
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
 
         assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
         ArgumentCaptor<Duration> timeout = ArgumentCaptor.forClass(Duration.class);
         verify(llmInvoker).call(
                 anyString(), anyString(), anyDouble(), anyInt(), timeout.capture());
         assertThat(timeout.getValue()).isPositive().isLessThanOrEqualTo(Duration.ofSeconds(10));
+        JsonNode llmEvent = traceEvents(trace, "llm").getFirst();
+        assertThat(llmEvent.path("budget_before_ms").asLong()).isPositive();
+        assertThat(llmEvent.path("budget_after_ms").asLong())
+                .isBetween(0L, llmEvent.path("budget_before_ms").asLong());
+    }
+
+    @Test
+    void turnBudgetExpiryDuringLlmAdmissionRecordsStructuredFailure() throws Exception {
+        AtomicInteger clockReads = new AtomicInteger();
+        AgentTurnBudget budget = AgentTurnBudget.start(
+                Duration.ofMillis(1),
+                () -> false,
+                () -> clockReads.getAndIncrement() < 2 ? 0L : Duration.ofMillis(2).toNanos());
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt", "private question", 42L, "private history", Map.of(), 3, budget);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.TURN_TIMEOUT);
+        verify(llmInvoker, never()).call(
+                anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class));
+        JsonNode llmEvent = traceEvents(trace, "llm").getFirst();
+        assertThat(llmEvent.path("status").asText()).isEqualTo("TIMEOUT");
+        assertThat(llmEvent.path("error_code").asText()).isEqualTo("TURN_TIMEOUT");
+        assertThat(llmEvent.path("attempt").asInt()).isEqualTo(1);
+        assertThat(llmEvent.path("budget_before_ms").asLong()).isZero();
+        assertThat(llmEvent.path("budget_after_ms").asLong()).isZero();
+        assertThat(trace.toPayloadMap().toString())
+                .doesNotContain("private question", "private history");
+    }
+
+    @Test
+    void turnCancellationDuringLlmAdmissionRecordsStructuredFailure() {
+        AtomicInteger cancellationChecks = new AtomicInteger();
+        AgentTurnBudget budget = AgentTurnBudget.start(
+                Duration.ofSeconds(1),
+                () -> cancellationChecks.getAndIncrement() > 0);
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt", "private question", 42L, "private history", Map.of(), 3, budget);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.CANCELLED);
+        JsonNode llmEvent = traceEvents(trace, "llm").getFirst();
+        assertThat(llmEvent.path("status").asText()).isEqualTo("CANCELLED");
+        assertThat(llmEvent.path("error_code").asText()).isEqualTo("TURN_CANCELLED");
+        assertThat(llmEvent.path("attempt").asInt()).isEqualTo(1);
     }
 
     @Test
@@ -349,6 +439,9 @@ class AgentLoopExecutorTest {
             assertThat(trace.getTerminatedBy()).isEqualTo("cancelled");
             assertThat(trace.getTimeoutStage()).isEmpty();
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            JsonNode llmEvent = traceEvents(trace, "llm").getFirst();
+            assertThat(llmEvent.path("status").asText()).isEqualTo("CANCELLED");
+            assertThat(llmEvent.path("error_code").asText()).isEqualTo("TURN_CANCELLED");
         } finally {
             Thread.interrupted();
         }
@@ -368,6 +461,9 @@ class AgentLoopExecutorTest {
         assertThat(eventTypes()).containsExactly("error");
         assertThat(trace.getTerminatedBy()).isEqualTo("error");
         assertThat(trace.getErrorMessage()).isEqualTo("MODEL_FAILED");
+        JsonNode llmEvent = traceEvents(trace, "llm").getFirst();
+        assertThat(llmEvent.path("status").asText()).isEqualTo("ERROR");
+        assertThat(llmEvent.path("error_code").asText()).isEqualTo("LLM_ERROR");
         verify(observationService).finishSpanError(
                 eq(childSpan), eq("llm_error"), anyMap(), anyMap());
     }
@@ -386,7 +482,65 @@ class AgentLoopExecutorTest {
         verify(llmInvoker, times(2)).call(anyString(), anyString(), anyDouble(), anyInt());
         JsonNode llmCalls = objectMapper.valueToTree(trace.toPayloadMap().get("llmCalls"));
         assertThat(llmCalls).hasSize(2);
+        assertThat(llmCalls.path(0).path("purpose").asText()).isEqualTo("LOOP_DECISION");
+        assertThat(llmCalls.path(0).path("status").asText()).isEqualTo("ERROR");
+        assertThat(llmCalls.path(0).path("error_code").asText())
+                .isEqualTo("LLM_TRANSIENT_ERROR");
+        assertThat(llmCalls.path(0).path("attempt").asInt()).isEqualTo(1);
+        assertThat(llmCalls.path(1).path("status").asText()).isEqualTo("SUCCESS");
+        assertThat(llmCalls.path(1).path("attempt").asInt()).isEqualTo(2);
         assertThat(eventTypes()).containsExactly("think");
+    }
+
+    @Test
+    void wrappedTimeoutOutranksTransientWrapperAndIsNotRetried() throws Exception {
+        RuntimeException wrappedTimeout = new RuntimeException(
+                "connection reset",
+                new TimeoutException("wrapped timeout secret"));
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenThrow(wrappedTimeout)
+                .thenReturn("{\"action\":\"final\"}");
+        AgentExecutionTrace trace = trace(2);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(), 2), trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.LLM_TIMEOUT);
+        verify(llmInvoker, times(1)).call(anyString(), anyString(), anyDouble(), anyInt());
+        JsonNode llmCalls = objectMapper.valueToTree(trace.toPayloadMap().get("llmCalls"));
+        assertThat(llmCalls).hasSize(1);
+        assertThat(llmCalls.path(0).path("status").asText()).isEqualTo("TIMEOUT");
+        assertThat(llmCalls.path(0).path("error_code").asText()).isEqualTo("LLM_TIMEOUT");
+        assertThat(llmCalls.path(0).path("attempt").asInt()).isEqualTo(1);
+        assertThat(trace.toPayloadMap().toString()).doesNotContain("wrapped timeout secret");
+    }
+
+    @Test
+    void wrappedInterruptedOutranksTransientWrapperAndIsNotRetried() throws Exception {
+        RuntimeException wrappedInterrupted = new RuntimeException(
+                "temporarily unavailable",
+                new InterruptedException("wrapped interrupt secret"));
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenThrow(wrappedInterrupted)
+                .thenReturn("{\"action\":\"final\"}");
+        AgentExecutionTrace trace = trace(2);
+
+        try {
+            AgentLoopResult result = executor.execute(
+                    request(Map.of(), 2), trace, agentSpan, events::add);
+
+            assertThat(result.status()).isEqualTo(AgentLoopResult.Status.LLM_INTERRUPTED);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            verify(llmInvoker, times(1)).call(anyString(), anyString(), anyDouble(), anyInt());
+            JsonNode llmCalls = objectMapper.valueToTree(trace.toPayloadMap().get("llmCalls"));
+            assertThat(llmCalls).hasSize(1);
+            assertThat(llmCalls.path(0).path("status").asText()).isEqualTo("INTERRUPTED");
+            assertThat(llmCalls.path(0).path("error_code").asText()).isEqualTo("LLM_INTERRUPTED");
+            assertThat(llmCalls.path(0).path("attempt").asInt()).isEqualTo(1);
+            assertThat(trace.toPayloadMap().toString()).doesNotContain("wrapped interrupt secret");
+        } finally {
+            Thread.interrupted();
+        }
     }
 
     @Test
@@ -405,6 +559,9 @@ class AgentLoopExecutorTest {
             assertThat(trace.getStepActions()).isEmpty();
             assertThat(trace.getTerminatedBy()).isEqualTo("error");
             assertThat(trace.getErrorMessage()).isEqualTo("MODEL_INTERRUPTED");
+            JsonNode llmEvent = traceEvents(trace, "llm").getFirst();
+            assertThat(llmEvent.path("status").asText()).isEqualTo("INTERRUPTED");
+            assertThat(llmEvent.path("error_code").asText()).isEqualTo("LLM_INTERRUPTED");
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
             verify(llmInvoker, times(1)).call(anyString(), anyString(), anyDouble(), anyInt());
             verify(observationService).finishSpanError(
@@ -461,6 +618,9 @@ class AgentLoopExecutorTest {
                 eq(childSpan), eq("tool_timeout"), anyMap(), anyMap());
         assertThat(objectMapper.valueToTree(trace.toPayloadMap().get("toolCalls"))
                 .path(0).path("success").asBoolean()).isFalse();
+        JsonNode toolEvent = traceEvents(trace, "tool").getFirst();
+        assertThat(toolEvent.path("status").asText()).isEqualTo("TIMEOUT");
+        assertThat(toolEvent.path("error_code").asText()).isEqualTo("TOOL_TIMEOUT");
     }
 
     @Test
@@ -486,22 +646,151 @@ class AgentLoopExecutorTest {
     @Test
     void rejectedToolExecutionFinishesStartedSpanBeforePropagating() throws Exception {
         AgentTool tool = tool("search");
+        when(tool.parameterSchema()).thenReturn(Map.of(
+                "query", ParamDef.string("query", true, 1, 100)));
         when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
-                .thenReturn("{\"action\":\"search\",\"input\":{}}");
+                .thenReturn("{\"action\":\"search\",\"input\":{\"query\":\"safe\"}}");
         when(toolExecutor.execute(any(), anyMap(), anyLong()))
-                .thenThrow(new RejectedExecutionException("executor saturated"));
+                .thenThrow(new RejectedExecutionException("executor saturated secret-marker"));
         AgentExecutionTrace trace = trace(3);
 
         assertThatThrownBy(() -> executor.execute(
                 request(Map.of(tool.name(), tool), 3), trace, agentSpan, events::add))
                 .isInstanceOf(RejectedExecutionException.class)
-                .hasMessage("executor saturated");
+                .hasMessage("executor saturated secret-marker");
 
         verify(observationService).finishSpanError(
                 childSpan,
                 "tool_executor_error",
                 Map.of("status", "error", "error.type", "INTERNAL_ERROR"),
                 Map.of());
+        JsonNode toolEvent = traceEvents(trace, "tool").getFirst();
+        assertThat(toolEvent.path("status").asText()).isEqualTo("ERROR");
+        assertThat(toolEvent.path("error_code").asText()).isEqualTo("TOOL_EXECUTOR_ERROR");
+        assertThat(toolEvent.path("details").path("sanitizedInput").path("query").asText())
+                .isEqualTo("safe");
+        assertThat(toolEvent.path("details").path("sanitizedInput").has("_userQuestion")).isFalse();
+        assertThat(toolEvent.path("details").path("sanitizedInput").has("_conversationHistory")).isFalse();
+        assertThat(toolEvent.path("details").path("outputPreview").asText()).isEmpty();
+        assertThat(trace.toPayloadMap().toString()).doesNotContain("secret-marker", "What happened?");
+    }
+
+    @Test
+    void activeToolCallRecordsExactBudgetsAndStructuredDiagnostics() throws Exception {
+        AtomicLong clock = new AtomicLong();
+        AgentTurnBudget budget = AgentTurnBudget.start(
+                Duration.ofMillis(100), () -> false, clock::get);
+        AgentTool tool = tool("search");
+        when(tool.parameterSchema()).thenReturn(Map.of(
+                "query", ParamDef.string("query", true, 1, 100)));
+        when(llmInvoker.call(
+                anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenAnswer(invocation -> {
+                    clock.addAndGet(Duration.ofMillis(2).toNanos());
+                    return "{\"action\":\"search\",\"input\":{\"query\":\"safe\"}}";
+                })
+                .thenReturn("{\"action\":\"final\"}");
+        AgentToolDiagnostics diagnostics = AgentToolDiagnostics.standard(
+                "search", tool.parameterSchema(), Map.of("query", "safe"), "result")
+                .withProvider("mysql")
+                .withSourcePolicy("public_only")
+                .withResultCount(1)
+                .withSelectedIds(List.of("post:1"));
+        when(toolExecutor.execute(any(), anyMap(), anyLong(), any(Duration.class)))
+                .thenAnswer(invocation -> {
+                    clock.addAndGet(Duration.ofMillis(3).toNanos());
+                    return new AgentToolResult("result", AgentToolResult.Status.SUCCESS, "", diagnostics);
+                });
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt", "question", 42L, "", Map.of(tool.name(), tool), 3, budget);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        JsonNode toolEvent = traceEvents(trace, "tool").getFirst();
+        assertThat(toolEvent.path("budget_before_ms").asLong()).isEqualTo(98L);
+        assertThat(toolEvent.path("budget_after_ms").asLong()).isEqualTo(95L);
+        assertThat(toolEvent.path("details").path("provider").asText()).isEqualTo("mysql");
+        assertThat(toolEvent.path("details").path("sourcePolicy").asText()).isEqualTo("public_only");
+        assertThat(toolEvent.path("details").path("resultCount").asInt()).isEqualTo(1);
+        assertThat(toolEvent.path("details").path("selectedIds").path(0).asText())
+                .isEqualTo("post:1");
+    }
+
+    @Test
+    void toolBudgetExpiryRecordsSafeStructuredTimeoutBeforeReturning() throws Exception {
+        AtomicLong clock = new AtomicLong();
+        AgentTurnBudget budget = AgentTurnBudget.start(
+                Duration.ofMillis(10), () -> false, clock::get);
+        AgentTool tool = tool("search");
+        when(tool.parameterSchema()).thenReturn(Map.of(
+                "query", ParamDef.string("query", true, 1, 100)));
+        when(llmInvoker.call(
+                anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenAnswer(invocation -> {
+                    clock.set(Duration.ofMillis(11).toNanos());
+                    return "{\"action\":\"search\",\"input\":{\"query\":\"safe\"}}";
+                });
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt", "private question", 42L, "private history",
+                Map.of(tool.name(), tool), 3, budget);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.TURN_TIMEOUT);
+        verify(toolExecutor, never()).execute(any(), anyMap(), anyLong(), any(Duration.class));
+        JsonNode toolEvent = traceEvents(trace, "tool").getFirst();
+        assertThat(toolEvent.path("status").asText()).isEqualTo("TIMEOUT");
+        assertThat(toolEvent.path("error_code").asText()).isEqualTo("TURN_TIMEOUT");
+        assertThat(toolEvent.path("budget_before_ms").asLong()).isZero();
+        assertThat(toolEvent.path("budget_after_ms").asLong()).isZero();
+        assertThat(toolEvent.path("details").path("sanitizedInput").path("query").asText())
+                .isEqualTo("safe");
+        assertThat(toolEvent.path("details").path("sanitizedInput").has("_userQuestion")).isFalse();
+        assertThat(toolEvent.path("details").path("sanitizedInput").has("_conversationHistory")).isFalse();
+        assertThat(toolEvent.path("details").path("outputPreview").asText()).isEmpty();
+        assertThat(trace.toPayloadMap().toString())
+                .doesNotContain("private question", "private history");
+    }
+
+    @Test
+    void toolAdmissionCancellationRecordsSafeStructuredInterruptionBeforeReturning() throws Exception {
+        AtomicLong clock = new AtomicLong();
+        AtomicBoolean cancelled = new AtomicBoolean();
+        AgentTurnBudget budget = AgentTurnBudget.start(
+                Duration.ofMillis(10), cancelled::get, clock::get);
+        AgentTool tool = tool("search");
+        when(tool.parameterSchema()).thenReturn(Map.of(
+                "query", ParamDef.string("query", true, 1, 100)));
+        when(llmInvoker.call(
+                anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenAnswer(invocation -> {
+                    cancelled.set(true);
+                    return "{\"action\":\"search\",\"input\":{\"query\":\"safe\"}}";
+                });
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt", "private question", 42L, "private history",
+                Map.of(tool.name(), tool), 3, budget);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.CANCELLED);
+        verify(toolExecutor, never()).execute(any(), anyMap(), anyLong(), any(Duration.class));
+        JsonNode toolEvent = traceEvents(trace, "tool").getFirst();
+        assertThat(toolEvent.path("status").asText()).isEqualTo("INTERRUPTED");
+        assertThat(toolEvent.path("error_code").asText()).isEqualTo("TURN_CANCELLED");
+        assertThat(toolEvent.path("budget_before_ms").asLong()).isEqualTo(10L);
+        assertThat(toolEvent.path("budget_after_ms").asLong()).isEqualTo(10L);
+        assertThat(toolEvent.path("details").path("sanitizedInput").path("query").asText())
+                .isEqualTo("safe");
+        assertThat(toolEvent.path("details").path("sanitizedInput").has("_userQuestion")).isFalse();
+        assertThat(toolEvent.path("details").path("sanitizedInput").has("_conversationHistory")).isFalse();
+        assertThat(toolEvent.path("details").path("outputPreview").asText()).isEmpty();
+        assertThat(trace.toPayloadMap().toString())
+                .doesNotContain("private question", "private history");
     }
 
     private AgentLoopRequest request(Map<String, AgentTool> tools, int maxSteps) {
@@ -520,6 +809,17 @@ class AgentLoopExecutorTest {
 
     private List<String> eventTypes() {
         return events.stream().map(AgentEvent::type).toList();
+    }
+
+    private List<JsonNode> traceEvents(AgentExecutionTrace trace, String type) {
+        List<JsonNode> matching = new ArrayList<>();
+        JsonNode traceEvents = objectMapper.valueToTree(trace.toPayloadMap().get("events"));
+        traceEvents.forEach(event -> {
+            if (type.equals(event.path("type").asText())) {
+                matching.add(event);
+            }
+        });
+        return matching;
     }
 
     private AgentTool tool(String name) {
