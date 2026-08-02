@@ -23,12 +23,16 @@ public record AgentToolDiagnostics(
         boolean outputTruncated,
         Integer resultCount,
         List<String> selectedIds,
-        String errorCode) {
+        String errorCode,
+        Map<String, Object> attributes) {
 
     private static final int MAX_SELECTED_IDS = 20;
     private static final int MAX_NESTING_DEPTH = 3;
     private static final int MAX_MAP_ENTRIES = 20;
     private static final int MAX_METADATA_CHARS = 128;
+    private static final int MAX_ATTRIBUTE_ENTRIES = 64;
+    private static final int MAX_ATTRIBUTE_DEPTH = 6;
+    private static final int MAX_ATTRIBUTE_STRING_CHARS = 16_384;
 
     public AgentToolDiagnostics {
         operation = boundedMetadata(defaultText(operation, "unknown"));
@@ -44,6 +48,35 @@ public record AgentToolDiagnostics(
         resultCount = resultCount == null ? null : Math.max(0, resultCount);
         selectedIds = immutableIds(selectedIds);
         errorCode = AgentTraceSanitizer.boundedRedactedText(errorCode, MAX_METADATA_CHARS);
+        attributes = immutableAttributes(attributes);
+    }
+
+    /** Backward-compatible constructor for tools without structured diagnostics attributes. */
+    public AgentToolDiagnostics(
+            String operation,
+            String provider,
+            String sourcePolicy,
+            Map<String, Object> sanitizedInput,
+            String outputPreview,
+            String outputSha256,
+            int outputChars,
+            boolean outputTruncated,
+            Integer resultCount,
+            List<String> selectedIds,
+            String errorCode) {
+        this(
+                operation,
+                provider,
+                sourcePolicy,
+                sanitizedInput,
+                outputPreview,
+                outputSha256,
+                outputChars,
+                outputTruncated,
+                resultCount,
+                selectedIds,
+                errorCode,
+                Map.of());
     }
 
     /** Creates the default STANDARD capture for one tool. */
@@ -64,7 +97,8 @@ public record AgentToolDiagnostics(
                 preview.truncated(),
                 null,
                 List.of(),
-                "");
+                "",
+                Map.of());
     }
 
     /** Creates a no-input fallback without exposing a diagnostics exception. */
@@ -73,28 +107,33 @@ public record AgentToolDiagnostics(
     }
 
     public AgentToolDiagnostics withProvider(String value) {
-        return copy(value, sourcePolicy, resultCount, selectedIds, errorCode);
+        return copy(value, sourcePolicy, resultCount, selectedIds, errorCode, attributes);
     }
 
     public AgentToolDiagnostics withSourcePolicy(String value) {
         return new AgentToolDiagnostics(operation, provider, value, sanitizedInput, outputPreview,
-                outputSha256, outputChars, outputTruncated, resultCount, selectedIds, errorCode);
+                outputSha256, outputChars, outputTruncated, resultCount, selectedIds, errorCode, attributes);
     }
 
     public AgentToolDiagnostics withResultCount(Integer value) {
         return new AgentToolDiagnostics(operation, provider, sourcePolicy, sanitizedInput, outputPreview,
-                outputSha256, outputChars, outputTruncated, value, selectedIds, errorCode);
+                outputSha256, outputChars, outputTruncated, value, selectedIds, errorCode, attributes);
     }
 
     public AgentToolDiagnostics withSelectedIds(Collection<String> values) {
         return new AgentToolDiagnostics(operation, provider, sourcePolicy, sanitizedInput, outputPreview,
                 outputSha256, outputChars, outputTruncated, resultCount,
-                values == null ? List.of() : new ArrayList<>(values), errorCode);
+                values == null ? List.of() : new ArrayList<>(values), errorCode, attributes);
     }
 
     public AgentToolDiagnostics withErrorCode(String value) {
         return new AgentToolDiagnostics(operation, provider, sourcePolicy, sanitizedInput, outputPreview,
-                outputSha256, outputChars, outputTruncated, resultCount, selectedIds, value);
+                outputSha256, outputChars, outputTruncated, resultCount, selectedIds, value, attributes);
+    }
+
+    public AgentToolDiagnostics withAttributes(Map<String, Object> values) {
+        return new AgentToolDiagnostics(operation, provider, sourcePolicy, sanitizedInput, outputPreview,
+                outputSha256, outputChars, outputTruncated, resultCount, selectedIds, errorCode, values);
     }
 
     private AgentToolDiagnostics copy(
@@ -102,10 +141,87 @@ public record AgentToolDiagnostics(
             String sourcePolicyValue,
             Integer resultCountValue,
             Collection<String> selectedIdsValue,
-            String errorCodeValue) {
+            String errorCodeValue,
+            Map<String, Object> attributesValue) {
         return new AgentToolDiagnostics(operation, providerValue, sourcePolicyValue, sanitizedInput,
                 outputPreview, outputSha256, outputChars, outputTruncated, resultCountValue,
-                selectedIdsValue == null ? List.of() : new ArrayList<>(selectedIdsValue), errorCodeValue);
+                selectedIdsValue == null ? List.of() : new ArrayList<>(selectedIdsValue), errorCodeValue,
+                attributesValue);
+    }
+
+    private static Map<String, Object> immutableAttributes(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : source.entrySet()) {
+            if (copy.size() >= MAX_ATTRIBUTE_ENTRIES) {
+                break;
+            }
+            String key = AgentTraceSanitizer.boundedRedactedText(entry.getKey(), MAX_METADATA_CHARS);
+            if (key.isBlank()) {
+                continue;
+            }
+            copy.put(key, AgentTraceSanitizer.isAdminCredentialKey(key)
+                    ? "[REDACTED]"
+                    : immutableAttributeValue(entry.getValue(), 0));
+        }
+        return Collections.unmodifiableMap(copy);
+    }
+
+    private static Object immutableAttributeValue(Object value, int depth) {
+        if (depth >= MAX_ATTRIBUTE_DEPTH) {
+            return "[TRUNCATED_DEPTH]";
+        }
+        if (value == null || value instanceof Boolean || value instanceof Character || value instanceof Enum<?>) {
+            return value;
+        }
+        if (value instanceof Number number) {
+            return AgentTraceSanitizer.snapshotNumber(number);
+        }
+        if (value instanceof CharSequence sequence) {
+            return adminAttributeText(sequence.toString());
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Object> copy = new ArrayList<>();
+            for (Object item : collection) {
+                if (copy.size() >= MAX_ATTRIBUTE_ENTRIES) {
+                    break;
+                }
+                copy.add(immutableAttributeValue(item, depth + 1));
+            }
+            return Collections.unmodifiableList(copy);
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> copy = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (copy.size() >= MAX_ATTRIBUTE_ENTRIES) {
+                    break;
+                }
+                String key = AgentTraceSanitizer.boundedRedactedText(
+                        String.valueOf(entry.getKey()), MAX_METADATA_CHARS);
+                if (key.isBlank()) {
+                    continue;
+                }
+                copy.put(key, AgentTraceSanitizer.isAdminCredentialKey(key)
+                        ? "[REDACTED]"
+                        : immutableAttributeValue(entry.getValue(), depth + 1));
+            }
+            return Collections.unmodifiableMap(copy);
+        }
+        if (value.getClass().isArray()) {
+            int size = Math.min(Array.getLength(value), MAX_ATTRIBUTE_ENTRIES);
+            List<Object> copy = new ArrayList<>(size);
+            for (int index = 0; index < size; index++) {
+                copy.add(immutableAttributeValue(Array.get(value, index), depth + 1));
+            }
+            return Collections.unmodifiableList(copy);
+        }
+        return adminAttributeText(String.valueOf(value));
+    }
+
+    private static String adminAttributeText(String value) {
+        return AgentTraceSanitizer.captureAdminContent(value, MAX_ATTRIBUTE_STRING_CHARS).text();
     }
 
     private static Map<String, Object> immutableMap(Map<String, Object> source) {
@@ -140,7 +256,7 @@ public record AgentToolDiagnostics(
             return AgentTraceSanitizer.snapshotNumber(number);
         }
         if (value instanceof CharSequence sequence) {
-            return AgentTraceSanitizer.boundedRedactedText(
+            return AgentTraceSanitizer.boundedSanitizedInputText(
                     sequence.toString(), AgentTraceSanitizer.MAX_INPUT_STRING_CHARS);
         }
         if (value instanceof Collection<?> collection) {

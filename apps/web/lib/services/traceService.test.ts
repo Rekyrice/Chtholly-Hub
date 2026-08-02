@@ -28,7 +28,7 @@ describe("traceService", () => {
     );
   });
 
-  it("normalizes missing hierarchy arrays from a legacy detail response", async () => {
+  it("normalizes missing safe projection fields without recreating raw payloads", async () => {
     vi.mocked(apiFetch).mockResolvedValue({
       correlationId: "legacy-trace",
       userId: 7,
@@ -37,13 +37,15 @@ describe("traceService", () => {
       durationMs: 120,
       stepsCount: 1,
       errorMessage: null,
-      toolCalls: [],
-      tracePayload: { terminatedBy: "final_answer" },
+      compatibility: "UNSUPPORTED",
+      timingAccuracy: "NONE",
     });
 
     const detail = await traceService.detail("legacy-trace");
 
-    expect(detail.steps).toEqual([]);
-    expect(detail.unassignedEvents).toEqual([]);
+    expect(detail.phases).toEqual([]);
+    expect(detail.metadata).toBeNull();
+    expect(detail).not.toHaveProperty("tracePayload");
+    expect(detail).not.toHaveProperty("toolCalls");
   });
 });

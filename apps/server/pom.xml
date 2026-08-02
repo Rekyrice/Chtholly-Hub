@@ -61,6 +61,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Outbound web research transport with connection-level DNS pinning. -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
+
         <!-- YAML content-pack manifests, version managed by Spring Boot. -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>

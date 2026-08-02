@@ -6,6 +6,7 @@ import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.config.AgentErrorMessages;
 import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.observability.AgentToolDiagnostics;
+import com.chtholly.agent.evidence.Evidence;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AgentToolExecutorTest {
 
@@ -67,6 +69,63 @@ class AgentToolExecutorTest {
         assertThat(result.diagnostics().sanitizedInput()).isEmpty();
         assertThat(result.diagnostics().outputPreview()).isEqualTo("original observation");
         assertThat(result.diagnostics().errorCode()).isEmpty();
+    }
+
+    @Test
+    void detailedToolReturnsImmutableEvidence() {
+        Evidence evidence = Evidence.fromWebPage(
+                "https://example.com/article", "Article", "content-hash", "excerpt");
+        AgentTool tool = new AgentTool() {
+            @Override
+            public String name() {
+                return "web_fetch";
+            }
+
+            @Override
+            public String description() {
+                return "fetch";
+            }
+
+            @Override
+            public String execute(Map<String, Object> input, long userId) {
+                throw new AssertionError("detailed execution must be used");
+            }
+
+            @Override
+            public AgentToolOutput executeDetailed(Map<String, Object> input, long userId) {
+                return new AgentToolOutput("page observation", List.of(evidence));
+            }
+        };
+
+        AgentToolResult result = executor(5).execute(tool, Map.of(), 7L);
+
+        assertThat(result.status()).isEqualTo(AgentToolResult.Status.SUCCESS);
+        assertThat(result.observation()).isEqualTo("page observation");
+        assertThat(result.evidence()).containsExactly(evidence);
+        assertThatThrownBy(() -> result.evidence().add(evidence))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void controlledToolFailureReturnsStableCodeAndUserMessageWithoutEvidence() {
+        AgentTool tool = tool("web_fetch", Map.of(), input -> {
+            throw new AgentToolExecutionException(
+                    "WEB_ROBOTS_DENIED",
+                    "Page access is disallowed.",
+                    Map.of(
+                            "requestedUrl", "https://example.com/private",
+                            "robots", Map.of("decision", "DENY")));
+        });
+
+        AgentToolResult result = executor(5).execute(tool, Map.of(), 7L);
+
+        assertThat(result.status()).isEqualTo(AgentToolResult.Status.ERROR);
+        assertThat(result.errorCode()).isEqualTo("WEB_ROBOTS_DENIED");
+        assertThat(result.observation()).isEqualTo("Page access is disallowed.");
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.diagnostics().attributes())
+                .containsEntry("requestedUrl", "https://example.com/private");
+        assertThat(result.diagnostics().attributes().get("robots").toString()).contains("DENY");
     }
 
     @Test
@@ -333,7 +392,7 @@ class AgentToolExecutorTest {
     }
 
     @Test
-    void errorDiagnosticsDoNotPersistExceptionUrlsHeadersOrConversationHistory() {
+    void administratorErrorDiagnosticsPreserveFailureChainButRedactCredentials() {
         AgentTool failingTool = tool("unsafe-failure", Map.of(), input -> {
             throw new IllegalStateException(
                     "GET https://api.example.test/private?token=url-secret "
@@ -346,11 +405,13 @@ class AgentToolExecutorTest {
 
         assertThat(result.status()).isEqualTo(AgentToolResult.Status.ERROR);
         assertThat(result.errorCode()).isEqualTo("TOOL_EXECUTION_ERROR");
-        assertThat(result.diagnostics().toString()).doesNotContain(
-                "https://api.example.test",
+        assertThat(result.diagnostics().attributes().toString())
+                .contains(
+                        "java.lang.IllegalStateException",
+                        "https://api.example.test/private?token=[REDACTED]")
+                .doesNotContain(
                 "url-secret",
                 "header-secret",
-                "private-history",
                 "private-input-history");
     }
 
@@ -362,6 +423,7 @@ class AgentToolExecutorTest {
         assertThat(result.status()).isEqualTo(AgentToolResult.Status.SUCCESS);
         assertThat(result.errorCode()).isEmpty();
         assertThat(result.diagnostics()).isNotNull();
+        assertThat(result.evidence()).isEmpty();
     }
 
     private AgentToolExecutor executor(int timeoutSeconds) {

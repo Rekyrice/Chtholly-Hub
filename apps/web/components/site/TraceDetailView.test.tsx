@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import TraceDetailView from "@/components/site/TraceDetailView";
 
@@ -8,142 +8,256 @@ vi.mock("@/lib/services/traceService", () => ({
   traceService: traceMocks,
 }));
 
-describe("TraceDetailView", () => {
-  beforeEach(() => {
-    traceMocks.detail.mockResolvedValue({
-      correlationId: "corr-42",
-      userId: 7,
-      sessionId: "room-session",
-      status: "SUCCESS",
-      durationMs: 240,
-      stepsCount: 2,
-      errorMessage: null,
-      toolCalls: [],
-      tracePayload: {
-        terminatedBy: "final_answer",
-        failureType: "NONE",
-        runMode: "candidate",
-        unapprovedDiagnostic: "must-not-project",
-        llmCallCount: 2,
-        toolCalls: [{ name: "fulltext_search" }],
-        components: {
-          prompt: "agent-prompt-v1",
-          skillSelector: "skill-selector-v1",
+const nativeTrace = {
+  correlationId: "corr-42",
+  userId: 7,
+  sessionId: "room-session",
+  status: "SUCCESS",
+  durationMs: 640,
+  stepsCount: 2,
+  errorMessage: null,
+  compatibility: "NATIVE_V4",
+  timingAccuracy: "EXACT",
+  phases: [
+    {
+      phase: "accepted",
+      events: [{
+        id: "event-1",
+        sequence: 1,
+        stepIndex: null,
+        phase: "accepted",
+        type: "lifecycle",
+        name: "turn_context",
+        status: "ACCEPTED",
+        startedOffsetMs: 0,
+        durationMs: 0,
+        attempt: null,
+        budgetBeforeMs: null,
+        budgetAfterMs: null,
+        errorCode: null,
+        details: { model: "deepseek-chat", runMode: "candidate" },
+      }],
+    },
+    {
+      phase: "llm",
+      events: [{
+        id: "event-2",
+        sequence: 2,
+        stepIndex: 0,
+        phase: "llm",
+        type: "llm",
+        name: "llm_call",
+        status: "SUCCESS",
+        startedOffsetMs: 45,
+        durationMs: 220,
+        attempt: 1,
+        budgetBeforeMs: 29_955,
+        budgetAfterMs: 29_735,
+        errorCode: null,
+        details: {
+          purpose: "LOOP_DECISION",
           model: "deepseek-chat",
-          retrieval: "document-rrf-v1",
-          tools: "agent-tool-v1",
-          traceSchema: "agent-trace-v3",
-        },
-        skill: {
-          id: "page-explain",
-          version: "v1",
-          selectionStatus: "SELECTED",
-          validationStatus: "VALID",
-        },
-        retrieval: {
-          strategy: "document-rrf-v1",
-          statuses: {
-            semantic: "SUCCESS_RESULTS",
-            keyword: "TIMEOUT",
-            entity: "SUCCESS_EMPTY",
+          inputChars: 5040,
+          outputChars: 103,
+          firstTokenMs: 88,
+          systemPrompt: {
+            text: "你是珂朵莉。请先检查证据，再决定是否调用工具。",
+            sourceChars: 24,
+            sha256: "b".repeat(64),
+            truncated: false,
+            credentialRedacted: false,
           },
-          evidenceCount: 1,
-          evidenceSnapshotHash: "snapshot-sha256",
-          degraded: true,
-          citationValidationStatus: "VALID",
-          evidence: [{
-            citationId: "E1",
-            documentId: "post:42",
-            source: "semantic",
-            sourceVersion: "content-v3",
-            sourceHash: "source-sha256",
-          }],
+          userPrompt: {
+            text: "用户想知道《迷宫饭》的评分、集数、放送时间和角色。",
+            sourceChars: 27,
+            sha256: "c".repeat(64),
+            truncated: false,
+            credentialRedacted: false,
+          },
+          rawOutput: {
+            text: "{\"action\":\"bangumi_search\",\"input\":{\"keyword\":\"迷宫饭\"}}",
+            sourceChars: 58,
+            sha256: "d".repeat(64),
+            truncated: false,
+            credentialRedacted: false,
+          },
         },
-        turn: {
-          requestId: "request-42",
-          turnId: "turn-42",
-          chatSessionId: "room-session",
-          connectionId: "connection-7",
-          budgetMs: 30000,
-          timeoutStage: "",
-          cancelled: false,
-          clientDeliveryStatus: "DELIVERED",
-          clientTerminalType: "final",
-          clientDeliveryCode: "",
-        },
-        memory: {
-          writeStatus: "COMMITTED",
-          failureCode: "",
-        },
-        toolPlan: {
-          reason: "selected_skill_bangumi_subject",
-          effectiveTools: ["bangumi_search"],
-        },
-        answerTiming: {
-          modelFirstTokenMs: 120,
-          safeAnswerReadyMs: 310,
-          firstClientDeltaMs: 312,
-        },
-      },
-      steps: [
-        {
-          stepIndex: 0,
-          action: "fulltext_search",
-          llmDurationMs: 40,
-          toolDurationMs: 80,
-          events: [
-            {
-              sequence: 1,
-              stepIndex: 0,
-              type: "llm",
-              name: "model",
-              durationMs: 40,
-              success: null,
-              inputSummary: null,
-              observationSummary: null,
-              inputChars: 120,
-              outputChars: 32,
-              firstTokenMs: null,
-            },
-            {
-              sequence: 2,
-              stepIndex: 0,
-              type: "tool",
-              name: "fulltext_search",
-              durationMs: 80,
-              success: true,
-              inputSummary: "{\"query\":\"trace\"}",
-              observationSummary: "找到 3 篇文章",
-              inputChars: null,
-              outputChars: null,
-              firstTokenMs: null,
-            },
-          ],
-        },
-        {
-          stepIndex: 1,
-          action: "final_answer",
-          llmDurationMs: 120,
-          toolDurationMs: 0,
-          events: [],
-        },
-      ],
-      unassignedEvents: [
-        {
-          sequence: null,
-          stepIndex: null,
-          type: "tool",
-          name: "legacy_tool",
-          durationMs: 12,
-          success: false,
+      }],
+    },
+    {
+      phase: "tool",
+      events: [{
+        id: "event-3",
+        sequence: 3,
+        stepIndex: 0,
+        phase: "tool",
+        type: "tool",
+        name: "bangumi_search",
+        status: "SUCCESS",
+        startedOffsetMs: 270,
+        durationMs: 14,
+        attempt: 1,
+        budgetBeforeMs: 29_730,
+        budgetAfterMs: 29_716,
+        errorCode: null,
+        details: {
+          operation: "subject_search",
+          provider: "bangumi",
+          sourcePolicy: "public_api",
+          sanitizedInput: { keyword: "迷宫饭" },
+          outputPreview: "命中《迷宫饭》与角色资料",
+          outputSha256: "a".repeat(64),
+          outputChars: 1329,
+          outputTruncated: false,
+          resultCount: 1,
+          selectedIds: ["subject:328609"],
           inputSummary: null,
           observationSummary: null,
-          inputChars: null,
-          outputChars: null,
-          firstTokenMs: null,
+          rawInput: {
+            text: "{\"keyword\":\"迷宫饭\",\"_userQuestion\":\"查询《迷宫饭》的评分和角色\",\"password\":\"[REDACTED]\"}",
+            sourceChars: 86,
+            sha256: "e".repeat(64),
+            truncated: false,
+            credentialRedacted: true,
+          },
+          rawObservation: {
+            text: "Bangumi subject 328609：评分 8.1，共 24 集，主要角色包括莱欧斯、玛露西尔和奇尔查克。",
+            sourceChars: 55,
+            sha256: "f".repeat(64),
+            truncated: false,
+            credentialRedacted: false,
+          },
+          attributes: {
+            requestedUrl: "https://api.bgm.tv/v0/subjects/328609",
+            httpStatus: 200,
+            redirectChain: [{ status: 302, url: "https://api.bgm.tv/v0/subjects/328609" }],
+            resolvedAddresses: ["104.26.0.1"],
+          },
         },
-      ],
-    });
+      }],
+    },
+    {
+      phase: "delivery",
+      events: [{
+        id: "event-4",
+        sequence: 4,
+        stepIndex: null,
+        phase: "delivery",
+        type: "lifecycle",
+        name: "terminal",
+        status: "SUCCESS",
+        startedOffsetMs: 630,
+        durationMs: 0,
+        attempt: null,
+        budgetBeforeMs: null,
+        budgetAfterMs: null,
+        errorCode: null,
+        details: {
+          terminalType: "final",
+          answerChars: 420,
+          finalAnswer: {
+            text: "《迷宫饭》共 24 集，主要角色包括莱欧斯、玛露西尔和奇尔查克。",
+            sourceChars: 34,
+            sha256: "1".repeat(64),
+            truncated: false,
+            credentialRedacted: false,
+          },
+        },
+      }],
+    },
+  ],
+  metadata: {
+    runMode: "candidate",
+    failureType: "NONE",
+    outcomeReason: "NONE",
+    llmCallCount: 2,
+    toolCallCount: 1,
+    components: {
+      prompt: "agent-prompt-v2",
+      skillSelector: "skill-selector-v1",
+      model: "deepseek-chat",
+      retrieval: "document-rrf-v1",
+      citationValidator: "citation-v1",
+      tools: "agent-tool-v2",
+      traceSchema: "agent-trace-v4",
+    },
+    skill: {
+      selectionStatus: "SELECTED",
+      id: "page-explain",
+      version: "v1",
+      validationStatus: "VALID",
+    },
+    retrieval: {
+      strategy: "document-rrf-v1",
+      statuses: { semantic: "SUCCESS_RESULTS", keyword: "TIMEOUT", entity: "SUCCESS_EMPTY" },
+      evidenceCount: 1,
+      evidenceSnapshotHash: "snapshot-sha256",
+      degraded: true,
+      citationValidationStatus: "VALID",
+      evidence: [{
+        citationId: "E1",
+        documentId: "post:42",
+        source: "semantic",
+        sourceVersion: "content-v3",
+        sourceHash: "source-sha256",
+      }],
+    },
+    turn: {
+      requestId: "request-42",
+      turnId: "turn-42",
+      chatSessionId: "room-session",
+      connectionId: "connection-7",
+      budgetMs: 30_000,
+      timeoutStage: null,
+      cancelled: false,
+      clientDeliveryStatus: "DELIVERED",
+      clientTerminalType: "final",
+      clientDeliveryCode: null,
+    },
+    memory: { writeStatus: "COMMITTED", failureCode: null },
+    toolPlan: { reason: "selected_skill_bangumi_subject", effectiveTools: ["bangumi_search"] },
+    steps: [{ stepIndex: 0, action: "bangumi_search", llmMs: 210, toolMs: 35 }],
+    answerTiming: { modelFirstTokenMs: 120, safeAnswerReadyMs: 610, firstClientDeltaMs: 612 },
+    capture: {
+      level: "ADMIN_FULL",
+      policyVersion: "trace-admin-full-v1",
+      maxContentFieldChars: 131_072,
+      maxTotalContentChars: 2_097_152,
+      capturedContentChars: 884,
+      truncatedContentFields: 0,
+      credentialRedactions: 1,
+    },
+    completeness: {
+      eventLimit: 256,
+      droppedEvents: 2,
+      truncatedToolOutputs: 1,
+      complete: false,
+    },
+    input: {
+      fingerprint: "input-sha256",
+      questionFingerprint: "question-sha256",
+      pageContextFingerprint: "page-sha256",
+      question: {
+        text: "查询《迷宫饭》的评分、集数、放送时间并列出角色",
+        sourceChars: 25,
+        sha256: "2".repeat(64),
+        truncated: false,
+        credentialRedacted: false,
+      },
+      pageContext: {
+        text: "正在陪读《吃掉红龙这件事，莱欧斯想得比谁都认真》",
+        sourceChars: 28,
+        sha256: "3".repeat(64),
+        truncated: false,
+        credentialRedacted: false,
+      },
+    },
+  },
+};
+
+describe("TraceDetailView", () => {
+  beforeEach(() => {
+    traceMocks.detail.mockResolvedValue(nativeTrace);
   });
 
   afterEach(() => {
@@ -151,69 +265,183 @@ describe("TraceDetailView", () => {
     vi.clearAllMocks();
   });
 
-  it("renders step, LLM, tool, observation and final layers", async () => {
+  it("renders an exact v4 waterfall with all execution stages", async () => {
     render(<TraceDetailView correlationId="corr-42" />);
 
-    expect(await screen.findByText("Step 1")).toBeInTheDocument();
-    expect(screen.getByText("LLM 决策")).toBeInTheDocument();
-    expect(screen.getByText("工具 · fulltext_search")).toBeInTheDocument();
-    expect(screen.getByText("找到 3 篇文章")).toBeInTheDocument();
-    expect(screen.getByText("最终回答")).toBeInTheDocument();
-    expect(screen.getByText("未分配事件（旧数据）")).toBeInTheDocument();
+    const waterfall = await screen.findByRole("region", { name: "Trace 时间瀑布" });
+    expect(within(waterfall).getByRole("region", { name: "接收请求阶段" })).toBeInTheDocument();
+    expect(within(waterfall).getByRole("region", { name: "模型调用阶段" })).toBeInTheDocument();
+    expect(within(waterfall).getByRole("region", { name: "工具执行阶段" })).toBeInTheDocument();
+    expect(within(waterfall).getByRole("region", { name: "交付结果阶段" })).toBeInTheDocument();
+    expect(within(waterfall).getByRole("article", { name: "模型 llm_call" })).toBeInTheDocument();
+    expect(within(waterfall).getByRole("article", { name: "工具 bangumi_search" })).toBeInTheDocument();
+    expect(within(waterfall).getByText("+270ms")).toBeInTheDocument();
+    expect(screen.getByText("原生 v4 · 精确时间")).toBeInTheDocument();
     expect(traceMocks.detail).toHaveBeenCalledWith("corr-42");
   });
 
-  it("renders versioned Trace metadata through the summary allowlist", async () => {
+  it("expands full administrator tool input and observation", async () => {
+    render(<TraceDetailView correlationId="corr-42" />);
+
+    const toolCard = await screen.findByRole("article", { name: "工具 bangumi_search" });
+    fireEvent.click(within(toolCard).getByText("查看诊断"));
+
+    expect(within(toolCard).getByText("bangumi")).toBeInTheDocument();
+    expect(within(toolCard).getByText("public_api")).toBeInTheDocument();
+    expect(within(toolCard).getByText("迷宫饭")).toBeInTheDocument();
+    expect(within(toolCard).getByText("命中《迷宫饭》与角色资料")).toBeInTheDocument();
+    expect(within(toolCard).getByText("subject:328609")).toBeInTheDocument();
+    expect(within(toolCard).getByText(/"_userQuestion":"查询《迷宫饭》的评分和角色"/)).toBeInTheDocument();
+    expect(within(toolCard).getByText(/评分 8\.1，共 24 集/)).toBeInTheDocument();
+    expect(within(toolCard).getByText("凭证字段已过滤")).toBeInTheDocument();
+    expect(within(toolCard).getByText("执行背景与外部条件")).toBeInTheDocument();
+    expect(within(toolCard).getByText(/"requestedUrl": "https:\/\/api\.bgm\.tv/)).toBeInTheDocument();
+    expect(within(toolCard).getByText(/"resolvedAddresses"/)).toBeInTheDocument();
+    expect(screen.queryByText("查看原始 Trace JSON")).not.toBeInTheDocument();
+  });
+
+  it("expands the exact prompts and raw model output used by one call", async () => {
+    render(<TraceDetailView correlationId="corr-42" />);
+
+    const llmCard = await screen.findByRole("article", { name: "模型 llm_call" });
+    fireEvent.click(within(llmCard).getByText("查看调用指标"));
+
+    expect(within(llmCard).getByText(/请先检查证据，再决定是否调用工具/)).toBeInTheDocument();
+    expect(within(llmCard).getByText(/用户想知道《迷宫饭》的评分、集数/)).toBeInTheDocument();
+    expect(within(llmCard).getByText(/"action":"bangumi_search"/)).toBeInTheDocument();
+  });
+
+  it("renders typed metadata and original administrator turn context", async () => {
     render(<TraceDetailView correlationId="corr-42" />);
 
     const metadata = await screen.findByRole("region", { name: "Trace 运行元数据" });
-    expect(metadata).toBeInTheDocument();
-    expect(screen.getByText("candidate")).toBeInTheDocument();
-    expect(screen.getByText("NONE")).toBeInTheDocument();
-    expect(screen.getByText("2 / 1")).toBeInTheDocument();
-    expect(screen.getByText("deepseek-chat")).toBeInTheDocument();
-    expect(screen.getByText("page-explain · v1")).toBeInTheDocument();
-    expect(screen.getByText("SELECTED / VALID")).toBeInTheDocument();
-    expect(screen.getByText("semantic: SUCCESS_RESULTS")).toBeInTheDocument();
-    expect(screen.getByText("keyword: TIMEOUT")).toBeInTheDocument();
-    expect(screen.getByText("E1 · post:42")).toBeInTheDocument();
-    expect(screen.getByText("VALID", { selector: "dd" })).toBeInTheDocument();
-    expect(screen.getByText("turn-42")).toBeInTheDocument();
-    expect(screen.getByText("30.0s")).toBeInTheDocument();
-    expect(screen.getByText("DELIVERED / final")).toBeInTheDocument();
-    expect(screen.getByText("COMMITTED")).toBeInTheDocument();
-    expect(screen.getByText("selected_skill_bangumi_subject")).toBeInTheDocument();
-    expect(screen.getByText("bangumi_search")).toBeInTheDocument();
-    expect(screen.getByText("120ms / 310ms / 312ms")).toBeInTheDocument();
-    expect(within(metadata).queryByText("must-not-project")).not.toBeInTheDocument();
+    expect(within(metadata).getByText("page-explain · v1")).toBeInTheDocument();
+    expect(within(metadata).getByText("semantic: SUCCESS_RESULTS")).toBeInTheDocument();
+    expect(within(metadata).getByText("E1 · post:42")).toBeInTheDocument();
+    expect(within(metadata).getByText("turn-42")).toBeInTheDocument();
+    expect(within(metadata).getByText("DELIVERED / final")).toBeInTheDocument();
+    expect(within(metadata).getByText("120ms / 610ms / 612ms")).toBeInTheDocument();
+    expect(within(metadata).getByText("agent-trace-v4")).toBeInTheDocument();
+    expect(within(metadata).getByText("ADMIN_FULL")).toBeInTheDocument();
+    expect(within(metadata).getByText(/查询《迷宫饭》的评分、集数、放送时间/)).toBeInTheDocument();
+    expect(within(metadata).getByText(/正在陪读《吃掉红龙这件事/)).toBeInTheDocument();
+    expect(within(metadata).getByText("room-session / connection-7")).toBeInTheDocument();
+    const steps = within(metadata).getByRole("region", { name: "Agent 循环步骤" });
+    expect(within(steps).getByText("Step 1 · bangumi_search")).toBeInTheDocument();
+    expect(within(steps).getByText("210ms / 35ms")).toBeInTheDocument();
+    expect(within(metadata).getByText("Trace 事件不完整：已丢弃 2 个事件。")).toBeInTheDocument();
+    expect(within(metadata).getByText("2 / 256")).toBeInTheDocument();
   });
 
-  it("keeps legacy or malformed payloads readable without guessing metadata", async () => {
+  it("labels legacy duration-only traces without inventing start offsets", async () => {
     traceMocks.detail.mockResolvedValueOnce({
-      correlationId: "corr-legacy",
+      ...nativeTrace,
+      correlationId: "corr-v3",
+      compatibility: "LEGACY_V3",
+      timingAccuracy: "DURATION_ONLY",
+      phases: [{
+        phase: "tool",
+        events: [{
+          ...nativeTrace.phases[2].events[0],
+          id: "legacy-tool-1",
+          startedOffsetMs: null,
+          details: {
+            ...nativeTrace.phases[2].events[0].details,
+            sanitizedInput: null,
+            outputPreview: null,
+            inputSummary: `sha256=${"b".repeat(64)};chars=17`,
+            observationSummary: `sha256=${"c".repeat(64)};chars=1329`,
+          },
+        }],
+      }],
+    });
+
+    render(<TraceDetailView correlationId="corr-v3" />);
+
+    expect(await screen.findByText("旧版 v3 · 仅调用耗时")).toBeInTheDocument();
+    expect(screen.getByText("旧数据没有可靠的开始时间，因此不会推测事件先后间隔。")).toBeInTheDocument();
+    expect(screen.queryByText(/\+\d+ms/)).not.toBeInTheDocument();
+    expect(screen.getByText(`sha256=${"b".repeat(64)};chars=17`)).toBeInTheDocument();
+  });
+
+  it("fails closed for malformed traces", async () => {
+    traceMocks.detail.mockResolvedValueOnce({
+      correlationId: "corr-malformed",
       userId: null,
       sessionId: null,
       status: "FAILURE",
       durationMs: null,
       stepsCount: 0,
       errorMessage: null,
-      toolCalls: null,
-      tracePayload: {
-        terminatedBy: "error",
-        components: "invalid",
-        skill: [],
-        retrieval: { statuses: "invalid", evidence: ["invalid"] },
-        failureType: { unexpected: true },
-      },
-      steps: [],
-      unassignedEvents: [],
+      compatibility: "MALFORMED",
+      timingAccuracy: "NONE",
+      phases: [],
+      metadata: null,
     });
 
-    render(<TraceDetailView correlationId="corr-legacy" />);
+    render(<TraceDetailView correlationId="corr-malformed" />);
 
-    expect(await screen.findByText("这条 Trace 没有可解析的 Step 层级。")).toBeInTheDocument();
-    expect(screen.queryByText("Trace 运行元数据")).not.toBeInTheDocument();
-    expect(screen.getAllByText("-").length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByText("查看原始 Trace JSON")).toBeInTheDocument();
+    expect(await screen.findByText("这条 Trace 无法安全解析")).toBeInTheDocument();
+    expect(screen.getByText("这条记录无法按 v4 合同组织成可靠链路，请重新触发一次 Agent 任务生成新 Trace。")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Trace 运行元数据" })).not.toBeInTheDocument();
+    expect(screen.queryByText("查看原始 Trace JSON")).not.toBeInTheDocument();
+  });
+
+  it("keeps sparse allowlisted collections readable", async () => {
+    const sparseTool = {
+      ...nativeTrace.phases[2].events[0],
+      details: {
+        operation: "subject_search",
+        provider: "bangumi",
+        sourcePolicy: "public_api",
+        outputChars: 0,
+        outputTruncated: false,
+      },
+    };
+    traceMocks.detail.mockResolvedValueOnce({
+      ...nativeTrace,
+      phases: [{ phase: "tool", events: [sparseTool] }],
+      metadata: {
+        ...nativeTrace.metadata,
+        retrieval: {
+          strategy: "document-rrf-v1",
+          evidenceCount: 0,
+          degraded: false,
+          citationValidationStatus: "NOT_RUN",
+        },
+        toolPlan: { reason: "not_planned" },
+      },
+    });
+
+    render(<TraceDetailView correlationId="corr-sparse" />);
+
+    expect(await screen.findByRole("article", { name: "工具 bangumi_search" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Trace 运行元数据" })).toBeInTheDocument();
+    expect(screen.getByText("not_planned")).toBeInTheDocument();
+  });
+
+  it("shows the current-post retrieval route even when no evidence was produced", async () => {
+    traceMocks.detail.mockResolvedValueOnce({
+      ...nativeTrace,
+      phases: [],
+      metadata: {
+        ...nativeTrace.metadata,
+        retrieval: {
+          strategy: "current-post-rag-v1",
+          statuses: { current_post: "SUCCESS_EMPTY" },
+          evidenceCount: 0,
+          degraded: false,
+          citationValidationStatus: "NOT_RUN",
+          evidence: [],
+        },
+      },
+    });
+
+    render(<TraceDetailView correlationId="current-post-empty" />);
+
+    const metadata = await screen.findByRole("region", { name: "Trace 运行元数据" });
+    expect(within(metadata).getByText("检索路由")).toBeInTheDocument();
+    expect(within(metadata).getByText("current_post: SUCCESS_EMPTY")).toBeInTheDocument();
+    expect(within(metadata).getByText("0")).toBeInTheDocument();
   });
 });

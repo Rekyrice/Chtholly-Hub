@@ -1,6 +1,7 @@
 package com.chtholly.agent;
 
 import com.chtholly.agent.observability.AgentToolDiagnostics;
+import com.chtholly.agent.runtime.AgentToolOutput;
 
 import java.util.Collections;
 import java.util.Map;
@@ -26,4 +27,13 @@ public interface AgentTool {
 
     /** 执行工具并返回观察结果（纯文本）。 */
     String execute(Map<String, Object> input, long userId);
+
+    /**
+     * Executes the tool and optionally returns evidence discovered at runtime.
+     *
+     * <p>Legacy tools remain text-only and require no migration.
+     */
+    default AgentToolOutput executeDetailed(Map<String, Object> input, long userId) {
+        return new AgentToolOutput(execute(input, userId));
+    }
 }

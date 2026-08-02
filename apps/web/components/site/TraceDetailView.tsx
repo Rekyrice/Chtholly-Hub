@@ -1,20 +1,59 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { traceService } from "@/lib/services/traceService";
-import type { TraceDetail, TraceEvent, TraceStep } from "@/lib/types/trace";
+import type {
+  TraceDetail,
+  TraceContent,
+  TraceEvent,
+  TraceLifecycleDetails,
+  TraceLlmDetails,
+  TraceMetadata,
+  TracePhase,
+  TraceToolDetails,
+} from "@/lib/types/trace";
+
+const PHASE_LABELS: Record<string, string> = {
+  accepted: "接收请求",
+  skill: "选择能力",
+  plan: "规划工具",
+  retrieval: "检索证据",
+  llm: "模型调用",
+  tool: "工具执行",
+  validation: "校验答案",
+  memory: "写入记忆",
+  delivery: "交付结果",
+};
 
 const COMPONENT_FIELDS = [
   ["prompt", "Prompt"],
   ["skillSelector", "Skill Selector"],
   ["model", "模型"],
   ["retrieval", "检索"],
+  ["citationValidator", "引用校验"],
   ["tools", "工具协议"],
   ["traceSchema", "Trace Schema"],
 ] as const;
 
-const RETRIEVAL_ROUTES = ["semantic", "keyword", "entity"] as const;
+const LIFECYCLE_DETAIL_LABELS: Record<string, string> = {
+  model: "模型",
+  runMode: "运行模式",
+  skillId: "Skill",
+  skillVersion: "Skill 版本",
+  sourceCount: "检索源",
+  evidenceCount: "Evidence",
+  reason: "原因",
+  toolCount: "工具数",
+  budgetMs: "单轮预算",
+  stage: "阶段",
+  terminalType: "终态类型",
+  deliveryCode: "交付代码",
+  modelFirstTokenMs: "模型首字",
+  safeAnswerReadyMs: "安全答案就绪",
+  firstClientDeltaMs: "客户端首字",
+  answerChars: "回答字符",
+};
 
 export default function TraceDetailView({ correlationId }: { correlationId: string }) {
   const [trace, setTrace] = useState<TraceDetail | null>(null);
@@ -47,7 +86,8 @@ export default function TraceDetailView({ correlationId }: { correlationId: stri
     return <div className="admin-loading-card">正在加载 Trace 执行层级……</div>;
   }
 
-  const metadata = projectTracePayload(trace.tracePayload);
+  const eventCount = trace.phases.reduce((total, phase) => total + phase.events.length, 0);
+  const unreadable = trace.compatibility === "MALFORMED" || trace.compatibility === "UNSUPPORTED";
 
   return (
     <div className="trace-detail-page">
@@ -57,77 +97,321 @@ export default function TraceDetailView({ correlationId }: { correlationId: stri
         <div>
           <p className="admin-page__eyebrow">Execution trace</p>
           <h1>{trace.correlationId}</h1>
-          <p>一次 Agent 执行内的 Step、模型调用、工具与观察结果。</p>
+          <p>从请求接收、模型决策到工具观察与最终交付，按一次真实执行展开。</p>
         </div>
-        <span className={`trace-status trace-status--${trace.status.toLowerCase()}`}>
-          {trace.status}
-        </span>
+        <div className="trace-detail-header__badges">
+          <span className={`trace-compat trace-compat--${trace.compatibility.toLowerCase()}`}>
+            {formatCompatibility(trace)}
+          </span>
+          <span className={`trace-status trace-status--${(trace.status || "unknown").toLowerCase()}`}>
+            {trace.status || "UNKNOWN"}
+          </span>
+        </div>
       </header>
 
       <dl className="trace-detail-summary">
         <SummaryItem label="用户" value={trace.userId ?? "-"} />
         <SummaryItem label="会话" value={trace.sessionId ?? "-"} mono />
-        <SummaryItem label="步骤" value={trace.stepsCount ?? trace.steps.length} />
+        <SummaryItem label="步骤" value={trace.stepsCount} />
+        <SummaryItem label="事件" value={eventCount} />
         <SummaryItem label="总耗时" value={formatMs(trace.durationMs)} />
-        <SummaryItem label="运行模式" value={metadata.runMode ?? "-"} />
-        <SummaryItem label="失败类型" value={metadata.failureType ?? "-"} mono />
-        <SummaryItem label="LLM / Tool 调用" value={formatCallCount(metadata)} />
+        <SummaryItem label="计时可信度" value={formatTimingAccuracy(trace.timingAccuracy)} />
+        <SummaryItem label="运行模式" value={trace.metadata?.runMode ?? "-"} />
+        <SummaryItem label="失败类型" value={trace.metadata?.failureType ?? "-"} mono />
       </dl>
 
       {trace.errorMessage && <div className="admin-alert">{trace.errorMessage}</div>}
 
-      {metadata.hasStructuredMetadata && <TraceMetadataSection metadata={metadata} />}
-
-      <section className="trace-timeline" aria-label="Trace 执行时间线">
-        {trace.steps.length === 0 ? (
-          <div className="trace-empty">这条 Trace 没有可解析的 Step 层级。</div>
-        ) : (
-          trace.steps.map((step) => <TraceStepCard key={step.stepIndex} step={step} />)
-        )}
-      </section>
-
-      {trace.unassignedEvents.length > 0 && (
-        <section className="trace-unassigned">
-          <header>
-            <h2>未分配事件（旧数据）</h2>
-            <p>这些事件没有明确 stepIndex，因此不推测归属。</p>
-          </header>
-          <div className="trace-event-list">
-            {trace.unassignedEvents.map((event, index) => (
-              <TraceEventCard key={`${event.type}-${event.sequence ?? index}`} event={event} />
-            ))}
-          </div>
-        </section>
+      {trace.compatibility === "LEGACY_V3" && (
+        <aside className="trace-compat-note trace-compat-note--legacy">
+          <strong>旧数据没有可靠的开始时间，因此不会推测事件先后间隔。</strong>
+          <span>页面只展示每次模型或工具调用自身的耗时与经过校验的摘要。</span>
+        </aside>
       )}
 
-      <details className="trace-raw">
-        <summary>查看原始 Trace JSON</summary>
-        <pre>{JSON.stringify(trace.tracePayload, null, 2)}</pre>
-      </details>
+      {unreadable ? (
+        <TraceUnavailable compatibility={trace.compatibility} />
+      ) : (
+        <TraceWaterfall trace={trace} />
+      )}
+
+      {trace.metadata && <TraceMetadataSection metadata={trace.metadata} />}
     </div>
   );
 }
 
-function TraceMetadataSection({ metadata }: { metadata: TracePayloadMetadata }) {
+function TraceWaterfall({ trace }: { trace: TraceDetail }) {
+  const exact = trace.timingAccuracy === "EXACT";
+  const totalMs = resolveTimelineDuration(trace);
+
   return (
-    <section className="trace-unassigned" aria-labelledby="trace-metadata-title">
+    <section className="trace-waterfall" aria-labelledby="trace-waterfall-title">
+      <header className="trace-section-heading">
+        <div>
+          <p className="admin-page__eyebrow">Execution waterfall</p>
+          <h2 id="trace-waterfall-title">Trace 时间瀑布</h2>
+        </div>
+        <p>{exact ? `0 — ${formatMs(totalMs)}` : "按记录顺序 · 仅显示调用耗时"}</p>
+      </header>
+
+      {exact && (
+        <div className="trace-waterfall__axis" aria-hidden="true">
+          <span>0</span><span>25%</span><span>50%</span><span>75%</span><span>{formatMs(totalMs)}</span>
+        </div>
+      )}
+
+      <div className="trace-waterfall__lanes">
+        {trace.phases.length === 0 ? (
+          <div className="trace-empty">这条 Trace 没有可展示的安全事件。</div>
+        ) : (
+          trace.phases.map((phase, index) => (
+            <TracePhaseLane
+              key={`${phase.phase}-${index}`}
+              phase={phase}
+              phaseIndex={index}
+              exact={exact}
+              totalMs={totalMs}
+            />
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TracePhaseLane({
+  phase,
+  phaseIndex,
+  exact,
+  totalMs,
+}: {
+  phase: TracePhase;
+  phaseIndex: number;
+  exact: boolean;
+  totalMs: number;
+}) {
+  return (
+    <section className="trace-waterfall__lane" aria-label={`${phaseLabel(phase.phase)}阶段`}>
+      <header className="trace-waterfall__lane-label">
+        <span>{String(phaseIndex + 1).padStart(2, "0")}</span>
+        <div>
+          <h3>{phaseLabel(phase.phase)}</h3>
+          <p>{phase.events.length} 个事件</p>
+        </div>
+      </header>
+
+      <div className="trace-waterfall__lane-body">
+        <div className={`trace-waterfall__track${exact ? "" : " trace-waterfall__track--duration"}`}>
+          {phase.events.map((event) => (
+            <div
+              className={`trace-waterfall__bar trace-waterfall__bar--${event.type}`}
+              key={`bar-${event.id}`}
+              style={eventBarStyle(event, exact, totalMs)}
+              title={`${event.name} · ${formatMs(event.durationMs)}`}
+            >
+              <span>{event.name}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="trace-event-list">
+          {phase.events.map((event) => (
+            <TraceEventCard key={event.id} event={event} exact={exact} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TraceEventCard({ event, exact }: { event: TraceEvent; exact: boolean }) {
+  const label = event.type === "tool"
+    ? `工具 ${event.name}`
+    : `${eventTypeLabel(event.type)} ${event.name}`;
+
+  return (
+    <article className={`trace-event trace-event--${event.type}`} aria-label={label}>
       <header>
-        <h2 id="trace-metadata-title">Trace 运行元数据</h2>
-        <p>仅展示版本、固定状态和 Evidence 标识；正文与原始输入不会投影到摘要区。</p>
+        <div>
+          <span className="trace-event__sequence">#{event.sequence ?? "-"}</span>
+          <div>
+            <strong>{eventDisplayName(event)}</strong>
+            <small>{event.name}</small>
+          </div>
+        </div>
+        <div className="trace-event__meta">
+          <span className={`trace-event__status trace-event__status--${statusTone(event.status)}`}>
+            {event.status || "UNKNOWN"}
+          </span>
+          {exact && event.startedOffsetMs != null && <span>+{formatMs(event.startedOffsetMs)}</span>}
+          <span>{formatMs(event.durationMs)}</span>
+        </div>
+      </header>
+
+      <div className="trace-event__contract">
+        {event.stepIndex != null && <span>Step {event.stepIndex + 1}</span>}
+        {event.attempt != null && <span>Attempt {event.attempt}</span>}
+        {event.budgetBeforeMs != null && (
+          <span>预算 {formatMs(event.budgetBeforeMs)} → {formatMs(event.budgetAfterMs)}</span>
+        )}
+        {event.errorCode && <span className="trace-event__error-code">{event.errorCode}</span>}
+      </div>
+
+      {event.details && (
+        <details className="trace-event__details">
+          <summary>{event.type === "tool" ? "查看诊断" : event.type === "llm" ? "查看调用指标" : "查看阶段信息"}</summary>
+          <TraceEventDetails event={event} />
+        </details>
+      )}
+    </article>
+  );
+}
+
+function TraceEventDetails({ event }: { event: TraceEvent }) {
+  if (event.type === "llm") {
+    const details = event.details as TraceLlmDetails;
+    return (
+      <div className="trace-llm-details">
+        <dl className="trace-event__tokens trace-event__tokens--five">
+          <Metric label="Purpose" value={details.purpose ?? "-"} />
+          <Metric label="Model" value={details.model ?? "-"} mono />
+          <Metric label="Input chars" value={details.inputChars ?? "-"} />
+          <Metric label="Output chars" value={details.outputChars ?? "-"} />
+          <Metric label="TTFT" value={formatMs(details.firstTokenMs)} />
+        </dl>
+        {details.failureClass && (
+          <div className="trace-content-failure">异常类型 · {details.failureClass}</div>
+        )}
+        <TraceContentBlock label="System Prompt" content={details.systemPrompt} />
+        <TraceContentBlock label="User Prompt" content={details.userPrompt} />
+        <TraceContentBlock label="模型原始输出" content={details.rawOutput} />
+        <TraceContentBlock label="异常消息" content={details.failureMessage} />
+      </div>
+    );
+  }
+
+  if (event.type === "tool") {
+    return <TraceToolDiagnostics details={event.details as TraceToolDetails} />;
+  }
+
+  const details = event.details as TraceLifecycleDetails;
+  const scalarEntries = Object.entries(details).filter(([key]) => key !== "finalAnswer");
+  return (
+    <div className="trace-lifecycle-details">
+      <dl className="trace-event__tokens">
+        {scalarEntries.map(([key, value]) => (
+          <Metric
+            key={key}
+            label={LIFECYCLE_DETAIL_LABELS[key] ?? key}
+            value={key.endsWith("Ms") && typeof value === "number" ? formatMs(value) : String(value)}
+            mono={typeof value === "string"}
+          />
+        ))}
+      </dl>
+      <TraceContentBlock label="最终交付内容" content={details.finalAnswer} />
+    </div>
+  );
+}
+
+function TraceToolDiagnostics({ details }: { details: TraceToolDetails }) {
+  const sanitizedEntries = details.sanitizedInput ? Object.entries(details.sanitizedInput) : [];
+  const selectedIds = details.selectedIds ?? [];
+  return (
+    <div className="trace-tool-diagnostics">
+      <dl className="trace-event__tokens trace-event__tokens--five">
+        <Metric label="Operation" value={details.operation ?? "-"} mono />
+        <Metric label="Provider" value={details.provider ?? "-"} mono />
+        <Metric label="Source policy" value={details.sourcePolicy ?? "-"} mono />
+        <Metric label="Output chars" value={details.outputChars ?? "-"} />
+        <Metric label="Result count" value={details.resultCount ?? "-"} />
+      </dl>
+
+      {sanitizedEntries.length > 0 && (
+        <section className="trace-event__block">
+          <span>脱敏输入</span>
+          <dl className="trace-tool-diagnostics__input">
+            {sanitizedEntries.map(([key, value]) => (
+              <div key={key}>
+                <dt>{key}</dt>
+                <dd>{formatSafeValue(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+
+      {details.outputPreview && (
+        <section className="trace-event__block trace-event__observation">
+          <span>输出预览{details.outputTruncated ? "（已截断）" : ""}</span>
+          <p>{details.outputPreview}</p>
+        </section>
+      )}
+
+      <TraceContentBlock label="实际工具输入" content={details.rawInput} />
+      <TraceContentBlock label="实际 Observe 内容" content={details.rawObservation} />
+      <TraceJsonBlock label="执行背景与外部条件" value={details.attributes} />
+
+      {(details.outputSha256 || details.inputSummary || details.observationSummary) && (
+        <dl className="trace-tool-diagnostics__hashes">
+          {details.outputSha256 && <Metric label="Output SHA-256" value={details.outputSha256} mono />}
+          {details.inputSummary && <Metric label="旧版输入摘要" value={details.inputSummary} mono />}
+          {details.observationSummary && (
+            <Metric label="旧版输出摘要" value={details.observationSummary} mono />
+          )}
+        </dl>
+      )}
+
+      {selectedIds.length > 0 && (
+        <section className="trace-event__block">
+          <span>选中结果</span>
+          <ul className="trace-tool-diagnostics__ids">
+            {selectedIds.map((id) => <li key={id}>{id}</li>)}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function TraceMetadataSection({ metadata }: { metadata: TraceMetadata }) {
+  const componentEntries = metadata.components
+    ? COMPONENT_FIELDS.flatMap(([key, label]) => {
+      const value = metadata.components?.[key];
+      return value ? [{ key, label, value }] : [];
+    })
+    : [];
+  const retrievalStatuses = metadata.retrieval?.statuses ?? {};
+  const retrievalEvidence = metadata.retrieval?.evidence ?? [];
+  const effectiveTools = metadata.toolPlan?.effectiveTools ?? [];
+
+  return (
+    <section className="trace-metadata" aria-labelledby="trace-metadata-title">
+      <header className="trace-section-heading">
+        <div>
+          <p className="admin-page__eyebrow">Administrator archive</p>
+          <h2 id="trace-metadata-title">Trace 运行元数据</h2>
+        </div>
+        <p>管理员全链路档案；正文按显式上限保存，运行凭证仍会过滤。</p>
       </header>
 
       <dl className="trace-detail-summary">
-        {metadata.components.map((component) => (
-          <SummaryItem
-            key={component.key}
-            label={component.label}
-            value={component.value}
-            mono
-          />
+        <SummaryItem label="运行模式" value={metadata.runMode ?? "-"} />
+        <SummaryItem label="失败类型" value={metadata.failureType ?? "-"} mono />
+        <SummaryItem label="结果原因" value={metadata.outcomeReason ?? "-"} mono />
+        <SummaryItem
+          label="LLM / Tool 调用"
+          value={`${metadata.llmCallCount ?? "-"} / ${metadata.toolCallCount ?? "-"}`}
+        />
+        {componentEntries.map((component) => (
+          <SummaryItem key={component.key} label={component.label} value={component.value} mono />
         ))}
         {metadata.skill && (
           <>
-            <SummaryItem label="Skill" value={formatSkill(metadata.skill)} mono />
+            <SummaryItem
+              label="Skill"
+              value={[metadata.skill.id, metadata.skill.version].filter(Boolean).join(" · ") || "-"}
+              mono
+            />
             <SummaryItem
               label="选择 / 校验"
               value={`${metadata.skill.selectionStatus ?? "-"} / ${metadata.skill.validationStatus ?? "-"}`}
@@ -138,41 +422,37 @@ function TraceMetadataSection({ metadata }: { metadata: TracePayloadMetadata }) 
           <>
             <SummaryItem label="检索策略" value={metadata.retrieval.strategy ?? "-"} mono />
             <SummaryItem label="Evidence" value={metadata.retrieval.evidenceCount ?? "-"} />
-            <SummaryItem
-              label="Evidence 快照"
-              value={metadata.retrieval.evidenceSnapshotHash ?? "-"}
-              mono
-            />
+            <SummaryItem label="Evidence 快照" value={metadata.retrieval.evidenceSnapshotHash ?? "-"} mono />
             <SummaryItem
               label="检索降级"
-              value={metadata.retrieval.degraded == null
-                ? "-"
-                : metadata.retrieval.degraded ? "是" : "否"}
+              value={metadata.retrieval.degraded == null ? "-" : metadata.retrieval.degraded ? "是" : "否"}
             />
-            <SummaryItem
-              label="引用校验"
-              value={metadata.retrieval.citationValidationStatus ?? "-"}
-            />
+            <SummaryItem label="引用校验" value={metadata.retrieval.citationValidationStatus ?? "-"} />
           </>
         )}
         {metadata.turn && (
           <>
             <SummaryItem label="Turn ID" value={metadata.turn.turnId ?? "-"} mono />
             <SummaryItem label="Request ID" value={metadata.turn.requestId ?? "-"} mono />
+            <SummaryItem
+              label="会话 / 连接"
+              value={`${metadata.turn.chatSessionId ?? "-"} / ${metadata.turn.connectionId ?? "-"}`}
+              mono
+            />
             <SummaryItem label="单轮预算" value={formatMs(metadata.turn.budgetMs)} />
             <SummaryItem
               label="客户端终态"
-              value={formatClientDelivery(metadata.turn)}
+              value={`${metadata.turn.clientDeliveryStatus ?? "-"} / ${metadata.turn.clientTerminalType ?? "-"}`}
               mono
             />
-            {metadata.turn.clientDeliveryCode && (
-              <SummaryItem label="交付异常" value={metadata.turn.clientDeliveryCode} mono />
-            )}
             <SummaryItem
               label="中止位置"
               value={metadata.turn.timeoutStage ?? (metadata.turn.cancelled ? "cancelled" : "-")}
               mono
             />
+            {metadata.turn.clientDeliveryCode && (
+              <SummaryItem label="交付异常" value={metadata.turn.clientDeliveryCode} mono />
+            )}
           </>
         )}
         {metadata.memory && (
@@ -188,8 +468,8 @@ function TraceMetadataSection({ metadata }: { metadata: TracePayloadMetadata }) 
             <SummaryItem label="工具规划" value={metadata.toolPlan.reason ?? "-"} mono />
             <SummaryItem
               label="本轮工具"
-              value={metadata.toolPlan.effectiveTools.length > 0
-                ? metadata.toolPlan.effectiveTools.join(", ")
+              value={effectiveTools.length > 0
+                ? effectiveTools.join(", ")
                 : "无"}
               mono
             />
@@ -198,41 +478,105 @@ function TraceMetadataSection({ metadata }: { metadata: TracePayloadMetadata }) 
         {metadata.answerTiming && (
           <SummaryItem
             label="模型 / 校验 / 可见"
-            value={formatAnswerTiming(metadata.answerTiming)}
+            value={`${formatMs(metadata.answerTiming.modelFirstTokenMs)} / ${formatMs(metadata.answerTiming.safeAnswerReadyMs)} / ${formatMs(metadata.answerTiming.firstClientDeltaMs)}`}
           />
+        )}
+        {metadata.capture && (
+          <>
+            <SummaryItem label="采集级别" value={metadata.capture.level ?? "-"} mono />
+            <SummaryItem label="采集策略" value={metadata.capture.policyVersion ?? "-"} mono />
+            <SummaryItem
+              label="正文采集"
+              value={`${metadata.capture.capturedContentChars ?? "-"} / ${metadata.capture.maxTotalContentChars ?? "-"} chars`}
+            />
+            <SummaryItem
+              label="截断 / 凭证过滤"
+              value={`${metadata.capture.truncatedContentFields ?? 0} / ${metadata.capture.credentialRedactions ?? 0}`}
+            />
+          </>
+        )}
+        {metadata.completeness && (
+          <>
+            <SummaryItem
+              label="事件丢弃 / 上限"
+              value={`${metadata.completeness.droppedEvents ?? 0} / ${metadata.completeness.eventLimit ?? "-"}`}
+            />
+            <SummaryItem
+              label="工具预览截断"
+              value={metadata.completeness.truncatedToolOutputs ?? 0}
+            />
+          </>
         )}
       </dl>
 
-      {metadata.retrieval && metadata.retrieval.statuses.length > 0 && (
-        <article className="trace-event trace-event--tool">
-          <header><strong>检索路由状态</strong></header>
-          <dl className="trace-event__tokens">
-            {metadata.retrieval.statuses.map((route) => (
-              <div key={route.route}>
-                <dt>{route.route}</dt>
-                <dd>{`${route.route}: ${route.status}`}</dd>
-              </div>
-            ))}
-          </dl>
-        </article>
+      {metadata.completeness && metadata.completeness.complete === false && (
+        <div className="admin-alert">
+          Trace 事件不完整：已丢弃 {metadata.completeness.droppedEvents ?? 0} 个事件。
+        </div>
       )}
 
-      {metadata.retrieval && metadata.retrieval.evidence.length > 0 && (
-        <div className="trace-event-list" aria-label="Evidence 元数据">
-          {metadata.retrieval.evidence.map((evidence, index) => (
-            <article className="trace-event trace-event--tool" key={`${evidence.citationId}-${index}`}>
-              <header>
-                <strong>{`${evidence.citationId ?? "-"} · ${evidence.documentId ?? "-"}`}</strong>
-              </header>
-              <dl className="trace-event__tokens">
-                <div><dt>来源</dt><dd>{evidence.source ?? "-"}</dd></div>
-                <div><dt>来源版本</dt><dd>{evidence.sourceVersion ?? "-"}</dd></div>
-                <div><dt>来源摘要</dt><dd className="trace-mono">{evidence.sourceHash ?? "-"}</dd></div>
+      {metadata.input && (
+        <section className="trace-turn-context" aria-label="本轮原始上下文">
+          <header>
+            <div>
+              <p className="admin-page__eyebrow">Turn input</p>
+              <h3>本轮原始问题与页面上下文</h3>
+            </div>
+            <span className="trace-mono">{metadata.input.fingerprint ?? "-"}</span>
+          </header>
+          <TraceContentBlock label="用户问题" content={metadata.input.question} />
+          <TraceContentBlock label="页面上下文" content={metadata.input.pageContext} />
+        </section>
+      )}
+
+      {metadata.steps && metadata.steps.length > 0 && (
+        <div className="trace-metadata__cards" role="region" aria-label="Agent 循环步骤">
+          {metadata.steps.map((step, index) => (
+            <article className="trace-metadata-card" key={`${step.stepIndex}-${step.action}-${index}`}>
+              <h3>Step {step.stepIndex + 1} · {step.action}</h3>
+              <dl>
+                <Metric label="LLM / Tool 耗时" value={`${formatMs(step.llmMs)} / ${formatMs(step.toolMs)}`} />
               </dl>
             </article>
           ))}
         </div>
       )}
+
+      {metadata.retrieval && (Object.keys(retrievalStatuses).length > 0 || retrievalEvidence.length > 0) && (
+        <div className="trace-metadata__cards">
+          <article className="trace-metadata-card">
+            <h3>检索路由</h3>
+            <ul>
+              {Object.entries(retrievalStatuses).map(([route, status]) => (
+                <li key={route}>{route}: {status}</li>
+              ))}
+            </ul>
+          </article>
+          {retrievalEvidence.map((evidence, index) => (
+            <article className="trace-metadata-card" key={`${evidence.citationId}-${index}`}>
+              <h3>{evidence.citationId ?? "-"} · {evidence.documentId ?? "-"}</h3>
+              <dl>
+                <Metric label="来源" value={evidence.source ?? "-"} />
+                <Metric label="来源版本" value={evidence.sourceVersion ?? "-"} mono />
+                <Metric label="来源摘要" value={evidence.sourceHash ?? "-"} mono />
+              </dl>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TraceUnavailable({ compatibility }: { compatibility: TraceDetail["compatibility"] }) {
+  const malformed = compatibility === "MALFORMED";
+  return (
+    <section className="trace-unavailable">
+      <span aria-hidden="true">{malformed ? "!" : "?"}</span>
+      <div>
+        <h2>{malformed ? "这条 Trace 无法安全解析" : "这条 Trace 版本暂不受支持"}</h2>
+        <p>这条记录无法按 v4 合同组织成可靠链路，请重新触发一次 Agent 任务生成新 Trace。</p>
+      </div>
     </section>
   );
 }
@@ -254,298 +598,143 @@ function SummaryItem({
   );
 }
 
-function TraceStepCard({ step }: { step: TraceStep }) {
-  const finalStep = step.action === "final_answer";
+function Metric({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string | number;
+  mono?: boolean;
+}) {
   return (
-    <article className={`trace-step${finalStep ? " trace-step--final" : ""}`}>
-      <header className="trace-step__header">
-        <div>
-          <span>Step {step.stepIndex + 1}</span>
-          <h2>{finalStep ? "最终回答" : step.action || "未命名动作"}</h2>
-        </div>
-        <div className="trace-step__metrics">
-          <span>LLM {formatMs(step.llmDurationMs)}</span>
-          {(step.toolDurationMs ?? 0) > 0 && <span>Tool {formatMs(step.toolDurationMs)}</span>}
-        </div>
-      </header>
-      {step.events.length > 0 ? (
-        <div className="trace-event-list">
-          {step.events.map((event, index) => (
-            <TraceEventCard key={`${event.type}-${event.sequence ?? index}`} event={event} />
-          ))}
-        </div>
-      ) : (
-        <p className="trace-step__empty">这个 Step 没有独立事件明细。</p>
-      )}
-    </article>
+    <div>
+      <dt>{label}</dt>
+      <dd className={mono ? "trace-mono" : undefined}>{value}</dd>
+    </div>
   );
 }
 
-function TraceEventCard({ event }: { event: TraceEvent }) {
-  const isTool = event.type === "tool";
+function resolveTimelineDuration(trace: TraceDetail) {
+  const eventEnd = trace.phases
+    .flatMap((phase) => phase.events)
+    .reduce((latest, event) => {
+      if (event.startedOffsetMs == null) return latest;
+      return Math.max(latest, event.startedOffsetMs + (event.durationMs ?? 0));
+    }, 0);
+  return Math.max(1, trace.durationMs ?? 0, eventEnd);
+}
+
+function eventBarStyle(event: TraceEvent, exact: boolean, totalMs: number): CSSProperties | undefined {
+  if (!exact || event.startedOffsetMs == null) return undefined;
+  const left = Math.min(99, Math.max(0, event.startedOffsetMs / totalMs * 100));
+  const durationPercent = Math.max(1.2, (event.durationMs ?? 0) / totalMs * 100);
+  const width = Math.max(0.8, Math.min(durationPercent, 100 - left));
+  return {
+    "--trace-left": `${left}%`,
+    "--trace-width": `${width}%`,
+  } as CSSProperties;
+}
+
+function formatCompatibility(trace: TraceDetail) {
+  if (trace.compatibility === "NATIVE_V4") return "原生 v4 · 精确时间";
+  if (trace.compatibility === "LEGACY_V3") return "旧版 v3 · 仅调用耗时";
+  if (trace.compatibility === "MALFORMED") return "载荷损坏 · 已隔离";
+  return "版本不支持 · 已隔离";
+}
+
+function formatTimingAccuracy(value: TraceDetail["timingAccuracy"]) {
+  if (value === "EXACT") return "精确";
+  if (value === "DURATION_ONLY") return "仅调用耗时";
+  return "不可用";
+}
+
+function phaseLabel(phase: string) {
+  return PHASE_LABELS[phase] ?? phase;
+}
+
+function eventDisplayName(event: TraceEvent) {
+  if (event.type === "llm") {
+    const purpose = (event.details as TraceLlmDetails | null)?.purpose;
+    return purpose || "模型调用";
+  }
+  return event.type === "tool" ? event.name : phaseLabel(event.phase);
+}
+
+function eventTypeLabel(type: string) {
+  if (type === "llm") return "模型";
+  if (type === "tool") return "工具";
+  return "阶段";
+}
+
+function statusTone(status: string | null | undefined) {
+  const normalized = (status || "UNKNOWN").toUpperCase();
+  if (["SUCCESS", "ACCEPTED", "COMPLETE", "VALID", "DELIVERED"].includes(normalized)) return "ok";
+  if (["TIMEOUT", "CANCELLED", "INTERRUPTED", "ABORTED", "DEGRADED"].includes(normalized)) return "warn";
+  if (["ERROR", "FAILURE", "FAILED", "INVALID"].includes(normalized)) return "fail";
+  return "neutral";
+}
+
+function formatSafeValue(value: unknown): string {
+  if (value == null) return "-";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) return value.map(formatSafeValue).join(", ");
+  return "[结构化值]";
+}
+
+function TraceContentBlock({
+  label,
+  content,
+}: {
+  label: string;
+  content: TraceContent | null | undefined;
+}) {
+  if (!content) return null;
   return (
-    <article className={`trace-event trace-event--${event.type}`}>
+    <section className="trace-content-block">
       <header>
+        <strong>{label}</strong>
         <div>
-          <span className="trace-event__sequence">#{event.sequence ?? "-"}</span>
-          <strong>{isTool ? `工具 · ${event.name || "unknown"}` : "LLM 决策"}</strong>
-        </div>
-        <div className="trace-event__meta">
-          {isTool && event.success != null && (
-            <span className={event.success ? "trace-event__ok" : "trace-event__fail"}>
-              {event.success ? "成功" : "失败"}
-            </span>
+          {content.truncated && <span className="trace-content-block__warn">已截断</span>}
+          {content.credentialRedacted && (
+            <span className="trace-content-block__warn">凭证字段已过滤</span>
           )}
-          <span>{formatMs(event.durationMs)}</span>
+          <span>{content.sourceChars} chars</span>
         </div>
       </header>
+      <pre>{content.text || "（空内容）"}</pre>
+      {content.sha256 && (
+        <footer>
+          <span>SHA-256</span>
+          <code>{content.sha256}</code>
+        </footer>
+      )}
+    </section>
+  );
+}
 
-      {!isTool && (
-        <dl className="trace-event__tokens">
-          <div><dt>Input chars</dt><dd>{event.inputChars ?? "-"}</dd></div>
-          <div><dt>Output chars</dt><dd>{event.outputChars ?? "-"}</dd></div>
-          <div><dt>TTFT</dt><dd>{formatMs(event.firstTokenMs)}</dd></div>
-        </dl>
-      )}
-
-      {event.inputSummary && (
-        <div className="trace-event__block">
-          <span>输入摘要</span>
-          <pre>{event.inputSummary}</pre>
-        </div>
-      )}
-      {event.observationSummary && (
-        <div className="trace-event__block trace-event__observation">
-          <span>Observation</span>
-          <p>{event.observationSummary}</p>
-        </div>
-      )}
-    </article>
+function TraceJsonBlock({
+  label,
+  value,
+}: {
+  label: string;
+  value: Record<string, unknown> | null | undefined;
+}) {
+  if (!value || Object.keys(value).length === 0) return null;
+  return (
+    <section className="trace-content-block">
+      <header>
+        <strong>{label}</strong>
+        <div><span>{Object.keys(value).length} fields</span></div>
+      </header>
+      <pre>{JSON.stringify(value, null, 2)}</pre>
+    </section>
   );
 }
 
 function formatMs(value: number | null | undefined) {
   if (value == null) return "-";
   return value < 1000 ? `${value}ms` : `${(value / 1000).toFixed(1)}s`;
-}
-
-type SafeRecord = Record<string, unknown>;
-
-type TracePayloadMetadata = {
-  runMode: string | null;
-  failureType: string | null;
-  llmCallCount: number | null;
-  toolCallCount: number | null;
-  components: Array<{ key: string; label: string; value: string }>;
-  skill: {
-    id: string | null;
-    version: string | null;
-    selectionStatus: string | null;
-    validationStatus: string | null;
-  } | null;
-  retrieval: {
-    strategy: string | null;
-    evidenceCount: number | null;
-    evidenceSnapshotHash: string | null;
-    degraded: boolean | null;
-    citationValidationStatus: string | null;
-    statuses: Array<{ route: string; status: string }>;
-    evidence: Array<{
-      citationId: string | null;
-      documentId: string | null;
-      source: string | null;
-      sourceVersion: string | null;
-      sourceHash: string | null;
-    }>;
-  } | null;
-  turn: {
-    requestId: string | null;
-    turnId: string | null;
-    budgetMs: number | null;
-    timeoutStage: string | null;
-    cancelled: boolean | null;
-    clientDeliveryStatus: string | null;
-    clientTerminalType: string | null;
-    clientDeliveryCode: string | null;
-  } | null;
-  memory: {
-    writeStatus: string | null;
-    failureCode: string | null;
-  } | null;
-  toolPlan: {
-    reason: string | null;
-    effectiveTools: string[];
-  } | null;
-  answerTiming: {
-    modelFirstTokenMs: number | null;
-    safeAnswerReadyMs: number | null;
-    firstClientDeltaMs: number | null;
-  } | null;
-  hasStructuredMetadata: boolean;
-};
-
-function projectTracePayload(payload: unknown): TracePayloadMetadata {
-  const root = asRecord(payload);
-  const componentRecord = asRecord(root?.components);
-  const components = componentRecord
-    ? COMPONENT_FIELDS.flatMap(([key, label]) => {
-        const value = boundedString(componentRecord[key]);
-        return value ? [{ key, label, value }] : [];
-      })
-    : [];
-
-  const skillRecord = asRecord(root?.skill);
-  const skill = skillRecord ? {
-    id: boundedString(skillRecord.id),
-    version: boundedString(skillRecord.version),
-    selectionStatus: boundedString(skillRecord.selectionStatus),
-    validationStatus: boundedString(skillRecord.validationStatus),
-  } : null;
-  const projectedSkill = skill && Object.values(skill).some((value) => value != null) ? skill : null;
-
-  const retrievalRecord = asRecord(root?.retrieval);
-  const statusesRecord = asRecord(retrievalRecord?.statuses);
-  const statuses = statusesRecord
-    ? RETRIEVAL_ROUTES.flatMap((route) => {
-        const status = boundedString(statusesRecord[route]);
-        return status ? [{ route, status }] : [];
-      })
-    : [];
-  const evidence = Array.isArray(retrievalRecord?.evidence)
-    ? retrievalRecord.evidence.slice(0, 20).flatMap((value) => {
-        const record = asRecord(value);
-        if (!record) return [];
-        const item = {
-          citationId: boundedString(record.citationId),
-          documentId: boundedString(record.documentId),
-          source: boundedString(record.source),
-          sourceVersion: boundedString(record.sourceVersion),
-          sourceHash: boundedString(record.sourceHash),
-        };
-        return Object.values(item).some((field) => field != null) ? [item] : [];
-      })
-    : [];
-  const retrieval = retrievalRecord ? {
-    strategy: boundedString(retrievalRecord.strategy),
-    evidenceCount: nonNegativeInteger(retrievalRecord.evidenceCount),
-    evidenceSnapshotHash: boundedString(retrievalRecord.evidenceSnapshotHash),
-    degraded: typeof retrievalRecord.degraded === "boolean" ? retrievalRecord.degraded : null,
-    citationValidationStatus: boundedString(retrievalRecord.citationValidationStatus),
-    statuses,
-    evidence,
-  } : null;
-  const projectedRetrieval = retrieval && (
-    retrieval.strategy != null
-    || retrieval.evidenceCount != null
-    || retrieval.evidenceSnapshotHash != null
-    || retrieval.degraded != null
-    || retrieval.citationValidationStatus != null
-    || retrieval.statuses.length > 0
-    || retrieval.evidence.length > 0
-  ) ? retrieval : null;
-
-  const turnRecord = asRecord(root?.turn);
-  const turn = turnRecord ? {
-    requestId: boundedString(turnRecord.requestId),
-    turnId: boundedString(turnRecord.turnId),
-    budgetMs: nonNegativeInteger(turnRecord.budgetMs),
-    timeoutStage: boundedString(turnRecord.timeoutStage),
-    cancelled: typeof turnRecord.cancelled === "boolean" ? turnRecord.cancelled : null,
-    clientDeliveryStatus: boundedString(turnRecord.clientDeliveryStatus),
-    clientTerminalType: boundedString(turnRecord.clientTerminalType),
-    clientDeliveryCode: boundedString(turnRecord.clientDeliveryCode),
-  } : null;
-  const projectedTurn = turn && Object.values(turn).some((value) => value != null) ? turn : null;
-
-  const memoryRecord = asRecord(root?.memory);
-  const memory = memoryRecord ? {
-    writeStatus: boundedString(memoryRecord.writeStatus),
-    failureCode: boundedString(memoryRecord.failureCode),
-  } : null;
-  const projectedMemory = memory && Object.values(memory).some((value) => value != null)
-    ? memory
-    : null;
-
-  const toolPlanRecord = asRecord(root?.toolPlan);
-  const effectiveTools = Array.isArray(toolPlanRecord?.effectiveTools)
-    ? toolPlanRecord.effectiveTools.slice(0, 20).flatMap((value) => {
-        const tool = boundedString(value);
-        return tool ? [tool] : [];
-      })
-    : [];
-  const toolPlan = toolPlanRecord ? {
-    reason: boundedString(toolPlanRecord.reason),
-    effectiveTools,
-  } : null;
-  const projectedToolPlan = toolPlan && (
-    toolPlan.reason != null || toolPlan.effectiveTools.length > 0
-  ) ? toolPlan : null;
-
-  const answerTimingRecord = asRecord(root?.answerTiming);
-  const answerTiming = answerTimingRecord ? {
-    modelFirstTokenMs: nonNegativeInteger(answerTimingRecord.modelFirstTokenMs),
-    safeAnswerReadyMs: nonNegativeInteger(answerTimingRecord.safeAnswerReadyMs),
-    firstClientDeltaMs: nonNegativeInteger(answerTimingRecord.firstClientDeltaMs),
-  } : null;
-  const projectedAnswerTiming = answerTiming && Object.values(answerTiming).some(
-    (value) => value != null,
-  ) ? answerTiming : null;
-
-  return {
-    runMode: boundedString(root?.runMode),
-    failureType: boundedString(root?.failureType),
-    llmCallCount: nonNegativeInteger(root?.llmCallCount),
-    toolCallCount: Array.isArray(root?.toolCalls) ? root.toolCalls.length : null,
-    components,
-    skill: projectedSkill,
-    retrieval: projectedRetrieval,
-    turn: projectedTurn,
-    memory: projectedMemory,
-    toolPlan: projectedToolPlan,
-    answerTiming: projectedAnswerTiming,
-    hasStructuredMetadata: components.length > 0
-      || projectedSkill != null
-      || projectedRetrieval != null
-      || projectedTurn != null
-      || projectedMemory != null
-      || projectedToolPlan != null
-      || projectedAnswerTiming != null,
-  };
-}
-
-function asRecord(value: unknown): SafeRecord | null {
-  return value != null && typeof value === "object" && !Array.isArray(value)
-    ? value as SafeRecord
-    : null;
-}
-
-function boundedString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return normalized ? normalized.slice(0, 256) : null;
-}
-
-function nonNegativeInteger(value: unknown): number | null {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
-}
-
-function formatCallCount(metadata: TracePayloadMetadata) {
-  if (metadata.llmCallCount == null && metadata.toolCallCount == null) return "-";
-  return `${metadata.llmCallCount ?? "-"} / ${metadata.toolCallCount ?? "-"}`;
-}
-
-function formatSkill(skill: NonNullable<TracePayloadMetadata["skill"]>) {
-  if (skill.id && skill.version) return `${skill.id} · ${skill.version}`;
-  return skill.id ?? skill.version ?? "-";
-}
-
-function formatAnswerTiming(timing: NonNullable<TracePayloadMetadata["answerTiming"]>) {
-  return [timing.modelFirstTokenMs, timing.safeAnswerReadyMs, timing.firstClientDeltaMs]
-    .map(formatMs)
-    .join(" / ");
-}
-
-function formatClientDelivery(turn: NonNullable<TracePayloadMetadata["turn"]>) {
-  if (!turn.clientDeliveryStatus && !turn.clientTerminalType) return "-";
-  return [turn.clientDeliveryStatus, turn.clientTerminalType].filter(Boolean).join(" / ");
 }

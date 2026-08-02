@@ -43,6 +43,27 @@ public record AgentContextSnapshot(
                 updatedSystemPrompt, evidenceSet, evidenceRequired, retrievalStatuses);
     }
 
+    /** Rebinds the final evidence snapshot without leaving stale citation content in the prompt. */
+    public String renderSystemPrompt(EvidenceSet effectiveEvidenceSet) {
+        EvidenceSet effective = effectiveEvidenceSet == null ? EvidenceSet.empty() : effectiveEvidenceSet;
+        String instructions = systemPrompt;
+        String initialEvidence = evidenceSet.renderForPrompt();
+        if (!initialEvidence.isBlank()) {
+            int evidenceStart = instructions.indexOf(initialEvidence);
+            if (evidenceStart >= 0) {
+                instructions = (instructions.substring(0, evidenceStart)
+                        + instructions.substring(evidenceStart + initialEvidence.length())).strip();
+            }
+        }
+        String renderedEvidence = effective.renderForPrompt();
+        if (renderedEvidence.isBlank()) {
+            return instructions;
+        }
+        return instructions.isBlank()
+                ? renderedEvidence
+                : instructions + "\n\n" + renderedEvidence;
+    }
+
     private static String snapshotId(
             String systemPrompt,
             EvidenceSet evidenceSet,

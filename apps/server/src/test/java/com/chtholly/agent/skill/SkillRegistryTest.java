@@ -38,7 +38,7 @@ class SkillRegistryTest {
                 .extracting(SkillDefinition::riskLevel, SkillDefinition::approvalPolicy)
                 .containsExactly("CONTROLLED_WRITE", "EXPLICIT_CONFIRMATION");
         assertThat(registry.require("page-explain", "v1").allowedTools())
-                .contains("article_rag", "fulltext_search")
+                .contains("article_rag", "fulltext_search", "web_search", "web_fetch")
                 .doesNotContain("draft_write");
         assertThat(registry.require("page-explain", "v1").defaultEvidencePolicy())
                 .isEqualTo(EvidencePolicy.OPTIONAL);
@@ -99,7 +99,7 @@ class SkillRegistryTest {
 
     private Set<String> readOnlyTools() {
         return Set.of("article_rag", "fulltext_search", "bangumi_search",
-                "bangumi_characters", "bangumi_person_works");
+                "bangumi_characters", "bangumi_person_works", "web_search", "web_fetch");
     }
 
     private String definition(String id, String tool, String validatorId) {

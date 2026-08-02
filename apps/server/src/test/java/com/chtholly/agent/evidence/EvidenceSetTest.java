@@ -83,6 +83,63 @@ class EvidenceSetTest {
         assertThat(result.status()).isEqualTo(EvidenceSet.ValidationStatus.MISSING_CITATION);
     }
 
+    @Test
+    void createsPublicVersionBoundWebEvidence() {
+        Evidence evidence = Evidence.fromWebPage(
+                "https://example.com/article",
+                "Example article",
+                "abc123",
+                "A bounded excerpt");
+
+        assertThat(evidence.sourceType()).isEqualTo("WEB");
+        assertThat(evidence.sourceId()).isEqualTo("https://example.com/article");
+        assertThat(evidence.documentId()).isEqualTo("https://example.com/article");
+        assertThat(evidence.retrievalSource()).isEqualTo("web_fetch");
+        assertThat(evidence.sourceVersion()).isEqualTo("sha256:abc123");
+        assertThat(evidence.sourceHash()).isEqualTo("abc123");
+        assertThat(evidence.permissions()).containsExactly("PUBLIC");
+        assertThat(evidence.trust()).isEqualTo(0.70);
+    }
+
+    @Test
+    void replacesChangedPublicEvidenceWithoutRenumberingExistingCitations() {
+        EvidenceSet initial = EvidenceSet.of(List.of(evidence(
+                "ev-1", "post:1", "Initial", "Initial excerpt", Set.of("PUBLIC"))),
+                Set.of("PUBLIC"));
+        Evidence duplicate = Evidence.fromWebPage(
+                "post:1", "Duplicate", "hash-duplicate", "duplicate excerpt");
+        Evidence web = Evidence.fromWebPage(
+                "https://example.com/article", "Web", "hash-web", "web excerpt");
+        Evidence nonPublic = evidence(
+                "ev-admin", "post:admin", "Admin", "private excerpt", Set.of("ADMIN"));
+
+        EvidenceSet merged = initial.append(List.of(duplicate, web, nonPublic));
+
+        assertThat(merged.items()).extracting(Evidence::documentId)
+                .containsExactly("post:1", "https://example.com/article");
+        assertThat(merged.items()).extracting(Evidence::citationId)
+                .containsExactly("E1", "E2");
+        assertThat(merged.items().getFirst().title()).isEqualTo("Duplicate");
+        assertThat(merged.items().getFirst().sourceHash()).isEqualTo("hash-duplicate");
+        assertThat(merged.renderForPromptFrom(1))
+                .contains("[E2]", "web excerpt")
+                .doesNotContain("[E1]", "Initial excerpt", "private excerpt", "站内事实");
+    }
+
+    @Test
+    void ignoresRepeatedDynamicEvidenceWhenDocumentAndHashAreUnchanged() {
+        Evidence first = Evidence.fromWebPage(
+                "https://example.com/article", "First", "same-hash", "first excerpt");
+        Evidence repeated = Evidence.fromWebPage(
+                "https://example.com/article", "Repeated", "same-hash", "repeated excerpt");
+        EvidenceSet initial = EvidenceSet.empty().append(List.of(first));
+
+        EvidenceSet merged = initial.append(List.of(repeated));
+
+        assertThat(merged).isSameAs(initial);
+        assertThat(merged.items().getFirst().title()).isEqualTo("First");
+    }
+
     private Evidence evidence(
             String evidenceId,
             String documentId,

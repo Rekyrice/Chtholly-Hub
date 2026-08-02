@@ -8,11 +8,14 @@ import com.chtholly.agent.config.AgentContextLabels;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.config.AgentErrorMessages;
 import com.chtholly.agent.config.AgentSystemPromptConfig;
+import com.chtholly.agent.evidence.Evidence;
+import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentObservationService;
 import com.chtholly.agent.observability.AgentToolDiagnostics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.micrometer.observation.Observation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -128,6 +131,12 @@ class AgentLoopExecutorTest {
                 .isEqualTo("{\"action\":\"final\",\"answer\":\"draft\"}".length());
         assertThat(llmEvent.path("phase").asText()).isEqualTo("llm");
         assertThat(llmEvent.path("details").path("purpose").asText()).isEqualTo("LOOP_DECISION");
+        assertThat(llmEvent.path("details").path("systemPrompt").path("text").asText())
+                .isEqualTo("system prompt");
+        assertThat(llmEvent.path("details").path("userPrompt").path("text").asText())
+                .isEqualTo(expectedUserPrompt);
+        assertThat(llmEvent.path("details").path("rawOutput").path("text").asText())
+                .isEqualTo("{\"action\":\"final\",\"answer\":\"draft\"}");
     }
 
     @Test
@@ -173,6 +182,353 @@ class AgentLoopExecutorTest {
                 .isEqualTo("re0");
         assertThat(toolEvent.path("details").path("outputPreview").asText())
                 .isEqualTo("tool result");
+        assertThat(toolEvent.path("details").path("input").path("text").asText())
+                .contains("\"query\":\"re0\"", "\"_userQuestion\":\"What happened?\"",
+                        "\"_conversationHistory\":\"Earlier conversation\"");
+        assertThat(toolEvent.path("details").path("observation").path("text").asText())
+                .isEqualTo("tool result");
+    }
+
+    @Test
+    void successfulToolEvidenceIsCitedInObservationAndCarriedToFinalResult() throws Exception {
+        AgentTool tool = tool("web_fetch");
+        Evidence evidence = Evidence.fromWebPage(
+                "https://example.com/article", "Article", "content-hash", "web excerpt");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(any(), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        "page observation",
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "page observation"),
+                        List.of(evidence)));
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt", "question", 42L, "", Map.of(tool.name(), tool), 3,
+                EvidenceSet.empty(), true);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.evidenceSet().items()).hasSize(1);
+        assertThat(result.evidenceSet().items().getFirst().citationId()).isEqualTo("E1");
+        assertThat(result.evidenceRequired()).isTrue();
+        String observation = events.stream()
+                .filter(event -> "observe".equals(event.type()))
+                .findFirst().orElseThrow().data().path("content").asText();
+        assertThat(observation).contains("page observation", "[E1]", "web excerpt");
+        assertThat(traceEvents(trace, "tool").getFirst()
+                .path("details").path("observation").path("text").asText())
+                .isEqualTo(observation);
+        ArgumentCaptor<String> prompts = ArgumentCaptor.forClass(String.class);
+        verify(llmInvoker, times(2)).call(anyString(), prompts.capture(), anyDouble(), anyInt());
+        assertThat(prompts.getAllValues().get(1)).contains("[E1]", "web excerpt");
+    }
+
+    @Test
+    void repeatedWebFetchReplacesChangedEvidenceAndReintroducesItsCitation() throws Exception {
+        AgentTool tool = tool("web_fetch");
+        Evidence first = Evidence.fromWebPage(
+                "https://example.com/article", "First", "hash-one", "first excerpt");
+        Evidence updated = Evidence.fromWebPage(
+                "https://example.com/article", "Updated", "hash-two", "updated excerpt");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(any(), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webFetchObservation("https://example.com/article"),
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "first page"),
+                        List.of(first)))
+                .thenReturn(new AgentToolResult(
+                        webFetchObservation("https://example.com/article"),
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "updated page"),
+                        List.of(updated)));
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(tool.name(), tool), 4), trace(4), agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(result.evidenceSet().items()).singleElement()
+                .satisfies(item -> {
+                    assertThat(item.citationId()).isEqualTo("E1");
+                    assertThat(item.sourceHash()).isEqualTo("hash-two");
+                    assertThat(item.excerpt()).isEqualTo("updated excerpt");
+                });
+        List<String> observations = events.stream()
+                .filter(event -> "observe".equals(event.type()))
+                .map(event -> event.data().path("content").asText())
+                .toList();
+        assertThat(observations).hasSize(2);
+        assertThat(observations.get(1)).contains("[E1]", "updated excerpt");
+    }
+
+    @Test
+    void failedToolEvidenceIsDiscardedFromEveryTerminalSnapshot() throws Exception {
+        AgentTool tool = tool("web_fetch");
+        Evidence evidence = Evidence.fromWebPage(
+                "https://example.com/article", "Article", "content-hash", "web excerpt");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(any(), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        "failed",
+                        AgentToolResult.Status.ERROR,
+                        "WEB_FAILED",
+                        AgentToolDiagnostics.fallback("web_fetch", "failed"),
+                        List.of(evidence)));
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(tool.name(), tool), 3), trace(3), agentSpan, events::add);
+
+        assertThat(result.evidenceSet()).isSameAs(EvidenceSet.empty());
+        assertThat(result.evidenceRequired()).isFalse();
+        assertThat(events.stream()
+                .filter(event -> "observe".equals(event.type()))
+                .findFirst().orElseThrow().data().path("content").asText())
+                .isEqualTo("failed");
+    }
+
+    @Test
+    void webSearchCannotFinishUntilFetchedEvidenceIsAvailable() throws Exception {
+        AgentTool search = tool("web_search");
+        AgentTool fetch = tool("web_fetch");
+        Evidence evidence = Evidence.fromWebPage(
+                "https://example.com/article", "Article", "content-hash", "verified excerpt");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation("https://example.com/article"),
+                        AgentToolResult.Status.SUCCESS));
+        when(toolExecutor.execute(eq(fetch), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webFetchObservation("https://example.com/article"),
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "page observation"),
+                        List.of(evidence)));
+        AgentExecutionTrace trace = trace(5);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search, fetch.name(), fetch), 5),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(result.evidenceSet().items()).hasSize(1);
+        assertThat(result.evidenceRequired()).isTrue();
+        assertThat(trace.getStepActions())
+                .containsExactly("web_search", "web_fetch_pending", "web_fetch");
+        assertThat(events.stream()
+                .filter(event -> "observe".equals(event.type()))
+                .map(event -> event.data().path("content").asText()))
+                .anyMatch(message -> message.contains("WEB_RESEARCH_INCOMPLETE"));
+        verify(toolExecutor).execute(eq(fetch), anyMap(), anyLong());
+    }
+
+    @Test
+    void failedWebFetchDoesNotAuthorizeSearchOnlyFinalAnswer() throws Exception {
+        AgentTool search = tool("web_search");
+        AgentTool fetch = tool("web_fetch");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation("https://example.com/article"),
+                        AgentToolResult.Status.SUCCESS));
+        when(toolExecutor.execute(eq(fetch), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult("fetch failed", AgentToolResult.Status.ERROR));
+        AgentExecutionTrace trace = trace(3);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search, fetch.name(), fetch), 3),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.MAX_STEPS);
+        assertThat(result.evidenceSet()).isSameAs(EvidenceSet.empty());
+        assertThat(trace.getStepActions())
+                .containsExactly("web_search", "web_fetch", "web_fetch_pending");
+        assertThat(events.stream()
+                .filter(event -> "observe".equals(event.type()))
+                .map(event -> event.data().path("content").asText()))
+                .anyMatch(message -> message.contains("WEB_RESEARCH_INCOMPLETE"));
+    }
+
+    @Test
+    void webSearchAfterEarlierFetchRequiresAFollowingFetch() throws Exception {
+        AgentTool search = tool("web_search");
+        AgentTool fetch = tool("web_fetch");
+        Evidence evidence = Evidence.fromWebPage(
+                "https://example.com/first", "First", "first-hash", "first excerpt");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(fetch), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        "first page",
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "first page"),
+                        List.of(evidence)));
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation("https://example.com/second"),
+                        AgentToolResult.Status.SUCCESS));
+        AgentExecutionTrace trace = trace(3);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search, fetch.name(), fetch), 3),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.MAX_STEPS);
+        assertThat(trace.getStepActions())
+                .containsExactly("web_fetch", "web_search", "web_fetch_pending");
+    }
+
+    @Test
+    void unrelatedWebFetchDoesNotSatisfySearchCandidateRequirement() throws Exception {
+        AgentTool search = tool("web_search");
+        AgentTool fetch = tool("web_fetch");
+        Evidence unrelated = Evidence.fromWebPage(
+                "https://example.net/unrelated", "Unrelated", "other-hash", "other excerpt");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation("https://example.com/candidate"),
+                        AgentToolResult.Status.SUCCESS));
+        when(toolExecutor.execute(eq(fetch), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webFetchObservation("https://example.net/unrelated"),
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "other page"),
+                        List.of(unrelated)));
+        AgentExecutionTrace trace = trace(3);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search, fetch.name(), fetch), 3),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.MAX_STEPS);
+        assertThat(result.evidenceSet().items()).singleElement()
+                .extracting(Evidence::documentId)
+                .isEqualTo("https://example.net/unrelated");
+        assertThat(trace.getStepActions())
+                .containsExactly("web_search", "web_fetch", "web_fetch_pending");
+    }
+
+    @Test
+    void consecutiveWebSearchesKeepEarlierCandidatesFetchable() throws Exception {
+        AgentTool search = tool("web_search");
+        AgentTool fetch = tool("web_fetch");
+        Evidence firstSearchEvidence = Evidence.fromWebPage(
+                "https://example.com/first", "First", "first-hash", "first excerpt");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation("HTTPS://Example.COM:443/first"),
+                        AgentToolResult.Status.SUCCESS))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation("https://example.com/second"),
+                        AgentToolResult.Status.SUCCESS));
+        when(toolExecutor.execute(eq(fetch), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webFetchObservation("https://example.com/first"),
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "first page"),
+                        List.of(firstSearchEvidence)));
+        AgentExecutionTrace trace = trace(4);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search, fetch.name(), fetch), 4),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(result.evidenceSet().items()).singleElement()
+                .extracting(Evidence::documentId)
+                .isEqualTo("https://example.com/first");
+        assertThat(trace.getStepActions())
+                .containsExactly("web_search", "web_search", "web_fetch");
+    }
+
+    @Test
+    void newlyVisibleCandidateFromALaterSearchRemainsFetchable() throws Exception {
+        AgentTool search = tool("web_search");
+        AgentTool fetch = tool("web_fetch");
+        Evidence overflowEvidence = Evidence.fromWebPage(
+                "https://example.com/ninth", "Ninth", "ninth-hash", "ninth excerpt");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation(
+                                "https://example.com/first",
+                                "https://example.com/second",
+                                "https://example.com/third",
+                                "https://example.com/fourth",
+                                "https://example.com/fifth",
+                                "https://example.com/sixth",
+                                "https://example.com/seventh",
+                                "https://example.com/eighth"),
+                        AgentToolResult.Status.SUCCESS))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation("https://example.com/ninth"),
+                        AgentToolResult.Status.SUCCESS));
+        when(toolExecutor.execute(eq(fetch), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webFetchObservation("https://example.com/ninth"),
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "ninth page"),
+                        List.of(overflowEvidence)));
+        AgentExecutionTrace trace = trace(4);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search, fetch.name(), fetch), 4),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(result.evidenceSet().items()).singleElement()
+                .extracting(Evidence::documentId)
+                .isEqualTo("https://example.com/ninth");
+        assertThat(trace.getStepActions())
+                .containsExactly("web_search", "web_search", "web_fetch");
     }
 
     @Test
@@ -369,7 +725,7 @@ class AgentLoopExecutorTest {
         assertThat(llmEvent.path("budget_before_ms").asLong()).isZero();
         assertThat(llmEvent.path("budget_after_ms").asLong()).isZero();
         assertThat(trace.toPayloadMap().toString())
-                .doesNotContain("private question", "private history");
+                .contains("private question", "private history");
     }
 
     @Test
@@ -512,7 +868,7 @@ class AgentLoopExecutorTest {
         assertThat(llmCalls.path(0).path("status").asText()).isEqualTo("TIMEOUT");
         assertThat(llmCalls.path(0).path("error_code").asText()).isEqualTo("LLM_TIMEOUT");
         assertThat(llmCalls.path(0).path("attempt").asInt()).isEqualTo(1);
-        assertThat(trace.toPayloadMap().toString()).doesNotContain("wrapped timeout secret");
+        assertThat(trace.toPayloadMap().toString()).contains("wrapped timeout secret");
     }
 
     @Test
@@ -537,7 +893,7 @@ class AgentLoopExecutorTest {
             assertThat(llmCalls.path(0).path("status").asText()).isEqualTo("INTERRUPTED");
             assertThat(llmCalls.path(0).path("error_code").asText()).isEqualTo("LLM_INTERRUPTED");
             assertThat(llmCalls.path(0).path("attempt").asInt()).isEqualTo(1);
-            assertThat(trace.toPayloadMap().toString()).doesNotContain("wrapped interrupt secret");
+            assertThat(trace.toPayloadMap().toString()).contains("wrapped interrupt secret");
         } finally {
             Thread.interrupted();
         }
@@ -621,6 +977,8 @@ class AgentLoopExecutorTest {
         JsonNode toolEvent = traceEvents(trace, "tool").getFirst();
         assertThat(toolEvent.path("status").asText()).isEqualTo("TIMEOUT");
         assertThat(toolEvent.path("error_code").asText()).isEqualTo("TOOL_TIMEOUT");
+        assertThat(toolEvent.path("details").path("observation").path("text").asText())
+                .isEqualTo("timed out\n\nbangumi guidance");
     }
 
     @Test
@@ -672,7 +1030,8 @@ class AgentLoopExecutorTest {
         assertThat(toolEvent.path("details").path("sanitizedInput").has("_userQuestion")).isFalse();
         assertThat(toolEvent.path("details").path("sanitizedInput").has("_conversationHistory")).isFalse();
         assertThat(toolEvent.path("details").path("outputPreview").asText()).isEmpty();
-        assertThat(trace.toPayloadMap().toString()).doesNotContain("secret-marker", "What happened?");
+        assertThat(toolEvent.path("details").path("input").path("text").asText())
+                .contains("\"query\":\"safe\"", "What happened?", "Earlier conversation");
     }
 
     @Test
@@ -752,7 +1111,7 @@ class AgentLoopExecutorTest {
         assertThat(toolEvent.path("details").path("sanitizedInput").has("_conversationHistory")).isFalse();
         assertThat(toolEvent.path("details").path("outputPreview").asText()).isEmpty();
         assertThat(trace.toPayloadMap().toString())
-                .doesNotContain("private question", "private history");
+                .contains("private question", "private history");
     }
 
     @Test
@@ -790,7 +1149,7 @@ class AgentLoopExecutorTest {
         assertThat(toolEvent.path("details").path("sanitizedInput").has("_conversationHistory")).isFalse();
         assertThat(toolEvent.path("details").path("outputPreview").asText()).isEmpty();
         assertThat(trace.toPayloadMap().toString())
-                .doesNotContain("private question", "private history");
+                .contains("private question", "private history");
     }
 
     private AgentLoopRequest request(Map<String, AgentTool> tools, int maxSteps) {
@@ -826,6 +1185,23 @@ class AgentLoopExecutorTest {
         AgentTool tool = mock(AgentTool.class);
         when(tool.name()).thenReturn(name);
         return tool;
+    }
+
+    private String webSearchObservation(String... urls) throws Exception {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("kind", "web_search_results");
+        var results = root.putArray("results");
+        for (String url : urls) {
+            results.addObject().put("url", url);
+        }
+        return objectMapper.writeValueAsString(root);
+    }
+
+    private String webFetchObservation(String requestedUrl) throws Exception {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("kind", "web_fetched_page");
+        root.put("requestedUrl", requestedUrl);
+        return objectMapper.writeValueAsString(root);
     }
 
     private AgentDomainConfig domainConfig() {

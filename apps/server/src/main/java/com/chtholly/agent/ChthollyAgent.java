@@ -462,9 +462,11 @@ public class ChthollyAgent {
                                 toolMap.keySet()));
                 maxSteps = Math.min(maxSteps, selectedSkill.maxSteps());
             }
-            trace.recordRetrieval(
-                    contextSnapshot.retrievalStatuses(), contextSnapshot.evidenceSet());
-            if (contextSnapshot.evidenceRequired() && contextSnapshot.evidenceSet().isEmpty()) {
+            if (contextSnapshot.evidenceRequired()
+                    && contextSnapshot.evidenceSet().isEmpty()
+                    && !toolMap.containsKey("web_fetch")) {
+                trace.recordRetrieval(
+                        contextSnapshot.retrievalStatuses(), contextSnapshot.evidenceSet());
                 trace.recordCitationValidation(EvidenceSet.ValidationStatus.NO_EVIDENCE.name());
                 trace.recordSkillValidation(selected ? "INSUFFICIENT_EVIDENCE" : "NOT_APPLICABLE");
                 trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.NO_EVIDENCE);
@@ -490,8 +492,15 @@ public class ChthollyAgent {
                     historyBlock,
                     toolMap,
                     maxSteps,
-                    effectiveBudget);
+                    effectiveBudget,
+                    contextSnapshot.evidenceSet(),
+                    contextSnapshot.evidenceRequired());
             AgentLoopResult result = loopExecutor.execute(request, trace, agentSpan, sink);
+            EvidenceSet finalEvidenceSet = contextSnapshot.evidenceSet()
+                    .append(result.evidenceSet().items());
+            boolean finalEvidenceRequired = contextSnapshot.evidenceRequired()
+                    || result.evidenceRequired();
+            trace.recordRetrieval(contextSnapshot.retrievalStatuses(), finalEvidenceSet);
             if (result.status() == AgentLoopResult.Status.FINAL_READY) {
                 long streamLlmMs = streamFinalAnswer(
                         sink,
@@ -502,6 +511,8 @@ public class ChthollyAgent {
                         agentSpan,
                         result.finalStepIndex(),
                         contextSnapshot,
+                        finalEvidenceSet,
+                        finalEvidenceRequired,
                         selectedSkill,
                         effectiveBudget);
                 trace.recordStep(
@@ -683,8 +694,8 @@ public class ChthollyAgent {
         AtomicLong firstTokenCallMs = new AtomicLong(-1);
         AtomicLong firstTokenTurnMs = new AtomicLong(-1);
         AtomicLong modelOutputChars = new AtomicLong();
+        StringBuilder generated = new StringBuilder();
         try {
-            StringBuilder generated = new StringBuilder();
             llmInvoker.stream(
                             system,
                             userPrompt,
@@ -719,7 +730,11 @@ public class ChthollyAgent {
                     System.currentTimeMillis() - startedAt,
                     system.length() + userPrompt.length(),
                     saturatedCharCount(modelOutputChars.get()),
-                    firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null);
+                    firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null,
+                    AgentExecutionTrace.LlmExchange.success(
+                            system,
+                            userPrompt,
+                            generated.toString()));
             agentObservationService.finishSpan(
                     llmSpan,
                     AgentSpanAttributes.llm("ok"),
@@ -741,7 +756,12 @@ public class ChthollyAgent {
                     System.currentTimeMillis() - startedAt,
                     system.length() + userPrompt.length(),
                     saturatedCharCount(modelOutputChars.get()),
-                    firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null);
+                    firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null,
+                    AgentExecutionTrace.LlmExchange.failure(
+                            system,
+                            userPrompt,
+                            generated.toString(),
+                            unavailable));
             agentObservationService.finishSpanError(
                     llmSpan,
                     unavailable.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
@@ -766,7 +786,12 @@ public class ChthollyAgent {
                         System.currentTimeMillis() - startedAt,
                         system.length() + userPrompt.length(),
                         saturatedCharCount(modelOutputChars.get()),
-                        firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null);
+                        firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null,
+                        AgentExecutionTrace.LlmExchange.failure(
+                                system,
+                                userPrompt,
+                                generated.toString(),
+                                exception));
                 agentObservationService.finishSpanError(
                         llmSpan,
                         cancelled ? "boundary_cancelled" : "boundary_turn_timeout",
@@ -791,7 +816,12 @@ public class ChthollyAgent {
                     durationMs,
                     system.length() + userPrompt.length(),
                     saturatedCharCount(modelOutputChars.get()),
-                    firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null);
+                    firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null,
+                    AgentExecutionTrace.LlmExchange.failure(
+                            system,
+                            userPrompt,
+                            generated.toString(),
+                            exception));
             if (isTimeout(exception)) {
                 trace.markFailure(AgentExecutionTrace.FailureType.LLM_TIMEOUT);
             } else {
@@ -887,15 +917,18 @@ public class ChthollyAgent {
             Observation agentSpan,
             int stepIndex,
             AgentContextSnapshot contextSnapshot,
+            EvidenceSet finalEvidenceSet,
+            boolean finalEvidenceRequired,
             SkillDefinition selectedSkill,
             AgentTurnBudget turnBudget) {
         String context = String.join("\n\n", transcript);
         String finalInstructions = agentDomainConfig.render(
                 agentDomainConfig.systemPrompt().finalAnswerSystem(),
                 "soul", characterSoulService.getSoulContent());
-        String system = contextSnapshot.systemPrompt().isBlank()
+        String contextualSystem = contextSnapshot.renderSystemPrompt(finalEvidenceSet);
+        String system = contextualSystem.isBlank()
                 ? finalInstructions
-                : contextSnapshot.systemPrompt() + "\n\n" + finalInstructions;
+                : contextualSystem + "\n\n" + finalInstructions;
         String userPrompt = context + "\n\n" + agentDomainConfig.systemPrompt().finalAnswerPrompt();
         int inputChars = system.length() + userPrompt.length();
 
@@ -910,6 +943,7 @@ public class ChthollyAgent {
         long streamMs;
         boolean llmCallRecorded = false;
         boolean llmSpanClosed = false;
+        StringBuilder full = new StringBuilder();
         try {
             turnBudget.check("final_answer");
             Flux<String> flux = llmInvoker.stream(
@@ -919,7 +953,6 @@ public class ChthollyAgent {
                     1024,
                     turnBudget.remaining("final_answer", Duration.ofSeconds(timeoutSec)));
 
-            StringBuilder full = new StringBuilder();
             flux.doOnNext(chunk -> {
                 if (chunk != null && !chunk.isEmpty()) {
                     long now = System.currentTimeMillis();
@@ -944,25 +977,29 @@ public class ChthollyAgent {
                     streamMs,
                     inputChars,
                     saturatedCharCount(modelOutputChars.get()),
-                    firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null);
+                    firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null,
+                    AgentExecutionTrace.LlmExchange.success(
+                            system,
+                            userPrompt,
+                            full.toString()));
             llmCallRecorded = true;
             agentObservationService.finishSpan(
                     llmSpan,
                     AgentSpanAttributes.llm("ok"),
                     Map.of());
             llmSpanClosed = true;
-            EvidenceSet.ValidationResult evidenceValidation = contextSnapshot.evidenceSet()
-                    .validate(candidate, contextSnapshot.evidenceRequired());
+            EvidenceSet.ValidationResult evidenceValidation = finalEvidenceSet
+                    .validate(candidate, finalEvidenceRequired);
             if (evidenceValidation.status() == EvidenceSet.ValidationStatus.MISSING_CITATION
-                    && !contextSnapshot.evidenceSet().isEmpty()) {
+                    && !finalEvidenceSet.isEmpty()) {
                 candidate = repairMissingCitations(
                         candidate,
-                        contextSnapshot.evidenceSet(),
+                        finalEvidenceSet,
                         trace,
                         stepIndex,
                         turnBudget);
-                evidenceValidation = contextSnapshot.evidenceSet()
-                        .validate(candidate, contextSnapshot.evidenceRequired());
+                evidenceValidation = finalEvidenceSet
+                        .validate(candidate, finalEvidenceRequired);
             }
             trace.recordCitationValidation(evidenceValidation.status().name());
             if (evidenceValidation.status() == EvidenceSet.ValidationStatus.UNKNOWN_CITATION
@@ -992,9 +1029,9 @@ public class ChthollyAgent {
                 SkillOutputValidator.SkillValidationResult skillValidation = skillOutputValidator.validate(
                         selectedSkill,
                         answer,
-                        contextSnapshot.evidenceSet(),
+                        finalEvidenceSet,
                         question,
-                        contextSnapshot.evidenceRequired());
+                        finalEvidenceRequired);
                 trace.recordSkillValidation(skillValidation.status().name());
                 if (skillValidation.status() == SkillOutputValidator.Status.CITATION_INVALID) {
                     trace.markFailure(AgentExecutionTrace.FailureType.CITATION_INVALID);
@@ -1040,7 +1077,12 @@ public class ChthollyAgent {
                         streamMs,
                         inputChars,
                         saturatedCharCount(modelOutputChars.get()),
-                        firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null);
+                        firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null,
+                        AgentExecutionTrace.LlmExchange.failure(
+                                system,
+                                userPrompt,
+                                full.toString(),
+                                unavailable));
             }
             if (!llmSpanClosed) {
                 agentObservationService.finishSpanError(
@@ -1070,7 +1112,12 @@ public class ChthollyAgent {
                             streamMs,
                             inputChars,
                             saturatedCharCount(modelOutputChars.get()),
-                            firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null);
+                            firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null,
+                            AgentExecutionTrace.LlmExchange.failure(
+                                    system,
+                                    userPrompt,
+                                    full.toString(),
+                                    e));
                 }
                 if (!llmSpanClosed) {
                     agentObservationService.finishSpanError(
@@ -1098,7 +1145,12 @@ public class ChthollyAgent {
                         streamMs,
                         inputChars,
                         saturatedCharCount(modelOutputChars.get()),
-                        firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null);
+                        firstTokenCallMs.get() >= 0 ? firstTokenCallMs.get() : null,
+                        AgentExecutionTrace.LlmExchange.failure(
+                                system,
+                                userPrompt,
+                                full.toString(),
+                                e));
             }
             if (isTimeout(e)) {
                 if (!llmSpanClosed) {
@@ -1186,7 +1238,11 @@ public class ChthollyAgent {
                     System.currentTimeMillis() - startedAt,
                     inputChars,
                     rawRepaired == null ? 0 : rawRepaired.length(),
-                    null);
+                    null,
+                    AgentExecutionTrace.LlmExchange.success(
+                            system,
+                            userPrompt,
+                            rawRepaired));
             return sameContentExceptCitations(candidate, repaired) ? repaired : candidate;
         } catch (AgentTurnBudget.UnavailableException unavailable) {
             trace.recordLlmCall(
@@ -1205,7 +1261,12 @@ public class ChthollyAgent {
                     System.currentTimeMillis() - startedAt,
                     inputChars,
                     0,
-                    null);
+                    null,
+                    AgentExecutionTrace.LlmExchange.failure(
+                            system,
+                            userPrompt,
+                            "",
+                            unavailable));
             throw unavailable;
         } catch (Exception exception) {
             trace.recordLlmCall(
@@ -1220,7 +1281,12 @@ public class ChthollyAgent {
                     System.currentTimeMillis() - startedAt,
                     inputChars,
                     0,
-                    null);
+                    null,
+                    AgentExecutionTrace.LlmExchange.failure(
+                            system,
+                            userPrompt,
+                            "",
+                            exception));
             log.warn("Agent citation repair failed ({})", exception.getClass().getSimpleName());
             return candidate;
         }

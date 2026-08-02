@@ -89,6 +89,31 @@ public record Evidence(
                 "E" + rank);
     }
 
+    /** Creates one public, version-bound evidence item from a fetched web page. */
+    public static Evidence fromWebPage(
+            String canonicalUrl,
+            String title,
+            String contentHash,
+            String excerpt) {
+        String url = required(canonicalUrl, "canonicalUrl");
+        String hash = required(contentHash, "contentHash");
+        return new Evidence(
+                "ev-" + sha256(url + "|" + hash).substring(0, 24),
+                "WEB",
+                url,
+                url,
+                null,
+                required(title, "title"),
+                "web_fetch",
+                "sha256:" + hash,
+                hash,
+                required(excerpt, "excerpt"),
+                1,
+                0.70,
+                Set.of("PUBLIC"),
+                "E1");
+    }
+
     private static String required(String value, String field) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(field + " must not be blank");

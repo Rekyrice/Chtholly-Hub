@@ -5,6 +5,8 @@ import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.AgentJsonExtractor;
 import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.config.AgentDomainConfig;
+import com.chtholly.agent.evidence.Evidence;
+import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentObservationService;
 import com.chtholly.agent.observability.AgentToolDiagnostics;
@@ -17,12 +19,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
@@ -34,6 +39,10 @@ import java.util.function.Consumer;
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class AgentLoopExecutor {
+
+    private static final String WEB_RESEARCH_INCOMPLETE =
+            "WEB_RESEARCH_INCOMPLETE: web_search results are discovery hints, not evidence. "
+                    + "Call web_fetch for at least one result and use only returned Evidence.";
 
     private final AgentLlmInvoker llmInvoker;
     private final AgentToolExecutor agentToolExecutor;
@@ -57,12 +66,15 @@ public class AgentLoopExecutor {
             Observation agentSpan,
             Consumer<AgentEvent> sink) {
         List<String> transcript = initialTranscript(request);
+        EvidenceState evidenceState = new EvidenceState(
+                request.evidenceSet(), request.evidenceRequired());
         boolean charactersRequired = requiresBangumiCharacters(request);
         boolean bangumiSearchCompleted = false;
         boolean bangumiCharactersCompleted = false;
 
         for (int step = 0; step < request.maxSteps(); step++) {
-            AgentLoopResult unavailable = stopIfTurnUnavailable(request, trace, sink, transcript);
+            AgentLoopResult unavailable = stopIfTurnUnavailable(
+                    request, trace, sink, transcript, evidenceState);
             if (unavailable != null) {
                 return unavailable;
             }
@@ -83,7 +95,7 @@ public class AgentLoopExecutor {
                                 : "turn_timeout",
                         AgentSpanAttributes.llm(exception.reason().name().toLowerCase()),
                         Map.of());
-                return terminateUnavailable(exception, transcript, trace, sink);
+                return terminateUnavailable(exception, transcript, trace, sink, evidenceState);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 if (request.turnBudget() != null && request.turnBudget().isCancelled()) {
@@ -98,7 +110,8 @@ public class AgentLoopExecutor {
                                     "loop_llm"),
                             transcript,
                             trace,
-                            sink);
+                            sink,
+                            evidenceState);
                 }
                 agentObservationService.finishSpanError(
                         llmSpan,
@@ -112,7 +125,8 @@ public class AgentLoopExecutor {
                         agentDomainConfig.errors().modelCallInterrupted(),
                         trace,
                         sink,
-                        trace::terminateError);
+                        trace::terminateError,
+                        evidenceState);
             } catch (TimeoutException e) {
                 long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
                 agentObservationService.finishSpanError(
@@ -127,7 +141,8 @@ public class AgentLoopExecutor {
                                     AgentTurnBudget.UnavailableReason.TIMEOUT, "loop_llm"),
                             transcript,
                             trace,
-                            sink);
+                            sink,
+                            evidenceState);
                 }
                 return terminate(
                         AgentLoopResult.Status.LLM_TIMEOUT,
@@ -135,7 +150,8 @@ public class AgentLoopExecutor {
                         agentDomainConfig.errors().modelResponseTimeout(),
                         trace,
                         sink,
-                        trace::terminateTimeout);
+                        trace::terminateTimeout,
+                        evidenceState);
             } catch (Exception e) {
                 long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
                 agentObservationService.finishSpanError(
@@ -150,7 +166,8 @@ public class AgentLoopExecutor {
                         agentDomainConfig.errors().modelCallFailed(),
                         trace,
                         sink,
-                        trace::terminateError);
+                        trace::terminateError,
+                        evidenceState);
             }
 
             long stepLlmMs = System.currentTimeMillis() - stepLlmStart;
@@ -184,7 +201,18 @@ public class AgentLoopExecutor {
                     trace.recordStep(step, "compound_tool_pending", stepLlmMs, 0);
                     continue;
                 }
-                return AgentLoopResult.finalReady(transcript, step, stepLlmMs);
+                if (evidenceState.webFetchPending()) {
+                    emitObserve(sink, WEB_RESEARCH_INCOMPLETE);
+                    appendExchange(transcript, llmOut, WEB_RESEARCH_INCOMPLETE);
+                    trace.recordStep(step, "web_fetch_pending", stepLlmMs, 0);
+                    continue;
+                }
+                return AgentLoopResult.finalReady(
+                        evidenceState.transcriptForFinalAnswer(transcript),
+                        step,
+                        stepLlmMs,
+                        evidenceState.evidenceSet(),
+                        evidenceState.evidenceRequired());
             }
 
             AgentTool tool = request.tools().get(action.action());
@@ -204,6 +232,7 @@ public class AgentLoopExecutor {
             if (!request.historyBlock().isBlank()) {
                 inputMap.put("_conversationHistory", request.historyBlock());
             }
+            String actualToolInput = serializeToolInput(inputMap);
             emitAct(sink, tool.name(), action.input());
             Observation toolSpan = agentObservationService.startToolSpan(agentSpan, tool.name());
             long toolStart = System.currentTimeMillis();
@@ -236,7 +265,9 @@ public class AgentLoopExecutor {
                         toolDurationMs,
                         toolBudgetBeforeMs,
                         toolBudgetAfterMs,
-                        failureResult);
+                        failureResult,
+                        actualToolInput,
+                        null);
                 agentObservationService.finishSpanError(
                         toolSpan,
                         exception.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
@@ -244,7 +275,7 @@ public class AgentLoopExecutor {
                                 : "turn_timeout",
                         Map.of("status", exception.reason().name().toLowerCase()),
                         Map.of());
-                return terminateUnavailable(exception, transcript, trace, sink);
+                return terminateUnavailable(exception, transcript, trace, sink, evidenceState);
             } catch (RuntimeException e) {
                 long toolDurationMs = elapsedMillis(toolStart);
                 long toolBudgetAfterMs = remainingBudgetMs(request.turnBudget());
@@ -258,7 +289,9 @@ public class AgentLoopExecutor {
                                 tool,
                                 inputMap,
                                 AgentToolResult.Status.ERROR,
-                                "TOOL_EXECUTOR_ERROR"));
+                                "TOOL_EXECUTOR_ERROR"),
+                        actualToolInput,
+                        null);
                 agentObservationService.finishSpanError(
                         toolSpan,
                         "tool_executor_error",
@@ -270,13 +303,35 @@ public class AgentLoopExecutor {
             long stepToolMs = System.currentTimeMillis() - toolStart;
             long toolBudgetAfterMs = remainingBudgetMs(request.turnBudget());
             finishToolSpan(toolSpan, toolResult.status());
+            observation = augmentObservation(tool.name(), observation, toolResult.status());
+            String canonicalObservation = observation;
+            boolean observationContainsDynamicEvidence = false;
+            if (toolResult.status() == AgentToolResult.Status.SUCCESS) {
+                String dynamicEvidence = evidenceState.merge(toolResult.evidence());
+                if (!dynamicEvidence.isBlank()) {
+                    observationContainsDynamicEvidence = true;
+                    observation = observation.isBlank()
+                            ? dynamicEvidence
+                            : observation + "\n\n" + dynamicEvidence;
+                }
+                if ("web_search".equals(tool.name())) {
+                    evidenceState.recordSuccessfulWebSearch(
+                            parseWebSearchDiscovery(toolResult.observation()));
+                } else if ("web_fetch".equals(tool.name())) {
+                    evidenceState.recordSuccessfulWebFetch(
+                            parseWebFetchRequestedUrl(toolResult.observation()),
+                            toolResult.evidence());
+                }
+            }
             trace.recordToolCall(
                     step,
                     tool.name(),
                     stepToolMs,
                     toolBudgetBeforeMs,
                     toolBudgetAfterMs,
-                    normalizedToolResult(toolResult));
+                    normalizedToolResult(toolResult),
+                    actualToolInput,
+                    observation);
             if ("bangumi_search".equals(tool.name())
                     && toolResult.status() == AgentToolResult.Status.SUCCESS) {
                 bangumiSearchCompleted = true;
@@ -284,7 +339,6 @@ public class AgentLoopExecutor {
             if ("bangumi_characters".equals(tool.name())) {
                 bangumiCharactersCompleted = true;
             }
-            observation = augmentObservation(tool.name(), observation, toolResult.status());
             emitObserve(sink, observation);
             trace.recordStep(step, tool.name(), stepLlmMs, stepToolMs);
             if (request.turnBudget() != null
@@ -296,7 +350,8 @@ public class AgentLoopExecutor {
                         AgentTurnBudget.unavailableForStage(reason, "loop_tool"),
                         transcript,
                         trace,
-                        sink);
+                        sink,
+                        evidenceState);
             }
             if (toolResult.status() == AgentToolResult.Status.INTERRUPTED) {
                 return terminate(
@@ -305,9 +360,15 @@ public class AgentLoopExecutor {
                         agentDomainConfig.errors().toolInterrupted(),
                         trace,
                         sink,
-                        trace::terminateError);
+                        trace::terminateError,
+                        evidenceState);
             }
             appendExchange(transcript, llmOut, observation);
+            if (observationContainsDynamicEvidence) {
+                evidenceState.recordEvidenceObservation(
+                        transcript.size() - 1,
+                        agentDomainConfig.context().observationLabel() + " " + canonicalObservation);
+            }
         }
 
         String maxStepsMessage = agentDomainConfig.render(
@@ -319,7 +380,8 @@ public class AgentLoopExecutor {
                 maxStepsMessage,
                 trace,
                 sink,
-                trace::terminateMaxSteps);
+                trace::terminateMaxSteps,
+                evidenceState);
     }
 
     private String invokeDecisionWithRetry(
@@ -355,7 +417,8 @@ public class AgentLoopExecutor {
                         elapsedMillis(attemptStartedAt),
                         inputChars,
                         output == null ? 0 : output.length(),
-                        null);
+                        null,
+                        AgentExecutionTrace.LlmExchange.success(systemPrompt, userPrompt, output));
                 return output;
             } catch (Exception exception) {
                 LlmFailure traceFailure = classifyLlmFailure(exception, turnBudget);
@@ -371,7 +434,12 @@ public class AgentLoopExecutor {
                         elapsedMillis(attemptStartedAt),
                         inputChars,
                         0,
-                        null);
+                        null,
+                        AgentExecutionTrace.LlmExchange.failure(
+                                systemPrompt,
+                                userPrompt,
+                                "",
+                                exception));
                 Exception terminalFailure = terminalLlmFailure(exception);
                 if (terminalFailure != null) {
                     throw terminalFailure;
@@ -492,7 +560,8 @@ public class AgentLoopExecutor {
                 result.observation(),
                 result.status(),
                 errorCode,
-                result.diagnostics().withErrorCode(errorCode));
+                result.diagnostics().withErrorCode(errorCode),
+                result.evidence());
     }
 
     private AgentToolResult safeToolFailureResult(
@@ -551,18 +620,25 @@ public class AgentLoopExecutor {
             String message,
             AgentExecutionTrace trace,
             Consumer<AgentEvent> sink,
-            Runnable traceTerminator) {
+            Runnable traceTerminator,
+            EvidenceState evidenceState) {
         traceTerminator.run();
         trace.setErrorMessage(message);
         emitError(sink, message);
-        return AgentLoopResult.terminal(status, transcript, message);
+        return AgentLoopResult.terminal(
+                status,
+                transcript,
+                message,
+                evidenceState.evidenceSet(),
+                evidenceState.evidenceRequired());
     }
 
     private AgentLoopResult stopIfTurnUnavailable(
             AgentLoopRequest request,
             AgentExecutionTrace trace,
             Consumer<AgentEvent> sink,
-            List<String> transcript) {
+            List<String> transcript,
+            EvidenceState evidenceState) {
         if (request.turnBudget() == null) {
             return null;
         }
@@ -570,7 +646,7 @@ public class AgentLoopExecutor {
             request.turnBudget().check("loop");
             return null;
         } catch (AgentTurnBudget.UnavailableException exception) {
-            return terminateUnavailable(exception, transcript, trace, sink);
+            return terminateUnavailable(exception, transcript, trace, sink, evidenceState);
         }
     }
 
@@ -578,7 +654,8 @@ public class AgentLoopExecutor {
             AgentTurnBudget.UnavailableException exception,
             List<String> transcript,
             AgentExecutionTrace trace,
-            Consumer<AgentEvent> sink) {
+            Consumer<AgentEvent> sink,
+            EvidenceState evidenceState) {
         boolean cancelled = exception.reason() == AgentTurnBudget.UnavailableReason.CANCELLED;
         if (!cancelled) {
             trace.recordTimeoutStage(exception.stage());
@@ -592,7 +669,8 @@ public class AgentLoopExecutor {
                         : agentDomainConfig.errors().responseTimeout(),
                 trace,
                 sink,
-                cancelled ? trace::terminateCancelled : trace::terminateTimeout);
+                cancelled ? trace::terminateCancelled : trace::terminateTimeout,
+                evidenceState);
     }
 
     private void appendExchange(List<String> transcript, String llmOut, String observation) {
@@ -629,6 +707,16 @@ public class AgentLoopExecutor {
             return json.length() <= 256 ? json : json.substring(0, 256);
         } catch (Exception e) {
             return input.toString();
+        }
+    }
+
+    private String serializeToolInput(Map<String, Object> input) {
+        try {
+            return objectMapper.writeValueAsString(input == null ? Map.of() : input);
+        } catch (Exception exception) {
+            log.debug("Agent tool trace input serialization fallback: {}",
+                    exception.getClass().getName());
+            return String.valueOf(input);
         }
     }
 
@@ -735,6 +823,182 @@ public class AgentLoopExecutor {
         return normalized.substring(0, maxLen) + "...";
     }
 
+    private WebSearchDiscovery parseWebSearchDiscovery(String observation) {
+        try {
+            JsonNode root = objectMapper.readTree(observation == null ? "" : observation);
+            if (root == null || !"web_search_results".equals(root.path("kind").asText())) {
+                return WebSearchDiscovery.invalid();
+            }
+            LinkedHashSet<String> urls = new LinkedHashSet<>();
+            JsonNode results = root.path("results");
+            if (results.isArray()) {
+                for (JsonNode result : results) {
+                    String normalized = normalizeResearchUrl(result.path("url").asText(""));
+                    if (!normalized.isBlank()) {
+                        urls.add(normalized);
+                    }
+                }
+            }
+            return new WebSearchDiscovery(true, Set.copyOf(urls));
+        } catch (Exception exception) {
+            log.debug("Ignoring malformed web_search observation envelope", exception);
+            return WebSearchDiscovery.invalid();
+        }
+    }
+
+    private String parseWebFetchRequestedUrl(String observation) {
+        try {
+            JsonNode root = objectMapper.readTree(observation == null ? "" : observation);
+            if (root == null || !"web_fetched_page".equals(root.path("kind").asText())) {
+                return "";
+            }
+            return normalizeResearchUrl(root.path("requestedUrl").asText(""));
+        } catch (Exception exception) {
+            log.debug("Ignoring malformed web_fetch observation envelope", exception);
+            return "";
+        }
+    }
+
+    private static String normalizeResearchUrl(String rawUrl) {
+        try {
+            URI uri = URI.create(rawUrl == null ? "" : rawUrl.strip()).normalize();
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            String host = uri.getHost();
+            if (!("http".equals(scheme) || "https".equals(scheme))
+                    || host == null
+                    || host.isBlank()
+                    || uri.getUserInfo() != null) {
+                return "";
+            }
+            int port = uri.getPort();
+            if (("http".equals(scheme) && port == 80)
+                    || ("https".equals(scheme) && port == 443)) {
+                port = -1;
+            }
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            String authorityHost = normalizedHost.contains(":")
+                    ? "[" + normalizedHost + "]"
+                    : normalizedHost;
+            String path = uri.getRawPath();
+            if (path == null || path.isBlank()) {
+                path = "/";
+            }
+            StringBuilder normalized = new StringBuilder(scheme)
+                    .append("://")
+                    .append(authorityHost);
+            if (port >= 0) {
+                normalized.append(':').append(port);
+            }
+            normalized.append(path);
+            if (uri.getRawQuery() != null && !uri.getRawQuery().isBlank()) {
+                normalized.append('?').append(uri.getRawQuery());
+            }
+            return normalized.toString();
+        } catch (IllegalArgumentException exception) {
+            return "";
+        }
+    }
+
     private record LlmFailure(String status, String errorCode) {
+    }
+
+    private record WebSearchDiscovery(boolean valid, Set<String> candidateUrls) {
+
+        private WebSearchDiscovery {
+            candidateUrls = candidateUrls == null ? Set.of() : Set.copyOf(candidateUrls);
+        }
+
+        private static WebSearchDiscovery invalid() {
+            return new WebSearchDiscovery(false, Set.of());
+        }
+    }
+
+    private static final class EvidenceState {
+        private EvidenceSet evidenceSet;
+        private final boolean initialRequired;
+        private boolean dynamicAdded;
+        private boolean webSearchNeedsFetch;
+        private Set<String> pendingWebCandidateUrls = Set.of();
+        private final Map<Integer, String> canonicalEvidenceObservations = new LinkedHashMap<>();
+
+        private EvidenceState(EvidenceSet evidenceSet, boolean initialRequired) {
+            this.evidenceSet = evidenceSet == null ? EvidenceSet.empty() : evidenceSet;
+            this.initialRequired = initialRequired;
+        }
+
+        private String merge(List<Evidence> candidates) {
+            List<Evidence> previousItems = evidenceSet.items();
+            EvidenceSet merged = evidenceSet.append(candidates);
+            if (merged == evidenceSet) {
+                return "";
+            }
+            List<Evidence> changedItems = new ArrayList<>();
+            List<Evidence> mergedItems = merged.items();
+            for (int index = 0; index < mergedItems.size(); index++) {
+                if (index >= previousItems.size()
+                        || !mergedItems.get(index).equals(previousItems.get(index))) {
+                    changedItems.add(mergedItems.get(index));
+                }
+            }
+            evidenceSet = merged;
+            dynamicAdded = true;
+            return evidenceSet.renderForPromptItems(changedItems);
+        }
+
+        private EvidenceSet evidenceSet() {
+            return evidenceSet;
+        }
+
+        private boolean evidenceRequired() {
+            return initialRequired || dynamicAdded;
+        }
+
+        private void recordEvidenceObservation(int transcriptIndex, String canonicalObservation) {
+            if (transcriptIndex >= 0 && canonicalObservation != null) {
+                canonicalEvidenceObservations.put(transcriptIndex, canonicalObservation);
+            }
+        }
+
+        private List<String> transcriptForFinalAnswer(List<String> transcript) {
+            if (transcript == null || transcript.isEmpty() || canonicalEvidenceObservations.isEmpty()) {
+                return transcript == null ? List.of() : List.copyOf(transcript);
+            }
+            List<String> canonical = new ArrayList<>(transcript);
+            for (Map.Entry<Integer, String> replacement : canonicalEvidenceObservations.entrySet()) {
+                if (replacement.getKey() < canonical.size()) {
+                    canonical.set(replacement.getKey(), replacement.getValue());
+                }
+            }
+            return List.copyOf(canonical);
+        }
+
+        private void recordSuccessfulWebSearch(WebSearchDiscovery discovery) {
+            if (discovery == null || !discovery.valid()) {
+                webSearchNeedsFetch = true;
+                return;
+            }
+            if (!discovery.candidateUrls().isEmpty()) {
+                LinkedHashSet<String> accumulated = new LinkedHashSet<>(pendingWebCandidateUrls);
+                accumulated.addAll(discovery.candidateUrls());
+                pendingWebCandidateUrls = Set.copyOf(accumulated);
+                webSearchNeedsFetch = true;
+            }
+        }
+
+        private void recordSuccessfulWebFetch(String requestedUrl, List<Evidence> evidence) {
+            if (webSearchNeedsFetch
+                    && requestedUrl != null
+                    && !requestedUrl.isBlank()
+                    && pendingWebCandidateUrls.contains(requestedUrl)
+                    && evidence != null
+                    && !evidence.isEmpty()) {
+                webSearchNeedsFetch = false;
+                pendingWebCandidateUrls = Set.of();
+            }
+        }
+
+        private boolean webFetchPending() {
+            return webSearchNeedsFetch;
+        }
     }
 }

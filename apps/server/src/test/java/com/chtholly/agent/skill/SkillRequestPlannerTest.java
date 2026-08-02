@@ -20,7 +20,7 @@ class SkillRequestPlannerTest {
                 List.of(new PathMatchingResourcePatternResolver().getResources(
                         "classpath*:agent/skills/*/v1.yml")),
                 Set.of("article_rag", "fulltext_search", "bangumi_search",
-                        "bangumi_characters", "bangumi_person_works"),
+                        "bangumi_characters", "bangumi_person_works", "web_search", "web_fetch"),
                 new SkillOutputValidator(),
                 ignored -> true);
         planner = new SkillRequestPlanner();

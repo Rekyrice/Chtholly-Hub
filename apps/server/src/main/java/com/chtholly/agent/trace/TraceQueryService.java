@@ -60,7 +60,7 @@ public class TraceQueryService {
         if (row == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "Trace 不存在");
         }
-        return TraceDetailDto.from(row, parseJson(row.getToolCalls()), parseJson(row.getTracePayload()));
+        return TraceDetailDto.from(row, objectMapper);
     }
 
     public TraceStatsDto getStats(int days) {

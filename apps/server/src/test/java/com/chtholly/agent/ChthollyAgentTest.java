@@ -15,11 +15,14 @@ import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.observability.AgentMetrics;
 import com.chtholly.agent.observability.AgentObservationService;
+import com.chtholly.agent.observability.AgentToolDiagnostics;
 import com.chtholly.agent.runtime.AgentLlmInvoker;
 import com.chtholly.agent.runtime.AgentLoopExecutor;
 import com.chtholly.agent.runtime.AgentLoopRequest;
 import com.chtholly.agent.runtime.AgentLoopResult;
+import com.chtholly.agent.runtime.AgentToolExecutor;
 import com.chtholly.agent.runtime.AgentToolPlanner;
+import com.chtholly.agent.runtime.AgentToolResult;
 import com.chtholly.agent.runtime.AgentTurnControl;
 import com.chtholly.agent.skill.SkillDefinition;
 import com.chtholly.agent.skill.EvidencePolicy;
@@ -394,6 +397,178 @@ class ChthollyAgentTest {
                 .isLessThanOrEqualTo(finalCall.path("duration_ms").asLong() + 25L);
         assertThat(payload.path("answerTiming").path("modelFirstTokenMs").asLong())
                 .isGreaterThan(finalCall.path("first_token_ms").asLong());
+        com.fasterxml.jackson.databind.JsonNode finalEvent = findLlmEvent(payload, "FINAL_ANSWER");
+        assertThat(finalEvent.path("details").path("systemPrompt").path("text").asText())
+                .contains("assembled system", "Answer with soul");
+        assertThat(finalEvent.path("details").path("userPrompt").path("text").asText())
+                .contains("history", "current question", "Produce final answer");
+        assertThat(finalEvent.path("details").path("rawOutput").path("text").asText())
+                .isEqualTo("final answer");
+        com.fasterxml.jackson.databind.JsonNode terminal = findNamedEvent(payload, "terminal");
+        assertThat(terminal.path("details").path("answer").path("text").asText()).isEqualTo("final");
+    }
+
+    @Test
+    void finalAnswerUsesOnlyTheLatestVersionForAnExistingCitation() {
+        EvidenceSet initialEvidence = EvidenceSet.empty().append(List.of(Evidence.fromWebPage(
+                "https://example.com/article",
+                "Old title",
+                "hash-old",
+                "OLD VERSION EXCERPT")));
+        EvidenceSet finalEvidence = initialEvidence.append(List.of(Evidence.fromWebPage(
+                "https://example.com/article",
+                "New title",
+                "hash-new",
+                "NEW VERSION EXCERPT")));
+        AgentContextSnapshot initialSnapshot = new AgentContextSnapshot(
+                "assembled system\n\n" + initialEvidence.renderForPrompt()
+                        + "\n\nselected skill instructions",
+                initialEvidence,
+                true);
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(initialSnapshot);
+        when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
+                AgentLoopResult.finalReady(
+                        List.of("current question"),
+                        1,
+                        10,
+                        finalEvidence,
+                        true));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(Flux.just("Grounded answer [E1]"));
+
+        agent.run("question", 7L, memory, events::add);
+
+        ArgumentCaptor<String> systemPrompt = ArgumentCaptor.forClass(String.class);
+        verify(llmInvoker).stream(
+                systemPrompt.capture(), anyString(), eq(0.3), eq(1024), any(Duration.class));
+        assertThat(systemPrompt.getValue())
+                .contains("selected skill instructions", "NEW VERSION EXCERPT", "hash-new", "[E1]")
+                .doesNotContain("OLD VERSION EXCERPT", "hash-old");
+    }
+
+    @Test
+    void finalAnswerDropsSupersededDynamicEvidenceButKeepsLoopVisibilityAndTrace() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        AgentToolExecutor toolExecutor = org.mockito.Mockito.mock(AgentToolExecutor.class);
+        AgentLoopExecutor realLoopExecutor = new AgentLoopExecutor(
+                llmInvoker,
+                toolExecutor,
+                new AgentJsonExtractor(objectMapper),
+                objectMapper,
+                observationService,
+                domainConfig);
+        AgentTool webFetch = tool("web_fetch");
+        agent = new ChthollyAgent(
+                llmInvoker,
+                realLoopExecutor,
+                new AgentToolPlanner(),
+                properties,
+                objectMapper,
+                List.of(webFetch),
+                agentMetrics,
+                observationService,
+                new CharacterSoulService("soul"),
+                contextEngine,
+                tracePersistenceService,
+                domainConfig,
+                skillRegistry,
+                skillSelector,
+                new SkillRequestPlanner(),
+                new SkillOutputValidator());
+        Evidence oldEvidence = Evidence.fromWebPage(
+                "https://example.com/article",
+                "Old title",
+                "hash-old",
+                "OLD VERSION EXCERPT");
+        Evidence updatedEvidence = Evidence.fromWebPage(
+                "https://example.com/article",
+                "Updated title",
+                "hash-new",
+                "UPDATED VERSION EXCERPT");
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(
+                anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("assembled system"));
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{\"url\":\"https://example.com/article\"}}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{\"url\":\"https://example.com/article\"}}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{\"url\":\"https://example.com/article\"}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(webFetch), anyMap(), eq(7L), any(Duration.class)))
+                .thenReturn(new AgentToolResult(
+                        "first page metadata",
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "first page metadata"),
+                        List.of(oldEvidence)))
+                .thenReturn(new AgentToolResult(
+                        "ordinary observation without evidence",
+                        AgentToolResult.Status.SUCCESS))
+                .thenReturn(new AgentToolResult(
+                        "updated page metadata",
+                        AgentToolResult.Status.SUCCESS,
+                        "",
+                        AgentToolDiagnostics.fallback("web_fetch", "updated page metadata"),
+                        List.of(updatedEvidence)));
+        org.mockito.Mockito.lenient().when(
+                observationService.startLlmSpan(eq(agentSpan), isNull())).thenReturn(llmSpan);
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(Flux.just("updated answer [E1]"));
+
+        agent.run("Read https://example.com/article twice", 7L, memory, events::add);
+
+        ArgumentCaptor<String> loopPrompts = ArgumentCaptor.forClass(String.class);
+        verify(llmInvoker, times(4)).call(
+                anyString(), loopPrompts.capture(), anyDouble(), anyInt(), any(Duration.class));
+        assertThat(loopPrompts.getAllValues().get(1))
+                .contains("first page metadata", "OLD VERSION EXCERPT");
+        assertThat(loopPrompts.getAllValues().get(2))
+                .contains("ordinary observation without evidence", "OLD VERSION EXCERPT");
+        assertThat(loopPrompts.getAllValues().get(3))
+                .contains(
+                        "ordinary observation without evidence",
+                        "updated page metadata",
+                        "OLD VERSION EXCERPT",
+                        "UPDATED VERSION EXCERPT");
+
+        ArgumentCaptor<String> finalSystem = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> finalUserPrompt = ArgumentCaptor.forClass(String.class);
+        verify(llmInvoker).stream(
+                finalSystem.capture(), finalUserPrompt.capture(), eq(0.3), eq(1024), any(Duration.class));
+        assertThat(finalSystem.getValue())
+                .contains("UPDATED VERSION EXCERPT", "hash-new")
+                .doesNotContain("OLD VERSION EXCERPT", "hash-old");
+        assertThat(finalUserPrompt.getValue())
+                .contains(
+                        "first page metadata",
+                        "ordinary observation without evidence",
+                        "updated page metadata")
+                .doesNotContain(
+                        "OLD VERSION EXCERPT",
+                        "UPDATED VERSION EXCERPT",
+                        "hash-old",
+                        "hash-new");
+
+        List<String> visibleObservations = events.stream()
+                .filter(event -> "observe".equals(event.type()))
+                .map(event -> event.data().path("content").asText())
+                .toList();
+        assertThat(visibleObservations.get(0)).contains("first page metadata", "OLD VERSION EXCERPT");
+        assertThat(visibleObservations.get(1)).isEqualTo("ordinary observation without evidence");
+        assertThat(visibleObservations.get(2)).contains("updated page metadata", "UPDATED VERSION EXCERPT");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        assertThat(traceCaptor.getValue().toPayloadMap().toString())
+                .contains(
+                        "first page metadata",
+                        "ordinary observation without evidence",
+                        "updated page metadata",
+                        "OLD VERSION EXCERPT",
+                        "UPDATED VERSION EXCERPT");
     }
 
     @Test
@@ -713,6 +888,15 @@ class ChthollyAgentTest {
                 .containsExactly("FINAL_ANSWER", "CITATION_REPAIR");
         assertThat(calls).extracting(call -> call.path("status").asText())
                 .containsOnly("SUCCESS");
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        com.fasterxml.jackson.databind.JsonNode repairEvent = findLlmEvent(payload, "CITATION_REPAIR");
+        assertThat(repairEvent.path("details").path("systemPrompt").path("text").asText())
+                .isNotBlank();
+        assertThat(repairEvent.path("details").path("userPrompt").path("text").asText())
+                .contains("E1");
+        assertThat(repairEvent.path("details").path("rawOutput").path("text").asText())
+                .endsWith("[E1]");
     }
 
     @Test
@@ -735,6 +919,17 @@ class ChthollyAgentTest {
         assertThat(call.path("status").asText()).isEqualTo("ERROR");
         assertThat(call.path("error_code").asText()).isEqualTo("LLM_ERROR");
         assertThat(call.path("output_chars").asInt()).isZero();
+        com.fasterxml.jackson.databind.JsonNode payload = new ObjectMapper().valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        com.fasterxml.jackson.databind.JsonNode boundaryEvent = findLlmEvent(payload, "BOUNDARY_RESPONSE");
+        assertThat(boundaryEvent.path("details").path("systemPrompt").path("text").asText())
+                .isNotBlank();
+        assertThat(boundaryEvent.path("details").path("userPrompt").path("text").asText())
+                .isNotBlank();
+        assertThat(boundaryEvent.path("details").path("failureClass").path("text").asText())
+                .contains("IllegalStateException");
+        assertThat(boundaryEvent.path("details").path("failureMessage").path("text").asText())
+                .contains("provider failed");
     }
 
     @Test
@@ -840,6 +1035,101 @@ class ChthollyAgentTest {
         assertThat(payload.path("retrieval").path("citationValidationStatus").asText())
                 .isEqualTo("NO_EVIDENCE");
         assertThat(payload.path("failureType").asText()).isEqualTo("RETRIEVAL_EMPTY");
+        assertThat(payload.path("outcomeReason").asText()).isEqualTo("NO_EVIDENCE");
+    }
+
+    @Test
+    void requiredEmptyInitialEvidenceCanBeSatisfiedByWebFetchBeforeFinalValidation() {
+        agent = new ChthollyAgent(
+                llmInvoker,
+                loopExecutor,
+                new AgentToolPlanner(),
+                properties,
+                new ObjectMapper(),
+                List.of(tool("web_fetch")),
+                agentMetrics,
+                observationService,
+                new CharacterSoulService("soul"),
+                contextEngine,
+                tracePersistenceService,
+                domainConfig,
+                skillRegistry,
+                skillSelector,
+                new SkillRequestPlanner(),
+                new SkillOutputValidator());
+        EvidenceSet dynamicEvidence = EvidenceSet.empty().append(List.of(Evidence.fromWebPage(
+                "https://example.com/article", "Article", "web-hash", "web excerpt")));
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new AgentContextSnapshot("assembled system", EvidenceSet.empty(), true));
+        when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
+                AgentLoopResult.finalReady(
+                        List.of("current question"), 1, 10, dynamicEvidence, true));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(Flux.just("web answer [E1]"));
+
+        agent.run("查网页事实", 7L, memory, events::add);
+
+        ArgumentCaptor<AgentLoopRequest> requestCaptor = ArgumentCaptor.forClass(AgentLoopRequest.class);
+        verify(loopExecutor).execute(requestCaptor.capture(), any(), any(), any());
+        assertThat(requestCaptor.getValue().evidenceSet().isEmpty()).isTrue();
+        assertThat(requestCaptor.getValue().evidenceRequired()).isTrue();
+        ArgumentCaptor<String> systemCaptor = ArgumentCaptor.forClass(String.class);
+        verify(llmInvoker).stream(
+                systemCaptor.capture(), anyString(), eq(0.3), eq(1024), any(Duration.class));
+        assertThat(systemCaptor.getValue()).contains("[E1]", "web excerpt");
+        assertThat(eventContents()).containsExactly("web answer [E1]", "web answer [E1]");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        var payload = new ObjectMapper().valueToTree(traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("retrieval").path("evidenceCount").asInt()).isEqualTo(1);
+        assertThat(payload.path("retrieval").path("citationValidationStatus").asText())
+                .isEqualTo("VALID");
+    }
+
+    @Test
+    void requiredWebTurnStillReturnsNoEvidenceWhenLoopAddsNothing() {
+        agent = new ChthollyAgent(
+                llmInvoker,
+                loopExecutor,
+                new AgentToolPlanner(),
+                properties,
+                new ObjectMapper(),
+                List.of(tool("web_fetch")),
+                agentMetrics,
+                observationService,
+                new CharacterSoulService("soul"),
+                contextEngine,
+                tracePersistenceService,
+                domainConfig,
+                skillRegistry,
+                skillSelector,
+                new SkillRequestPlanner(),
+                new SkillOutputValidator());
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new AgentContextSnapshot("assembled system", EvidenceSet.empty(), true));
+        when(loopExecutor.execute(any(), any(), any(), any())).thenReturn(
+                AgentLoopResult.finalReady(
+                        List.of("current question"), 1, 10, EvidenceSet.empty(), true));
+        when(observationService.startLlmSpan(agentSpan, "test-model")).thenReturn(llmSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(
+                        Flux.just("unsupported answer"),
+                        Flux.just("我认真找过了，但站内暂时没有足够资料支撑这次回答。"));
+
+        agent.run("查网页事实", 7L, memory, events::add);
+
+        verify(loopExecutor).execute(any(), any(), any(), any());
+        assertThat(eventContents()).containsOnly(
+                "我认真找过了，但站内暂时没有足够资料支撑这次回答。");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        var payload = new ObjectMapper().valueToTree(traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("retrieval").path("evidenceCount").asInt()).isZero();
+        assertThat(payload.path("retrieval").path("citationValidationStatus").asText())
+                .isEqualTo("NO_EVIDENCE");
         assertThat(payload.path("outcomeReason").asText()).isEqualTo("NO_EVIDENCE");
     }
 
@@ -1234,5 +1524,27 @@ class ChthollyAgentTest {
                         "",
                         "",
                         ","));
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode findLlmEvent(
+            com.fasterxml.jackson.databind.JsonNode payload,
+            String purpose) {
+        for (com.fasterxml.jackson.databind.JsonNode event : payload.path("events")) {
+            if (purpose.equals(event.path("details").path("purpose").asText())) {
+                return event;
+            }
+        }
+        return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode findNamedEvent(
+            com.fasterxml.jackson.databind.JsonNode payload,
+            String name) {
+        for (com.fasterxml.jackson.databind.JsonNode event : payload.path("events")) {
+            if (name.equals(event.path("name").asText())) {
+                return event;
+            }
+        }
+        return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
     }
 }

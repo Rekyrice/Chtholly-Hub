@@ -33,6 +33,9 @@ public class AgentExecutionTrace {
 
     private static final int EVENT_LIMIT = 256;
     private static final int MAX_EVENT_TEXT_CHARS = AgentTraceSanitizer.MAX_INPUT_STRING_CHARS;
+    private static final int MAX_ADMIN_DIAGNOSTIC_ITEMS = 64;
+    private static final int MAX_ADMIN_DIAGNOSTIC_DEPTH = 6;
+    private static final int MAX_ADMIN_DIAGNOSTIC_TEXT_CHARS = 16_384;
 
     private final String correlationId;
     private final long userId;
@@ -56,6 +59,9 @@ public class AgentExecutionTrace {
     private int eventSequence;
     private int droppedEvents;
     private int truncatedToolOutputs;
+    private int capturedChars;
+    private int truncatedCaptureFields;
+    private int credentialRedactions;
     private String terminatedBy = "error";
     private String modelVersion = "unknown";
     private String runMode = "candidate";
@@ -209,6 +215,37 @@ public class AgentExecutionTrace {
             int inputChars,
             int outputChars,
             Long firstTokenMs) {
+        recordLlmCall(
+                stepIndex,
+                purpose,
+                model,
+                status,
+                errorCode,
+                attempt,
+                budgetBeforeMs,
+                budgetAfterMs,
+                durationMs,
+                inputChars,
+                outputChars,
+                firstTokenMs,
+                null);
+    }
+
+    /** Records a model invocation together with administrator-only replay content. */
+    public void recordLlmCall(
+            Integer stepIndex,
+            String purpose,
+            String model,
+            String status,
+            String errorCode,
+            int attempt,
+            long budgetBeforeMs,
+            long budgetAfterMs,
+            long durationMs,
+            int inputChars,
+            int outputChars,
+            Long firstTokenMs,
+            LlmExchange exchange) {
         long safeDurationMs = nonNegative(durationMs);
         long safeBudgetBeforeMs = nonNegative(budgetBeforeMs);
         long safeBudgetAfterMs = nonNegative(budgetAfterMs);
@@ -249,6 +286,17 @@ public class AgentExecutionTrace {
         details.put("output_chars", safeOutputChars);
         if (safeFirstTokenMs != null) {
             details.put("first_token_ms", safeFirstTokenMs);
+        }
+        if (exchange != null) {
+            details.put("systemPrompt", captureContent(exchange.systemPrompt()));
+            details.put("userPrompt", captureContent(exchange.userPrompt()));
+            details.put("rawOutput", captureContent(exchange.rawOutput()));
+            if (exchange.failureClass() != null && !exchange.failureClass().isBlank()) {
+                details.put("failureClass", captureContent(exchange.failureClass()));
+            }
+            if (exchange.failureMessage() != null && !exchange.failureMessage().isBlank()) {
+                details.put("failureMessage", captureContent(exchange.failureMessage()));
+            }
         }
         recordDurationEvent(
                 sequence,
@@ -343,6 +391,27 @@ public class AgentExecutionTrace {
             long budgetBeforeMs,
             long budgetAfterMs,
             AgentToolResult result) {
+        recordToolCall(
+                stepIndex,
+                toolName,
+                durationMs,
+                budgetBeforeMs,
+                budgetAfterMs,
+                result,
+                null,
+                null);
+    }
+
+    /** Records a tool invocation with the actual augmented input and final Observe content. */
+    public void recordToolCall(
+            Integer stepIndex,
+            String toolName,
+            long durationMs,
+            long budgetBeforeMs,
+            long budgetAfterMs,
+            AgentToolResult result,
+            String actualInput,
+            String finalObservation) {
         AgentToolResult safeResult = java.util.Objects.requireNonNull(result, "result");
         AgentToolDiagnostics diagnostics = safeResult.diagnostics();
         String safeToolName = eventText(toolName, "unknown");
@@ -386,6 +455,13 @@ public class AgentExecutionTrace {
             details.put("resultCount", diagnostics.resultCount());
         }
         details.put("selectedIds", diagnostics.selectedIds());
+        details.put("attributes", diagnostics.attributes());
+        if (actualInput != null) {
+            details.put("input", captureContent(actualInput));
+        }
+        if (finalObservation != null) {
+            details.put("observation", captureContent(finalObservation));
+        }
         recordDurationEvent(
                 sequence,
                 "tool",
@@ -436,7 +512,11 @@ public class AgentExecutionTrace {
                 "lifecycle",
                 "turn_context",
                 "ACCEPTED",
-                Map.of("model", this.modelVersion, "run_mode", this.runMode));
+                Map.of(
+                        "model", this.modelVersion,
+                        "run_mode", this.runMode,
+                        "question", captureContent(normalizedQuestion),
+                        "pageContext", captureContent(normalizedPage)));
     }
 
     public void recordSkillSelection(String status, String id, String version) {
@@ -670,7 +750,9 @@ public class AgentExecutionTrace {
     public void terminateFinalAnswer(String answer) {
         terminatedBy = "final_answer";
         finalAnswerLength = answer == null ? 0 : answer.length();
-        recordTerminalEvent("SUCCESS", Map.of("answer_chars", finalAnswerLength));
+        recordTerminalEvent("SUCCESS", Map.of(
+                "answer_chars", finalAnswerLength,
+                "answer", captureContent(answer)));
     }
 
     public void terminateMaxSteps() {
@@ -754,6 +836,7 @@ public class AgentExecutionTrace {
         payload.put("llmCalls", llmCallDetails.stream().map(TraceLlmCallInfo::toMap).toList());
         payload.put("events", events.stream().map(TraceEventInfo::toMap).toList());
         payload.put("privacy", privacyMetadata());
+        payload.put("capture", captureMetadata());
         payload.put("components", componentVersions());
         payload.put("skill", skillMetadata());
         payload.put("retrieval", retrievalMetadata());
@@ -771,8 +854,8 @@ public class AgentExecutionTrace {
 
     private Map<String, Object> privacyMetadata() {
         Map<String, Object> privacy = new LinkedHashMap<>();
-        privacy.put("captureLevel", "STANDARD");
-        privacy.put("policyVersion", "trace-standard-v1");
+        privacy.put("captureLevel", "ADMIN_FULL");
+        privacy.put("policyVersion", "trace-admin-full-v1");
         privacy.put("contentBounded", true);
         privacy.put("maxInputStringChars", AgentTraceSanitizer.MAX_INPUT_STRING_CHARS);
         privacy.put("maxOutputPreviewChars", AgentTraceSanitizer.MAX_OUTPUT_PREVIEW_CHARS);
@@ -781,6 +864,19 @@ public class AgentExecutionTrace {
         privacy.put("droppedEvents", droppedEvents);
         privacy.put("truncatedToolOutputs", truncatedToolOutputs);
         return Collections.unmodifiableMap(privacy);
+    }
+
+    private Map<String, Object> captureMetadata() {
+        Map<String, Object> capture = new LinkedHashMap<>();
+        capture.put("level", "ADMIN_FULL");
+        capture.put("policyVersion", "trace-admin-full-v1");
+        capture.put("maxPerFieldChars", AgentTraceSanitizer.MAX_ADMIN_CONTENT_CHARS);
+        capture.put("maxCapturedChars", AgentTraceSanitizer.MAX_ADMIN_TURN_CAPTURE_CHARS);
+        capture.put("capturedChars", capturedChars);
+        capture.put("truncated", truncatedCaptureFields > 0);
+        capture.put("truncatedFields", truncatedCaptureFields);
+        capture.put("redactions", credentialRedactions);
+        return Collections.unmodifiableMap(capture);
     }
 
     private Map<String, String> componentVersions() {
@@ -1075,7 +1171,7 @@ public class AgentExecutionTrace {
         recordInstantEvent("delivery", "lifecycle", "terminal", terminalStatus, details);
     }
 
-    private static Map<String, Object> safeDetails(Map<String, ?> source) {
+    private Map<String, Object> safeDetails(Map<String, ?> source) {
         if (source == null || source.isEmpty()) {
             return Map.of();
         }
@@ -1088,16 +1184,86 @@ public class AgentExecutionTrace {
             if (AgentTraceSanitizer.isInternalKey(key)) {
                 continue;
             }
-            projected.put(key, AgentTraceSanitizer.isSensitiveKey(key) && isContentValue(entry.getValue())
-                    ? "[REDACTED]"
-                    : safeDetailValue(key, entry.getValue(), 0));
+            if ("attributes".equals(key) && entry.getValue() instanceof Map<?, ?> attributes) {
+                projected.put(key, safeAdminAttributes(attributes));
+            } else if ("sanitizedInput".equals(key) && entry.getValue() instanceof Map<?, ?> input) {
+                projected.put(key, safeSanitizedInput(input));
+            } else {
+                projected.put(key, AgentTraceSanitizer.isSensitiveKey(key) && isContentValue(entry.getValue())
+                        ? "[REDACTED]"
+                        : safeDetailValue(key, entry.getValue(), 0));
+            }
         }
         return Collections.unmodifiableMap(projected);
+    }
+
+    private static Map<String, Object> safeSanitizedInput(Map<?, ?> source) {
+        Map<String, Object> projected = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            if (projected.size() >= AgentTraceSanitizer.MAX_COLLECTION_ITEMS) {
+                break;
+            }
+            String key = eventText(String.valueOf(entry.getKey()), "unknown");
+            if (AgentTraceSanitizer.isInternalKey(key)) {
+                continue;
+            }
+            projected.put(key, AgentTraceSanitizer.isSensitiveKey(key)
+                    && isContentValue(entry.getValue())
+                    ? "[REDACTED]"
+                    : safeSanitizedInputValue(entry.getValue(), 0));
+        }
+        return Collections.unmodifiableMap(projected);
+    }
+
+    private static Object safeSanitizedInputValue(Object value, int depth) {
+        if (value == null || value instanceof Boolean) {
+            return value;
+        }
+        if (value instanceof Number number) {
+            return AgentTraceSanitizer.snapshotNumber(number);
+        }
+        if (value instanceof CharSequence || value instanceof Character || value instanceof Enum<?>) {
+            return AgentTraceSanitizer.safeSanitizedInputText(String.valueOf(value));
+        }
+        if (depth >= 3) {
+            return "[UNSUPPORTED]";
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> projected = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (projected.size() >= AgentTraceSanitizer.MAX_COLLECTION_ITEMS) {
+                    break;
+                }
+                String key = eventText(String.valueOf(entry.getKey()), "unknown");
+                if (AgentTraceSanitizer.isInternalKey(key)) {
+                    continue;
+                }
+                projected.put(key, AgentTraceSanitizer.isSensitiveKey(key)
+                        && isContentValue(entry.getValue())
+                        ? "[REDACTED]"
+                        : safeSanitizedInputValue(entry.getValue(), depth + 1));
+            }
+            return Collections.unmodifiableMap(projected);
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Object> projected = new ArrayList<>();
+            for (Object item : collection) {
+                if (projected.size() >= AgentTraceSanitizer.MAX_COLLECTION_ITEMS) {
+                    break;
+                }
+                projected.add(safeSanitizedInputValue(item, depth + 1));
+            }
+            return Collections.unmodifiableList(projected);
+        }
+        return "[UNSUPPORTED]";
     }
 
     private static Object safeDetailValue(String key, Object value, int depth) {
         if (value == null || value instanceof Boolean) {
             return value;
+        }
+        if (value instanceof AgentTraceSanitizer.ContentSnapshot snapshot) {
+            return snapshot.toMap();
         }
         if (value instanceof Number number) {
             return AgentTraceSanitizer.snapshotNumber(number);
@@ -1139,6 +1305,85 @@ public class AgentExecutionTrace {
             return Collections.unmodifiableList(projected);
         }
         return "[UNSUPPORTED]";
+    }
+
+    private Map<String, Object> safeAdminAttributes(Map<?, ?> source) {
+        Map<String, Object> projected = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            if (projected.size() >= MAX_ADMIN_DIAGNOSTIC_ITEMS) {
+                break;
+            }
+            String key = boundedEventText(String.valueOf(entry.getKey()), MAX_EVENT_TEXT_CHARS);
+            if (key.isBlank()) {
+                continue;
+            }
+            projected.put(key, AgentTraceSanitizer.isAdminCredentialKey(key)
+                    ? "[REDACTED]"
+                    : safeAdminAttributeValue(entry.getValue(), 0));
+        }
+        return Collections.unmodifiableMap(projected);
+    }
+
+    private Object safeAdminAttributeValue(Object value, int depth) {
+        if (value == null || value instanceof Boolean) {
+            return value;
+        }
+        if (value instanceof Number number) {
+            return AgentTraceSanitizer.snapshotNumber(number);
+        }
+        if (value instanceof CharSequence || value instanceof Character || value instanceof Enum<?>) {
+            return captureContent(String.valueOf(value), MAX_ADMIN_DIAGNOSTIC_TEXT_CHARS).text();
+        }
+        if (depth >= MAX_ADMIN_DIAGNOSTIC_DEPTH) {
+            return "[TRUNCATED_DEPTH]";
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> projected = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (projected.size() >= MAX_ADMIN_DIAGNOSTIC_ITEMS) {
+                    break;
+                }
+                String key = boundedEventText(String.valueOf(entry.getKey()), MAX_EVENT_TEXT_CHARS);
+                if (key.isBlank()) {
+                    continue;
+                }
+                projected.put(key, AgentTraceSanitizer.isAdminCredentialKey(key)
+                        ? "[REDACTED]"
+                        : safeAdminAttributeValue(entry.getValue(), depth + 1));
+            }
+            return Collections.unmodifiableMap(projected);
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Object> projected = new ArrayList<>();
+            for (Object item : collection) {
+                if (projected.size() >= MAX_ADMIN_DIAGNOSTIC_ITEMS) {
+                    break;
+                }
+                projected.add(safeAdminAttributeValue(item, depth + 1));
+            }
+            return Collections.unmodifiableList(projected);
+        }
+        return captureContent(String.valueOf(value), MAX_ADMIN_DIAGNOSTIC_TEXT_CHARS).text();
+    }
+
+    private synchronized AgentTraceSanitizer.ContentSnapshot captureContent(String value) {
+        return captureContent(value, AgentTraceSanitizer.MAX_ADMIN_CONTENT_CHARS);
+    }
+
+    private synchronized AgentTraceSanitizer.ContentSnapshot captureContent(String value, int fieldLimit) {
+        int remaining = Math.max(
+                0,
+                AgentTraceSanitizer.MAX_ADMIN_TURN_CAPTURE_CHARS - capturedChars);
+        AgentTraceSanitizer.AdminCapture capture = AgentTraceSanitizer.captureAdmin(
+                value,
+                Math.min(Math.max(0, fieldLimit), remaining));
+        AgentTraceSanitizer.ContentSnapshot snapshot = capture.snapshot();
+        capturedChars += snapshot.text().length();
+        credentialRedactions += capture.redactions();
+        if (snapshot.truncated()) {
+            truncatedCaptureFields++;
+        }
+        return snapshot;
     }
 
     private static boolean isContentValue(Object value) {
@@ -1225,6 +1470,45 @@ public class AgentExecutionTrace {
                 map.put("first_token_ms", firstTokenMs);
             }
             return map;
+        }
+    }
+
+    /** Raw content passed to or returned by one actual model invocation. */
+    public record LlmExchange(
+            String systemPrompt,
+            String userPrompt,
+            String rawOutput,
+            String failureClass,
+            String failureMessage) {
+
+        public static LlmExchange success(String systemPrompt, String userPrompt, String rawOutput) {
+            return new LlmExchange(systemPrompt, userPrompt, rawOutput, "", "");
+        }
+
+        public static LlmExchange failure(
+                String systemPrompt,
+                String userPrompt,
+                String rawOutput,
+                Throwable failure) {
+            StringBuilder classes = new StringBuilder();
+            StringBuilder messages = new StringBuilder();
+            Throwable current = failure;
+            int depth = 0;
+            while (current != null && depth++ < 32) {
+                if (!classes.isEmpty()) {
+                    classes.append(" -> ");
+                    messages.append(" -> ");
+                }
+                classes.append(current.getClass().getName());
+                messages.append(current.getMessage() == null ? "" : current.getMessage());
+                current = current.getCause();
+            }
+            return new LlmExchange(
+                    systemPrompt,
+                    userPrompt,
+                    rawOutput,
+                    classes.toString(),
+                    messages.toString());
         }
     }
 

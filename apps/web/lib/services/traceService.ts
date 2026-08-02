@@ -9,9 +9,9 @@ import type {
 
 const TRACE_PREFIX = "/api/v1/traces";
 
-type TraceDetailPayload = Omit<TraceDetail, "steps" | "unassignedEvents"> & {
-  steps?: TraceDetail["steps"] | null;
-  unassignedEvents?: TraceDetail["unassignedEvents"] | null;
+type TraceDetailPayload = Omit<TraceDetail, "phases" | "metadata"> & {
+  phases?: TraceDetail["phases"] | null;
+  metadata?: TraceDetail["metadata"];
 };
 
 function rangeQuery(from?: string, to?: string) {
@@ -49,8 +49,8 @@ export const traceService = {
     );
     return {
       ...detail,
-      steps: Array.isArray(detail.steps) ? detail.steps : [],
-      unassignedEvents: Array.isArray(detail.unassignedEvents) ? detail.unassignedEvents : [],
+      phases: Array.isArray(detail.phases) ? detail.phases : [],
+      metadata: detail.metadata ?? null,
     };
   },
 

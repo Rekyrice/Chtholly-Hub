@@ -58,6 +58,50 @@ class AgentTraceSanitizerTest {
     }
 
     @Test
+    void sanitizedInputRedactsInfrastructureUrlUserInfoButPreservesOrdinaryUrls() {
+        Map<String, ParamDef> schema = Map.of(
+                "endpoint", new ParamDef("Database endpoint", String.class, true),
+                "mirrors", new ParamDef("Database mirrors", List.class, false),
+                "documentation", new ParamDef("Documentation URL", String.class, false));
+
+        Map<String, Object> sanitized = AgentTraceSanitizer.sanitizeInput(schema, Map.of(
+                "endpoint", "redis://default:redis-secret@cache.internal:6379/0",
+                "mirrors", List.of(
+                        "postgresql://db-user:pg-secret@db.internal/app",
+                        "mongodb://mongo-user:mongo-secret@mongo.internal/app"),
+                "documentation", "https://example.com/database/setup"));
+
+        assertThat(sanitized)
+                .containsEntry("endpoint", "redis://[REDACTED]@cache.internal:6379/0")
+                .containsEntry("documentation", "https://example.com/database/setup");
+        assertThat(sanitized.get("mirrors")).isEqualTo(List.of(
+                "postgresql://[REDACTED]@db.internal/app",
+                "mongodb://[REDACTED]@mongo.internal/app"));
+        assertThat(sanitized.toString()).doesNotContain(
+                "default", "redis-secret", "db-user", "pg-secret", "mongo-user", "mongo-secret");
+    }
+
+    @Test
+    void standardSanitizationFindsUriUserInfoBeforeTruncatingOversizedInput() {
+        String secret = "dsn-secret-" + "x".repeat(17_000);
+        String dsn = "redis://service:" + secret + "@cache.internal:6379/0";
+        Map<String, ParamDef> schema = Map.of(
+                "endpoint", new ParamDef("Database endpoint", String.class, true));
+
+        Map<String, Object> sanitized = AgentTraceSanitizer.sanitizeInput(
+                schema, Map.of("endpoint", dsn));
+        AgentTraceSanitizer.Preview preview = AgentTraceSanitizer.preview(
+                "probe start " + dsn + " probe end");
+
+        assertThat(sanitized)
+                .containsEntry("endpoint", "redis://[REDACTED]@cache.internal:6379/0");
+        assertThat(preview.text())
+                .contains("probe start", "redis://[REDACTED]@cache.internal:6379/0", "probe end");
+        assertThat(sanitized.toString()).doesNotContain("service", "dsn-secret");
+        assertThat(preview.text()).doesNotContain("service", "dsn-secret");
+    }
+
+    @Test
     void scalarAndCollectionValuesAreBoundedWithoutRecursiveExpansion() {
         Map<String, ParamDef> schema = Map.of(
                 "text", new ParamDef("Text", String.class, false),
@@ -167,6 +211,114 @@ class AgentTraceSanitizerTest {
         assertThat(preview.truncated()).isTrue();
         assertThat(preview.chars()).isEqualTo(original.length());
         assertThat(preview.sha256()).isEqualTo(sha256(original));
+    }
+
+    @Test
+    void adminCapturePreservesUserContextAndUrlsButRedactsInfrastructureCredentials() {
+        String source = "question=为什么 token 预算很小 tokenBudget=2048 https://example.com/post?id=7 "
+                + "_userQuestion=保留这个问题 Authorization=Bearer admin-secret "
+                + "access_token=access-secret password=pwd-secret\n"
+                + "Set-Cookie=session=set-cookie-secret\n"
+                + "Authorization-Header=Bearer header-secret\n"
+                + "secret-key=provider-secret";
+
+        AgentTraceSanitizer.ContentSnapshot snapshot =
+                AgentTraceSanitizer.captureAdminContent(source, 131_072);
+
+        assertThat(snapshot.text())
+                .contains("为什么 token 预算很小", "tokenBudget=2048", "https://example.com/post?id=7",
+                        "_userQuestion=保留这个问题")
+                .doesNotContain("admin-secret", "access-secret", "pwd-secret",
+                        "set-cookie-secret", "header-secret", "provider-secret");
+        assertThat(snapshot.text()).contains("[REDACTED]");
+        assertThat(snapshot.sourceChars()).isEqualTo(source.length());
+        assertThat(snapshot.sha256()).isEqualTo(sha256(snapshot.text()));
+        assertThat(snapshot.truncated()).isFalse();
+        assertThat(snapshot.credentialRedacted()).isTrue();
+    }
+
+    @Test
+    void adminCaptureHashesCredentialFilteredFullContentBeforeExplicitTruncation() {
+        String source = "Cookie=session-secret\n" + "正文".repeat(100);
+
+        AgentTraceSanitizer.ContentSnapshot snapshot =
+                AgentTraceSanitizer.captureAdminContent(source, 12);
+        AgentTraceSanitizer.ContentSnapshot complete =
+                AgentTraceSanitizer.captureAdminContent(source, 131_072);
+
+        assertThat(snapshot.text()).hasSize(12).doesNotContain("session-secret");
+        assertThat(snapshot.sha256()).isEqualTo(complete.sha256());
+        assertThat(snapshot.sourceChars()).isEqualTo(source.length());
+        assertThat(snapshot.truncated()).isTrue();
+        assertThat(snapshot.credentialRedacted()).isTrue();
+    }
+
+    @Test
+    void adminCaptureRedactsJsonAuthorizationWithoutDiscardingSiblingFields() {
+        String source = "{\"Authorization\":\"Bearer auth-secret\","
+                + "\"safe\":\"keep this field\",\"answer\":\"done\"}";
+
+        AgentTraceSanitizer.ContentSnapshot snapshot =
+                AgentTraceSanitizer.captureAdminContent(source, 131_072);
+
+        assertThat(snapshot.text())
+                .contains("\"Authorization\":\"[REDACTED]\"", "\"safe\":\"keep this field\"", "\"answer\":\"done\"")
+                .doesNotContain("auth-secret");
+        assertThat(snapshot.credentialRedacted()).isTrue();
+    }
+
+    @Test
+    void adminCaptureRedactsUrlUserInfoAndSignedQueryCredentials() {
+        String source = "fetch https://alice:uri-secret@example.com/path?"
+                + "X-Amz-Signature=signature-secret&AWSAccessKeyId=access-key-secret&topic=keep#section";
+
+        AgentTraceSanitizer.ContentSnapshot snapshot =
+                AgentTraceSanitizer.captureAdminContent(source, 131_072);
+
+        assertThat(snapshot.text())
+                .contains("https://[REDACTED]@example.com/path?", "topic=keep#section")
+                .doesNotContain("alice", "uri-secret", "signature-secret", "access-key-secret");
+        assertThat(snapshot.credentialRedacted()).isTrue();
+    }
+
+    @Test
+    void adminCaptureRedactsInfrastructureUrlUserInfoAcrossSchemes() {
+        String source = "redis://default:redis-secret@cache.internal:6379/0 "
+                + "mongodb://db-user:mongo-secret@db.internal/app "
+                + "amqps://broker:broker-secret@mq.internal/vhost";
+
+        AgentTraceSanitizer.ContentSnapshot snapshot =
+                AgentTraceSanitizer.captureAdminContent(source, 131_072);
+
+        assertThat(snapshot.text())
+                .contains(
+                        "redis://[REDACTED]@cache.internal:6379/0",
+                        "mongodb://[REDACTED]@db.internal/app",
+                        "amqps://[REDACTED]@mq.internal/vhost")
+                .doesNotContain(
+                        "default", "redis-secret", "db-user", "mongo-secret",
+                        "broker", "broker-secret");
+        assertThat(snapshot.credentialRedacted()).isTrue();
+    }
+
+    @Test
+    void standardPreviewRedactsInfrastructureUrlUserInfoWithoutDiscardingContext() {
+        String source = "diagnostic start redis://default:redis-secret@cache.internal:6379/0 "
+                + "postgresql://db-user:pg-secret@db.internal/app "
+                + "mongodb://mongo-user:mongo-secret@mongo.internal/app diagnostic end";
+
+        AgentTraceSanitizer.Preview preview = AgentTraceSanitizer.preview(source);
+
+        assertThat(preview.text())
+                .contains(
+                        "diagnostic start",
+                        "redis://[REDACTED]@cache.internal:6379/0",
+                        "postgresql://[REDACTED]@db.internal/app",
+                        "mongodb://[REDACTED]@mongo.internal/app",
+                        "diagnostic end")
+                .doesNotContain(
+                        "default", "redis-secret", "db-user", "pg-secret",
+                        "mongo-user", "mongo-secret");
     }
 
     @Test

@@ -21,7 +21,7 @@ class SkillCandidateDatasetTest {
 
     private static final Set<String> READ_ONLY_TOOLS = Set.of(
             "article_rag", "fulltext_search", "bangumi_search",
-            "bangumi_characters", "bangumi_person_works");
+            "bangumi_characters", "bangumi_person_works", "web_search", "web_fetch");
     private static final Set<String> FORBIDDEN_WRITE_TOOLS = Set.of("draft_write", "post_publish");
 
     private SkillRegistry registry;

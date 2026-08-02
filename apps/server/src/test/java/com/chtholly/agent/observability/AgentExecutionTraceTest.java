@@ -137,7 +137,8 @@ class AgentExecutionTraceTest {
         assertThat(payload.path("input").path("questionFingerprint").asText()).hasSize(64);
         assertThat(payload.path("input").path("pageContextFingerprint").asText()).hasSize(64);
         assertThat(payload.toString())
-                .doesNotContain("super-secret", "question token", "page: /post/1", "excerpt");
+                .contains("question token", "page: /post/1")
+                .doesNotContain("super-secret", "excerpt");
     }
 
     @Test
@@ -195,7 +196,7 @@ class AgentExecutionTraceTest {
                 .isEqualTo(805L);
         assertThat(payload.path("components").path("traceSchema").asText())
                 .isEqualTo("agent-trace-v4");
-        assertThat(payload.toString()).doesNotContain("private question", "private page");
+        assertThat(payload.toString()).contains("private question", "private page");
     }
 
     @Test
@@ -243,6 +244,115 @@ class AgentExecutionTraceTest {
     }
 
     @Test
+    void adminTraceCapturesReplayableTurnLlmToolAndFinalDeliveryContent() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        trace.recordTurnContext(
+                "原始问题 https://example.com/post Authorization=Bearer turn-secret",
+                "post:42 页面正文",
+                "deepseek-chat",
+                "candidate");
+        trace.recordLlmCall(
+                0,
+                "LOOP_DECISION",
+                "deepseek-chat",
+                "ERROR",
+                "LLM_ERROR",
+                1,
+                9_000,
+                8_000,
+                1_000,
+                20,
+                10,
+                null,
+                new AgentExecutionTrace.LlmExchange(
+                        "system prompt Cookie=sid-secret",
+                        "user prompt with full history",
+                        "raw model output",
+                        "java.lang.IllegalStateException",
+                        "upstream failed access_token=llm-secret"));
+        AgentToolResult result = new AgentToolResult(
+                "raw tool output",
+                AgentToolResult.Status.SUCCESS,
+                "",
+                AgentToolDiagnostics.fallback("article_rag", "raw tool output"));
+        trace.recordToolCall(
+                0,
+                "article_rag",
+                12,
+                8_000,
+                7_900,
+                result,
+                "{\"query\":\"原始问题\",\"_userQuestion\":\"完整内部问题\"}",
+                "最终进入 Observe 的内容");
+        trace.terminateFinalAnswer("最终交付 answer");
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+        JsonNode turnContext = payload.path("events").path(0).path("details");
+        JsonNode llm = payload.path("events").path(1).path("details");
+        JsonNode tool = payload.path("events").path(2).path("details");
+        JsonNode terminal = payload.path("events").path(3).path("details");
+
+        assertThat(turnContext.path("question").path("text").asText())
+                .contains("原始问题", "https://example.com/post")
+                .doesNotContain("turn-secret");
+        assertThat(turnContext.path("pageContext").path("text").asText()).isEqualTo("post:42 页面正文");
+        assertThat(llm.path("systemPrompt").path("text").asText())
+                .contains("system prompt").doesNotContain("sid-secret");
+        assertThat(llm.path("userPrompt").path("text").asText()).isEqualTo("user prompt with full history");
+        assertThat(llm.path("rawOutput").path("text").asText()).isEqualTo("raw model output");
+        assertThat(llm.path("failureClass").path("text").asText())
+                .isEqualTo("java.lang.IllegalStateException");
+        assertThat(llm.path("failureMessage").path("text").asText())
+                .contains("upstream failed").doesNotContain("llm-secret");
+        assertThat(tool.path("input").path("text").asText())
+                .contains("_userQuestion", "完整内部问题");
+        assertThat(tool.path("observation").path("text").asText())
+                .isEqualTo("最终进入 Observe 的内容");
+        assertThat(terminal.path("answer").path("text").asText()).isEqualTo("最终交付 answer");
+        assertThat(payload.path("capture").path("level").asText()).isEqualTo("ADMIN_FULL");
+        assertThat(payload.path("capture").path("policyVersion").asText())
+                .isEqualTo("trace-admin-full-v1");
+        assertThat(payload.path("capture").path("maxPerFieldChars").asInt()).isEqualTo(131_072);
+        assertThat(payload.path("capture").path("maxCapturedChars").asInt()).isEqualTo(2_097_152);
+        assertThat(payload.path("capture").path("capturedChars").asInt()).isPositive();
+        assertThat(payload.path("capture").path("redactions").asInt()).isGreaterThanOrEqualTo(3);
+    }
+
+    @Test
+    void adminTraceEnforcesPerFieldAndWholeTurnCaptureBudgetsWithExplicitMetadata() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        String oversized = "x".repeat(200_000);
+
+        for (int index = 0; index < 20; index++) {
+            trace.recordLlmCall(
+                    index,
+                    "LOOP_DECISION",
+                    "model",
+                    "SUCCESS",
+                    "",
+                    1,
+                    0,
+                    0,
+                    1,
+                    oversized.length() * 3,
+                    oversized.length(),
+                    null,
+                    new AgentExecutionTrace.LlmExchange(oversized, oversized, oversized, "", ""));
+        }
+
+        JsonNode payload = objectMapper.valueToTree(trace.toPayloadMap());
+        JsonNode capture = payload.path("capture");
+        JsonNode firstDetails = payload.path("events").path(0).path("details");
+
+        assertThat(firstDetails.path("systemPrompt").path("text").asText()).hasSize(131_072);
+        assertThat(firstDetails.path("systemPrompt").path("sourceChars").asInt()).isEqualTo(200_000);
+        assertThat(firstDetails.path("systemPrompt").path("truncated").asBoolean()).isTrue();
+        assertThat(capture.path("capturedChars").asLong()).isLessThanOrEqualTo(2_097_152L);
+        assertThat(capture.path("truncated").asBoolean()).isTrue();
+        assertThat(capture.path("truncatedFields").asInt()).isPositive();
+    }
+
+    @Test
     void recordsAllToolStatusesDiagnosticsAndLegacySuccess() {
         AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
         int index = 0;
@@ -258,7 +368,14 @@ class AgentExecutionTraceTest {
                     status == AgentToolResult.Status.TIMEOUT,
                     2,
                     List.of("post:1", "post:2"),
-                    status == AgentToolResult.Status.SUCCESS ? "" : "TOOL_" + status.name());
+                    status == AgentToolResult.Status.SUCCESS ? "" : "TOOL_" + status.name(),
+                    Map.of(
+                            "requestedUrl", "https://example.com/article",
+                            "httpStatus", 200,
+                            "tokenBudget", 2_048,
+                            "requestContext", "c".repeat(600),
+                            "authorization", "Bearer trace-secret",
+                            "redirectChain", List.of("https://example.com/article")));
             AgentToolResult result = new AgentToolResult(
                     "raw observation must not be copied",
                     status,
@@ -293,6 +410,16 @@ class AgentExecutionTraceTest {
             assertThat(event.path("details").path("outputChars").asInt()).isEqualTo(14);
             assertThat(event.path("details").path("resultCount").asInt()).isEqualTo(2);
             assertThat(event.path("details").path("selectedIds")).hasSize(2);
+            assertThat(event.path("details").path("attributes").path("requestedUrl").asText())
+                    .isEqualTo("https://example.com/article");
+            assertThat(event.path("details").path("attributes").path("httpStatus").asInt())
+                    .isEqualTo(200);
+            assertThat(event.path("details").path("attributes").path("tokenBudget").asInt())
+                    .isEqualTo(2_048);
+            assertThat(event.path("details").path("attributes").path("requestContext").asText())
+                    .hasSize(600);
+            assertThat(event.path("details").path("attributes").path("authorization").asText())
+                    .isEqualTo("[REDACTED]");
         }
         assertThat(calls.path(5).path("success").asBoolean()).isTrue();
         assertThat(calls.path(5).path("status").asText()).isEqualTo("SUCCESS");
@@ -300,6 +427,37 @@ class AgentExecutionTraceTest {
         assertThat(calls.path(5).path("input_summary").asText()).startsWith("sha256=");
         assertThat(calls.path(5).path("observation_summary").asText()).startsWith("sha256=");
         assertThat(payload.toString()).doesNotContain("raw observation must not be copied", "secret=input");
+    }
+
+    @Test
+    void toolEventPreservesOrdinarySanitizedInputUrlWhileFilteringCredentials() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
+        AgentToolDiagnostics diagnostics = new AgentToolDiagnostics(
+                "web_fetch",
+                "jdk-http-client",
+                "public-web",
+                Map.of("url", "https://alice:uri-secret@example.com/article?topic=keep&token=query-secret"),
+                "fetched",
+                "a".repeat(64),
+                7,
+                false,
+                1,
+                List.of(),
+                "");
+
+        trace.recordToolCall(
+                0,
+                "web_fetch",
+                10,
+                1_000,
+                990,
+                new AgentToolResult("fetched", AgentToolResult.Status.SUCCESS, "", diagnostics));
+
+        JsonNode sanitizedInput = objectMapper.valueToTree(trace.toPayloadMap())
+                .path("events").path(0).path("details").path("sanitizedInput");
+        assertThat(sanitizedInput.path("url").asText())
+                .isEqualTo("https://[REDACTED]@example.com/article?topic=keep&token=[REDACTED]");
+        assertThat(sanitizedInput.toString()).doesNotContain("alice", "uri-secret", "query-secret");
     }
 
     @Test
@@ -388,7 +546,7 @@ class AgentExecutionTraceTest {
         assertThat(events).extracting(event -> event.path("phase").asText()).containsOnly(
                 "accepted", "skill", "plan", "retrieval", "validation", "memory", "delivery");
         assertThat(objectMapper.valueToTree(trace.toPayloadMap()).toString())
-                .doesNotContain("private question", "private page", "private final answer");
+                .contains("private question", "private page", "private final answer");
     }
 
     @Test
@@ -410,8 +568,8 @@ class AgentExecutionTraceTest {
         JsonNode privacy = payload.path("privacy");
 
         assertThat(payload.path("events")).hasSize(256);
-        assertThat(privacy.path("captureLevel").asText()).isEqualTo("STANDARD");
-        assertThat(privacy.path("policyVersion").asText()).isEqualTo("trace-standard-v1");
+        assertThat(privacy.path("captureLevel").asText()).isEqualTo("ADMIN_FULL");
+        assertThat(privacy.path("policyVersion").asText()).isEqualTo("trace-admin-full-v1");
         assertThat(privacy.path("contentBounded").asBoolean()).isTrue();
         assertThat(privacy.path("maxInputStringChars").asInt())
                 .isEqualTo(AgentTraceSanitizer.MAX_INPUT_STRING_CHARS);

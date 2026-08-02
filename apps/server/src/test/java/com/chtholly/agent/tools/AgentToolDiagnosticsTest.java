@@ -1,5 +1,6 @@
 package com.chtholly.agent.tools;
 
+import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.config.BangumiDomainConfig;
 import com.chtholly.agent.observability.AgentToolDiagnostics;
@@ -9,6 +10,7 @@ import com.chtholly.search.service.SearchService;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -17,6 +19,49 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AgentToolDiagnosticsTest {
+
+    @Test
+    void structuredAttributesKeepHttpBackgroundButRedactCredentials() {
+        AgentToolDiagnostics diagnostics = AgentToolDiagnostics.fallback("web_fetch", "page")
+                .withAttributes(Map.of(
+                        "requestedUrl", "https://example.com/review",
+                        "tokenBudget", 2_048,
+                        "redirectChain", List.of(Map.of(
+                                "status", 302,
+                                "url", "https://example.com/final")),
+                        "resolvedAddresses", List.of("93.184.216.34"),
+                        "authorization", "Bearer private"));
+
+        assertThat(diagnostics.attributes())
+                .containsEntry("requestedUrl", "https://example.com/review")
+                .containsEntry("tokenBudget", 2_048)
+                .containsEntry("authorization", "[REDACTED]");
+        assertThat(diagnostics.attributes().get("redirectChain").toString())
+                .contains("302", "https://example.com/final");
+        assertThat(diagnostics.attributes().get("resolvedAddresses").toString())
+                .contains("93.184.216.34");
+    }
+
+    @Test
+    void standardDiagnosticsRedactInfrastructureUserInfoFromInputAndOutputPreview() {
+        AgentToolDiagnostics diagnostics = AgentToolDiagnostics.standard(
+                "database_probe",
+                Map.of(
+                        "endpoint", new ParamDef("Database endpoint", String.class, true),
+                        "documentation", new ParamDef("Documentation URL", String.class, false)),
+                Map.of(
+                        "endpoint", "redis://default:redis-secret@cache.internal:6379/0",
+                        "documentation", "https://example.com/database/setup"),
+                "probe result postgresql://db-user:pg-secret@db.internal/app remains readable");
+
+        assertThat(diagnostics.sanitizedInput())
+                .containsEntry("endpoint", "redis://[REDACTED]@cache.internal:6379/0")
+                .containsEntry("documentation", "https://example.com/database/setup");
+        assertThat(diagnostics.outputPreview())
+                .contains("probe result", "postgresql://[REDACTED]@db.internal/app", "remains readable")
+                .doesNotContain("db-user", "pg-secret");
+        assertThat(diagnostics.toString()).doesNotContain("default", "redis-secret", "db-user", "pg-secret");
+    }
 
     @Test
     void articleRagReportsMetadataActualBlocksAndOrderedUniqueIds() {

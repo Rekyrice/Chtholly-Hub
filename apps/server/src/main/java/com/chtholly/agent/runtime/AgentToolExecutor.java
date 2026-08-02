@@ -5,6 +5,7 @@ import com.chtholly.agent.AgentToolParamValidator;
 import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.config.AgentProperties;
+import com.chtholly.agent.evidence.Evidence;
 import com.chtholly.agent.observability.AgentToolDiagnostics;
 import com.chtholly.agent.observability.AgentTraceSanitizer;
 import jakarta.annotation.PreDestroy;
@@ -14,6 +15,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -110,11 +114,14 @@ public class AgentToolExecutor {
         }
 
         Duration timeout = effectiveTimeout(turnRemainder);
-        Future<String> future = executor.submit(() -> tool.execute(input, userId));
+        Future<AgentToolOutput> future = executor.submit(() -> tool.executeDetailed(input, userId));
         try {
-            return result(tool, parameterSchema, input,
-                    future.get(timeout.toNanos(), TimeUnit.NANOSECONDS),
-                    AgentToolResult.Status.SUCCESS, "");
+            AgentToolOutput output = future.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
+            if (output == null) {
+                output = new AgentToolOutput("");
+            }
+            return result(tool, parameterSchema, input, output.observation(),
+                    AgentToolResult.Status.SUCCESS, "", output.evidence());
         } catch (TimeoutException e) {
             future.cancel(true);
             log.warn("Tool {} execution timed out (>{}ms)", safeToolName(tool), timeout.toMillis());
@@ -122,6 +129,25 @@ public class AgentToolExecutor {
                     AgentToolResult.Status.TIMEOUT, TOOL_TIMEOUT);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (cause instanceof AgentToolExecutionException controlledFailure) {
+                log.warn("Tool {} execution rejected ({})",
+                        safeToolName(tool), controlledFailure.errorCode());
+                Map<String, Object> controlledDiagnostics = new LinkedHashMap<>(
+                        controlledFailure.diagnosticAttributes());
+                if (controlledFailure.getCause() != null) {
+                    failureDiagnostics(controlledFailure.getCause()).forEach(
+                            controlledDiagnostics::putIfAbsent);
+                }
+                return result(
+                        tool,
+                        parameterSchema,
+                        input,
+                        AgentTraceSanitizer.safeMessage(controlledFailure.userMessage()),
+                        AgentToolResult.Status.ERROR,
+                        controlledFailure.errorCode(),
+                        List.of(),
+                        controlledDiagnostics);
+            }
             String rawMessage = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
             String message = AgentTraceSanitizer.safeMessage(rawMessage);
             log.warn("Tool {} execution failed ({})", safeToolName(tool), cause.getClass().getSimpleName());
@@ -130,7 +156,7 @@ public class AgentToolExecutor {
                     "message",
                     message);
             return result(tool, parameterSchema, input, observation,
-                    AgentToolResult.Status.ERROR, TOOL_EXECUTION_ERROR);
+                    AgentToolResult.Status.ERROR, TOOL_EXECUTION_ERROR, List.of(), failureDiagnostics(cause));
         } catch (InterruptedException e) {
             future.cancel(true);
             log.warn("Tool {} execution interrupted", safeToolName(tool));
@@ -147,6 +173,29 @@ public class AgentToolExecutor {
             String observation,
             AgentToolResult.Status status,
             String errorCode) {
+        return result(tool, parameterSchema, input, observation, status, errorCode, List.of());
+    }
+
+    private AgentToolResult result(
+            AgentTool tool,
+            Map<String, ParamDef> parameterSchema,
+            Map<String, Object> input,
+            String observation,
+            AgentToolResult.Status status,
+            String errorCode,
+            List<Evidence> evidence) {
+        return result(tool, parameterSchema, input, observation, status, errorCode, evidence, Map.of());
+    }
+
+    private AgentToolResult result(
+            AgentTool tool,
+            Map<String, ParamDef> parameterSchema,
+            Map<String, Object> input,
+            String observation,
+            AgentToolResult.Status status,
+            String errorCode,
+            List<Evidence> evidence,
+            Map<String, Object> diagnosticAttributes) {
         AgentToolDiagnostics diagnostics = null;
         Future<AgentToolDiagnostics> diagnosticsFuture = null;
         try {
@@ -168,7 +217,25 @@ public class AgentToolExecutor {
             diagnostics = fallbackDiagnostics(tool, parameterSchema, input, observation);
         }
         diagnostics = diagnostics.withErrorCode(errorCode);
-        return new AgentToolResult(observation, status, errorCode, diagnostics);
+        if (diagnosticAttributes != null && !diagnosticAttributes.isEmpty()) {
+            Map<String, Object> mergedAttributes = new LinkedHashMap<>(diagnostics.attributes());
+            mergedAttributes.putAll(diagnosticAttributes);
+            diagnostics = diagnostics.withAttributes(mergedAttributes);
+        }
+        return new AgentToolResult(observation, status, errorCode, diagnostics, evidence);
+    }
+
+    private Map<String, Object> failureDiagnostics(Throwable failure) {
+        List<Map<String, Object>> chain = new ArrayList<>();
+        Throwable current = failure;
+        for (int depth = 0; current != null && depth < 8; depth++) {
+            Map<String, Object> cause = new LinkedHashMap<>();
+            cause.put("class", current.getClass().getName());
+            cause.put("message", current.getMessage() == null ? "" : current.getMessage());
+            chain.add(cause);
+            current = current.getCause();
+        }
+        return Map.of("failureChain", chain);
     }
 
     private AgentToolDiagnostics fallbackDiagnostics(
