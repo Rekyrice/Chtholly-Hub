@@ -4,6 +4,7 @@ import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.memory.AgentContextUtil;
+import com.chtholly.agent.observability.AgentToolDiagnostics;
 import com.chtholly.bangumi.model.BangumiSubjectRow;
 import com.chtholly.bangumi.service.BangumiService;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
 /** Bangumi subject search tool backed by local cache and API fallback. */
@@ -25,6 +27,12 @@ import java.util.stream.Collectors;
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class BangumiSearchTool implements AgentTool {
+
+    private static final int MAX_DIAGNOSTIC_OBSERVATION_CHARS = 65_536;
+    private static final Pattern SUBJECT_ITEM = Pattern.compile(
+            "(?m)^- 「[^\\r\\n]{1,500}」 \\[Bangumi ([0-9]{1,20})][ \\t]*$");
+    private static final Pattern SERIES_COUNT = Pattern.compile(
+            "(?m)^共找到[ \\t]*([0-9]{1,9})[ \\t]*部[^\\r\\n]*$");
 
     private final BangumiService bangumiService;
     private final AgentDomainConfig agentDomainConfig;
@@ -45,6 +53,27 @@ public class BangumiSearchTool implements AgentTool {
                 "keyword", ParamDef.string(
                         agentDomainConfig.bangumi().keywordParam(), true, 1, 120)
         );
+    }
+
+    @Override
+    public AgentToolDiagnostics traceDiagnostics(Map<String, Object> input, String observation) {
+        AgentToolDiagnostics base = AgentTool.super.traceDiagnostics(input, observation);
+        String bounded = boundedObservation(observation);
+        Matcher idMatcher = SUBJECT_ITEM.matcher(bounded);
+        List<String> selectedIds = new ArrayList<>();
+        int markerCount = 0;
+        while (idMatcher.find()) {
+            markerCount++;
+            selectedIds.add(idMatcher.group(1));
+        }
+        Integer resultCount = null;
+        if (markerCount > 0) {
+            Matcher seriesMatcher = SERIES_COUNT.matcher(bounded);
+            resultCount = seriesMatcher.find()
+                    ? Integer.valueOf(seriesMatcher.group(1))
+                    : markerCount;
+        }
+        return diagnostics(base, resultCount, selectedIds);
     }
 
     @Override
@@ -228,5 +257,32 @@ public class BangumiSearchTool implements AgentTool {
             case 6 -> agentDomainConfig.bangumi().realType();
             default -> agentDomainConfig.bangumi().fallbackTypePrefix() + type;
         };
+    }
+
+    private String boundedObservation(String observation) {
+        if (observation == null) {
+            return "";
+        }
+        return observation.length() <= MAX_DIAGNOSTIC_OBSERVATION_CHARS
+                ? observation
+                : observation.substring(0, MAX_DIAGNOSTIC_OBSERVATION_CHARS);
+    }
+
+    private AgentToolDiagnostics diagnostics(
+            AgentToolDiagnostics base,
+            Integer resultCount,
+            List<String> selectedIds) {
+        return new AgentToolDiagnostics(
+                "subject_search",
+                "bangumi",
+                "local_first_api_fallback",
+                base.sanitizedInput(),
+                base.outputPreview(),
+                base.outputSha256(),
+                base.outputChars(),
+                base.outputTruncated(),
+                resultCount,
+                selectedIds,
+                base.errorCode());
     }
 }

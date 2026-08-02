@@ -2,6 +2,7 @@ package com.chtholly.agent.tools;
 
 import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.ParamDef;
+import com.chtholly.agent.observability.AgentToolDiagnostics;
 import com.chtholly.bangumi.service.BangumiService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -22,8 +23,14 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class BangumiPersonWorksTool implements AgentTool {
 
+    private static final int MAX_DIAGNOSTIC_OBSERVATION_CHARS = 65_536;
+
     private static final Pattern WORK_TITLE = Pattern.compile(
             "《([^》]+)》|「([^」]+)」|“([^”]+)”|\"([^\"]+)\"");
+    private static final Pattern WORK_COUNT = Pattern.compile(
+            "参与作品（[^\\r\\n]{0,128}共[ \\t]*([0-9]{1,9})[ \\t]*部）");
+    private static final Pattern WORK_ITEM = Pattern.compile(
+            "(?m)^- 《[^\\r\\n]{1,1000}\\[Bangumi ([0-9]{1,20})][ \\t]*$");
 
     private final BangumiService bangumiService;
 
@@ -48,6 +55,25 @@ public class BangumiPersonWorksTool implements AgentTool {
                 "work_title", ParamDef.string("用于反查作者的作品名", false, 1, 120),
                 "work_type", ParamDef.enumString(
                         "作品类型", false, List.of("book", "anime", "all")));
+    }
+
+    @Override
+    public AgentToolDiagnostics traceDiagnostics(Map<String, Object> input, String observation) {
+        AgentToolDiagnostics base = AgentTool.super.traceDiagnostics(input, observation);
+        String bounded = boundedObservation(observation);
+        Matcher countMatcher = WORK_COUNT.matcher(bounded);
+        long total = 0;
+        boolean recognized = false;
+        while (countMatcher.find()) {
+            recognized = true;
+            total = Math.min(Integer.MAX_VALUE, total + Integer.parseInt(countMatcher.group(1)));
+        }
+        List<String> selectedIds = new ArrayList<>();
+        Matcher itemMatcher = WORK_ITEM.matcher(bounded);
+        while (itemMatcher.find()) {
+            selectedIds.add(itemMatcher.group(1));
+        }
+        return diagnostics(base, recognized ? (int) total : null, selectedIds);
     }
 
     @Override
@@ -123,5 +149,32 @@ public class BangumiPersonWorksTool implements AgentTool {
 
     private String str(Object v) {
         return v == null ? null : String.valueOf(v).trim();
+    }
+
+    private String boundedObservation(String observation) {
+        if (observation == null) {
+            return "";
+        }
+        return observation.length() <= MAX_DIAGNOSTIC_OBSERVATION_CHARS
+                ? observation
+                : observation.substring(0, MAX_DIAGNOSTIC_OBSERVATION_CHARS);
+    }
+
+    private AgentToolDiagnostics diagnostics(
+            AgentToolDiagnostics base,
+            Integer resultCount,
+            List<String> selectedIds) {
+        return new AgentToolDiagnostics(
+                "person_works",
+                "bangumi",
+                "bounded_api_lookup",
+                base.sanitizedInput(),
+                base.outputPreview(),
+                base.outputSha256(),
+                base.outputChars(),
+                base.outputTruncated(),
+                resultCount,
+                selectedIds,
+                base.errorCode());
     }
 }

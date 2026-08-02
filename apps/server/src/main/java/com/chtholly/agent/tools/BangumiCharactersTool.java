@@ -4,6 +4,7 @@ import com.chtholly.agent.AgentTool;
 import com.chtholly.agent.ParamDef;
 import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.memory.AgentContextUtil;
+import com.chtholly.agent.observability.AgentToolDiagnostics;
 import com.chtholly.bangumi.service.BangumiService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,12 +16,20 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Bangumi 条目角色查询：主要人物、宿舍伙伴等登场角色。 */
 @Component
 @ConditionalOnProperty(name = "llm.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class BangumiCharactersTool implements AgentTool {
+
+    private static final int MAX_DIAGNOSTIC_OBSERVATION_CHARS = 65_536;
+    private static final Pattern RESULT_COUNT = Pattern.compile(
+            "登场角色（共[ \\t]*([0-9]{1,9})[ \\t]*个）");
+    private static final Pattern SUBJECT_HEADER = Pattern.compile(
+            "(?m)^条目：《[^\\r\\n]{0,500}》\\[Bangumi ([0-9]{1,20})][ \\t]*$");
 
     private final BangumiService bangumiService;
     private final AgentDomainConfig agentDomainConfig;
@@ -43,6 +52,22 @@ public class BangumiCharactersTool implements AgentTool {
         return Map.of(
                 "keyword", ParamDef.string(
                         "条目名或系列简称；追问时可从对话历史推断", false, 1, 120));
+    }
+
+    @Override
+    public AgentToolDiagnostics traceDiagnostics(Map<String, Object> input, String observation) {
+        AgentToolDiagnostics base = AgentTool.super.traceDiagnostics(input, observation);
+        String bounded = boundedObservation(observation);
+        Matcher countMatcher = RESULT_COUNT.matcher(bounded);
+        Integer resultCount = countMatcher.find() ? Integer.valueOf(countMatcher.group(1)) : null;
+        List<String> selectedIds = new ArrayList<>();
+        if (resultCount != null) {
+            Matcher subjectMatcher = SUBJECT_HEADER.matcher(bounded);
+            if (subjectMatcher.find()) {
+                selectedIds.add(subjectMatcher.group(1));
+            }
+        }
+        return diagnostics(base, resultCount, selectedIds);
     }
 
     @Override
@@ -84,5 +109,32 @@ public class BangumiCharactersTool implements AgentTool {
             candidates.add(title);
         }
         return new ArrayList<>(candidates);
+    }
+
+    private String boundedObservation(String observation) {
+        if (observation == null) {
+            return "";
+        }
+        return observation.length() <= MAX_DIAGNOSTIC_OBSERVATION_CHARS
+                ? observation
+                : observation.substring(0, MAX_DIAGNOSTIC_OBSERVATION_CHARS);
+    }
+
+    private AgentToolDiagnostics diagnostics(
+            AgentToolDiagnostics base,
+            Integer resultCount,
+            List<String> selectedIds) {
+        return new AgentToolDiagnostics(
+                "subject_characters",
+                "bangumi",
+                "local_subject_then_api",
+                base.sanitizedInput(),
+                base.outputPreview(),
+                base.outputSha256(),
+                base.outputChars(),
+                base.outputTruncated(),
+                resultCount,
+                selectedIds,
+                base.errorCode());
     }
 }
