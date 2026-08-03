@@ -1,9 +1,13 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AgentMessageList from "@/components/agent/AgentMessageList";
 import type { ChatMessage } from "@/lib/types/agent";
 
 vi.mock("@/lib/hooks/useMangaMessageScroll", () => ({ useMangaMessageScroll: vi.fn() }));
+
+afterEach(() => {
+  cleanup();
+});
 
 function rowFor(content: string) {
   const row = screen.getByText(content).closest(".agent-message-row");
@@ -146,6 +150,41 @@ describe("AgentMessageList compact assistant replies", () => {
 });
 
 describe("AgentMessageList rich assistant replies", () => {
+  it("does not create image requests from completed Markdown and keeps useful alt text", () => {
+    const message: ChatMessage = {
+      id: "remote-image-reply",
+      role: "assistant",
+      content: [
+        "![evidence diagram](https://tracker.example/private.png)",
+        "",
+        "- [source](https://example.com/source)",
+        "",
+        "| Field | Value |",
+        "| --- | --- |",
+        "| status | verified |",
+      ].join("\n"),
+    };
+
+    const { container } = render(
+      <AgentMessageList
+        messages={[message]}
+        busy={false}
+        showSteps={false}
+        liveSteps={[]}
+        rich
+      />,
+    );
+
+    expect(container.querySelector(".agent-rich-markdown img")).toBeNull();
+    expect(container).toHaveTextContent("evidence diagram");
+    expect(screen.getByRole("link", { name: "source" })).toHaveAttribute(
+      "href",
+      "https://example.com/source",
+    );
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("list")).toBeInTheDocument();
+  });
+
   it("keeps a rich reply as plain text while streaming and renders Markdown after completion", () => {
     const content = "- **证据一**\n- 证据二";
     const streamingMessage: ChatMessage = {

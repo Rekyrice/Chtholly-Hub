@@ -184,4 +184,19 @@ describe("PostQnA", () => {
     expect(screen.getByRole("list")).toBeInTheDocument();
     expect(screen.getByText("接受同伴的差异")).toBeInTheDocument();
   });
+
+  it("does not create image requests from a completed answer and keeps useful alt text", async () => {
+    qaStream.mockImplementation(() => completedAnswer(
+      "Answer ready.\n\n![private chart](https://tracker.example/post-answer.png)",
+    ));
+    const { container } = render(<PostQnA postId="42" />);
+
+    ask("请给我证据图");
+
+    await screen.findByText("Answer ready.");
+    await waitFor(() => expect(screen.getByPlaceholderText(/想问些什么呢/u)).toBeEnabled());
+    const answer = container.querySelector<HTMLElement>(".post-qna-turn__answer");
+    expect(answer?.querySelector("img")).toBeNull();
+    expect(answer).toHaveTextContent("private chart");
+  });
 });

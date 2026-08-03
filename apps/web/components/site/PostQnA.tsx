@@ -2,8 +2,7 @@
 
 import { Send, Sparkles } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeAgentMarkdown } from "@/components/agent/SafeAgentMarkdown";
 import { ChthollyIllustration } from "@/components/site/ChthollyIllustration";
 import { postAiService } from "@/lib/services/postAiService";
 import { cn } from "@/lib/utils";
@@ -136,9 +135,7 @@ export default function PostQnA({ postId }: PostQnAProps) {
                 )}
               >
                 {turn.status === "done" ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {turn.answer || "没有收到回答。"}
-                  </ReactMarkdown>
+                  <SafeAgentMarkdown content={turn.answer || "没有收到回答。"} />
                 ) : (
                   <span className="whitespace-pre-wrap">
                     {turn.answer || (turn.status === "streaming" ? "珂朵莉正在想……" : "没有收到回答。")}

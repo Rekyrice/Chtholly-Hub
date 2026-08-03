@@ -1,13 +1,12 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeAgentMarkdown } from "@/components/agent/SafeAgentMarkdown";
 import { cn } from "@/lib/utils";
 
 export function AgentRichMessage({ content }: { content: string }) {
   return (
     <div className="agent-rich-markdown text-sm leading-relaxed">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <SafeAgentMarkdown content={content} />
     </div>
   );
 }
