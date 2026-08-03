@@ -277,6 +277,7 @@ describe("useAgentWebSocket turn protocol", () => {
       role: "assistant",
       content: "当前最终回答",
       streaming: false,
+      completionState: "done",
     });
   });
 
@@ -359,6 +360,46 @@ describe("useAgentWebSocket turn protocol", () => {
       role: "system",
       content: "当前错误",
     });
+  });
+
+  it("preserves a partial assistant reply as interrupted when the current turn errors", async () => {
+    const { result } = renderAgentHook();
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    await act(async () => result.current.sendMessage("生成一半会失败的一轮"));
+    const { requestId } = sentChatPayload(sockets[0]);
+
+    act(() => {
+      sockets[0].receive({
+        type: "accepted",
+        requestId,
+        turnId: "turn-partial-error",
+        data: {},
+      });
+      sockets[0].receive({
+        type: "delta",
+        requestId,
+        turnId: "turn-partial-error",
+        data: { content: "- **尚未完成的回答" },
+      });
+      sockets[0].receive({
+        type: "error",
+        requestId,
+        turnId: "turn-partial-error",
+        data: { message: "当前错误" },
+      });
+    });
+
+    expect(result.current.busy).toBe(false);
+    expect(result.current.messages).toEqual([
+      expect.objectContaining({ role: "user", content: "生成一半会失败的一轮" }),
+      expect.objectContaining({
+        role: "assistant",
+        content: "- **尚未完成的回答",
+        streaming: false,
+        completionState: "interrupted",
+      }),
+      expect.objectContaining({ role: "system", content: "当前错误" }),
+    ]);
   });
 
   it("keeps cleared envelopes compatible without request and turn ids", async () => {
@@ -698,6 +739,7 @@ describe("useAgentWebSocket disconnect recovery", () => {
           role: "assistant",
           content: "已经收到的回答",
           streaming: false,
+          completionState: "interrupted",
         }),
         expect.objectContaining({
           role: "system",

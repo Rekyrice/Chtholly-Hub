@@ -181,7 +181,7 @@ export function useAgentWebSocket({
     setMessages((previous) => [
       ...previous.map((message) => (
         message.id === streamId
-          ? { ...message, streaming: false, steps }
+          ? { ...message, streaming: false, completionState: "interrupted" as const, steps }
           : message
       )),
       {
@@ -205,16 +205,17 @@ export function useAgentWebSocket({
     const steps = [...stepsRef.current];
     setLivePhase("error");
     setLastError(message);
-    if (streamId) {
-      setMessages((previous) => previous.filter((item) => item.id !== streamId));
-    }
     streamingIdRef.current = null;
     currentRequestIdRef.current = null;
     currentTurnIdRef.current = null;
     currentTurnSocketRef.current = null;
     busyRef.current = false;
     setMessages((previous) => [
-      ...previous,
+      ...previous.map((item) => (
+        item.id === streamId
+          ? { ...item, streaming: false, completionState: "interrupted" as const, steps }
+          : item
+      )),
       { id: `e-${Date.now()}`, role: "system", content: message, steps },
     ]);
     stepsRef.current = [];
@@ -332,10 +333,20 @@ export function useAgentWebSocket({
           streamId
             ? previous.map((message) =>
                 message.id === streamId
-                  ? { ...message, content, streaming: false, steps }
+                  ? { ...message, content, streaming: false, completionState: "done" as const, steps }
                   : message,
               )
-            : [...previous, { id: `a-${Date.now()}`, role: "assistant", content, steps }],
+            : [
+                ...previous,
+                {
+                  id: `a-${Date.now()}`,
+                  role: "assistant",
+                  content,
+                  streaming: false,
+                  completionState: "done" as const,
+                  steps,
+                },
+              ],
         );
         streamingIdRef.current = null;
         currentRequestIdRef.current = null;

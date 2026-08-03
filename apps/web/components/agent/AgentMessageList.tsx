@@ -48,6 +48,9 @@ function MessageBubble({
   const canCollapse =
     compactAssistantMessages && msg.content.length > 320;
   const collapsed = canCollapse && !expanded;
+  const renderRich = rich
+    && !msg.streaming
+    && msg.completionState !== "interrupted";
   const finishEntering = (event: React.AnimationEvent<HTMLDivElement>) => {
     if (event.currentTarget === event.target) setIsEntering(false);
   };
@@ -94,11 +97,11 @@ function MessageBubble({
         ref={isSpeaking ? bubbleRef : undefined}
         className={cn(
           "agent-bubble-assistant max-w-full text-sm leading-relaxed",
-          rich && !msg.streaming && "agent-bubble-assistant--rich",
+          renderRich && "agent-bubble-assistant--rich",
           isSpeaking && "agent-bubble-assistant--speaking",
         )}
       >
-        {rich && !msg.streaming ? (
+        {renderRich ? (
           <div
             className={cn(
               "agent-bubble-content",

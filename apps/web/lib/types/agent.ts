@@ -34,6 +34,8 @@ export interface ChatMessage {
   steps?: string[];
   /** 是否正在流式输出 */
   streaming?: boolean;
+  /** 助手回答的终态；旧消息未携带该字段时按正常完成兼容。 */
+  completionState?: "done" | "interrupted";
 }
 
 export type ProactiveNotificationItem = {

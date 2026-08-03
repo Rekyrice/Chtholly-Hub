@@ -184,6 +184,39 @@ describe("AgentMessageList rich assistant replies", () => {
     unmount();
   });
 
+  it("keeps an interrupted rich reply as plain text", () => {
+    const content = "- **尚未完成的证据";
+    const message: ChatMessage = {
+      id: "interrupted-rich-reply",
+      role: "assistant",
+      content,
+      streaming: false,
+      completionState: "interrupted",
+    };
+
+    const { container, unmount } = render(
+      <AgentMessageList
+        messages={[message]}
+        busy={false}
+        showSteps={false}
+        liveSteps={[]}
+        rich
+      />,
+    );
+
+    const bubble = container.querySelector<HTMLElement>(".agent-bubble-assistant");
+    const textContent = bubble?.textContent;
+    const hasRichClass = bubble?.classList.contains("agent-bubble-assistant--rich");
+    const list = bubble?.querySelector("ul");
+    const emphasis = bubble?.querySelector("strong");
+    unmount();
+
+    expect(textContent).toContain(content);
+    expect(hasRichClass).toBe(false);
+    expect(list).toBeNull();
+    expect(emphasis).toBeNull();
+  });
+
   it("does not turn raw script HTML into DOM when rendering completed Markdown", () => {
     const message: ChatMessage = {
       id: "safe-rich-reply",
