@@ -440,6 +440,9 @@ function TraceMetadataSection({ metadata }: { metadata: TraceMetadata }) {
               mono
             />
             <SummaryItem label="单轮预算" value={formatMs(metadata.turn.budgetMs)} />
+            {metadata.turn.maxSteps != null && (
+              <SummaryItem label="推理步数上限" value={`${metadata.turn.maxSteps} 步`} />
+            )}
             <SummaryItem
               label="客户端终态"
               value={`${metadata.turn.clientDeliveryStatus ?? "-"} / ${metadata.turn.clientTerminalType ?? "-"}`}

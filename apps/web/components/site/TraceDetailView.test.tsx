@@ -208,6 +208,7 @@ const nativeTrace = {
       chatSessionId: "room-session",
       connectionId: "connection-7",
       budgetMs: 30_000,
+      maxSteps: 4,
       timeoutStage: null,
       cancelled: false,
       clientDeliveryStatus: "DELIVERED",
@@ -326,6 +327,8 @@ describe("TraceDetailView", () => {
     expect(within(metadata).getByText(/查询《迷宫饭》的评分、集数、放送时间/)).toBeInTheDocument();
     expect(within(metadata).getByText(/正在陪读《吃掉红龙这件事/)).toBeInTheDocument();
     expect(within(metadata).getByText("room-session / connection-7")).toBeInTheDocument();
+    expect(within(metadata).getByText("推理步数上限")).toBeInTheDocument();
+    expect(within(metadata).getByText("4 步")).toBeInTheDocument();
     const steps = within(metadata).getByRole("region", { name: "Agent 循环步骤" });
     expect(within(steps).getByText("Step 1 · bangumi_search")).toBeInTheDocument();
     expect(within(steps).getByText("210ms / 35ms")).toBeInTheDocument();
@@ -418,6 +421,24 @@ describe("TraceDetailView", () => {
     expect(await screen.findByRole("article", { name: "工具 bangumi_search" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Trace 运行元数据" })).toBeInTheDocument();
     expect(screen.getByText("not_planned")).toBeInTheDocument();
+  });
+
+  it("keeps older trace metadata readable when max steps is absent", async () => {
+    traceMocks.detail.mockResolvedValueOnce({
+      ...nativeTrace,
+      correlationId: "native-without-max-steps",
+      phases: [],
+      metadata: {
+        ...nativeTrace.metadata,
+        turn: { ...nativeTrace.metadata.turn, maxSteps: undefined },
+      },
+    });
+
+    render(<TraceDetailView correlationId="native-without-max-steps" />);
+
+    const metadata = await screen.findByRole("region", { name: "Trace 运行元数据" });
+    expect(within(metadata).getByText("30.0s")).toBeInTheDocument();
+    expect(within(metadata).queryByText("推理步数上限")).not.toBeInTheDocument();
   });
 
   it("shows the current-post retrieval route even when no evidence was produced", async () => {

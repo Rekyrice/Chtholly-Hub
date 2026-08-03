@@ -165,6 +165,7 @@ class TraceQueryServiceTest {
                             "chatSessionId":"private-session",
                             "connectionId":"private-connection",
                             "budgetMs":30000,
+                            "maxSteps":4,
                             "timeoutStage":"",
                             "cancelled":false,
                             "clientDeliveryStatus":"DELIVERED",
@@ -304,6 +305,7 @@ class TraceQueryServiceTest {
                 .isEqualTo("SUCCESS_RESULTS");
         assertThat(metadata.path("turn").path("chatSessionId").asText()).isEqualTo("private-session");
         assertThat(metadata.path("turn").path("connectionId").asText()).isEqualTo("private-connection");
+        assertThat(metadata.path("turn").path("maxSteps").asInt()).isEqualTo(4);
         assertThat(metadata.path("toolPlan").path("effectiveTools").path(0).asText())
                 .isEqualTo("fulltext_search");
         assertThat(metadata.path("steps").path(0).path("stepIndex").asInt()).isZero();
@@ -456,6 +458,25 @@ class TraceQueryServiceTest {
         assertThat(detail.path("metadata").path("retrieval").path("evidence")).isEmpty();
         assertThat(detail.path("metadata").path("toolPlan").path("effectiveTools").isArray()).isTrue();
         assertThat(detail.path("metadata").path("toolPlan").path("effectiveTools")).isEmpty();
+    }
+
+    @Test
+    void getTraceKeepsOlderNativeTurnMetadataCompatibleWithoutMaxSteps() {
+        JsonNode detail = traceJson(
+                "native-without-max-steps",
+                "[]",
+                """
+                        {
+                          "components":{"traceSchema":"agent-trace-v4"},
+                          "turn":{"budgetMs":30000},
+                          "events":[]
+                        }
+                        """);
+
+        assertThat(detail.path("compatibility").asText()).isEqualTo("NATIVE_V4");
+        assertThat(detail.path("metadata").path("turn").path("budgetMs").asLong())
+                .isEqualTo(30_000L);
+        assertThat(detail.path("metadata").path("turn").has("maxSteps")).isFalse();
     }
 
     @Test

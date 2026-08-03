@@ -84,6 +84,7 @@ public record TraceMetadataDto(
             String chatSessionId,
             String connectionId,
             Long budgetMs,
+            Integer maxSteps,
             String timeoutStage,
             Boolean cancelled,
             String clientDeliveryStatus,

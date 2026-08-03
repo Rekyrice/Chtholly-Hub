@@ -49,6 +49,23 @@ class AgentExecutionTraceTest {
     }
 
     @Test
+    void effectiveStepBudgetCanOnlyBeNarrowedAndNeverDropsBelowOne() {
+        AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 10);
+
+        trace.limitMaxSteps(12);
+        assertThat(trace.getMaxSteps()).isEqualTo(10);
+
+        trace.limitMaxSteps(4);
+        trace.limitMaxSteps(6);
+        assertThat(trace.getMaxSteps()).isEqualTo(4);
+
+        trace.limitMaxSteps(0);
+        assertThat(trace.getMaxSteps()).isEqualTo(1);
+        assertThat(objectMapper.valueToTree(trace.toPayloadMap()).path("turn").path("maxSteps").asInt())
+                .isEqualTo(1);
+    }
+
+    @Test
     void recordToolCallUsesExplicitFailureStatusInsteadOfObservationText() {
         AgentExecutionTrace trace = new AgentExecutionTrace(42L, "ws-test", 5);
 

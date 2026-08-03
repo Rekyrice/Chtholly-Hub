@@ -147,6 +147,7 @@ export type TraceMetadata = {
     chatSessionId?: string | null;
     connectionId?: string | null;
     budgetMs?: number | null;
+    maxSteps?: number | null;
     timeoutStage?: string | null;
     cancelled?: boolean | null;
     clientDeliveryStatus?: string | null;

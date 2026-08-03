@@ -272,6 +272,12 @@ class ChthollyAgentTest {
         assertThat(request.historyBlock()).isEqualTo("history");
         assertThat(request.tools()).containsKey("search");
         assertThat(request.maxSteps()).isEqualTo(4);
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor =
+                ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        assertThat(traceCaptor.getValue().getMaxSteps()).isEqualTo(4);
+        assertThat(new ObjectMapper().valueToTree(traceCaptor.getValue().toPayloadMap())
+                .path("turn").path("maxSteps").asInt()).isEqualTo(4);
     }
 
     @Test
