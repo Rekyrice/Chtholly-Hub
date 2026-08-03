@@ -36,7 +36,8 @@ class PromptTailRendererTest {
                 5. 网页事实只能引用 web_fetch 分配的本轮 [E#]，无法抓取原文时应说明证据不足
                 6. 不要编造工具返回的数据，如实告诉用户查询结果
 
-                输出格式：只输出单个 JSON 对象；调用工具用 {"action":"工具名","input":{...}}，可以回答时用 {"action":"final","answer":"占位"}""");
+                输出格式：只输出单个 JSON 对象；调用工具用 {"action":"工具名","input":{...}}，可以回答时用 {"action":"final"}""")
+                .doesNotContain("{\"action\":\"final\",\"answer\"");
     }
 
     @Test
@@ -49,7 +50,8 @@ class PromptTailRendererTest {
                 .contains("## 工具使用准则")
                 .contains("每次只调用一个工具")
                 .contains("{\"action\":\"工具名\",\"input\":{...}}")
-                .contains("{\"action\":\"final\",\"answer\":\"占位\"}");
+                .contains("{\"action\":\"final\"}")
+                .doesNotContain("{\"action\":\"final\",\"answer\"");
     }
 
     @Test
@@ -61,7 +63,8 @@ class PromptTailRendererTest {
         assertThat(renderer.renderTools(brokenIterable))
                 .contains("## 可用工具")
                 .contains("## 工具使用准则")
-                .contains("{\"action\":\"final\",\"answer\":\"占位\"}");
+                .contains("{\"action\":\"final\"}")
+                .doesNotContain("{\"action\":\"final\",\"answer\"");
     }
 
     @Test

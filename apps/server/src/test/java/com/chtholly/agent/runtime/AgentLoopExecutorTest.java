@@ -95,9 +95,10 @@ class AgentLoopExecutorTest {
     }
 
     @Test
-    void finalActionReturnsReadyWithInitialTranscriptAndOnlyThinkEvent() throws Exception {
+    void standardFinalActionReturnsReadyWithInitialTranscriptAndOnlyThinkEvent() throws Exception {
+        String finalAction = "{\"action\":\"final\"}";
         when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
-                .thenReturn("{\"action\":\"final\",\"answer\":\"draft\"}");
+                .thenReturn(finalAction);
         AgentExecutionTrace trace = trace(3);
 
         AgentLoopResult result = executor.execute(
@@ -128,7 +129,7 @@ class AgentLoopExecutorTest {
         assertThat(llmCall.path("input_chars").asInt())
                 .isEqualTo("system prompt".length() + expectedUserPrompt.length());
         assertThat(llmCall.path("output_chars").asInt())
-                .isEqualTo("{\"action\":\"final\",\"answer\":\"draft\"}".length());
+                .isEqualTo(finalAction.length());
         assertThat(llmEvent.path("phase").asText()).isEqualTo("llm");
         assertThat(llmEvent.path("details").path("purpose").asText()).isEqualTo("LOOP_DECISION");
         assertThat(llmEvent.path("details").path("systemPrompt").path("text").asText())
@@ -136,7 +137,7 @@ class AgentLoopExecutorTest {
         assertThat(llmEvent.path("details").path("userPrompt").path("text").asText())
                 .isEqualTo(expectedUserPrompt);
         assertThat(llmEvent.path("details").path("rawOutput").path("text").asText())
-                .isEqualTo("{\"action\":\"final\",\"answer\":\"draft\"}");
+                .isEqualTo(finalAction);
     }
 
     @Test

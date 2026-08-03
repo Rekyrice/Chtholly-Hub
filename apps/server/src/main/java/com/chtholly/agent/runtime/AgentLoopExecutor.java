@@ -686,8 +686,7 @@ public class AgentLoopExecutor {
             throw new IllegalArgumentException("missing action");
         }
         JsonNode input = node.path("input");
-        String answer = node.path("answer").asText(null);
-        return new AgentAction(action, input.isMissingNode() ? null : input, answer);
+        return new AgentAction(action, input.isMissingNode() ? null : input);
     }
 
     @SuppressWarnings("unchecked")

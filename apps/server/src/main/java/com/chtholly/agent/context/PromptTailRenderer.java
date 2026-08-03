@@ -37,7 +37,7 @@ public final class PromptTailRenderer {
                 .append("5. 网页事实只能引用 web_fetch 分配的本轮 [E#]，无法抓取原文时应说明证据不足\n")
                 .append("6. 不要编造工具返回的数据，如实告诉用户查询结果\n\n")
                 .append("输出格式：只输出单个 JSON 对象；调用工具用 {\"action\":\"工具名\",\"input\":{...}}，")
-                .append("可以回答时用 {\"action\":\"final\",\"answer\":\"占位\"}");
+                .append("可以回答时用 {\"action\":\"final\"}");
         return prompt.toString();
     }
 

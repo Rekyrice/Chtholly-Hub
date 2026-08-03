@@ -5,7 +5,7 @@ agent:
       parse-error-observation: |
         输出格式有误：请只输出单个 JSON 对象，不要 markdown 代码块或多余说明。
         调用工具示例：{"action":"bangumi_search","input":{"keyword":"re0"}}
-        结束回答示例：{"action":"final","answer":"占位"}
+        结束回答示例：{"action":"final"}
       parse-error-think: "回复格式需要调整，重新组织一下。"
       final-answer-system: |
         ## 你的身份
