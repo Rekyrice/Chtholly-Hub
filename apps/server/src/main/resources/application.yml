@@ -145,7 +145,7 @@ agent:
   model: ${AGENT_MODEL:deepseek-chat}
   llm-timeout-seconds: ${AGENT_LLM_TIMEOUT_SECONDS:30}
   max-response-chars: ${AGENT_MAX_RESPONSE_CHARS:2000}
-  max-steps: ${AGENT_MAX_STEPS:5}
+  max-steps: ${AGENT_MAX_STEPS:10}
   memory-max-turns: ${AGENT_MEMORY_MAX_TURNS:20}
   memory-ttl-minutes: ${AGENT_MEMORY_TTL_MINUTES:120}
   tool-timeout-seconds: ${AGENT_TOOL_TIMEOUT_SECONDS:30}

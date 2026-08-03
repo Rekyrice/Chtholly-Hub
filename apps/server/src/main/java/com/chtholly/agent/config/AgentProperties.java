@@ -14,7 +14,7 @@ public class AgentProperties {
     /** 流式最终回答最大字符数（超出截断）。 */
     private int maxResponseChars = 2000;
     /** ReAct 最大步数，防止无限循环。 */
-    private int maxSteps = 5;
+    private int maxSteps = 10;
     /** 会话记忆保留的最大轮次（user+assistant 各算一条）。 */
     private int memoryMaxTurns = 20;
     /** 会话记忆 Redis TTL（分钟，滑动过期：每次读写刷新）。 */

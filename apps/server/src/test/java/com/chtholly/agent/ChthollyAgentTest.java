@@ -276,6 +276,7 @@ class ChthollyAgentTest {
 
     @Test
     void selectedReadOnlySkillReceivesPageContextAndNarrowsRuntimeTools() {
+        properties.setMaxSteps(10);
         SkillDefinition definition = skillDefinition();
         when(memory.formatForPrompt()).thenReturn("");
         when(skillRegistry.enabled()).thenReturn(List.of(definition));
