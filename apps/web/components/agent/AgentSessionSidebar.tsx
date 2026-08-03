@@ -20,6 +20,7 @@ export default function AgentSessionSidebar({
   const {
     sessions,
     activeSessionId,
+    busy,
     switchSession,
     createSession,
     renameSession,
@@ -69,6 +70,7 @@ export default function AgentSessionSidebar({
                 onSelect={() => switchSession(session.id)}
                 onRename={(title) => renameSession(session.id, title)}
                 onDelete={() => deleteSession(session.id)}
+                deleteDisabled={session.id === activeSessionId && busy}
               />
             ))}
           </ul>

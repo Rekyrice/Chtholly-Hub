@@ -131,10 +131,8 @@ describe("useAgentSessions article context", () => {
       const { result } = renderHook(() => useAgentSessions());
       await waitFor(() => expect(result.current.hydrated).toBe(true));
 
-      act(() => result.current.setMessages(partialMessages));
-      expect(result.current.messages.at(-1)).toMatchObject({ streaming: true });
-
       act(() => {
+        result.current.setMessages(partialMessages);
         if (migration === "switch") result.current.switchSession("target-session");
         if (migration === "create") result.current.createSession();
         if (migration === "context") {
@@ -158,18 +156,81 @@ describe("useAgentSessions article context", () => {
     },
   );
 
+  it.each(["switch", "create", "context"] as const)(
+    "keeps a completed reply done during a same-batch %s migration",
+    async (migration) => {
+      seedSessions();
+      const { result } = renderHook(() => useAgentSessions());
+      await waitFor(() => expect(result.current.hydrated).toBe(true));
+      const completedMessages = [
+        { id: "done-user", role: "user" as const, content: "已完成问题" },
+        {
+          id: "done-assistant",
+          role: "assistant" as const,
+          content: "**完整回答**",
+          streaming: false,
+          completionState: "done" as const,
+        },
+      ];
+
+      act(() => {
+        result.current.setMessages(completedMessages);
+        if (migration === "switch") result.current.switchSession("target-session");
+        if (migration === "create") result.current.createSession();
+        if (migration === "context") {
+          result.current.activateContextSession({
+            contextKey: "post:done-context",
+            contextTitle: "已完成上下文",
+          });
+        }
+      });
+
+      await waitFor(() => {
+        const source = storedSessions().find((session) => session.id === "source-session");
+        expect(source?.messages.at(-1)).toMatchObject({
+          id: "done-assistant",
+          streaming: false,
+          completionState: "done",
+        });
+      });
+    },
+  );
+
   it("moves to a clean fallback when deleting an active session with a partial reply", async () => {
     seedSessions();
     const { result } = renderHook(() => useAgentSessions());
     await waitFor(() => expect(result.current.hydrated).toBe(true));
-    act(() => result.current.setMessages(partialMessages));
-
-    act(() => result.current.deleteSession("source-session"));
+    act(() => {
+      result.current.setMessages(partialMessages);
+      result.current.deleteSession("source-session");
+    });
 
     expect(result.current.activeSessionId).toBe("target-session");
     expect(result.current.messages).toEqual([
       { id: "target-user", role: "user", content: "目标消息" },
     ]);
     expect(storedSessions().some((session) => session.id === "source-session")).toBe(false);
+  });
+
+  it("keeps session refs coherent across same-batch create, rename, and delete", async () => {
+    seedSessions();
+    const { result } = renderHook(() => useAgentSessions());
+    await waitFor(() => expect(result.current.hydrated).toBe(true));
+
+    let createdId = "";
+    act(() => {
+      createdId = result.current.createSession();
+      result.current.renameSession(createdId, "同批新会话");
+      result.current.deleteSession("target-session");
+    });
+
+    await waitFor(() => {
+      const stored = storedSessions();
+      expect(stored.find((session) => session.id === createdId)).toMatchObject({
+        id: createdId,
+      });
+      expect(stored.some((session) => session.id === "target-session")).toBe(false);
+    });
+    expect(result.current.sessions.find((session) => session.id === createdId)?.title).toBe("同批新会话");
   });
 });

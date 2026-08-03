@@ -126,8 +126,10 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
 
   const deleteSession = useCallback(
     (sessionId: string) => {
+      const deletingActive = sessionId === sessionState.activeSessionId;
+      if (deletingActive && socketState.busy) return;
       socketState.clearBackendMemory(sessionId);
-      if (sessionId === sessionState.activeSessionId) prepareSessionMigration();
+      if (deletingActive) prepareSessionMigration();
       sessionState.deleteSession(sessionId);
     },
     [prepareSessionMigration, sessionState, socketState],

@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   createSessionId,
   loadActiveSessionId,
@@ -47,20 +54,32 @@ function emptySession(
 }
 
 export function useAgentSessions() {
-  const [sessions, setSessions] = useState<AgentSessionRecord[]>([]);
+  const [sessions, setSessionsState] = useState<AgentSessionRecord[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessagesState] = useState<ChatMessage[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const activeSessionIdRef = useRef(activeSessionId);
   const activeSessionContextRef = useRef<AgentSessionContext | null>(null);
   const messagesRef = useRef(messages);
   const sessionsRef = useRef(sessions);
+  const setSessions = useCallback<Dispatch<SetStateAction<AgentSessionRecord[]>>>((action) => {
+    const next = typeof action === "function"
+      ? action(sessionsRef.current)
+      : action;
+    sessionsRef.current = next;
+    setSessionsState(next);
+  }, []);
+  const setMessages = useCallback<Dispatch<SetStateAction<ChatMessage[]>>>((action) => {
+    const next = typeof action === "function"
+      ? action(messagesRef.current)
+      : action;
+    messagesRef.current = next;
+    setMessagesState(next);
+  }, []);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
-    messagesRef.current = messages;
-    sessionsRef.current = sessions;
-  }, [activeSessionId, messages, sessions]);
+  }, [activeSessionId]);
 
   useEffect(() => {
     const stored = loadStoredSessions();
@@ -85,23 +104,22 @@ export function useAgentSessions() {
     const id = activeSessionIdRef.current;
     if (!id) return;
     const normalizedMessages = normalizeChatMessages(nextMessages);
-    setSessions((previous) => {
-      const existing = previous.find((session) => session.id === id);
-      const record: AgentSessionRecord = {
-        id,
-        title: existing?.titleLocked ? existing.title : sessionTitleFromMessages(normalizedMessages),
-        messages: normalizedMessages,
-        createdAt: existing?.createdAt ?? Date.now(),
-        updatedAt: Date.now(),
-        titleLocked: existing?.titleLocked,
-        contextKey: existing?.contextKey,
-        contextTitle: existing?.contextTitle,
-        postId: existing?.postId,
-      };
-      const next = upsertSessionRecord(previous, record);
-      saveStoredSessions(next);
-      return next;
-    });
+    const existing = sessionsRef.current.find((session) => session.id === id);
+    const record: AgentSessionRecord = {
+      id,
+      title: existing?.titleLocked ? existing.title : sessionTitleFromMessages(normalizedMessages),
+      messages: normalizedMessages,
+      createdAt: existing?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      titleLocked: existing?.titleLocked,
+      contextKey: existing?.contextKey,
+      contextTitle: existing?.contextTitle,
+      postId: existing?.postId,
+    };
+    const next = upsertSessionRecord(sessionsRef.current, record);
+    sessionsRef.current = next;
+    setSessions(next);
+    saveStoredSessions(next);
   }, []);
 
   useEffect(() => {

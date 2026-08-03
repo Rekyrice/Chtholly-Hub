@@ -119,7 +119,8 @@ export function useAgentWebSocket({
   const currentTurnIdRef = useRef<string | null>(null);
   const currentTurnSocketRef = useRef<WebSocket | null>(null);
   const busyRef = useRef(false);
-  const sendLockRef = useRef(false);
+  const sendAttemptSequenceRef = useRef(0);
+  const activeSendAttemptRef = useRef<number | null>(null);
   const turnGenerationRef = useRef(0);
   const proactiveInstanceSequenceRef = useRef(0);
   const stepsRef = useRef<string[]>([]);
@@ -197,10 +198,20 @@ export function useAgentWebSocket({
   }, [setMessages]);
 
   const abandonCurrentTurn = useCallback(() => {
-    const socket = currentTurnSocketRef.current;
+    const registeredSocket = wsRef.current;
+    const socket = currentTurnSocketRef.current
+      ?? (
+        activeSendAttemptRef.current !== null
+        || registeredSocket?.readyState === WebSocket.CONNECTING
+          ? registeredSocket
+          : null
+      );
     const streamId = streamingIdRef.current;
     const steps = [...stepsRef.current];
 
+    activeSendAttemptRef.current = null;
+    connectionGenerationRef.current += 1;
+    connectionPromiseRef.current = null;
     turnGenerationRef.current += 1;
     currentRequestIdRef.current = null;
     currentTurnIdRef.current = null;
@@ -208,7 +219,6 @@ export function useAgentWebSocket({
     streamingIdRef.current = null;
     stepsRef.current = [];
     busyRef.current = false;
-    sendLockRef.current = false;
     setMessages((previous) => normalizeChatMessages(previous.map((message) => (
       message.id === streamId ? { ...message, steps } : message
     ))));
@@ -218,8 +228,6 @@ export function useAgentWebSocket({
     setLastError(null);
 
     if (!socket) return;
-    connectionGenerationRef.current += 1;
-    connectionPromiseRef.current = null;
     for (const [requestId, intent] of backendClearIntentsRef.current) {
       if (intent.socket === socket) backendClearIntentsRef.current.delete(requestId);
     }
@@ -536,7 +544,7 @@ export function useAgentWebSocket({
   const sendMessage = useCallback(
     async (text: string, options?: AgentSendOptions) => {
       const trimmed = text.trim();
-      if (!trimmed || busyRef.current || sendLockRef.current) return;
+      if (!trimmed || busyRef.current || activeSendAttemptRef.current !== null) return;
       if (!loggedIn) {
         setMessages((previous) => [
           ...previous,
@@ -544,12 +552,20 @@ export function useAgentWebSocket({
         ]);
         return;
       }
-      sendLockRef.current = true;
+      const sessionId = activeSessionIdRef.current;
+      const sessionContext = activeSessionContextRef.current;
+      if (!sessionId) return;
+      sendAttemptSequenceRef.current += 1;
+      const attempt = sendAttemptSequenceRef.current;
+      activeSendAttemptRef.current = attempt;
+      const isCurrentAttempt = () => activeSendAttemptRef.current === attempt;
       try {
         let socket = wsRef.current;
         if (!socket || socket.readyState !== WebSocket.OPEN) {
           socket = await connect();
+          if (!isCurrentAttempt()) return;
           if (!socket) {
+            if (!isCurrentAttempt()) return;
             setMessages((previous) => [
               ...previous,
               { id: `s-${Date.now()}`, role: "system", content: "无法连接 Agent 服务。" },
@@ -557,7 +573,10 @@ export function useAgentWebSocket({
             return;
           }
           wsRef.current = socket;
-          if (!(await waitUntilOpen(socket))) {
+          const opened = await waitUntilOpen(socket);
+          if (!isCurrentAttempt()) return;
+          if (!opened) {
+            if (!isCurrentAttempt()) return;
             setMessages((previous) => [
               ...previous,
               {
@@ -569,9 +588,9 @@ export function useAgentWebSocket({
             return;
           }
         }
-        const sessionId = activeSessionIdRef.current;
-        if (!sessionId || socket.readyState !== WebSocket.OPEN) return;
+        if (!isCurrentAttempt() || socket.readyState !== WebSocket.OPEN) return;
         turnGenerationRef.current += 1;
+        if (!isCurrentAttempt()) return;
         setMessages((previous) => [
           ...previous,
           { id: `u-${Date.now()}`, role: "user", content: trimmed },
@@ -585,7 +604,7 @@ export function useAgentWebSocket({
           title: document.title,
           search: window.location.search,
           taskType: options?.taskType,
-          sessionContext: activeSessionContextRef.current,
+          sessionContext,
         });
         currentRequestIdRef.current = payload.requestId;
         currentTurnIdRef.current = null;
@@ -596,6 +615,7 @@ export function useAgentWebSocket({
         setLiveSteps([]);
         streamingIdRef.current = null;
         try {
+          if (!isCurrentAttempt()) return;
           socket.send(JSON.stringify(payload));
         } catch {
           if (wsRef.current === socket) {
@@ -605,7 +625,9 @@ export function useAgentWebSocket({
           interruptCurrentTurn(socket);
         }
       } finally {
-        sendLockRef.current = false;
+        if (activeSendAttemptRef.current === attempt) {
+          activeSendAttemptRef.current = null;
+        }
       }
     },
     [

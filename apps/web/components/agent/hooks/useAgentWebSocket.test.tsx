@@ -63,7 +63,7 @@ function renderAgentHook(initialMessages: ChatMessage[] = []) {
     });
     return { ...socketState, messages };
   });
-  return { ...hook, onInputConsumed };
+  return { ...hook, onInputConsumed, activeSessionIdRef };
 }
 
 function sentChatPayload(socket: MockWebSocket, index = 0) {
@@ -810,6 +810,85 @@ describe("useAgentWebSocket disconnect recovery", () => {
     });
 
     expect(result.current.messages.some((message) => message.content.includes("不应写入"))).toBe(false);
+  });
+
+  it("invalidates a send waiting for a ticket without letting its finally unlock the next attempt", async () => {
+    let resolveOldTicket!: (url: string) => void;
+    let resolveNewTicket!: (url: string) => void;
+    const oldTicket = new Promise<string>((resolve) => { resolveOldTicket = resolve; });
+    const newTicket = new Promise<string>((resolve) => { resolveNewTicket = resolve; });
+    vi.mocked(getAgentWsUrl)
+      .mockReset()
+      .mockImplementationOnce(() => oldTicket)
+      .mockImplementationOnce(() => newTicket);
+    const { result, activeSessionIdRef } = renderAgentHook();
+    await waitFor(() => expect(getAgentWsUrl).toHaveBeenCalledOnce());
+
+    let oldSend!: Promise<void>;
+    act(() => { oldSend = result.current.sendMessage("旧会话问题"); });
+    act(() => {
+      result.current.abandonCurrentTurn();
+      activeSessionIdRef.current = "session-2";
+    });
+
+    let newSend!: Promise<void>;
+    act(() => { newSend = result.current.sendMessage("新会话问题"); });
+    await waitFor(() => expect(getAgentWsUrl).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveOldTicket("ws://example.test/api/v1/agent/ws?ticket=old");
+      await oldSend;
+    });
+    await act(async () => result.current.sendMessage("不应抢占新 attempt"));
+    expect(getAgentWsUrl).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveNewTicket("ws://example.test/api/v1/agent/ws?ticket=new");
+      await newSend;
+    });
+
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].send).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(sockets[0].send.mock.calls[0]?.[0]))).toMatchObject({
+      type: "chat",
+      sessionId: "session-2",
+      message: "新会话问题",
+    });
+    expect(result.current.messages).toEqual([
+      expect.objectContaining({ role: "user", content: "新会话问题" }),
+    ]);
+  });
+
+  it("closes a connecting socket and lets the migrated session send immediately", async () => {
+    const { result, activeSessionIdRef } = renderAgentHook();
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    act(() => sockets[0].disconnect());
+    socketReadyStates.push(MockWebSocket.CONNECTING);
+
+    let oldSend!: Promise<void>;
+    act(() => { oldSend = result.current.sendMessage("握手中的旧问题"); });
+    await waitFor(() => expect(sockets).toHaveLength(2));
+
+    act(() => {
+      result.current.abandonCurrentTurn();
+      activeSessionIdRef.current = "session-2";
+    });
+    expect(sockets[1].close).toHaveBeenCalledOnce();
+
+    await act(async () => result.current.sendMessage("迁移后的新问题"));
+    expect(sockets).toHaveLength(3);
+    expect(JSON.parse(String(sockets[2].send.mock.calls[0]?.[0]))).toMatchObject({
+      type: "chat",
+      sessionId: "session-2",
+      message: "迁移后的新问题",
+    });
+
+    act(() => sockets[1].disconnect());
+    await act(async () => oldSend);
+    expect(sockets[1].send).not.toHaveBeenCalled();
+    expect(result.current.messages.some((message) => (
+      message.content.includes("旧问题") || message.content.includes("连接失败")
+    ))).toBe(false);
   });
 
   it("rolls back the turn when socket.send throws and allows a fresh retry", async () => {

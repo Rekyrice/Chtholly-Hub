@@ -11,6 +11,7 @@ type AgentSessionItemProps = {
   onSelect: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
+  deleteDisabled?: boolean;
 };
 
 export default function AgentSessionItem({
@@ -26,6 +27,7 @@ function AgentSessionItemState({
   onSelect,
   onRename,
   onDelete,
+  deleteDisabled = false,
 }: AgentSessionItemProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -132,6 +134,7 @@ function AgentSessionItemState({
                 type="button"
                 className="agent-session-menu-item agent-session-menu-item--danger"
                 role="menuitem"
+                disabled={deleteDisabled}
                 onClick={(e) => {
                   e.stopPropagation();
                   setMenuOpen(false);

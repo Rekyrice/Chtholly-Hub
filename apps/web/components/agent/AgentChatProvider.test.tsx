@@ -7,6 +7,7 @@ import {
 } from "@/components/agent/AgentChatProvider";
 
 const mocks = vi.hoisted(() => ({
+  busy: true,
   abandonCurrentTurn: vi.fn(),
   switchSession: vi.fn(() => true),
   createSession: vi.fn(() => "created-session"),
@@ -54,7 +55,7 @@ vi.mock("@/components/agent/hooks/useAgentSessions", () => ({
 vi.mock("@/components/agent/hooks/useAgentWebSocket", () => ({
   useAgentWebSocket: () => ({
     connected: true,
-    busy: true,
+    busy: mocks.busy,
     liveSteps: [],
     livePhase: "speaking",
     lastError: null,
@@ -77,13 +78,13 @@ function wrapper({ children }: { children: ReactNode }) {
 describe("AgentChatProvider session migration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.busy = true;
   });
 
   it.each([
     ["switch", (context: ReturnType<typeof useAgentChatContext>) => context.switchSession("target-session"), mocks.switchSession],
     ["create", (context: ReturnType<typeof useAgentChatContext>) => context.createSession(), mocks.createSession],
     ["context", (context: ReturnType<typeof useAgentChatContext>) => context.activateContextSession({ contextKey: "post:new", contextTitle: "新上下文" }), mocks.activateContextSession],
-    ["delete", (context: ReturnType<typeof useAgentChatContext>) => context.deleteSession("active-session"), mocks.deleteSession],
   ] as const)("abandons the active turn before a %s session migration", (_name, migrate, sessionAction) => {
     const { result } = renderHook(() => useAgentChatContext(), { wrapper });
 
@@ -94,6 +95,27 @@ describe("AgentChatProvider session migration", () => {
     expect(mocks.abandonCurrentTurn.mock.invocationCallOrder[0]).toBeLessThan(
       sessionAction.mock.invocationCallOrder[0],
     );
+  });
+
+  it("refuses to delete the active session while a turn is busy", () => {
+    const { result } = renderHook(() => useAgentChatContext(), { wrapper });
+
+    act(() => result.current.deleteSession("active-session"));
+
+    expect(mocks.clearBackendMemory).not.toHaveBeenCalled();
+    expect(mocks.abandonCurrentTurn).not.toHaveBeenCalled();
+    expect(mocks.deleteSession).not.toHaveBeenCalled();
+  });
+
+  it("clears and deletes the active session when it is idle", () => {
+    mocks.busy = false;
+    const { result } = renderHook(() => useAgentChatContext(), { wrapper });
+
+    act(() => result.current.deleteSession("active-session"));
+
+    expect(mocks.clearBackendMemory).toHaveBeenCalledWith("active-session");
+    expect(mocks.abandonCurrentTurn).toHaveBeenCalledOnce();
+    expect(mocks.deleteSession).toHaveBeenCalledWith("active-session");
   });
 
   it("does not abandon for the current or an unknown session", () => {
