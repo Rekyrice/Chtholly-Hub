@@ -149,7 +149,7 @@ export default function AgentChatPanel({
           busy={busy}
           showSteps={showSteps}
           liveSteps={liveSteps}
-          rich={isWorkspace && richMarkdown}
+          rich={richMarkdown}
           mangaLayout={isWorkspace}
           showAssistantAvatar={showAssistantAvatar}
           compactAssistantMessages={variant === "float"}

@@ -6,10 +6,14 @@ const agentState = vi.hoisted(() => ({
   busy: false,
   streaming: false,
   input: "",
+  richMarkdown: false,
   sendMessage: vi.fn(),
 }));
 const linkState = vi.hoisted(() => ({ componentPreventedNavigation: false }));
-const messageListState = vi.hoisted(() => ({ compactAssistantMessages: undefined as boolean | undefined }));
+const messageListState = vi.hoisted(() => ({
+  compactAssistantMessages: undefined as boolean | undefined,
+  rich: undefined as boolean | undefined,
+}));
 
 vi.mock("next/link", () => ({
   default: ({ children, onClick, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
@@ -36,7 +40,7 @@ vi.mock("@/components/agent/AgentChatProvider", () => ({
     streaming: agentState.streaming,
     showSteps: false,
     setShowSteps: vi.fn(),
-    richMarkdown: false,
+    richMarkdown: agentState.richMarkdown,
     liveSteps: [],
     sendMessage: agentState.sendMessage,
     clearConversation: vi.fn(),
@@ -44,8 +48,9 @@ vi.mock("@/components/agent/AgentChatProvider", () => ({
   }),
 }));
 vi.mock("@/components/agent/AgentMessageList", () => ({
-  default: (props: { compactAssistantMessages?: boolean }) => {
+  default: (props: { compactAssistantMessages?: boolean; rich?: boolean }) => {
     messageListState.compactAssistantMessages = props.compactAssistantMessages;
+    messageListState.rich = props.rich;
     return <div />;
   },
 }));
@@ -58,9 +63,11 @@ describe("AgentChatPanel expansion", () => {
     agentState.busy = false;
     agentState.streaming = false;
     agentState.input = "";
+    agentState.richMarkdown = false;
     agentState.sendMessage.mockReset();
     linkState.componentPreventedNavigation = false;
     messageListState.compactAssistantMessages = undefined;
+    messageListState.rich = undefined;
   });
 
   afterEach(() => {
@@ -110,6 +117,20 @@ describe("AgentChatPanel expansion", () => {
     render(<AgentChatPanel variant={variant} />);
 
     expect(messageListState.compactAssistantMessages).toBe(expected);
+  });
+
+  it.each([
+    [true, "float"],
+    [true, "workspace"],
+    [true, "room"],
+    [false, "float"],
+    [false, "workspace"],
+    [false, "room"],
+  ] as const)("passes rich=%s to messages for the %s variant", (richMarkdown, variant) => {
+    agentState.richMarkdown = richMarkdown;
+    render(<AgentChatPanel variant={variant} />);
+
+    expect(messageListState.rich).toBe(richMarkdown);
   });
 
   it.each([
