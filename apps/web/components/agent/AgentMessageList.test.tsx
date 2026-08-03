@@ -146,6 +146,66 @@ describe("AgentMessageList compact assistant replies", () => {
 });
 
 describe("AgentMessageList rich assistant replies", () => {
+  it("keeps a rich reply as plain text while streaming and renders Markdown after completion", () => {
+    const content = "- **证据一**\n- 证据二";
+    const streamingMessage: ChatMessage = {
+      id: "streaming-rich-reply",
+      role: "assistant",
+      content,
+      streaming: true,
+    };
+    const { container, rerender, unmount } = render(
+      <AgentMessageList
+        messages={[streamingMessage]}
+        busy
+        showSteps={false}
+        liveSteps={[]}
+        rich
+      />,
+    );
+
+    const bubble = container.querySelector<HTMLElement>(".agent-bubble-assistant");
+    expect(bubble?.textContent).toContain("- **证据一**");
+    expect(bubble?.querySelector("ul")).toBeNull();
+    expect(bubble?.querySelector("strong")).toBeNull();
+
+    rerender(
+      <AgentMessageList
+        messages={[{ ...streamingMessage, streaming: false }]}
+        busy={false}
+        showSteps={false}
+        liveSteps={[]}
+        rich
+      />,
+    );
+
+    expect(within(bubble!).getByRole("list")).toBeInTheDocument();
+    expect(within(bubble!).getByText("证据一").closest("strong")).not.toBeNull();
+    unmount();
+  });
+
+  it("does not turn raw script HTML into DOM when rendering completed Markdown", () => {
+    const message: ChatMessage = {
+      id: "safe-rich-reply",
+      role: "assistant",
+      content: "<script>window.__markdownInjected = true</script>\n\n**安全强调**",
+    };
+
+    const { container, unmount } = render(
+      <AgentMessageList
+        messages={[message]}
+        busy={false}
+        showSteps={false}
+        liveSteps={[]}
+        rich
+      />,
+    );
+
+    expect(container.querySelector("script")).toBeNull();
+    expect(screen.getByText("安全强调").closest("strong")).not.toBeNull();
+    unmount();
+  });
+
   it("marks completed markdown replies with the reading typography variant", () => {
     const message: ChatMessage = {
       id: "rich-reply",

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PostQnA from "@/components/site/PostQnA";
 import type { PostQaStreamEvent } from "@/lib/services/postAiService";
@@ -27,6 +27,15 @@ async function* completedAnswer(answer: string): AsyncGenerator<PostQaStreamEven
   yield { type: "done" };
 }
 
+async function* gatedAnswer(
+  answer: string,
+  doneGate: Promise<void>,
+): AsyncGenerator<PostQaStreamEvent> {
+  yield { type: "delta", data: answer };
+  await doneGate;
+  yield { type: "done" };
+}
+
 async function* interruptedAnswer(answer: string): AsyncGenerator<PostQaStreamEvent> {
   yield { type: "delta", data: answer };
   throw new Error("connection reset");
@@ -43,6 +52,14 @@ function ask(question: string) {
     target: { value: question },
   });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
+}
+
+function createGate() {
+  let release = () => {};
+  const wait = new Promise<void>((resolve) => {
+    release = () => resolve();
+  });
+  return { wait, release };
 }
 
 describe("PostQnA", () => {
@@ -76,6 +93,50 @@ describe("PostQnA", () => {
     expect(await screen.findByText("回答暂时中断了。已保留收到的内容，可以稍后再问一次。"))
       .toBeInTheDocument();
     expect(answer).not.toHaveClass("post-qna-turn__answer--error");
+  });
+
+  it("keeps streamed Markdown literal until the done event, then renders it", async () => {
+    const markdown = "核心观点：\n\n- **认真**面对魔物\n- 接受同伴的差异";
+    const gate = createGate();
+    qaStream.mockImplementation(() => gatedAnswer(markdown, gate.wait));
+    const { container } = render(<PostQnA postId="42" />);
+
+    ask("核心观点是什么？");
+
+    try {
+      const answer = await waitFor(() => {
+        const node = container.querySelector<HTMLElement>(".post-qna-turn__answer");
+        if (!node) throw new Error("Missing streamed answer");
+        expect(node.textContent).toContain("- **认真**面对魔物");
+        return node;
+      });
+      expect(answer.querySelector("ul")).toBeNull();
+      expect(answer.querySelector("strong")).toBeNull();
+
+      await act(async () => {
+        gate.release();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => expect(answer.querySelector("ul")).not.toBeNull());
+      expect(answer.querySelector("strong")).toHaveTextContent("认真");
+    } finally {
+      gate.release();
+    }
+  });
+
+  it("keeps an interrupted Markdown fragment as plain text", async () => {
+    const markdown = "- **已收到的片段**";
+    qaStream.mockImplementation(() => interruptedAnswer(markdown));
+    const { container } = render(<PostQnA postId="42" />);
+
+    ask("后来呢？");
+
+    await screen.findByText("回答暂时中断了。已保留收到的内容，可以稍后再问一次。");
+    const answer = container.querySelector<HTMLElement>(".post-qna-turn__answer");
+    expect(answer?.textContent).toContain(markdown);
+    expect(answer?.querySelector("ul")).toBeNull();
+    expect(answer?.querySelector("strong")).toBeNull();
   });
 
   it("does not overwrite a completed turn when a late transport error arrives", async () => {

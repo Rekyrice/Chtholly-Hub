@@ -135,9 +135,15 @@ export default function PostQnA({ postId }: PostQnAProps) {
                   turn.status === "streaming" && "post-qna-turn__answer--streaming",
                 )}
               >
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {turn.answer || (turn.status === "streaming" ? "珂朵莉正在想……" : "没有收到回答。")}
-                </ReactMarkdown>
+                {turn.status === "done" ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {turn.answer || "没有收到回答。"}
+                  </ReactMarkdown>
+                ) : (
+                  <span className="whitespace-pre-wrap">
+                    {turn.answer || (turn.status === "streaming" ? "珂朵莉正在想……" : "没有收到回答。")}
+                  </span>
+                )}
               </div>
             </article>
           ))}
