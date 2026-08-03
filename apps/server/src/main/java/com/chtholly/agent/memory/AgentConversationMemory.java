@@ -14,17 +14,17 @@ public class AgentConversationMemory {
     private final String chatSessionId;
     private final AgentMemoryStore store;
     private final List<AgentTurn> turns;
-    private final long expectedEpoch;
+    private final String expectedGeneration;
 
     AgentConversationMemory(
             long userId,
             String chatSessionId,
-            long expectedEpoch,
+            String expectedGeneration,
             List<AgentTurn> turns,
             AgentMemoryStore store) {
         this.userId = userId;
         this.chatSessionId = chatSessionId;
-        this.expectedEpoch = expectedEpoch;
+        this.expectedGeneration = expectedGeneration;
         this.store = store;
         this.turns = new ArrayList<>(turns == null ? List.of() : turns);
     }
@@ -37,7 +37,7 @@ public class AgentConversationMemory {
                 userId,
                 chatSessionId,
                 turn,
-                expectedEpoch);
+                expectedGeneration);
         if (!result.committed()) {
             return;
         }
@@ -84,7 +84,7 @@ public class AgentConversationMemory {
                 exchange,
                 control,
                 deadlineEpochMs,
-                expectedEpoch);
+                expectedGeneration);
         if (!result.committed()) {
             return result;
         }

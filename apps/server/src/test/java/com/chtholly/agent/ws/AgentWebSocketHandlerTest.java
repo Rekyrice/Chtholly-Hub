@@ -17,6 +17,7 @@ import com.chtholly.agent.runtime.AgentTurnControl;
 import com.chtholly.common.tracing.CorrelationIdSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,6 +51,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -216,7 +218,7 @@ class AgentWebSocketHandlerTest {
     }
 
     @Test
-    void clearAcknowledgementEchoesItsRequestIdWithoutCreatingATurn() throws Exception {
+    void legacyClearMessageIsRejectedWithoutTouchingMemory() throws Exception {
         when(rawSession.getId()).thenReturn("sess-clear-correlation");
         when(rawSession.getUri()).thenReturn(
                 URI.create("ws://localhost/api/v1/agent/ws?ticket=clear-correlation"));
@@ -234,12 +236,79 @@ class AgentWebSocketHandlerTest {
                         + "\"requestId\":\"clear-request-1\"}"));
 
         assertThat(payloads).hasSize(1);
-        var cleared = objectMapper.readTree(payloads.getFirst());
-        assertThat(cleared.path("type").asText()).isEqualTo("cleared");
-        assertThat(cleared.path("requestId").asText()).isEqualTo("clear-request-1");
-        assertThat(cleared.has("turnId")).isFalse();
-        verify(memoryStore).clearMemory(10L, "sess-chat-clear");
-        verifyNoInteractions(agent);
+        var error = objectMapper.readTree(payloads.getFirst());
+        assertThat(error.path("type").asText()).isEqualTo("error");
+        assertThat(error.path("data").path("message").asText()).isEqualTo("未知消息类型");
+        verifyNoInteractions(memoryStore, agent);
+    }
+
+    @Test
+    void capturesMemoryGenerationBeforeClaimingTheTurnLease() throws Exception {
+        AgentTurnCoordinator coordinator = org.mockito.Mockito.mock(AgentTurnCoordinator.class);
+        AgentWebSocketHandler orderedHandler = handler(coordinator, Runnable::run);
+        when(rawSession.getId()).thenReturn("sess-memory-fence-order");
+        when(rawSession.getUri()).thenReturn(
+                URI.create("ws://localhost/api/v1/agent/ws?ticket=memory-fence-order"));
+        when(ticketStore.consume("memory-fence-order")).thenReturn(11L);
+        when(memoryStore.getOrCreateMemory(11L, "sess-chat-memory-fence")).thenReturn(memory);
+        when(coordinator.acquire(anyLong(), anyString(), anyString(), anyString(), any(Duration.class)))
+                .thenAnswer(invocation -> new AgentTurnCoordinator.AcquireResult(
+                        AgentTurnCoordinator.AcquireStatus.ACQUIRED,
+                        invocation.getArgument(3)));
+        when(coordinator.release(anyLong(), anyString(), anyString())).thenReturn(true);
+        doNothing().when(rawSession).sendMessage(any());
+        doNothing().when(agent).run(
+                any(), anyLong(), any(), any(AgentTurnControl.class), any(), any(), any());
+        orderedHandler.afterConnectionEstablished(rawSession);
+
+        orderedHandler.handleTextMessage(
+                rawSession,
+                new TextMessage(chatPayload(
+                        "sess-chat-memory-fence",
+                        "capture before acquire",
+                        "request-memory-fence")));
+
+        InOrder order = inOrder(memoryStore, coordinator);
+        order.verify(memoryStore).getOrCreateMemory(11L, "sess-chat-memory-fence");
+        order.verify(coordinator).acquire(
+                eq(11L),
+                eq("sess-chat-memory-fence"),
+                eq("request-memory-fence"),
+                anyString(),
+                any(Duration.class));
+    }
+
+    @Test
+    void memorySnapshotFailureRejectsTheRequestBeforeClaimingTheTurnLease() throws Exception {
+        AgentTurnCoordinator coordinator = org.mockito.Mockito.mock(AgentTurnCoordinator.class);
+        AgentWebSocketHandler orderedHandler = handler(coordinator, Runnable::run);
+        when(rawSession.getId()).thenReturn("sess-memory-unavailable");
+        when(rawSession.getUri()).thenReturn(
+                URI.create("ws://localhost/api/v1/agent/ws?ticket=memory-unavailable"));
+        when(ticketStore.consume("memory-unavailable")).thenReturn(12L);
+        when(memoryStore.getOrCreateMemory(12L, "sess-chat-memory-unavailable"))
+                .thenThrow(new IllegalStateException("redis unavailable"));
+        List<String> payloads = new CopyOnWriteArrayList<>();
+        doAnswer(invocation -> {
+            TextMessage sent = invocation.getArgument(0);
+            payloads.add(sent.getPayload());
+            return null;
+        }).when(rawSession).sendMessage(any());
+        orderedHandler.afterConnectionEstablished(rawSession);
+
+        orderedHandler.handleTextMessage(
+                rawSession,
+                new TextMessage(chatPayload(
+                        "sess-chat-memory-unavailable",
+                        "do not accept without a memory fence",
+                        "request-memory-unavailable")));
+
+        assertThat(payloads).hasSize(1);
+        var rejected = objectMapper.readTree(payloads.getFirst());
+        assertThat(rejected.path("type").asText()).isEqualTo("rejected");
+        assertThat(rejected.path("requestId").asText()).isEqualTo("request-memory-unavailable");
+        assertThat(rejected.path("data").path("code").asText()).isEqualTo("MEMORY_UNAVAILABLE");
+        verifyNoInteractions(coordinator, agent);
     }
 
     @Test
@@ -362,36 +431,6 @@ class AgentWebSocketHandlerTest {
         assertThat(error.path("requestId").asText()).isEqualTo("request-turn-failure");
         assertThat(error.path("turnId").asText()).isEqualTo(accepted.path("turnId").asText());
         assertThat(error.path("data").path("code").asText()).isEqualTo("TURN_FAILED");
-    }
-
-    @Test
-    void failureLoadingMemoryAfterAcceptanceRemainsBoundToTheAcceptedTurn() throws Exception {
-        when(rawSession.getId()).thenReturn("sess-memory-failure");
-        when(rawSession.getUri()).thenReturn(
-                URI.create("ws://localhost/api/v1/agent/ws?ticket=memory-failure"));
-        when(rawSession.isOpen()).thenReturn(true);
-        when(ticketStore.consume("memory-failure")).thenReturn(73L);
-        when(memoryStore.getOrCreateMemory(73L, "sess-chat-memory-failure"))
-                .thenThrow(new IllegalStateException("redis unavailable"));
-        List<String> payloads = new CopyOnWriteArrayList<>();
-        doAnswer(invocation -> {
-            TextMessage sent = invocation.getArgument(0);
-            payloads.add(sent.getPayload());
-            return null;
-        }).when(rawSession).sendMessage(any());
-
-        handler.afterConnectionEstablished(rawSession);
-        handler.handleTextMessage(rawSession, new TextMessage(
-                chatPayload("sess-chat-memory-failure", "hello", "request-memory-failure")));
-
-        assertThat(payloads).hasSize(2);
-        var accepted = objectMapper.readTree(payloads.get(0));
-        var error = objectMapper.readTree(payloads.get(1));
-        assertThat(error.path("type").asText()).isEqualTo("error");
-        assertThat(error.path("requestId").asText()).isEqualTo("request-memory-failure");
-        assertThat(error.path("turnId").asText()).isEqualTo(accepted.path("turnId").asText());
-        assertThat(error.path("data").path("code").asText()).isEqualTo("TURN_FAILED");
-        verifyNoInteractions(agent);
     }
 
     @Test

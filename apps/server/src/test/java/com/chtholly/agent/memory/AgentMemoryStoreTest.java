@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -50,6 +51,9 @@ class AgentMemoryStoreTest {
         properties.setMemoryTtlMinutes(120);
         store = new AgentMemoryStore(redis, objectMapper, properties);
         lenient().when(redis.opsForValue()).thenReturn(valueOps);
+        lenient().when(valueOps.get(anyString())).thenReturn("generation-0");
+        lenient().when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .thenReturn(true);
     }
 
     @Test
@@ -66,13 +70,13 @@ class AgentMemoryStoreTest {
         ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
         verify(redis).execute(scriptCaptor.capture(), keysCaptor.capture(), argsCaptor.capture());
         assertThat(scriptCaptor.getValue().getScriptAsString())
-                .contains("RPUSH", "LTRIM", "PEXPIRE", "TIME", "GET")
+                .contains("RPUSH", "LTRIM", "PEXPIRE", "TIME", "GET", "PEXPIRE', KEYS[3]")
                 .doesNotContain("INCR");
         assertThat(keysCaptor.getValue().get(0)).isEqualTo("agent:memory:42:" + CHAT_SESSION);
         assertThat(keysCaptor.getValue())
-                .contains("agent:memory:epoch:42:" + CHAT_SESSION)
+                .contains("agent:memory:generation:42:" + CHAT_SESSION)
                 .hasSize(3);
-        assertThat(argsCaptor.getValue()[4]).isEqualTo("0");
+        assertThat(argsCaptor.getValue()[4]).isEqualTo("generation-0");
         assertThat(argsCaptor.getValue()[5].toString()).contains("\"role\":\"USER\"");
     }
 
@@ -125,7 +129,7 @@ class AgentMemoryStoreTest {
     }
 
     @Test
-    void clearMemoryAtomicallyAdvancesEpochAndDeletesMemoryWithoutDroppingTheActiveLease() {
+    void clearMemoryAtomicallyRotatesExpiringGenerationAndDeletesMemoryWithoutDroppingTheActiveLease() {
         stubScriptResult(1L);
 
         store.clearMemory(7L, CHAT_SESSION);
@@ -134,20 +138,56 @@ class AgentMemoryStoreTest {
         ArgumentCaptor<DefaultRedisScript<Long>> scriptCaptor = ArgumentCaptor.forClass(DefaultRedisScript.class);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass(List.class);
-        verify(redis).execute(scriptCaptor.capture(), keysCaptor.capture(), any(Object[].class));
-        assertThat(scriptCaptor.getValue().getScriptAsString()).contains("INCR", "DEL");
+        ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
+        verify(redis).execute(scriptCaptor.capture(), keysCaptor.capture(), argsCaptor.capture());
+        assertThat(scriptCaptor.getValue().getScriptAsString())
+                .contains("EXISTS", "SET", "PX", "DEL")
+                .doesNotContain("INCR");
         assertThat(keysCaptor.getValue())
                 .containsExactly(
                         "agent:memory:7:" + CHAT_SESSION,
-                        "agent:memory:epoch:7:" + CHAT_SESSION);
+                        "agent:memory:generation:7:" + CHAT_SESSION,
+                        com.chtholly.agent.runtime.AgentTurnKeySupport.activeKey(7L, CHAT_SESSION));
+        assertThat(argsCaptor.getValue()[0].toString()).isNotBlank();
+        assertThat(argsCaptor.getValue()[1]).isEqualTo("7200000");
         assertThat(scriptCaptor.getValue().getScriptAsString())
-                .doesNotContain("KEYS[3]");
+                .contains("KEYS[3]")
+                .doesNotContain("'DEL', KEYS[3]");
+    }
+
+    @Test
+    void clearMemoryAcceptsANoopForACompletelyUnknownSession() {
+        stubScriptResult(0L);
+
+        store.clearMemory(17L, "sess-unknown");
+
+        verify(redis).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+        verify(valueOps, org.mockito.Mockito.never()).set(anyString(), anyString());
+    }
+
+    @Test
+    void aNewSnapshotInitializesAnOpaqueGenerationWithTheExistingMemoryTtl() {
+        when(redis.opsForList()).thenReturn(listOps);
+        when(valueOps.get("agent:memory:generation:18:" + CHAT_SESSION)).thenReturn(null);
+        when(listOps.range("agent:memory:18:" + CHAT_SESSION, 0, -1)).thenReturn(List.of());
+
+        store.getOrCreateMemory(18L, CHAT_SESSION);
+
+        ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Duration> ttlCaptor = ArgumentCaptor.forClass(Duration.class);
+        verify(valueOps).setIfAbsent(
+                org.mockito.ArgumentMatchers.eq("agent:memory:generation:18:" + CHAT_SESSION),
+                tokenCaptor.capture(),
+                ttlCaptor.capture());
+        assertThat(tokenCaptor.getValue()).matches(
+                "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
+        assertThat(ttlCaptor.getValue()).isEqualTo(Duration.ofMinutes(120));
     }
 
     @Test
     void oldSnapshotCannotWriteAfterSessionWasCleared() {
         when(redis.opsForList()).thenReturn(listOps);
-        when(valueOps.get("agent:memory:epoch:7:" + CHAT_SESSION)).thenReturn(null);
+        when(valueOps.get("agent:memory:generation:7:" + CHAT_SESSION)).thenReturn("generation-old");
         when(listOps.range("agent:memory:7:" + CHAT_SESSION, 0, -1)).thenReturn(List.of());
         doReturn(1L, -3L).when(redis)
                 .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
@@ -167,7 +207,7 @@ class AgentMemoryStoreTest {
     @Test
     void oldSnapshotSingleTurnIsNotAppendedLocallyAfterSessionWasCleared() {
         when(redis.opsForList()).thenReturn(listOps);
-        when(valueOps.get("agent:memory:epoch:8:" + CHAT_SESSION)).thenReturn(null);
+        when(valueOps.get("agent:memory:generation:8:" + CHAT_SESSION)).thenReturn("generation-old");
         when(listOps.range("agent:memory:8:" + CHAT_SESSION, 0, -1)).thenReturn(List.of());
         doReturn(1L, -3L).when(redis)
                 .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
@@ -182,9 +222,9 @@ class AgentMemoryStoreTest {
     @Test
     void sessionClearedRejectionInvalidatesTheStaleLocalSnapshot() throws Exception {
         when(redis.opsForList()).thenReturn(listOps);
-        String epochKey = "agent:memory:epoch:12:" + CHAT_SESSION;
+        String generationKey = "agent:memory:generation:12:" + CHAT_SESSION;
         String oldJson = objectMapper.writeValueAsString(AgentTurn.assistant("old history"));
-        when(valueOps.get(epochKey)).thenReturn("0");
+        when(valueOps.get(generationKey)).thenReturn("generation-old");
         when(listOps.range("agent:memory:12:" + CHAT_SESSION, 0, -1)).thenReturn(List.of(oldJson));
         doReturn(-3L).when(redis)
                 .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
@@ -200,10 +240,29 @@ class AgentMemoryStoreTest {
     }
 
     @Test
-    void aNewSnapshotLoadedAfterClearCanWriteWithTheAdvancedEpoch() {
+    void anExpiredGenerationRejectsAnOldSnapshotWithoutAReplacementClear() {
         when(redis.opsForList()).thenReturn(listOps);
-        String epochKey = "agent:memory:epoch:13:" + CHAT_SESSION;
-        when(valueOps.get(epochKey)).thenReturn("1");
+        String generationKey = "agent:memory:generation:16:" + CHAT_SESSION;
+        when(valueOps.get(generationKey)).thenReturn("generation-old");
+        when(listOps.range("agent:memory:16:" + CHAT_SESSION, 0, -1)).thenReturn(List.of());
+        doReturn(-3L).when(redis)
+                .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
+        AgentConversationMemory oldSnapshot = store.getOrCreateMemory(16L, CHAT_SESSION);
+
+        AgentMemoryStore.MemoryWriteResult result = oldSnapshot.addExchange(
+                AgentTurn.user("expired generation question"),
+                AgentTurn.assistant("must not persist"),
+                null);
+
+        assertThat(result.failureCode()).isEqualTo("SESSION_CLEARED");
+        assertThat(oldSnapshot.isEmpty()).isTrue();
+    }
+
+    @Test
+    void aNewSnapshotLoadedAfterClearCanWriteWithTheRotatedGeneration() {
+        when(redis.opsForList()).thenReturn(listOps);
+        String generationKey = "agent:memory:generation:13:" + CHAT_SESSION;
+        when(valueOps.get(generationKey)).thenReturn("generation-new");
         when(listOps.range("agent:memory:13:" + CHAT_SESSION, 0, -1)).thenReturn(List.of());
         doReturn(1L, 1L).when(redis)
                 .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
@@ -219,16 +278,16 @@ class AgentMemoryStoreTest {
         ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
         verify(redis, org.mockito.Mockito.times(2))
                 .execute(any(DefaultRedisScript.class), anyList(), argsCaptor.capture());
-        assertThat(argsCaptor.getAllValues().getLast()[4]).isEqualTo("1");
+        assertThat(argsCaptor.getAllValues().getLast()[4]).isEqualTo("generation-new");
     }
 
     @Test
-    void anotherStoreReloadsItsHotCacheAfterEpochChanges() throws Exception {
+    void anotherStoreReloadsItsHotCacheAfterGenerationChanges() throws Exception {
         when(redis.opsForList()).thenReturn(listOps);
         String redisKey = "agent:memory:9:" + CHAT_SESSION;
-        String epochKey = "agent:memory:epoch:9:" + CHAT_SESSION;
+        String generationKey = "agent:memory:generation:9:" + CHAT_SESSION;
         String oldJson = objectMapper.writeValueAsString(AgentTurn.assistant("old history"));
-        when(valueOps.get(epochKey)).thenReturn("0", "1");
+        when(valueOps.get(generationKey)).thenReturn("generation-old", "generation-new");
         when(listOps.range(redisKey, 0, -1)).thenReturn(List.of(oldJson), List.of());
         stubScriptResult(1L);
         AgentProperties properties = new AgentProperties();
@@ -244,12 +303,12 @@ class AgentMemoryStoreTest {
     }
 
     @Test
-    void clearMemoryFailsClosedWhenRedisCannotConfirmTheEpoch() throws Exception {
+    void clearMemoryFailsClosedWhenRedisCannotConfirmTheGeneration() throws Exception {
         when(redis.opsForList()).thenReturn(listOps);
         String redisKey = "agent:memory:11:" + CHAT_SESSION;
-        String epochKey = "agent:memory:epoch:11:" + CHAT_SESSION;
+        String generationKey = "agent:memory:generation:11:" + CHAT_SESSION;
         String oldJson = objectMapper.writeValueAsString(AgentTurn.assistant("old history"));
-        when(valueOps.get(epochKey)).thenReturn("0");
+        when(valueOps.get(generationKey)).thenReturn("generation-old");
         when(listOps.range(redisKey, 0, -1)).thenReturn(List.of(oldJson));
         assertThat(store.getTurns(11L, CHAT_SESSION)).hasSize(1);
         doThrow(new IllegalStateException("redis unavailable")).when(redis)
@@ -261,7 +320,7 @@ class AgentMemoryStoreTest {
     }
 
     @Test
-    void clearMemoryFailsClosedWhenRedisReturnsNoEpoch() {
+    void clearMemoryFailsClosedWhenRedisReturnsNoResult() {
         doReturn(null).when(redis)
                 .execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
 
@@ -271,8 +330,8 @@ class AgentMemoryStoreTest {
     }
 
     @Test
-    void clearMemoryFailsClosedWhenRedisReturnsAnInvalidEpoch() {
-        stubScriptResult(0L);
+    void clearMemoryFailsClosedWhenRedisReturnsAnInvalidResult() {
+        stubScriptResult(2L);
 
         assertThatThrownBy(() -> store.clearMemory(15L, CHAT_SESSION))
                 .isInstanceOf(IllegalStateException.class)

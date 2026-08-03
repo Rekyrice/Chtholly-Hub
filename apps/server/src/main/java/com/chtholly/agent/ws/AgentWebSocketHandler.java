@@ -257,22 +257,6 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             JsonNode root = objectMapper.readTree(payload);
             String type = root.path("type").asText("");
 
-            if ("clear".equals(type)) {
-                String chatSessionId = root.path("sessionId").asText("").trim();
-                if (!AgentChatSessionSupport.isValid(chatSessionId)) {
-                    sendJson(safe, "error", objectMapper.createObjectNode().put("message", "缺少或无效的 sessionId"));
-                    return;
-                }
-                memoryStore.clearMemory(userId, chatSessionId);
-                sendJson(
-                        safe,
-                        "cleared",
-                        objectMapper.createObjectNode().put("message", "对话记忆已清空"),
-                        requestId(root),
-                        null);
-                return;
-            }
-
             if (!"chat".equals(type)) {
                 sendJson(safe, "error", objectMapper.createObjectNode().put("message", "未知消息类型"));
                 return;
@@ -301,6 +285,16 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
             sessionChatSessionIds.put(session.getId(), chatSessionId);
+
+            AgentConversationMemory memory;
+            try {
+                memory = memoryStore.getOrCreateMemory(userId, chatSessionId);
+            } catch (Exception exception) {
+                log.warn("Agent memory snapshot unavailable userId={}, sessionId={}: {}",
+                        userId, chatSessionId, exception.getMessage());
+                sendRejected(safe, requestId, "MEMORY_UNAVAILABLE", rejectionMessage("MEMORY_UNAVAILABLE"));
+                return;
+            }
 
             String turnId = UUID.randomUUID().toString();
             int timeoutSeconds = Math.max(1, properties.getTurnTimeoutSeconds());
@@ -344,7 +338,6 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
                         requestId,
                         turnId);
                 acceptedSent = true;
-                AgentConversationMemory memory = memoryStore.getOrCreateMemory(userId, chatSessionId);
                 String pageContext = formatPageContext(root.path("context"));
                 String taskType = root.path("taskType").asText("").strip();
                 Consumer<AgentEvent> eventSink = event -> {
@@ -652,6 +645,7 @@ public class AgentWebSocketHandler extends TextWebSocketHandler {
             case "TURN_IN_PROGRESS" -> "当前对话仍有回答正在生成";
             case "DUPLICATE_REQUEST" -> "该请求已经处理过，请勿重复发送";
             case "TURN_COORDINATION_UNAVAILABLE" -> "暂时无法建立回答任务，请稍后重试";
+            case "MEMORY_UNAVAILABLE" -> "暂时无法加载会话记忆，请稍后重试";
             default -> "请求未被接受";
         };
     }

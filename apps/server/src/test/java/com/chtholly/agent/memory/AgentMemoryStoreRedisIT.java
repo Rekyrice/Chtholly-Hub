@@ -18,13 +18,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers(disabledWithoutDocker = true)
 class AgentMemoryStoreRedisIT {
 
-    private static final String SESSION_ID = "sess-epoch-it";
+    private static final String SESSION_ID = "sess-generation-it";
     private static final long USER_ID = 91L;
 
     @Container
@@ -76,11 +77,16 @@ class AgentMemoryStoreRedisIT {
                 AgentTurn.assistant("old answer"))).isTrue();
         assertThat(redis.opsForList().size(memoryKey())).isEqualTo(2L);
         assertThat(secondStore.getTurns(USER_ID, SESSION_ID)).hasSize(2);
+        String generationBeforeClear = redis.opsForValue().get(generationKey());
+        assertThat(generationBeforeClear).isNotBlank();
 
         firstStore.clearMemory(USER_ID, SESSION_ID);
 
         assertThat(redis.hasKey(memoryKey())).isFalse();
-        assertThat(redis.opsForValue().get(epochKey())).isEqualTo("1");
+        String generationAfterClear = redis.opsForValue().get(generationKey());
+        assertThat(generationAfterClear).isNotBlank();
+        assertThat(generationAfterClear).isNotEqualTo(generationBeforeClear);
+        assertThat(redis.getExpire(generationKey(), TimeUnit.MILLISECONDS)).isPositive();
         AgentMemoryStore.MemoryWriteResult staleResult = oldSnapshot.addExchange(
                 AgentTurn.user("after clear from stale snapshot"),
                 AgentTurn.assistant("must not return"),
@@ -97,20 +103,70 @@ class AgentMemoryStoreRedisIT {
     }
 
     @Test
+    void clearingACompletelyUnknownSessionDoesNotCreateATombstone() {
+        String unknownSession = "sess-random-unknown";
+
+        firstStore.clearMemory(USER_ID, unknownSession);
+
+        assertThat(redis.hasKey("agent:memory:" + USER_ID + ":" + unknownSession)).isFalse();
+        assertThat(redis.hasKey("agent:memory:generation:" + USER_ID + ":" + unknownSession))
+                .isFalse();
+    }
+
+    @Test
+    void anExpiredGenerationRejectsTheOldSnapshotAndANewSnapshotGetsANewToken() {
+        AgentConversationMemory oldSnapshot = firstStore.getOrCreateMemory(USER_ID, SESSION_ID);
+        String oldGeneration = redis.opsForValue().get(generationKey());
+        assertThat(oldGeneration).isNotBlank();
+        assertThat(redis.delete(generationKey())).isTrue();
+
+        AgentMemoryStore.MemoryWriteResult staleResult = oldSnapshot.addExchange(
+                AgentTurn.user("expired token question"),
+                AgentTurn.assistant("must not persist"),
+                null);
+
+        assertThat(staleResult.failureCode()).isEqualTo("SESSION_CLEARED");
+        assertThat(redis.hasKey(memoryKey())).isFalse();
+        AgentConversationMemory newSnapshot = secondStore.getOrCreateMemory(USER_ID, SESSION_ID);
+        String newGeneration = redis.opsForValue().get(generationKey());
+        assertThat(newGeneration).isNotBlank().isNotEqualTo(oldGeneration);
+        assertThat(newSnapshot.addExchange(
+                AgentTurn.user("new token question"),
+                AgentTurn.assistant("new token answer"))).isTrue();
+    }
+
+    @Test
+    void appendRefreshesTheGenerationTtlAlongsideTheMemoryTtl() {
+        AgentConversationMemory snapshot = firstStore.getOrCreateMemory(USER_ID, SESSION_ID);
+        assertThat(redis.persist(generationKey())).isTrue();
+        assertThat(redis.getExpire(generationKey(), TimeUnit.MILLISECONDS)).isEqualTo(-1L);
+
+        assertThat(snapshot.addExchange(
+                AgentTurn.user("refresh ttl"),
+                AgentTurn.assistant("refreshed"))).isTrue();
+
+        long generationTtl = redis.getExpire(generationKey(), TimeUnit.MILLISECONDS);
+        long memoryTtl = redis.getExpire(memoryKey(), TimeUnit.MILLISECONDS);
+        assertThat(generationTtl).isPositive();
+        assertThat(memoryTtl).isPositive();
+        assertThat(Math.abs(generationTtl - memoryTtl)).isLessThan(1_000L);
+    }
+
+    @Test
     void clearRejectsAnAcceptedTurnWithoutDroppingItsCoordinatorLease() {
         AgentTurnCoordinator coordinator = new AgentTurnCoordinator(redis);
         AgentTurnCoordinator.AcquireResult acquired = coordinator.acquire(
                 USER_ID,
                 SESSION_ID,
-                "request-epoch-it",
-                "turn-epoch-it",
+                "request-generation-it",
+                "turn-generation-it",
                 Duration.ofSeconds(30));
         assertThat(acquired.status()).isEqualTo(AgentTurnCoordinator.AcquireStatus.ACQUIRED);
         AgentTurnControl control = AgentTurnControl.create(
-                "request-epoch-it",
-                "turn-epoch-it",
+                "request-generation-it",
+                "turn-generation-it",
                 SESSION_ID,
-                "connection-epoch-it",
+                "connection-generation-it",
                 Duration.ofSeconds(30));
         AgentConversationMemory oldSnapshot = firstStore.getOrCreateMemory(USER_ID, SESSION_ID);
 
@@ -122,14 +178,14 @@ class AgentMemoryStoreRedisIT {
 
         assertThat(result.failureCode()).isEqualTo("SESSION_CLEARED");
         assertThat(redis.hasKey(memoryKey())).isFalse();
-        assertThat(coordinator.release(USER_ID, SESSION_ID, "turn-epoch-it")).isTrue();
+        assertThat(coordinator.release(USER_ID, SESSION_ID, "turn-generation-it")).isTrue();
     }
 
     private static String memoryKey() {
         return "agent:memory:" + USER_ID + ":" + SESSION_ID;
     }
 
-    private static String epochKey() {
-        return "agent:memory:epoch:" + USER_ID + ":" + SESSION_ID;
+    private static String generationKey() {
+        return "agent:memory:generation:" + USER_ID + ":" + SESSION_ID;
     }
 }
