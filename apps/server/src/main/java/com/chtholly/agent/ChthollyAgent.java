@@ -401,6 +401,10 @@ public class ChthollyAgent {
 
             boolean selected = isSelected(selection);
             SkillDefinition selectedSkill = selected ? selection.definition() : null;
+            if (selectedSkill != null) {
+                maxSteps = Math.min(maxSteps, selectedSkill.maxSteps());
+                trace.limitMaxSteps(maxSteps);
+            }
             AgentTurnBudget effectiveBudget = selectedSkill == null
                     ? turnBudget
                     : turnBudget.limitFromStart(Duration.ofMillis(selectedSkill.timeoutBudgetMs()));
@@ -460,7 +464,6 @@ public class ChthollyAgent {
                                 selection,
                                 taskPlan.evidencePolicy(),
                                 toolMap.keySet()));
-                maxSteps = Math.min(maxSteps, selectedSkill.maxSteps());
             }
             if (contextSnapshot.evidenceRequired()
                     && contextSnapshot.evidenceSet().isEmpty()

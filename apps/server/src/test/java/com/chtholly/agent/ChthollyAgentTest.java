@@ -321,8 +321,11 @@ class ChthollyAgentTest {
         ArgumentCaptor<AgentExecutionTrace> traceCaptor =
                 ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
-        var payload = new ObjectMapper().valueToTree(traceCaptor.getValue().toPayloadMap());
+        AgentExecutionTrace trace = traceCaptor.getValue();
+        assertThat(trace.getMaxSteps()).isEqualTo(3);
+        var payload = new ObjectMapper().valueToTree(trace.toPayloadMap());
         assertThat(payload.path("turn").path("budgetMs").asLong()).isEqualTo(30_000L);
+        assertThat(payload.path("turn").path("maxSteps").asInt()).isEqualTo(3);
         assertThat(payload.path("toolPlan").path("reason").asText())
                 .isEqualTo("selected_skill_evidence_only");
         assertThat(payload.path("toolPlan").path("effectiveTools").get(0).asText())

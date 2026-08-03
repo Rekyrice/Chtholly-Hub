@@ -40,7 +40,7 @@ public class AgentExecutionTrace {
     private final String correlationId;
     private final long userId;
     private final String sessionId;
-    private final int maxSteps;
+    private int maxSteps;
     private final String requestId;
     private final String turnId;
     private final String connectionId;
@@ -133,6 +133,11 @@ public class AgentExecutionTrace {
         this.turnControl = safeControl;
         this.turnBudgetMs = safeControl.budget().totalBudget().toMillis();
         this.clientDeliveryStatus = safeControl.clientDeliveryStatus().name();
+    }
+
+    /** Narrows the recorded step budget after a selected skill applies its execution cap. */
+    public void limitMaxSteps(int effectiveMaxSteps) {
+        this.maxSteps = Math.min(maxSteps, Math.max(1, effectiveMaxSteps));
     }
 
     private static String resolveCorrelationId() {
@@ -928,6 +933,7 @@ public class AgentExecutionTrace {
         turn.put("chatSessionId", sessionId == null ? "" : sessionId);
         turn.put("connectionId", connectionId);
         turn.put("budgetMs", turnBudgetMs);
+        turn.put("maxSteps", maxSteps);
         turn.put("timeoutStage", timeoutStage);
         turn.put("cancelled", cancelled);
         turn.put("clientDeliveryStatus", clientDeliveryStatus);
