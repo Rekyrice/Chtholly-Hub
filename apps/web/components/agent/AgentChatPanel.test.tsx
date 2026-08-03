@@ -4,6 +4,7 @@ import AgentChatPanel from "@/components/agent/AgentChatPanel";
 
 const agentState = vi.hoisted(() => ({
   busy: false,
+  turnActive: false,
   streaming: false,
   input: "",
   richMarkdown: false,
@@ -37,6 +38,9 @@ vi.mock("@/components/agent/AgentChatProvider", () => ({
     setInput: vi.fn(),
     connected: true,
     busy: agentState.busy,
+    turnActive: agentState.turnActive,
+    sessionOperationPending: false,
+    conversationClearError: null,
     streaming: agentState.streaming,
     showSteps: false,
     setShowSteps: vi.fn(),
@@ -61,6 +65,7 @@ vi.mock("@/lib/hooks/useMinWidth", () => ({ useMinWidth: () => true }));
 describe("AgentChatPanel expansion", () => {
   beforeEach(() => {
     agentState.busy = false;
+    agentState.turnActive = false;
     agentState.streaming = false;
     agentState.input = "";
     agentState.richMarkdown = false;
@@ -101,6 +106,19 @@ describe("AgentChatPanel expansion", () => {
     fireEvent.click(expandLink!);
     expect(linkState.componentPreventedNavigation).toBe(false);
     expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables navigation and message input while a ticket or socket handshake is pending", () => {
+    agentState.turnActive = true;
+    agentState.input = "等待发送";
+    const { container } = render(<AgentChatPanel variant="float" />);
+
+    expect(container.querySelector('a[href^="/agent?session="]')).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByTestId("agent-input")).toBeDisabled();
+    expect(screen.getByTestId("agent-send")).toBeDisabled();
   });
 
   it("uses Chtholly4 as the compact chat avatar", () => {

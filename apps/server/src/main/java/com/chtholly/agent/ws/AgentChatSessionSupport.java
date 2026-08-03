@@ -2,15 +2,21 @@ package com.chtholly.agent.ws;
 
 import org.springframework.util.StringUtils;
 
-/** 校验前端 Agent 会话 id（与 localStorage sess-xxx 一致）。 */
-final class AgentChatSessionSupport {
+/** Validates frontend Agent chat session IDs shared by HTTP and WebSocket entry points. */
+public final class AgentChatSessionSupport {
 
     private static final int MAX_LENGTH = 128;
 
     private AgentChatSessionSupport() {
     }
 
-    static boolean isValid(String sessionId) {
+    /**
+     * Checks whether a session ID is safe to use as an Agent memory key component.
+     *
+     * @param sessionId frontend chat session ID
+     * @return {@code true} when the ID satisfies the shared format contract
+     */
+    public static boolean isValid(String sessionId) {
         if (!StringUtils.hasText(sessionId) || sessionId.length() > MAX_LENGTH) {
             return false;
         }

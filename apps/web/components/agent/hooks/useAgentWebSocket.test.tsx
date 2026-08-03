@@ -402,160 +402,6 @@ describe("useAgentWebSocket turn protocol", () => {
     ]);
   });
 
-  it("keeps cleared envelopes compatible without request and turn ids", async () => {
-    const { result } = renderAgentHook([
-      { id: "existing", role: "assistant", content: "已有消息" },
-    ]);
-    await waitFor(() => expect(sockets).toHaveLength(1));
-
-    act(() => result.current.clearConversation());
-    act(() => sockets[0].receive({ type: "cleared", data: {} }));
-
-    expect(result.current.messages).toEqual([]);
-    expect(result.current.busy).toBe(false);
-  });
-
-  it("does not let an unknown or backend clear acknowledgement reset the current turn", async () => {
-    const { result } = renderAgentHook();
-    await waitFor(() => expect(sockets).toHaveLength(1));
-    await act(async () => result.current.sendMessage("当前轮"));
-    const { requestId } = sentChatPayload(sockets[0]);
-
-    act(() => sockets[0].receive({ type: "cleared", data: {} }));
-    expect(result.current.busy).toBe(true);
-
-    act(() => {
-      result.current.clearBackendMemory("another-session");
-      sockets[0].receive({ type: "cleared", data: {} });
-    });
-    expect(result.current.busy).toBe(true);
-
-    act(() => {
-      sockets[0].receive({
-        type: "accepted",
-        requestId,
-        turnId: "turn-after-clear",
-        data: {},
-      });
-      sockets[0].receive({
-        type: "final",
-        requestId,
-        turnId: "turn-after-clear",
-        data: { content: "仍然完成" },
-      });
-    });
-
-    expect(result.current.busy).toBe(false);
-    expect(result.current.messages.at(-1)).toMatchObject({
-      role: "assistant",
-      content: "仍然完成",
-    });
-  });
-
-  it("ignores a user clear acknowledgement that arrives after a new turn starts", async () => {
-    const { result } = renderAgentHook([
-      { id: "old", role: "assistant", content: "旧消息" },
-    ]);
-    await waitFor(() => expect(sockets).toHaveLength(1));
-
-    act(() => result.current.clearConversation());
-    await act(async () => result.current.sendMessage("清理后新问题"));
-    const { requestId } = sentChatPayload(sockets[0], 1);
-    act(() => sockets[0].receive({ type: "cleared", data: {} }));
-
-    expect(result.current.busy).toBe(true);
-    expect(result.current.messages).toEqual([
-      { id: "old", role: "assistant", content: "旧消息" },
-      expect.objectContaining({ role: "user", content: "清理后新问题" }),
-    ]);
-
-    act(() => {
-      sockets[0].receive({
-        type: "accepted",
-        requestId,
-        turnId: "turn-new-after-clear",
-        data: {},
-      });
-      sockets[0].receive({
-        type: "final",
-        requestId,
-        turnId: "turn-new-after-clear",
-        data: { content: "新回答" },
-      });
-    });
-    expect(result.current.messages.at(-1)).toMatchObject({
-      role: "assistant",
-      content: "新回答",
-    });
-  });
-
-  it("does not erase a newer completed turn when a user clear acknowledgement is late", async () => {
-    const { result } = renderAgentHook([
-      { id: "old", role: "assistant", content: "旧消息" },
-    ]);
-    await waitFor(() => expect(sockets).toHaveLength(1));
-
-    act(() => result.current.clearConversation());
-    const clearPayload = JSON.parse(String(sockets[0].send.mock.calls[0]?.[0])) as {
-      requestId: string;
-    };
-    await act(async () => result.current.sendMessage("新一轮"));
-    const { requestId } = sentChatPayload(sockets[0], 1);
-    act(() => {
-      sockets[0].receive({
-        type: "accepted",
-        requestId,
-        turnId: "turn-completed-before-clear",
-        data: {},
-      });
-      sockets[0].receive({
-        type: "final",
-        requestId,
-        turnId: "turn-completed-before-clear",
-        data: { content: "新回答已完成" },
-      });
-      sockets[0].receive({
-        type: "cleared",
-        requestId: clearPayload.requestId,
-        data: {},
-      });
-    });
-
-    expect(result.current.messages).toContainEqual(expect.objectContaining({
-      role: "assistant",
-      content: "新回答已完成",
-    }));
-  });
-
-  it("correlates overlapping clear acknowledgements without overwriting intent", async () => {
-    const { result } = renderAgentHook([
-      { id: "existing", role: "assistant", content: "待清理" },
-    ]);
-    await waitFor(() => expect(sockets).toHaveLength(1));
-
-    act(() => {
-      result.current.clearConversation();
-      result.current.clearBackendMemory("another-session");
-    });
-    const userClear = JSON.parse(String(sockets[0].send.mock.calls[0]?.[0])) as {
-      requestId: string;
-    };
-    const backendClear = JSON.parse(String(sockets[0].send.mock.calls[1]?.[0])) as {
-      requestId: string;
-    };
-    expect(userClear.requestId).not.toBe(backendClear.requestId);
-
-    act(() => {
-      sockets[0].receive({ type: "cleared", requestId: backendClear.requestId, data: {} });
-    });
-    expect(result.current.messages).toHaveLength(1);
-
-    act(() => {
-      sockets[0].receive({ type: "cleared", requestId: userClear.requestId, data: {} });
-    });
-    expect(result.current.messages).toEqual([]);
-  });
-
   it("ignores matching ids when rejected or turn events arrive from an old socket", async () => {
     const { result } = renderAgentHook();
     await waitFor(() => expect(sockets).toHaveLength(1));
@@ -859,6 +705,33 @@ describe("useAgentWebSocket disconnect recovery", () => {
     ]);
   });
 
+  it("reports a ref-backed active turn while a send waits for its ticket", async () => {
+    let resolveTicket!: (url: string) => void;
+    const ticket = new Promise<string>((resolve) => { resolveTicket = resolve; });
+    vi.mocked(getAgentWsUrl).mockReset().mockImplementationOnce(() => ticket);
+    const { result } = renderAgentHook([
+      { id: "existing", role: "assistant", content: "待保留" },
+    ]);
+    await waitFor(() => expect(getAgentWsUrl).toHaveBeenCalledOnce());
+
+    let pendingSend!: Promise<void>;
+    act(() => {
+      pendingSend = result.current.sendMessage("等待票据");
+    });
+
+    expect(result.current.hasActiveTurn()).toBe(true);
+    await waitFor(() => expect(result.current.turnActive).toBe(true));
+
+    act(() => result.current.abandonCurrentTurn());
+    expect(result.current.hasActiveTurn()).toBe(false);
+    expect(result.current.turnActive).toBe(false);
+
+    await act(async () => {
+      resolveTicket("ws://example.test/api/v1/agent/ws?ticket=late");
+      await pendingSend;
+    });
+  });
+
   it("closes a connecting socket and lets the migrated session send immediately", async () => {
     const { result, activeSessionIdRef } = renderAgentHook();
     await waitFor(() => expect(sockets).toHaveLength(1));
@@ -889,6 +762,30 @@ describe("useAgentWebSocket disconnect recovery", () => {
     expect(result.current.messages.some((message) => (
       message.content.includes("旧问题") || message.content.includes("连接失败")
     ))).toBe(false);
+  });
+
+  it("reports a ref-backed active turn while the send socket is connecting", async () => {
+    const { result } = renderAgentHook();
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    act(() => sockets[0].disconnect());
+    socketReadyStates.push(MockWebSocket.CONNECTING);
+
+    let pendingSend!: Promise<void>;
+    act(() => {
+      pendingSend = result.current.sendMessage("等待握手");
+    });
+    await waitFor(() => expect(sockets).toHaveLength(2));
+
+    expect(result.current.hasActiveTurn()).toBe(true);
+    expect(result.current.turnActive).toBe(true);
+
+    act(() => result.current.abandonCurrentTurn());
+    expect(result.current.hasActiveTurn()).toBe(false);
+    expect(result.current.turnActive).toBe(false);
+    expect(sockets[1].close).toHaveBeenCalledOnce();
+
+    act(() => sockets[1].disconnect());
+    await act(async () => pendingSend);
   });
 
   it("rolls back the turn when socket.send throws and allows a fresh retry", async () => {

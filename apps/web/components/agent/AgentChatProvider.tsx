@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -17,6 +18,7 @@ import type {
   AgentSessionRecord,
 } from "@/lib/agent/sessions";
 import { isLoggedIn, purgeExpiredAuth } from "@/lib/auth/tokens";
+import { agentService } from "@/lib/services/agentService";
 import type {
   AgentSendOptions,
   ChatMessage,
@@ -36,6 +38,7 @@ type AgentChatContextValue = {
   setInput: (value: string) => void;
   connected: boolean;
   busy: boolean;
+  turnActive: boolean;
   showSteps: boolean;
   setShowSteps: (value: BooleanStateAction) => void;
   workspaceDark: boolean;
@@ -50,12 +53,17 @@ type AgentChatContextValue = {
   visibleProactiveNotification: ProactiveNotificationItem | null;
   dismissProactiveNotification: () => void;
   sendMessage: (text: string, options?: AgentSendOptions) => Promise<void>;
-  clearConversation: () => void;
+  clearConversation: () => Promise<boolean>;
+  clearingConversation: boolean;
+  conversationClearError: string | null;
+  sessionOperationPending: boolean;
   switchSession: (sessionId: string) => void;
   createSession: () => string;
   activateContextSession: (context: AgentSessionContext) => string;
   renameSession: (sessionId: string, title: string) => void;
-  deleteSession: (sessionId: string) => void;
+  deleteSession: (sessionId: string) => Promise<void>;
+  deletingSessionIds: string[];
+  sessionDeleteError: string | null;
   fillAndSend: (text: string) => void;
 };
 
@@ -64,6 +72,12 @@ const AgentChatContext = createContext<AgentChatContextValue | null>(null);
 export function AgentChatProvider({ children }: { children: ReactNode }) {
   const [loggedIn, setLoggedIn] = useState(false);
   const [input, setInput] = useState("");
+  const [deletingSessionIds, setDeletingSessionIds] = useState<string[]>([]);
+  const [sessionDeleteError, setSessionDeleteError] = useState<string | null>(null);
+  const [clearingConversation, setClearingConversation] = useState(false);
+  const [conversationClearError, setConversationClearError] = useState<string | null>(null);
+  const deletingSessionIdsRef = useRef(new Set<string>());
+  const clearingConversationSessionIdRef = useRef<string | null>(null);
   const preferences = useAgentPreferences();
   const sessionState = useAgentSessions();
 
@@ -95,56 +109,144 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     socketState.abandonCurrentTurn();
   }, [socketState]);
 
+  const clearSessionErrors = useCallback(() => {
+    setSessionDeleteError(null);
+    setConversationClearError(null);
+  }, []);
+
   const switchSession = useCallback(
     (sessionId: string) => {
+      if (clearingConversationSessionIdRef.current) return;
+      if (deletingSessionIdsRef.current.has(sessionId)) return;
       if (
         sessionId === sessionState.activeSessionId
         || !sessionState.sessions.some((session) => session.id === sessionId)
       ) return;
+      clearSessionErrors();
       prepareSessionMigration();
       sessionState.switchSession(sessionId);
     },
-    [prepareSessionMigration, sessionState],
+    [clearSessionErrors, prepareSessionMigration, sessionState],
   );
 
   const createSession = useCallback(() => {
+    if (clearingConversationSessionIdRef.current) {
+      return sessionState.activeSessionIdRef.current;
+    }
+    clearSessionErrors();
     prepareSessionMigration();
     const id = sessionState.createSession();
     return id;
-  }, [prepareSessionMigration, sessionState]);
+  }, [clearSessionErrors, prepareSessionMigration, sessionState]);
 
   const activateContextSession = useCallback(
     (context: AgentSessionContext) => {
+      if (clearingConversationSessionIdRef.current) {
+        return sessionState.activeSessionIdRef.current;
+      }
       const existing = sessionState.sessions.find(
         (session) => session.contextKey === context.contextKey,
       );
+      if (existing && deletingSessionIdsRef.current.has(existing.id)) {
+        return sessionState.activeSessionIdRef.current;
+      }
+      clearSessionErrors();
       if (existing?.id !== sessionState.activeSessionId) prepareSessionMigration();
       return sessionState.activateContextSession(context);
     },
-    [prepareSessionMigration, sessionState],
+    [clearSessionErrors, prepareSessionMigration, sessionState],
+  );
+
+  const sendMessage = useCallback(
+    async (text: string, options?: AgentSendOptions) => {
+      const sessionId = sessionState.activeSessionIdRef.current;
+      if (
+        deletingSessionIdsRef.current.has(sessionId)
+        || clearingConversationSessionIdRef.current === sessionId
+      ) return;
+      clearSessionErrors();
+      await socketState.sendMessage(text, options);
+    },
+    [clearSessionErrors, sessionState.activeSessionIdRef, socketState],
   );
 
   const deleteSession = useCallback(
-    (sessionId: string) => {
-      const deletingActive = sessionId === sessionState.activeSessionId;
-      if (deletingActive && socketState.busy) return;
-      socketState.clearBackendMemory(sessionId);
-      if (deletingActive) prepareSessionMigration();
-      sessionState.deleteSession(sessionId);
+    async (sessionId: string) => {
+      if (!sessionState.sessions.some((session) => session.id === sessionId)) return;
+      if (deletingSessionIdsRef.current.has(sessionId)) return;
+      if (clearingConversationSessionIdRef.current === sessionId) return;
+      const deletingActive = sessionId === sessionState.activeSessionIdRef.current;
+      if (deletingActive && socketState.hasActiveTurn()) return;
+
+      deletingSessionIdsRef.current.add(sessionId);
+      setDeletingSessionIds([...deletingSessionIdsRef.current]);
+      setSessionDeleteError(null);
+      try {
+        await agentService.clearSessionMemory(sessionId);
+        if (sessionId === sessionState.activeSessionIdRef.current) {
+          prepareSessionMigration();
+        }
+        sessionState.deleteSession(sessionId);
+      } catch {
+        setSessionDeleteError("未能删除会话，后端记忆清理失败，请重试。");
+      } finally {
+        deletingSessionIdsRef.current.delete(sessionId);
+        setDeletingSessionIds([...deletingSessionIdsRef.current]);
+      }
     },
     [prepareSessionMigration, sessionState, socketState],
   );
 
+  const renameSession = useCallback((sessionId: string, title: string) => {
+    if (
+      deletingSessionIdsRef.current.has(sessionId)
+      || clearingConversationSessionIdRef.current === sessionId
+    ) return;
+    sessionState.renameSession(sessionId, title);
+  }, [sessionState]);
+
+  const clearConversation = useCallback(async () => {
+    const sessionId = sessionState.activeSessionIdRef.current;
+    if (
+      !sessionId
+      || socketState.hasActiveTurn()
+      || deletingSessionIdsRef.current.has(sessionId)
+      || clearingConversationSessionIdRef.current !== null
+    ) return false;
+
+    clearingConversationSessionIdRef.current = sessionId;
+    setClearingConversation(true);
+    setConversationClearError(null);
+    try {
+      await agentService.clearSessionMemory(sessionId);
+      if (sessionState.activeSessionIdRef.current !== sessionId) {
+        setConversationClearError("会话已经切换，请重试清空操作。");
+        return false;
+      }
+      socketState.clearLocalConversation();
+      return true;
+    } catch {
+      setConversationClearError("未能清空当前对话，后端记忆清理失败，请重试。");
+      return false;
+    } finally {
+      clearingConversationSessionIdRef.current = null;
+      setClearingConversation(false);
+    }
+  }, [sessionState.activeSessionIdRef, socketState]);
+
   const fillAndSend = useCallback(
     (text: string) => {
       setInput(text);
-      void socketState.sendMessage(text);
+      void sendMessage(text);
     },
-    [socketState],
+    [sendMessage],
   );
 
   const value = useMemo<AgentChatContextValue>(
-    () => ({
+    () => {
+      const sessionOperationPending = clearingConversation
+        || deletingSessionIds.includes(sessionState.activeSessionId);
+      return ({
       loggedIn,
       activeSessionId: sessionState.activeSessionId,
       activeSessionContext: sessionState.activeSessionContextRef.current,
@@ -154,6 +256,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       setInput,
       connected: socketState.connected,
       busy: socketState.busy,
+      turnActive: socketState.turnActive,
       ...preferences,
       liveSteps: socketState.liveSteps,
       livePhase: socketState.livePhase,
@@ -162,23 +265,36 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       proactiveNotifications: socketState.proactiveNotifications,
       visibleProactiveNotification: socketState.visibleProactiveNotification,
       dismissProactiveNotification: socketState.dismissProactiveNotification,
-      sendMessage: socketState.sendMessage,
-      clearConversation: socketState.clearConversation,
+      sendMessage,
+      clearConversation,
+      clearingConversation,
+      conversationClearError,
+      sessionOperationPending,
       switchSession,
       createSession,
       activateContextSession,
-      renameSession: sessionState.renameSession,
+      renameSession,
       deleteSession,
+      deletingSessionIds,
+      sessionDeleteError,
       fillAndSend,
-    }),
+      });
+    },
     [
+      clearConversation,
+      clearingConversation,
+      conversationClearError,
       createSession,
       deleteSession,
+      deletingSessionIds,
       activateContextSession,
       fillAndSend,
       input,
       loggedIn,
       preferences,
+      renameSession,
+      sendMessage,
+      sessionDeleteError,
       sessionState,
       socketState,
       switchSession,

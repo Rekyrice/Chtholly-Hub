@@ -14,10 +14,17 @@ public class AgentConversationMemory {
     private final String chatSessionId;
     private final AgentMemoryStore store;
     private final List<AgentTurn> turns;
+    private final long expectedEpoch;
 
-    AgentConversationMemory(long userId, String chatSessionId, List<AgentTurn> turns, AgentMemoryStore store) {
+    AgentConversationMemory(
+            long userId,
+            String chatSessionId,
+            long expectedEpoch,
+            List<AgentTurn> turns,
+            AgentMemoryStore store) {
         this.userId = userId;
         this.chatSessionId = chatSessionId;
+        this.expectedEpoch = expectedEpoch;
         this.store = store;
         this.turns = new ArrayList<>(turns == null ? List.of() : turns);
     }
@@ -26,7 +33,14 @@ public class AgentConversationMemory {
         if (turn == null || turn.content() == null || turn.content().isBlank()) {
             return;
         }
-        store.addTurn(userId, chatSessionId, turn);
+        AgentMemoryStore.MemoryWriteResult result = store.addTurn(
+                userId,
+                chatSessionId,
+                turn,
+                expectedEpoch);
+        if (!result.committed()) {
+            return;
+        }
         turns.add(turn);
         int max = store.maxTurns();
         while (turns.size() > max) {
@@ -65,7 +79,12 @@ public class AgentConversationMemory {
         }
         List<AgentTurn> exchange = List.of(userTurn, assistantTurn);
         AgentMemoryStore.MemoryWriteResult result = store.addTurns(
-                userId, chatSessionId, exchange, control, deadlineEpochMs);
+                userId,
+                chatSessionId,
+                exchange,
+                control,
+                deadlineEpochMs,
+                expectedEpoch);
         if (!result.committed()) {
             return result;
         }

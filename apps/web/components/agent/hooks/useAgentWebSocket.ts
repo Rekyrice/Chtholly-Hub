@@ -35,13 +35,6 @@ type BuildAgentChatPayloadInput = {
   sessionContext?: AgentSessionContext | null;
 };
 
-type BackendClearIntent = {
-  kind: "backend" | "user";
-  socket: WebSocket;
-  requestId: string;
-  turnGenerationAtSend: number;
-};
-
 function createRequestId() {
   const cryptoApi = globalThis.crypto;
   if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
@@ -105,6 +98,7 @@ export function useAgentWebSocket({
 }: UseAgentWebSocketOptions) {
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [turnActive, setTurnActive] = useState(false);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
   const [livePhase, setLivePhase] = useState<AgentLivePhase>("idle");
   const [lastError, setLastError] = useState<string | null>(null);
@@ -124,7 +118,10 @@ export function useAgentWebSocket({
   const turnGenerationRef = useRef(0);
   const proactiveInstanceSequenceRef = useRef(0);
   const stepsRef = useRef<string[]>([]);
-  const backendClearIntentsRef = useRef(new Map<string, BackendClearIntent>());
+  const hasActiveTurn = useCallback(
+    () => busyRef.current || activeSendAttemptRef.current !== null,
+    [],
+  );
 
   const pushStep = useCallback((line: string) => {
     stepsRef.current = [...stepsRef.current, line];
@@ -159,8 +156,9 @@ export function useAgentWebSocket({
     currentTurnIdRef.current = null;
     currentTurnSocketRef.current = null;
     busyRef.current = false;
-    backendClearIntentsRef.current.clear();
+    activeSendAttemptRef.current = null;
     setBusy(false);
+    setTurnActive(false);
     setLivePhase("idle");
     setLastError(null);
   }, []);
@@ -176,9 +174,6 @@ export function useAgentWebSocket({
     const steps = [...stepsRef.current];
     streamingIdRef.current = null;
     stepsRef.current = [];
-    for (const [requestId, intent] of backendClearIntentsRef.current) {
-      if (intent.socket === socket) backendClearIntentsRef.current.delete(requestId);
-    }
     setMessages((previous) => [
       ...previous.map((message) => (
         message.id === streamId
@@ -193,6 +188,7 @@ export function useAgentWebSocket({
     ]);
     setLiveSteps([]);
     setBusy(false);
+    setTurnActive(false);
     setLivePhase("idle");
     setLastError(null);
   }, [setMessages]);
@@ -224,13 +220,11 @@ export function useAgentWebSocket({
     ))));
     setLiveSteps([]);
     setBusy(false);
+    setTurnActive(false);
     setLivePhase("idle");
     setLastError(null);
 
     if (!socket) return;
-    for (const [requestId, intent] of backendClearIntentsRef.current) {
-      if (intent.socket === socket) backendClearIntentsRef.current.delete(requestId);
-    }
     if (wsRef.current === socket) {
       wsRef.current = null;
       setConnected(false);
@@ -263,6 +257,7 @@ export function useAgentWebSocket({
     stepsRef.current = [];
     setLiveSteps([]);
     setBusy(false);
+    setTurnActive(false);
     const completedGeneration = turnGenerationRef.current;
     window.setTimeout(() => {
       if (turnGenerationRef.current !== completedGeneration || busyRef.current) return;
@@ -278,26 +273,6 @@ export function useAgentWebSocket({
       if (type === "proactive") {
         if (sourceSocket !== wsRef.current) return;
         pushProactiveNotification(data);
-        return;
-      }
-      if (type === "cleared") {
-        if (wsRef.current !== sourceSocket) return;
-        let intent: BackendClearIntent | undefined;
-        if (typeof envelope.requestId === "string" && envelope.requestId) {
-          intent = backendClearIntentsRef.current.get(envelope.requestId);
-          if (!intent || intent.socket !== sourceSocket) return;
-          backendClearIntentsRef.current.delete(envelope.requestId);
-        } else {
-          const candidates = [...backendClearIntentsRef.current.values()]
-            .filter((candidate) => candidate.socket === sourceSocket);
-          if (candidates.length !== 1) return;
-          [intent] = candidates;
-          backendClearIntentsRef.current.delete(intent.requestId);
-        }
-        if (intent.kind !== "user") return;
-        if (busyRef.current || turnGenerationRef.current !== intent.turnGenerationAtSend) return;
-        setMessages([]);
-        resetTransient();
         return;
       }
       if (type === "rejected") {
@@ -398,6 +373,7 @@ export function useAgentWebSocket({
         stepsRef.current = [];
         setLiveSteps([]);
         setBusy(false);
+        setTurnActive(false);
         const completedGeneration = turnGenerationRef.current;
         window.setTimeout(() => {
           if (turnGenerationRef.current === completedGeneration && !busyRef.current) {
@@ -411,7 +387,7 @@ export function useAgentWebSocket({
         return;
       }
     },
-    [finishTurnWithError, pushProactiveNotification, pushStep, resetTransient, setMessages],
+    [finishTurnWithError, pushProactiveNotification, pushStep, setMessages],
   );
 
   const attachHandlers = useCallback(
@@ -424,9 +400,6 @@ export function useAgentWebSocket({
         if (wsRef.current === socket) {
           wsRef.current = null;
           setConnected(false);
-        }
-        for (const [requestId, intent] of backendClearIntentsRef.current) {
-          if (intent.socket === socket) backendClearIntentsRef.current.delete(requestId);
         }
         interruptCurrentTurn(socket);
       };
@@ -558,6 +531,7 @@ export function useAgentWebSocket({
       sendAttemptSequenceRef.current += 1;
       const attempt = sendAttemptSequenceRef.current;
       activeSendAttemptRef.current = attempt;
+      setTurnActive(true);
       const isCurrentAttempt = () => activeSendAttemptRef.current === attempt;
       try {
         let socket = wsRef.current;
@@ -627,6 +601,7 @@ export function useAgentWebSocket({
       } finally {
         if (activeSendAttemptRef.current === attempt) {
           activeSendAttemptRef.current = null;
+          if (!busyRef.current) setTurnActive(false);
         }
       }
     },
@@ -642,45 +617,10 @@ export function useAgentWebSocket({
     ],
   );
 
-  const clearBackendMemory = useCallback((sessionId: string) => {
-    const socket = wsRef.current;
-    if (!sessionId || !socket || socket.readyState !== WebSocket.OPEN) return;
-    const requestId = createRequestId();
-    backendClearIntentsRef.current.set(requestId, {
-      kind: "backend",
-      socket,
-      requestId,
-      turnGenerationAtSend: turnGenerationRef.current,
-    });
-    try {
-      socket.send(JSON.stringify({ type: "clear", requestId, sessionId }));
-    } catch {
-      backendClearIntentsRef.current.delete(requestId);
-    }
-  }, []);
-
-  const clearConversation = useCallback(() => {
-    const sessionId = activeSessionIdRef.current;
-    if (!sessionId || busyRef.current) return;
-    const socket = wsRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      setMessages([]);
-      resetTransient();
-      return;
-    }
-    const requestId = createRequestId();
-    backendClearIntentsRef.current.set(requestId, {
-      kind: "user",
-      socket,
-      requestId,
-      turnGenerationAtSend: turnGenerationRef.current,
-    });
-    try {
-      socket.send(JSON.stringify({ type: "clear", requestId, sessionId }));
-    } catch {
-      backendClearIntentsRef.current.delete(requestId);
-    }
-  }, [activeSessionIdRef, resetTransient, setMessages]);
+  const clearLocalConversation = useCallback(() => {
+    setMessages([]);
+    resetTransient();
+  }, [resetTransient, setMessages]);
 
   const streaming = useMemo(
     () => messages.some((message) => message.streaming),
@@ -690,6 +630,8 @@ export function useAgentWebSocket({
   return {
     connected,
     busy,
+    turnActive,
+    hasActiveTurn,
     liveSteps,
     livePhase,
     lastError,
@@ -697,8 +639,7 @@ export function useAgentWebSocket({
     visibleProactiveNotification,
     dismissProactiveNotification,
     sendMessage,
-    clearConversation,
-    clearBackendMemory,
+    clearLocalConversation,
     abandonCurrentTurn,
     resetTransient,
     streaming,

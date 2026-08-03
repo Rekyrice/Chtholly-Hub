@@ -12,6 +12,7 @@ type AgentSessionItemProps = {
   onRename: (title: string) => void;
   onDelete: () => void;
   deleteDisabled?: boolean;
+  deletePending?: boolean;
 };
 
 export default function AgentSessionItem({
@@ -28,6 +29,7 @@ function AgentSessionItemState({
   onRename,
   onDelete,
   deleteDisabled = false,
+  deletePending = false,
 }: AgentSessionItemProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -141,7 +143,7 @@ function AgentSessionItemState({
                   onDelete();
                 }}
               >
-                删除
+                {deletePending ? "删除中…" : "删除"}
               </button>
             </div>
           )}

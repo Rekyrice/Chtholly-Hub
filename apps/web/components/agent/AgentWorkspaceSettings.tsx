@@ -45,6 +45,9 @@ export default function AgentWorkspaceSettings() {
     setRichMarkdown,
     messages,
     busy,
+    turnActive,
+    clearingConversation,
+    conversationClearError,
     clearConversation,
   } = useAgentChatContext();
   const [open, setOpen] = useState(false);
@@ -100,16 +103,22 @@ export default function AgentWorkspaceSettings() {
 
           <div className="agent-settings-divider" />
 
+          {conversationClearError && (
+            <p className="mb-2 text-xs text-error" role="alert">
+              {conversationClearError}
+            </p>
+          )}
+
           <button
             type="button"
             className="agent-settings-action"
-            disabled={busy || messages.length === 0}
-            onClick={() => {
-              clearConversation();
-              setOpen(false);
+            disabled={busy || turnActive || clearingConversation || messages.length === 0}
+            onClick={async () => {
+              const cleared = await clearConversation();
+              if (cleared) setOpen(false);
             }}
           >
-            清空当前对话
+            {clearingConversation ? "清理中…" : "清空当前对话"}
           </button>
         </div>
       )}

@@ -20,7 +20,9 @@ export default function AgentSessionSidebar({
   const {
     sessions,
     activeSessionId,
-    busy,
+    turnActive,
+    deletingSessionIds,
+    sessionDeleteError,
     switchSession,
     createSession,
     renameSession,
@@ -61,18 +63,27 @@ export default function AgentSessionSidebar({
               <Plus size={16} />
             </button>
           </div>
+          {sessionDeleteError && (
+            <p className="px-3 py-2 text-xs text-error" role="alert">
+              {sessionDeleteError}
+            </p>
+          )}
           <ul className="agent-session-list">
-            {sessions.map((session) => (
-              <AgentSessionItem
-                key={session.id}
-                session={session}
-                active={session.id === activeSessionId}
-                onSelect={() => switchSession(session.id)}
-                onRename={(title) => renameSession(session.id, title)}
-                onDelete={() => deleteSession(session.id)}
-                deleteDisabled={session.id === activeSessionId && busy}
-              />
-            ))}
+            {sessions.map((session) => {
+              const deleting = deletingSessionIds.includes(session.id);
+              return (
+                <AgentSessionItem
+                  key={session.id}
+                  session={session}
+                  active={session.id === activeSessionId}
+                  onSelect={() => switchSession(session.id)}
+                  onRename={(title) => renameSession(session.id, title)}
+                  onDelete={() => void deleteSession(session.id)}
+                  deleteDisabled={deleting || (session.id === activeSessionId && turnActive)}
+                  deletePending={deleting}
+                />
+              );
+            })}
           </ul>
         </>
       )}

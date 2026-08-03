@@ -38,6 +38,9 @@ export default function AgentChatPanel({
     setInput,
     connected,
     busy,
+    turnActive,
+    sessionOperationPending,
+    conversationClearError,
     streaming,
     showSteps,
     setShowSteps,
@@ -54,7 +57,8 @@ export default function AgentChatPanel({
   const workspacePlaceholder = useAgentPlaceholder();
   const showAssistantAvatar = !isWorkspace || !isDesktopLayout;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const expansionBlocked = busy || streaming;
+  const operationBlocked = busy || turnActive || sessionOperationPending;
+  const expansionBlocked = operationBlocked || streaming;
 
   return (
     <div
@@ -178,7 +182,7 @@ export default function AgentChatPanel({
             placeholder
               ?? (isWorkspace ? workspacePlaceholder : isRoom ? "想和她说什么…" : "输入问题…")
           }
-          disabled={busy}
+          disabled={operationBlocked}
           className={cn(
             "floating-agent-input-field agent-input flex-1 text-sm disabled:opacity-50",
             isWorkspace && "agent-input--workspace",
@@ -187,7 +191,7 @@ export default function AgentChatPanel({
         />
         <button
           type="submit"
-          disabled={busy || !input.trim()}
+          disabled={operationBlocked || !input.trim()}
           className="floating-agent-send-btn disabled:opacity-50"
           aria-label="发送"
           data-testid="agent-send"
@@ -196,12 +200,18 @@ export default function AgentChatPanel({
         </button>
       </form>
 
+      {!isWorkspace && conversationClearError && (
+        <p className="px-4 pb-2 text-xs text-error shrink-0" role="alert">
+          {conversationClearError}
+        </p>
+      )}
+
       {!isWorkspace && messages.length > 0 && (
         <div className="px-4 pb-2 shrink-0">
           <button
             type="button"
-            disabled={busy}
-            onClick={clearConversation}
+            disabled={operationBlocked}
+            onClick={() => void clearConversation()}
             className="text-xs text-text-secondary hover:text-sky transition-colors duration-150 disabled:opacity-50"
           >
             清空对话

@@ -24,15 +24,17 @@ import java.util.List;
 public class AgentMemoryStore {
 
     private static final String KEY_PREFIX = "agent:memory:";
+    private static final String EPOCH_KEY_PREFIX = "agent:memory:epoch:";
     private static final long UNFENCED_DEADLINE_EPOCH_MS = 253_402_300_799_999L;
     private static final DefaultRedisScript<Long> APPEND_SCRIPT = appendScript();
+    private static final DefaultRedisScript<Long> CLEAR_SCRIPT = clearScript();
     /** 本地热数据缓存容量（会话数上限）。 */
     private static final int LOCAL_CACHE_MAX_SIZE = 4096;
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final AgentProperties properties;
-    private final Cache<String, List<AgentTurn>> localCache;
+    private final Cache<String, CachedMemory> localCache;
 
     public AgentMemoryStore(StringRedisTemplate redis, ObjectMapper objectMapper, AgentProperties properties) {
         this.redis = redis;
@@ -45,22 +47,47 @@ public class AgentMemoryStore {
                 .build();
     }
 
-    /** 加载指定前端会话的对话记忆（优先 Caffeine，未命中则 LRANGE Redis List）。 */
+    /** 校验持久 epoch 后加载会话记忆；本地快照版本一致时复用 Caffeine，否则重读 Redis List。 */
     public AgentConversationMemory getOrCreateMemory(long userId, String chatSessionId) {
-        String cacheKey = cacheKey(userId, chatSessionId);
-        List<AgentTurn> turns = localCache.get(cacheKey, k -> loadTurnsFromRedis(userId, chatSessionId));
-        if (turns == null) {
-            turns = List.of();
-        }
-        return new AgentConversationMemory(userId, chatSessionId, turns, this);
+        CachedMemory snapshot = currentMemory(userId, chatSessionId);
+        return new AgentConversationMemory(
+                userId,
+                chatSessionId,
+                snapshot.epoch(),
+                snapshot.turns(),
+                this);
     }
 
     /** RPUSH 单条 turn 并 LTRIM 保留最近 maxTurns 条。 */
-    public void addTurn(long userId, String chatSessionId, AgentTurn turn) {
+    public boolean addTurn(long userId, String chatSessionId, AgentTurn turn) {
         if (turn == null) {
-            return;
+            return false;
         }
-        addTurns(userId, chatSessionId, List.of(turn));
+        long expectedEpoch = currentEpoch(userId, chatSessionId);
+        return addTurns(
+                userId,
+                chatSessionId,
+                List.of(turn),
+                null,
+                UNFENCED_DEADLINE_EPOCH_MS,
+                expectedEpoch).committed();
+    }
+
+    MemoryWriteResult addTurn(
+            long userId,
+            String chatSessionId,
+            AgentTurn turn,
+            long expectedEpoch) {
+        if (turn == null) {
+            return MemoryWriteResult.rejected("INVALID_EXCHANGE");
+        }
+        return addTurns(
+                userId,
+                chatSessionId,
+                List.of(turn),
+                null,
+                UNFENCED_DEADLINE_EPOCH_MS,
+                expectedEpoch);
     }
 
     /** 使用单次 RPUSH 原子追加一组 turn，避免问答对只写入一半。 */
@@ -86,6 +113,17 @@ public class AgentMemoryStore {
             List<AgentTurn> turns,
             AgentTurnControl control,
             long deadlineEpochMs) {
+        long expectedEpoch = currentEpoch(userId, chatSessionId);
+        return addTurns(userId, chatSessionId, turns, control, deadlineEpochMs, expectedEpoch);
+    }
+
+    MemoryWriteResult addTurns(
+            long userId,
+            String chatSessionId,
+            List<AgentTurn> turns,
+            AgentTurnControl control,
+            long deadlineEpochMs,
+            long expectedEpoch) {
         List<AgentTurn> validTurns = turns == null
                 ? List.of()
                 : turns.stream()
@@ -100,7 +138,6 @@ public class AgentMemoryStore {
         }
         String redisKey = redisKey(userId, chatSessionId);
         String cacheKey = cacheKey(userId, chatSessionId);
-        List<AgentTurn> cachedBeforeWrite = localCache.getIfPresent(cacheKey);
         try {
             String[] serialized = new String[validTurns.size()];
             for (int index = 0; index < validTurns.size(); index++) {
@@ -112,32 +149,29 @@ public class AgentMemoryStore {
             long effectiveDeadlineEpochMs = fenced
                     ? Math.min(control.budget().deadlineEpochMillis(), deadlineEpochMs)
                     : UNFENCED_DEADLINE_EPOCH_MS;
-            Object[] args = new Object[4 + serialized.length];
+            Object[] args = new Object[5 + serialized.length];
             args[0] = Integer.toString(max);
             args[1] = Long.toString(ttl().toMillis());
             args[2] = Long.toString(effectiveDeadlineEpochMs);
             args[3] = expectedTurnId;
-            System.arraycopy(serialized, 0, args, 4, serialized.length);
+            args[4] = Long.toString(expectedEpoch);
+            System.arraycopy(serialized, 0, args, 5, serialized.length);
             Long code = redis.execute(
                     APPEND_SCRIPT,
-                    List.of(redisKey, AgentTurnKeySupport.activeKey(userId, chatSessionId)),
+                    List.of(
+                            redisKey,
+                            AgentTurnKeySupport.activeKey(userId, chatSessionId),
+                            epochKey(userId, chatSessionId)),
                     args);
             MemoryWriteResult result = MemoryWriteResult.fromCode(code);
             if (!result.committed()) {
-                if (result.status() == MemoryWriteStatus.UNKNOWN) {
+                if (result.status() == MemoryWriteStatus.UNKNOWN
+                        || "SESSION_CLEARED".equals(result.failureCode())) {
                     localCache.invalidate(cacheKey);
                 }
                 return result;
             }
-
-            if (cachedBeforeWrite != null) {
-                List<AgentTurn> cached = new ArrayList<>(cachedBeforeWrite);
-                cached.addAll(validTurns);
-                while (cached.size() > max) {
-                    cached.remove(0);
-                }
-                localCache.put(cacheKey, List.copyOf(cached));
-            }
+            localCache.invalidate(cacheKey);
             return result;
         } catch (Exception e) {
             localCache.invalidate(cacheKey);
@@ -149,8 +183,17 @@ public class AgentMemoryStore {
 
     /** 清空指定前端会话的对话记忆。 */
     public void clearMemory(long userId, String chatSessionId) {
-        redis.delete(redisKey(userId, chatSessionId));
-        localCache.invalidate(cacheKey(userId, chatSessionId));
+        String cacheKey = cacheKey(userId, chatSessionId);
+        try {
+            Long nextEpoch = redis.execute(
+                    CLEAR_SCRIPT,
+                    List.of(redisKey(userId, chatSessionId), epochKey(userId, chatSessionId)));
+            if (nextEpoch == null || nextEpoch < 1L) {
+                throw new IllegalStateException("Agent memory clear outcome is unknown");
+            }
+        } finally {
+            localCache.invalidate(cacheKey);
+        }
     }
 
     /**
@@ -161,8 +204,7 @@ public class AgentMemoryStore {
      * @return Immutable turn snapshot.
      */
     public List<AgentTurn> getTurns(long userId, String chatSessionId) {
-        String cacheKey = cacheKey(userId, chatSessionId);
-        List<AgentTurn> turns = localCache.get(cacheKey, k -> loadTurnsFromRedis(userId, chatSessionId));
+        List<AgentTurn> turns = currentMemory(userId, chatSessionId).turns();
         if (turns == null || turns.isEmpty()) {
             return List.of();
         }
@@ -173,7 +215,7 @@ public class AgentMemoryStore {
     public AgentMemoryStats getStats() {
         long activeSessions = localCache.estimatedSize();
         long totalTurns = localCache.asMap().values().stream()
-                .mapToLong(List::size)
+                .mapToLong(cached -> cached.turns().size())
                 .sum();
         return new AgentMemoryStats(activeSessions, totalTurns);
     }
@@ -216,6 +258,38 @@ public class AgentMemoryStore {
         return KEY_PREFIX + userId + ":" + chatSessionId;
     }
 
+    private static String epochKey(long userId, String chatSessionId) {
+        return EPOCH_KEY_PREFIX + userId + ":" + chatSessionId;
+    }
+
+    private CachedMemory currentMemory(long userId, String chatSessionId) {
+        String cacheKey = cacheKey(userId, chatSessionId);
+        long epoch = currentEpoch(userId, chatSessionId);
+        CachedMemory cached = localCache.getIfPresent(cacheKey);
+        if (cached != null && cached.epoch() == epoch) {
+            return cached;
+        }
+        CachedMemory loaded = new CachedMemory(epoch, loadTurnsFromRedis(userId, chatSessionId));
+        localCache.put(cacheKey, loaded);
+        return loaded;
+    }
+
+    private long currentEpoch(long userId, String chatSessionId) {
+        String raw = redis.opsForValue().get(epochKey(userId, chatSessionId));
+        if (!StringUtils.hasText(raw)) {
+            return 0L;
+        }
+        try {
+            long epoch = Long.parseLong(raw);
+            if (epoch < 0L) {
+                throw new NumberFormatException("negative epoch");
+            }
+            return epoch;
+        } catch (NumberFormatException exception) {
+            throw new IllegalStateException("Agent memory epoch is invalid", exception);
+        }
+    }
+
     private static DefaultRedisScript<Long> appendScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
         script.setResultType(Long.class);
@@ -224,9 +298,14 @@ public class AgentMemoryStore {
                 local ttlMs = tonumber(ARGV[2])
                 local deadlineMs = tonumber(ARGV[3])
                 local expectedTurnId = ARGV[4]
+                local expectedEpoch = tonumber(ARGV[5])
                 if not maxTurns or maxTurns < 2 or not ttlMs or ttlMs < 1
-                        or not deadlineMs or #ARGV < 5 then
+                        or not deadlineMs or not expectedEpoch or expectedEpoch < 0 or #ARGV < 6 then
                   return redis.error_reply('invalid memory arguments')
+                end
+                local currentEpoch = tonumber(redis.call('GET', KEYS[3]) or '0')
+                if currentEpoch ~= expectedEpoch then
+                  return -3
                 end
                 if expectedTurnId ~= '' and redis.call('GET', KEYS[2]) ~= expectedTurnId then
                   return -2
@@ -236,10 +315,21 @@ public class AgentMemoryStore {
                 if nowMs >= deadlineMs then
                   return -1
                 end
-                redis.call('RPUSH', KEYS[1], unpack(ARGV, 5))
+                redis.call('RPUSH', KEYS[1], unpack(ARGV, 6))
                 redis.call('LTRIM', KEYS[1], -maxTurns, -1)
                 redis.call('PEXPIRE', KEYS[1], ttlMs)
                 return 1
+                """);
+        return script;
+    }
+
+    private static DefaultRedisScript<Long> clearScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setResultType(Long.class);
+        script.setScriptText("""
+                local nextEpoch = redis.call('INCR', KEYS[2])
+                redis.call('DEL', KEYS[1])
+                return nextEpoch
                 """);
         return script;
     }
@@ -269,6 +359,9 @@ public class AgentMemoryStore {
             if (code == -2L) {
                 return rejected("STALE_TURN");
             }
+            if (code == -3L) {
+                return rejected("SESSION_CLEARED");
+            }
             return unknown("UNEXPECTED_RESULT");
         }
 
@@ -285,5 +378,11 @@ public class AgentMemoryStore {
         COMMITTED,
         REJECTED,
         UNKNOWN
+    }
+
+    private record CachedMemory(long epoch, List<AgentTurn> turns) {
+        private CachedMemory {
+            turns = turns == null ? List.of() : List.copyOf(turns);
+        }
     }
 }
