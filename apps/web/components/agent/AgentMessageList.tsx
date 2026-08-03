@@ -99,7 +99,14 @@ function MessageBubble({
         )}
       >
         {rich && !msg.streaming ? (
-          <AgentRichMessage content={msg.content} />
+          <div
+            className={cn(
+              "agent-bubble-content",
+              collapsed && "agent-bubble-content--collapsed",
+            )}
+          >
+            <AgentRichMessage content={msg.content} />
+          </div>
         ) : (
           <span
             className={cn(

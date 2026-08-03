@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AgentMessageList from "@/components/agent/AgentMessageList";
 import type { ChatMessage } from "@/lib/types/agent";
@@ -166,5 +166,48 @@ describe("AgentMessageList rich assistant replies", () => {
     const bubble = screen.getByText("第一段。").closest(".agent-bubble-assistant");
     expect(bubble).toHaveClass("agent-bubble-assistant--rich");
     expect(screen.getByRole("list")).toBeInTheDocument();
+  });
+
+  it("collapses and expands a completed long rich reply without losing markdown semantics", () => {
+    const content = [
+      "**结论**",
+      "",
+      "这是完成态富文本回答。".repeat(40),
+      "",
+      "- 证据一",
+      "- 证据二",
+    ].join("\n");
+    const message: ChatMessage = {
+      id: "long-rich-reply",
+      role: "assistant",
+      content,
+    };
+
+    render(
+      <AgentMessageList
+        messages={[message]}
+        busy={false}
+        showSteps={false}
+        liveSteps={[]}
+        rich
+        compactAssistantMessages
+      />,
+    );
+
+    const emphasis = screen.getByText("结论");
+    const bubble = emphasis.closest<HTMLElement>(".agent-bubble-assistant");
+    const contentContainer = emphasis.closest<HTMLElement>(".agent-bubble-content");
+    expect(bubble).not.toBeNull();
+    expect(contentContainer).toHaveClass("agent-bubble-content--collapsed");
+    expect(emphasis.closest("strong")).not.toBeNull();
+    expect(within(bubble!).getByRole("list")).toBeInTheDocument();
+
+    fireEvent.click(within(bubble!).getByRole("button", { name: "展开回答" }));
+
+    expect(contentContainer).not.toHaveClass("agent-bubble-content--collapsed");
+    expect(within(bubble!).getByRole("button", { name: "收起回答" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 });
