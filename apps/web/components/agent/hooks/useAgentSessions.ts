@@ -8,6 +8,7 @@ import {
   saveActiveSessionId,
   saveStoredSessions,
   sessionTitleFromMessages,
+  normalizeChatMessages,
   type AgentSessionContext,
   type AgentSessionRecord,
 } from "@/lib/agent/sessions";
@@ -76,18 +77,20 @@ export function useAgentSessions() {
     activeSessionContextRef.current = activeSession ? sessionContext(activeSession) : null;
     /* eslint-enable react-hooks/set-state-in-effect */
     saveActiveSessionId(activeId);
+    saveStoredSessions(initialSessions);
     setHydrated(true);
   }, []);
 
   const persistActiveSession = useCallback((nextMessages: ChatMessage[]) => {
     const id = activeSessionIdRef.current;
     if (!id) return;
+    const normalizedMessages = normalizeChatMessages(nextMessages);
     setSessions((previous) => {
       const existing = previous.find((session) => session.id === id);
       const record: AgentSessionRecord = {
         id,
-        title: existing?.titleLocked ? existing.title : sessionTitleFromMessages(nextMessages),
-        messages: nextMessages,
+        title: existing?.titleLocked ? existing.title : sessionTitleFromMessages(normalizedMessages),
+        messages: normalizedMessages,
         createdAt: existing?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
         titleLocked: existing?.titleLocked,

@@ -90,30 +90,47 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     onInputConsumed: consumeInput,
   });
 
-  const resetConversationView = useCallback(() => {
+  const prepareSessionMigration = useCallback(() => {
     setInput("");
-    socketState.resetTransient();
+    socketState.abandonCurrentTurn();
   }, [socketState]);
 
   const switchSession = useCallback(
     (sessionId: string) => {
-      if (sessionState.switchSession(sessionId)) resetConversationView();
+      if (
+        sessionId === sessionState.activeSessionId
+        || !sessionState.sessions.some((session) => session.id === sessionId)
+      ) return;
+      prepareSessionMigration();
+      sessionState.switchSession(sessionId);
     },
-    [resetConversationView, sessionState],
+    [prepareSessionMigration, sessionState],
   );
 
   const createSession = useCallback(() => {
+    prepareSessionMigration();
     const id = sessionState.createSession();
-    resetConversationView();
     return id;
-  }, [resetConversationView, sessionState]);
+  }, [prepareSessionMigration, sessionState]);
+
+  const activateContextSession = useCallback(
+    (context: AgentSessionContext) => {
+      const existing = sessionState.sessions.find(
+        (session) => session.contextKey === context.contextKey,
+      );
+      if (existing?.id !== sessionState.activeSessionId) prepareSessionMigration();
+      return sessionState.activateContextSession(context);
+    },
+    [prepareSessionMigration, sessionState],
+  );
 
   const deleteSession = useCallback(
     (sessionId: string) => {
       socketState.clearBackendMemory(sessionId);
-      if (sessionState.deleteSession(sessionId)) resetConversationView();
+      if (sessionId === sessionState.activeSessionId) prepareSessionMigration();
+      sessionState.deleteSession(sessionId);
     },
-    [resetConversationView, sessionState, socketState],
+    [prepareSessionMigration, sessionState, socketState],
   );
 
   const fillAndSend = useCallback(
@@ -147,7 +164,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       clearConversation: socketState.clearConversation,
       switchSession,
       createSession,
-      activateContextSession: sessionState.activateContextSession,
+      activateContextSession,
       renameSession: sessionState.renameSession,
       deleteSession,
       fillAndSend,
@@ -155,6 +172,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     [
       createSession,
       deleteSession,
+      activateContextSession,
       fillAndSend,
       input,
       loggedIn,

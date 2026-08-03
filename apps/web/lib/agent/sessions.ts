@@ -26,6 +26,28 @@ const WORKSPACE_DARK_KEY = "chtholly-agent-workspace-dark";
 const RICH_MARKDOWN_KEY = "chtholly-agent-rich-markdown";
 const SESSIONS_COLLAPSED_KEY = "chtholly-agent-sessions-collapsed";
 
+export function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  let changed = false;
+  const normalized = messages.map((message) => {
+    if (
+      message.role !== "assistant"
+      || (!message.streaming && message.completionState !== "interrupted")
+    ) {
+      return message;
+    }
+    if (message.streaming === false && message.completionState === "interrupted") {
+      return message;
+    }
+    changed = true;
+    return {
+      ...message,
+      streaming: false,
+      completionState: "interrupted" as const,
+    };
+  });
+  return changed ? normalized : messages;
+}
+
 export function createSessionId() {
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -43,7 +65,11 @@ export function loadStoredSessions(): AgentSessionRecord[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as AgentSessionRecord[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((session) => ({
+      ...session,
+      messages: normalizeChatMessages(Array.isArray(session.messages) ? session.messages : []),
+    }));
   } catch {
     return [];
   }

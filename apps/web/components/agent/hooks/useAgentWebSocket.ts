@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { getAgentWsUrl } from "@/lib/agent/wsUrl";
-import type { AgentSessionContext } from "@/lib/agent/sessions";
+import { normalizeChatMessages, type AgentSessionContext } from "@/lib/agent/sessions";
 import type {
   AgentEventType,
   AgentSendOptions,
@@ -194,6 +194,40 @@ export function useAgentWebSocket({
     setBusy(false);
     setLivePhase("idle");
     setLastError(null);
+  }, [setMessages]);
+
+  const abandonCurrentTurn = useCallback(() => {
+    const socket = currentTurnSocketRef.current;
+    const streamId = streamingIdRef.current;
+    const steps = [...stepsRef.current];
+
+    turnGenerationRef.current += 1;
+    currentRequestIdRef.current = null;
+    currentTurnIdRef.current = null;
+    currentTurnSocketRef.current = null;
+    streamingIdRef.current = null;
+    stepsRef.current = [];
+    busyRef.current = false;
+    sendLockRef.current = false;
+    setMessages((previous) => normalizeChatMessages(previous.map((message) => (
+      message.id === streamId ? { ...message, steps } : message
+    ))));
+    setLiveSteps([]);
+    setBusy(false);
+    setLivePhase("idle");
+    setLastError(null);
+
+    if (!socket) return;
+    connectionGenerationRef.current += 1;
+    connectionPromiseRef.current = null;
+    for (const [requestId, intent] of backendClearIntentsRef.current) {
+      if (intent.socket === socket) backendClearIntentsRef.current.delete(requestId);
+    }
+    if (wsRef.current === socket) {
+      wsRef.current = null;
+      setConnected(false);
+    }
+    socket.close();
   }, [setMessages]);
 
   const finishTurnWithError = useCallback((data: Record<string, unknown>) => {
@@ -643,6 +677,7 @@ export function useAgentWebSocket({
     sendMessage,
     clearConversation,
     clearBackendMemory,
+    abandonCurrentTurn,
     resetTransient,
     streaming,
   } as const;

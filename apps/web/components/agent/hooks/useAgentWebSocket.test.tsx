@@ -763,6 +763,55 @@ describe("useAgentWebSocket disconnect recovery", () => {
     },
   );
 
+  it("abandons the current turn before session migration and ignores its late terminal events", async () => {
+    const { result } = renderAgentHook();
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    await act(async () => result.current.sendMessage("切换前的问题"));
+    const { requestId } = sentChatPayload(sockets[0]);
+    act(() => {
+      sockets[0].receive({
+        type: "accepted",
+        requestId,
+        turnId: "turn-before-migration",
+        data: {},
+      });
+      sockets[0].receive({
+        type: "delta",
+        requestId,
+        turnId: "turn-before-migration",
+        data: { content: "- **切换前的部分回答" },
+      });
+    });
+
+    act(() => result.current.abandonCurrentTurn());
+
+    expect(result.current.busy).toBe(false);
+    expect(sockets[0].close).toHaveBeenCalledOnce();
+    expect(result.current.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      content: "- **切换前的部分回答",
+      streaming: false,
+      completionState: "interrupted",
+    });
+
+    act(() => {
+      sockets[0].receive({
+        type: "final",
+        requestId,
+        turnId: "turn-before-migration",
+        data: { content: "不应写入的迟到 final" },
+      });
+      sockets[0].receive({
+        type: "error",
+        requestId,
+        turnId: "turn-before-migration",
+        data: { message: "不应写入的迟到 error" },
+      });
+    });
+
+    expect(result.current.messages.some((message) => message.content.includes("不应写入"))).toBe(false);
+  });
+
   it("rolls back the turn when socket.send throws and allows a fresh retry", async () => {
     const { result } = renderAgentHook();
     await waitFor(() => expect(sockets).toHaveLength(1));
