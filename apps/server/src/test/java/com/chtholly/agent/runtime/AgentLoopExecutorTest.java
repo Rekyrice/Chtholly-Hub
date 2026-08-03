@@ -567,6 +567,46 @@ class AgentLoopExecutorTest {
     }
 
     @Test
+    void compoundBangumiQuestionAcceptsFinalActionWithLiteralLineBreaks() throws Exception {
+        AgentTool search = tool("bangumi_search");
+        AgentTool characters = tool("bangumi_characters");
+        String finalAction = """
+                {"action":"final","answer":"评分 7.80，共 24 集。
+
+                主要角色：
+                - 莱欧斯
+                - 玛露希尔"}
+                """;
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"bangumi_search\",\"input\":{\"keyword\":\"迷宫饭\"}}")
+                .thenReturn("{\"action\":\"bangumi_characters\",\"input\":{\"keyword\":\"迷宫饭\"}}")
+                .thenReturn(finalAction);
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult("评分 7.80，共 24 集", AgentToolResult.Status.SUCCESS));
+        when(toolExecutor.execute(eq(characters), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult("主要角色：莱欧斯、玛露希尔", AgentToolResult.Status.SUCCESS));
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system",
+                "查询《迷宫饭》的评分、集数、放送时间并列出角色",
+                7L,
+                "",
+                Map.of(search.name(), search, characters.name(), characters),
+                3);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(trace.getStepActions()).containsExactly("bangumi_search", "bangumi_characters");
+        assertThat(trace.getStepActions()).doesNotContain("parse_error");
+        JsonNode finalDecisionEvent = traceEvents(trace, "llm").get(2);
+        assertThat(finalDecisionEvent.path("details").path("rawOutput").path("text").asText())
+                .isEqualTo(finalAction)
+                .contains("评分 7.80，共 24 集。\n\n主要角色：");
+        verify(llmInvoker, times(3)).call(anyString(), anyString(), anyDouble(), anyInt());
+    }
+
+    @Test
     void invalidJsonEmitsConfiguredParseEventsAndRetries() throws Exception {
         when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("not-json")

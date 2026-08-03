@@ -45,6 +45,10 @@ public final class AgentJsonExtractor {
         if (isActionJson(trimmed)) {
             return trimmed;
         }
+        String repairedDocument = escapeControlCharactersInsideStrings(trimmed);
+        if (!repairedDocument.equals(trimmed) && isActionJson(repairedDocument)) {
+            return repairedDocument;
+        }
 
         String lastValid = null;
         for (int i = 0; i < trimmed.length(); i++) {
@@ -52,6 +56,13 @@ public final class AgentJsonExtractor {
                 continue;
             }
             String snippet = readOneJsonObject(trimmed, i);
+            if (snippet == null) {
+                String suffix = trimmed.substring(i);
+                String repairedSuffix = escapeControlCharactersInsideStrings(suffix);
+                if (!repairedSuffix.equals(suffix)) {
+                    snippet = readOneJsonObject(repairedSuffix, 0);
+                }
+            }
             if (snippet != null && isActionJson(snippet)) {
                 lastValid = snippet;
             }
@@ -90,6 +101,57 @@ public final class AgentJsonExtractor {
             }
         }
         return blocks;
+    }
+
+    /**
+     * LLMs sometimes place literal line breaks in a JSON string even when the surrounding
+     * action object is otherwise valid. Escape only JSON-disallowed control characters that
+     * occur inside quoted strings so prose outside the object remains available for scanning.
+     */
+    private static String escapeControlCharactersInsideStrings(String source) {
+        StringBuilder normalized = new StringBuilder(source.length());
+        boolean insideString = false;
+        boolean escaped = false;
+        for (int index = 0; index < source.length(); index++) {
+            char current = source.charAt(index);
+            if (!insideString) {
+                normalized.append(current);
+                if (current == '"') {
+                    insideString = true;
+                }
+                continue;
+            }
+            if (escaped) {
+                normalized.append(current);
+                escaped = false;
+                continue;
+            }
+            if (current == '\\') {
+                normalized.append(current);
+                escaped = true;
+                continue;
+            }
+            if (current == '"') {
+                normalized.append(current);
+                insideString = false;
+                continue;
+            }
+            switch (current) {
+                case '\b' -> normalized.append("\\b");
+                case '\f' -> normalized.append("\\f");
+                case '\n' -> normalized.append("\\n");
+                case '\r' -> normalized.append("\\r");
+                case '\t' -> normalized.append("\\t");
+                default -> {
+                    if (current < 0x20) {
+                        normalized.append(String.format("\\u%04x", (int) current));
+                    } else {
+                        normalized.append(current);
+                    }
+                }
+            }
+        }
+        return normalized.toString();
     }
 
     private boolean isActionJson(String json) {

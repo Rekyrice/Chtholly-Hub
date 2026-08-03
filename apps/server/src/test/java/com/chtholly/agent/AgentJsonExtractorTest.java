@@ -65,6 +65,79 @@ class AgentJsonExtractorTest {
     }
 
     @Test
+    void repairsLiteralLineBreaksInsideFinalAnswer() throws Exception {
+        String text = """
+                {"action":"final","answer":"《迷宫饭》动画版评分 7.80。
+
+                主要角色：
+                - 莱欧斯
+                - 玛露希尔"}
+                """;
+
+        String json = extractor.extractActionJson(text);
+
+        assertThat(new ObjectMapper().readTree(json).path("answer").asText())
+                .isEqualTo("《迷宫饭》动画版评分 7.80。\n\n主要角色：\n- 莱欧斯\n- 玛露希尔");
+    }
+
+    @Test
+    void preservesAlreadyEscapedJsonStringContent() throws Exception {
+        String text = "{\"action\":\"final\",\"answer\":\"第一行\\n\\t\\\"引号\\\"和\\\\路径\"}";
+
+        String json = extractor.extractActionJson(text);
+
+        assertThat(new ObjectMapper().readTree(json).path("answer").asText())
+                .isEqualTo("第一行\n\t\"引号\"和\\路径");
+    }
+
+    @Test
+    void repairsAllLiteralControlCharactersInsideJsonStrings() throws Exception {
+        String expected = "A\r\nB\tC" + (char) 1 + "D";
+        String text = "{\"action\":\"final\",\"answer\":\"" + expected + "\"}";
+
+        String json = extractor.extractActionJson(text);
+
+        assertThat(new ObjectMapper().readTree(json).path("answer").asText()).isEqualTo(expected);
+    }
+
+    @Test
+    void stillRejectsStructurallyInvalidJson() {
+        assertThatThrownBy(() -> extractor.extractActionJson(
+                "{\"action\":\"final\",\"answer\":\"未闭合"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> extractor.extractActionJson(
+                "{\"action\":\"final\",\"answer\":\"非法\\x转义\"}"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void extractsMultilineJsonBlockAfterQuotedProse() throws Exception {
+        String text = """
+                前文里有一个单独的 " 引号。
+                ```json
+                {"action":"final","answer":"第一行
+                第二行"}
+                ```
+                """;
+
+        String json = extractor.extractActionJson(text);
+
+        assertThat(new ObjectMapper().readTree(json).path("answer").asText())
+                .isEqualTo("第一行\n第二行");
+    }
+
+    @Test
+    void quotedProseDoesNotCorruptFollowingMultilineActionObject() throws Exception {
+        String text = "前文里有一个单独的 \" 引号，然后才是结果："
+                + "{\"action\":\"final\",\"answer\":\"第一行\n第二行\"}";
+
+        String json = extractor.extractActionJson(text);
+
+        assertThat(new ObjectMapper().readTree(json).path("answer").asText())
+                .isEqualTo("第一行\n第二行");
+    }
+
+    @Test
     void rejectsPlainText() {
         assertThatThrownBy(() -> extractor.extractActionJson("这不是 JSON"))
                 .isInstanceOf(IllegalArgumentException.class);
