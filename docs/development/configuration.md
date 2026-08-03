@@ -39,7 +39,7 @@
 
 ### Agent 领域配置
 
-运行参数如最大步数、记忆 TTL 与工具超时由 `application.yml` 的 `agent.*` 映射环境变量；面向领域的提示词、错误信息和 Bangumi 展示模板集中在 `agent-domain.yml`。`AGENT_TURN_TIMEOUT_SECONDS` 是一轮对话从服务端接受开始计时的全局上限，缺省为 `60`；检索、ReAct LLM/工具、最终生成和引用修复共同消耗这一预算，选中 Skill 时还会被其 `timeoutBudgetMs` 进一步收紧。`AGENT_LLM_TIMEOUT_SECONDS` 与 `AGENT_TOOL_TIMEOUT_SECONDS` 仍是单阶段上限，实际调用使用它们与整轮剩余时间的较小值。修改模板时应验证占位符与 [`AgentDomainConfig`](../../apps/server/src/main/java/com/chtholly/agent/config/AgentDomainConfig.java) 的绑定，避免把运行密钥或机器地址写入该文件。
+运行参数如最大步数、记忆 TTL 与工具超时由 `application.yml` 的 `agent.*` 映射环境变量；面向领域的提示词、错误信息和 Bangumi 展示模板集中在 `agent-domain.yml`。`AGENT_MAX_STEPS` 是通用路径的全局最大步数，缺省为 `10`；Skill 声明 `maxSteps` 时，有效值取全局配置与 Skill 声明的较小值，因此部分 Skill 会使用少于 10 步的上限。`AGENT_TURN_TIMEOUT_SECONDS` 是一轮对话从服务端接受开始计时的全局上限，缺省为 `60`；检索、ReAct LLM/工具、最终生成和引用修复共同消耗这一预算，选中 Skill 时还会被其 `timeoutBudgetMs` 进一步收紧。`AGENT_LLM_TIMEOUT_SECONDS` 与 `AGENT_TOOL_TIMEOUT_SECONDS` 仍是单阶段上限，实际调用使用它们与整轮剩余时间的较小值。修改模板时应验证占位符与 [`AgentDomainConfig`](../../apps/server/src/main/java/com/chtholly/agent/config/AgentDomainConfig.java) 的绑定，避免把运行密钥或机器地址写入该文件。
 
 ### Next.js 环境边界
 
