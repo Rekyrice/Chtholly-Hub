@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.io.ClassPathResource;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -65,6 +66,28 @@ class DeadLetterMessageServiceTest {
                 41L, "attempt-41")).isTrue();
 
         verify(mapper).recoverExpiredReplay(41L, "attempt-41");
+    }
+
+    @Test
+    void listResultsDoesNotExposeMutablePersistenceRows() {
+        DeadLetterMessageRow row = new DeadLetterMessageRow();
+        row.setId(41L);
+        row.setSourceTopic("canal-outbox");
+        row.setMessageKey("reaction-41");
+        row.setMessageValue("sensitive-payload");
+        row.setRetryCount(3);
+        row.setStatus(DeadLetterStatus.DEAD.name());
+        row.setReplayAttemptToken("attempt-41");
+        when(mapper.list("canal-outbox", "DEAD", 10, 10))
+                .thenReturn(List.of(row));
+
+        List<DeadLetterReplayResult> results = service.listResults(
+                "canal-outbox", "DEAD", 2, 10);
+
+        assertThat(results).containsExactly(
+                DeadLetterReplayResult.from(row));
+        assertThat(results.getFirst().replayAttemptToken())
+                .isEqualTo("attempt-41");
     }
 
     @Test

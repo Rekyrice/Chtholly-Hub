@@ -44,10 +44,33 @@ public class DeadLetterMessageService {
         return mapper.findById(id);
     }
 
-    public List<DeadLetterMessageRow> list(String topic, String status, int page, int size) {
+    private List<DeadLetterMessageRow> list(
+            String topic,
+            String status,
+            int page,
+            int size) {
         int limit = Math.max(1, Math.min(size, 100));
         int offset = Math.max(0, (Math.max(page, 1) - 1) * limit);
         return mapper.list(topic, status, limit, offset);
+    }
+
+    /**
+     * Lists immutable application results without exposing mutable persistence rows.
+     *
+     * @param topic optional source topic filter
+     * @param status optional status filter
+     * @param page one-based page number
+     * @param size requested page size
+     * @return immutable dead-letter result snapshots
+     */
+    public List<DeadLetterReplayResult> listResults(
+            String topic,
+            String status,
+            int page,
+            int size) {
+        return list(topic, status, page, size).stream()
+                .map(DeadLetterReplayResult::from)
+                .toList();
     }
 
     public long count(String topic, String status) {

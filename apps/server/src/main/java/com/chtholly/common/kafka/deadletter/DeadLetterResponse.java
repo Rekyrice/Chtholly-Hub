@@ -16,18 +16,18 @@ public record DeadLetterResponse(
         LocalDateTime replayStartedAt,
         LocalDateTime replayDeadlineAt
 ) {
-    static DeadLetterResponse from(DeadLetterMessageRow row) {
+    static DeadLetterResponse from(DeadLetterReplayResult result) {
         return new DeadLetterResponse(
-                row.getId(),
-                row.getSourceTopic(),
-                row.getMessageKey(),
-                row.getExceptionClass(),
-                row.getExceptionMessage(),
-                row.getRetryCount() != null ? row.getRetryCount() : 0,
-                row.getStatus(),
-                row.getReplayAttemptToken(),
-                row.getCreatedAt(),
-                row.getReplayStartedAt(),
-                row.getReplayDeadlineAt());
+                result.id(),
+                result.sourceTopic(),
+                result.messageKey(),
+                result.exceptionClass(),
+                result.exceptionMessage(),
+                result.retryCount(),
+                result.status(),
+                result.replayAttemptToken(),
+                result.createdAt(),
+                result.replayStartedAt(),
+                result.replayDeadlineAt());
     }
 }
