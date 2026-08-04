@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 COMPOSE=(docker compose -f docker-compose.prod.yml)
-CERTBOT_IMAGE="certbot/certbot:v4.0.0"
+CERTBOT_IMAGE="certbot/certbot:v5.7.0"
 
 if [[ ! -f .env ]]; then
   echo "缺少 .env；请先安装生产配置包并完成 HTTP 部署" >&2

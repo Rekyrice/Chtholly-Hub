@@ -110,7 +110,7 @@ test("HTTPS 切换仅在证书和 Nginx 配置验证成功后执行", () => {
 
   assert.match(template, /__DOMAIN__/);
   assert.match(template, /ssl_certificate/);
-  assert.match(enableHttps, /certbot/);
+  assert.match(enableHttps, /CERTBOT_IMAGE="certbot\/certbot:v5\.7\.0"/);
   assert.match(enableHttps, /nginx -t/);
   assert.match(enableHttps, /NGINX_CONFIG_PATH/);
 });
