@@ -71,7 +71,8 @@ services:
       start_period: 60s
 
   kafka:
-    image: apache/kafka:latest
+    image: apache/kafka:4.2.0
+    profiles: ["kafka"]
     restart: unless-stopped
     hostname: kafka
     environment:
@@ -107,9 +108,11 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+        required: false
     environment:
       SERVER_PORT: 8888
-      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-llm}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_DATABASE: ${MYSQL_DATABASE:-chtholly}
@@ -119,9 +122,33 @@ services:
       REDIS_PORT: 6379
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       ES_URIS: http://elasticsearch:9200
-      CANAL_ENABLED: "false"
-      LLM_ENABLED: "false"
+      ES_REPLICAS: ${ES_REPLICAS:-0}
+      CANAL_ENABLED: ${CANAL_ENABLED:-false}
+      CANAL_PASSWORD: ${CANAL_PASSWORD:-}
+      COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS: ${COUNTER_KAFKA_PUBLISH_MAX_ATTEMPTS:-3}
+      COUNTER_KAFKA_PUBLISH_ACK_TIMEOUT: ${COUNTER_KAFKA_PUBLISH_ACK_TIMEOUT:-PT3S}
+      COUNTER_KAFKA_CONSUMER_MAX_ATTEMPTS: ${COUNTER_KAFKA_CONSUMER_MAX_ATTEMPTS:-3}
+      COUNTER_KAFKA_CONSUMER_RETRY_BACKOFF: ${COUNTER_KAFKA_CONSUMER_RETRY_BACKOFF:-PT1S}
+      COUNTER_KAFKA_CONSUMER_DLT_ACK_TIMEOUT: ${COUNTER_KAFKA_CONSUMER_DLT_ACK_TIMEOUT:-PT3S}
+      COUNTER_CALIBRATION_ENABLED: ${COUNTER_CALIBRATION_ENABLED:-true}
+      COUNTER_CALIBRATION_FIXED_DELAY: ${COUNTER_CALIBRATION_FIXED_DELAY:-PT5M}
+      COUNTER_CALIBRATION_BATCH_SIZE: ${COUNTER_CALIBRATION_BATCH_SIZE:-50}
+      LLM_ENABLED: ${LLM_ENABLED:-true}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      AGENT_MODEL: ${AGENT_MODEL:-deepseek-chat}
+      AGENT_LLM_TIMEOUT_SECONDS: ${AGENT_LLM_TIMEOUT_SECONDS:-30}
+      AGENT_MAX_RESPONSE_CHARS: ${AGENT_MAX_RESPONSE_CHARS:-2000}
+      AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-10}
+      AGENT_MEMORY_MAX_TURNS: ${AGENT_MEMORY_MAX_TURNS:-20}
+      AGENT_MEMORY_TTL_MINUTES: ${AGENT_MEMORY_TTL_MINUTES:-120}
+      AGENT_TOOL_TIMEOUT_SECONDS: ${AGENT_TOOL_TIMEOUT_SECONDS:-30}
+      AGENT_TURN_TIMEOUT_SECONDS: ${AGENT_TURN_TIMEOUT_SECONDS:-60}
       SITE_OWNER_USER_ID: ${SITE_OWNER_USER_ID:-1}
+      CHTHOLLY_USER_ID: ${CHTHOLLY_USER_ID:-888888888888888888}
+      OWNER_BOOTSTRAP_PASSWORD: ${OWNER_BOOTSTRAP_PASSWORD:-}
+      OWNER_HANDLE: ${OWNER_HANDLE:-Rekyrice}
+      OWNER_NICKNAME: ${OWNER_NICKNAME:-Rekyrice}
       OSS_ENDPOINT: ${OSS_ENDPOINT:-}
       OSS_ACCESS_KEY_ID: ${OSS_ACCESS_KEY_ID:-}
       OSS_ACCESS_KEY_SECRET: ${OSS_ACCESS_KEY_SECRET:-}
@@ -131,8 +158,16 @@ services:
       STORAGE_TYPE: ${STORAGE_TYPE:-local}
       STORAGE_LOCAL_PATH: ${STORAGE_LOCAL_PATH:-/app/uploads}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      BANGUMI_ENABLED: ${BANGUMI_ENABLED:-true}
+      BANGUMI_ACCESS_TOKEN: ${BANGUMI_ACCESS_TOKEN:-}
+      BANGUMI_SYNC_ENABLED: ${BANGUMI_SYNC_ENABLED:-false}
+      AUTH_JWT_PRIVATE_KEY: file:/run/secrets/jwt-private.pem
+      AUTH_JWT_PUBLIC_KEY: file:/run/secrets/jwt-public.pem
     volumes:
       - uploads_data:/app/uploads
+      - ./.production-secrets/jwt-private.pem:/run/secrets/jwt-private.pem:ro
+      - ./.production-secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8888/actuator/health"]
       interval: 15s
