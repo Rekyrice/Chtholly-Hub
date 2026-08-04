@@ -200,9 +200,13 @@ class PostFeedServiceImplCacheReadModeTest {
     ) {
         CacheProperties properties = new CacheProperties();
         properties.setReadMode(readMode);
-        return new PostFeedServiceImpl(
-                mapper, redis, new ObjectMapper().findAndRegisterModules(), counterService, commentService, local, hotKey,
-                personalFeedService, publicAuthorQueryService, properties, cacheMetrics);
+        FeedItemAssembler assembler =
+                new FeedItemAssembler(counterService, commentService, publicAuthorQueryService);
+        PublicPostFeedCacheGateway cacheGateway = new PublicPostFeedCacheGateway(
+                redis, new ObjectMapper().findAndRegisterModules(), local, hotKey);
+        PublicPostFeedQueryService publicFeed = new PublicPostFeedQueryService(
+                mapper, cacheGateway, assembler, properties, cacheMetrics);
+        return new PostFeedServiceImpl(publicFeed, personalFeedService);
     }
 
     private void stubEnrichment(long postId) {

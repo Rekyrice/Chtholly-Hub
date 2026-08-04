@@ -2,16 +2,12 @@ package com.chtholly.post.service.impl;
 
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import com.chtholly.common.api.pagination.PageResponse;
-import com.chtholly.counter.service.CounterService;
-import com.chtholly.comment.service.CommentService;
 import com.chtholly.post.api.dto.FeedItemResponse;
 import com.chtholly.post.feed.FeedTimelineProperties;
 import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.post.util.FeedCursor;
-import com.chtholly.user.model.PublicAuthorSnapshot;
-import com.chtholly.user.service.PublicAuthorQueryService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -44,36 +40,42 @@ public class PersonalPostFeedService {
     private final PostMapper mapper;
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
-    private final CounterService counterService;
-    private final CommentService commentService;
     private final Cache<String, PageResponse<FeedItemResponse>> feedMineCache;
     private final HotKeyDetector hotKey;
     private final FeedTimelineService feedTimelineService;
     private final FeedTimelineProperties feedTimelineProperties;
-    private final PublicAuthorQueryService publicAuthorQueryService;
+    private final FeedItemAssembler assembler;
 
+    /**
+     * Creates the user-scoped feed service.
+     *
+     * @param mapper post feed persistence mapper
+     * @param redis Redis client for personal pages and timeline fragments
+     * @param objectMapper cached payload codec
+     * @param feedMineCache process-local personal-feed cache
+     * @param hotKey hot-key detector for adaptive TTLs
+     * @param feedTimelineService following timeline reader
+     * @param feedTimelineProperties following timeline configuration
+     * @param assembler shared feed-item assembler
+     */
     public PersonalPostFeedService(
             PostMapper mapper,
             StringRedisTemplate redis,
             ObjectMapper objectMapper,
-            CounterService counterService,
-            CommentService commentService,
             @Qualifier("feedMineCache") Cache<String, PageResponse<FeedItemResponse>> feedMineCache,
             HotKeyDetector hotKey,
             FeedTimelineService feedTimelineService,
             FeedTimelineProperties feedTimelineProperties,
-            PublicAuthorQueryService publicAuthorQueryService
+            FeedItemAssembler assembler
     ) {
         this.mapper = mapper;
         this.redis = redis;
         this.objectMapper = objectMapper;
-        this.counterService = counterService;
-        this.commentService = commentService;
         this.feedMineCache = feedMineCache;
         this.hotKey = hotKey;
         this.feedTimelineService = feedTimelineService;
         this.feedTimelineProperties = feedTimelineProperties;
-        this.publicAuthorQueryService = publicAuthorQueryService;
+        this.assembler = assembler;
     }
 
     private String nextCursorFromRows(List<PostFeedRow> rows) {
@@ -85,36 +87,6 @@ public class PersonalPostFeedService {
             return null;
         }
         return FeedCursor.encode(last.getPublishTime(), last.getId());
-    }
-
-
-    private List<FeedItemResponse> enrich(List<FeedItemResponse> base, Long uid) {
-        if (base == null || base.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<Long> postIds = new ArrayList<>(base.size());
-        for (FeedItemResponse it : base) {
-            postIds.add(Long.parseLong(it.id()));
-        }
-        Map<Long, Long> commentCounts = commentService.countActiveByPostIds(postIds);
-
-        Map<Long, Boolean> likedBatch = Map.of();
-        Map<Long, Boolean> favBatch = Map.of();
-        if (uid != null) {
-            likedBatch = counterService.batchIsLiked(uid, postIds);
-            favBatch = counterService.batchIsFaved(uid, postIds);
-        }
-
-        List<FeedItemResponse> out = new ArrayList<>(base.size());
-        for (FeedItemResponse it : base) {
-            long postId = Long.parseLong(it.id());
-            boolean liked = uid != null && Boolean.TRUE.equals(likedBatch.get(postId));
-            boolean faved = uid != null && Boolean.TRUE.equals(favBatch.get(postId));
-            out.add(it.withUserFlags(liked, faved)
-                    .withCommentCount(commentCounts.getOrDefault(postId, 0L)));
-        }
-        return refreshAuthors(out);
     }
 
 
@@ -181,7 +153,7 @@ public class PersonalPostFeedService {
             hotKey.record(key);
             maybeExtendTtlMine(key);
             log.info("feed.mine source=local key={} page={} size={} user={}", key, safePage, safeSize, userId);
-            List<FeedItemResponse> enriched = enrich(ensureMineAuthorId(local.items(), userId), userId);
+            List<FeedItemResponse> enriched = assembler.enrich(ensureMineAuthorId(local.items(), userId), userId);
             return PageResponse.offset(enriched, local.page(), local.size(), local.total(),
                     local.hasMore(), local.nextCursor());
         }
@@ -199,7 +171,8 @@ public class PersonalPostFeedService {
                     hotKey.record(key);
                     maybeExtendTtlMine(key);
                     log.info("feed.mine source=page key={} page={} size={} user={}", key, safePage, safeSize, userId);
-                List<FeedItemResponse> enriched = enrich(ensureMineAuthorId(cachedResp.items(), userId), userId);
+                List<FeedItemResponse> enriched = assembler.enrich(
+                        ensureMineAuthorId(cachedResp.items(), userId), userId);
                 return PageResponse.offset(enriched, cachedResp.page(), cachedResp.size(), cachedResp.total(),
                         cachedResp.hasMore(), cachedResp.nextCursor());
             }
@@ -213,7 +186,7 @@ public class PersonalPostFeedService {
         boolean hasMore = rows.size() > safeSize;
         if (hasMore) rows = rows.subList(0, safeSize);
 
-        List<FeedItemResponse> items = mapRowsToItems(rows, userId, true);
+        List<FeedItemResponse> items = assembler.fromRows(rows, userId, true);
 
         long total = mapper.countMyPublished(userId);
         PageResponse<FeedItemResponse> resp = PageResponse.offset(items, safePage, safeSize, total, hasMore,
@@ -269,7 +242,7 @@ public class PersonalPostFeedService {
         boolean hasMore = slice.size() > safeSize;
         List<PostFeedRow> pageRows = hasMore ? slice.subList(0, safeSize) : slice;
 
-        List<FeedItemResponse> items = mapRowsToItemsBatch(pageRows, userId);
+        List<FeedItemResponse> items = assembler.fromRowsBatch(pageRows, userId);
         log.info("feed.following user={} page={} size={} timeline={} bigv={} merged={} hasMore={}",
                 userId, safePage, safeSize, timelineRows.size(), bigVRows.size(), sorted.size(), hasMore);
         return PageResponse.offset(items, safePage, safeSize, 0L, hasMore,
@@ -316,37 +289,6 @@ public class PersonalPostFeedService {
         return all;
     }
 
-    /**
-     * 解析 JSON 数组字符串为 List<String>。
-     * @param json JSON 数组字符串
-     * @return 字符串列表；解析失败或空字符串返回空列表
-     */
-    /**
-     * 将数据库行映射为响应条目。
-     * 计数通过计数服务填充；liked/faved 按需计算；isTop 仅在个人列表返回。
-     * @param rows 查询结果行
-     * @param userIdNullable 当前用户 ID（可空）
-     * @param includeIsTop 是否在响应中包含 isTop
-     * @return 条目列表
-     */
-    private List<FeedItemResponse> mapRowsToItems(List<PostFeedRow> rows, Long userIdNullable, boolean includeIsTop) {
-        List<FeedItemResponse> items = new ArrayList<>(rows.size());
-
-        for (PostFeedRow r : rows) {
-            Map<String, Long> counts = counterService.getCounts("post", String.valueOf(r.getId()), List.of("like", "fav"));
-            Boolean liked = userIdNullable != null && counterService.isLiked("post", String.valueOf(r.getId()), userIdNullable);
-            Boolean faved = userIdNullable != null && counterService.isFaved("post", String.valueOf(r.getId()), userIdNullable);
-            Boolean isTop = includeIsTop ? r.getIsTop() : null;
-
-            items.add(FeedItemResponse.fromRow(
-                    r,
-                    FeedItemResponse.CounterSnapshot.from(counts),
-                    liked,
-                    faved).withTop(isTop));
-        }
-        return withCommentCounts(refreshAuthors(items));
-    }
-
     private List<FeedItemResponse> ensureMineAuthorId(List<FeedItemResponse> items, long userId) {
         if (items == null || items.isEmpty()) {
             return Collections.emptyList();
@@ -360,111 +302,15 @@ public class PersonalPostFeedService {
                 .toList();
     }
 
-    private List<FeedItemResponse> refreshAuthors(List<FeedItemResponse> items) {
-        if (items == null || items.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<Long> authorIds = items.stream()
-                .map(FeedItemResponse::authorId)
-                .map(PersonalPostFeedService::parseLongOrNull)
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.collectingAndThen(
-                        java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new), List::copyOf));
-        Map<Long, PublicAuthorSnapshot> authors = Map.of();
-        if (!authorIds.isEmpty()) {
-            try {
-                authors = publicAuthorQueryService.findByIds(authorIds);
-            } catch (RuntimeException exception) {
-                log.warn("Failed to refresh personal feed author profiles, authorIds={}", authorIds, exception);
-            }
-        }
-        Map<Long, PublicAuthorSnapshot> resolved = authors;
-        return items.stream().map(item -> {
-            Long authorId = parseLongOrNull(item.authorId());
-            PublicAuthorSnapshot author = authorId == null ? null : resolved.get(authorId);
-            if (author != null) {
-                return item.withAuthor(String.valueOf(author.id()), author.handle(), author.avatar(),
-                        author.nickname(), author.tagsJson());
-            }
-            if (item.authorNickname() == null || item.authorNickname().isBlank()) {
-                return item.withAuthor(item.authorId(), item.authorHandle(), item.authorAvatar(),
-                        "已注销用户", item.tagJson());
-            }
-            return item;
-        }).toList();
-    }
-
-    private List<FeedItemResponse> withCommentCounts(List<FeedItemResponse> items) {
-        if (items == null || items.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<Long> postIds = items.stream()
-                .map(FeedItemResponse::id)
-                .map(PersonalPostFeedService::parseLongOrNull)
-                .filter(java.util.Objects::nonNull)
-                .toList();
-        Map<Long, Long> counts = commentService.countActiveByPostIds(postIds);
-        return items.stream()
-                .map(item -> {
-                    Long postId = parseLongOrNull(item.id());
-                    return item.withCommentCount(postId == null ? 0L : counts.getOrDefault(postId, 0L));
-                })
-                .toList();
-    }
-
-    private static Long parseLongOrNull(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return Long.valueOf(value);
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
-    /**
-     * 批量映射 Feed 行并填充计数与点赞/收藏状态（Pipeline 优化）。
-     */
-    private List<FeedItemResponse> mapRowsToItemsBatch(List<PostFeedRow> rows, long userId) {
-        if (rows.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<String> idStr = rows.stream().map(r -> String.valueOf(r.getId())).toList();
-        List<Long> idLong = rows.stream().map(PostFeedRow::getId).toList();
-
-        Map<String, Map<String, Long>> countsBatch =
-                counterService.getCountsBatch("post", idStr, List.of("like", "fav"));
-        Map<Long, Boolean> likedBatch = counterService.batchIsLiked(userId, idLong);
-        Map<Long, Boolean> favBatch = counterService.batchIsFaved(userId, idLong);
-
-        List<FeedItemResponse> items = new ArrayList<>(rows.size());
-        for (PostFeedRow r : rows) {
-            Map<String, Long> counts = countsBatch.getOrDefault(String.valueOf(r.getId()), Map.of());
-            boolean liked = Boolean.TRUE.equals(likedBatch.get(r.getId()));
-            boolean faved = Boolean.TRUE.equals(favBatch.get(r.getId()));
-
-            items.add(FeedItemResponse.fromRow(
-                    r,
-                    FeedItemResponse.CounterSnapshot.from(counts),
-                    liked,
-                    faved).withTop(null));
-        }
-        return withCommentCounts(refreshAuthors(items));
-    }
-
-
-
     /**
      * 根据热点级别动态延长“我的发布”页面缓存 TTL。
      * @param key 页面缓存 Key
      */
-    private void maybeExtendTtlMine (String key) {
+    private void maybeExtendTtlMine(String key) {
         int baseTtl = 30;
         int target = hotKey.ttlForMine(baseTtl, key);
         Long currentTtl = redis.getExpire(key);
-        if (currentTtl < target) {
+        if (currentTtl == null || currentTtl < target) {
             redis.expire(key, Duration.ofSeconds(target));
         }
     }

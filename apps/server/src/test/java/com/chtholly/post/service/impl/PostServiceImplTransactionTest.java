@@ -47,10 +47,26 @@ class PostServiceImplTransactionTest {
     void setUp() {
         TransactionSynchronizationManager.initSynchronization();
         TransactionSynchronizationManager.setActualTransactionActive(true);
+        SnowflakeIdGenerator idGenerator = new SnowflakeIdGenerator();
+        ObjectMapper objectMapper = new ObjectMapper();
+        PostPayloadCodec payloadCodec = new PostPayloadCodec(objectMapper);
+        PostOutboxWriter outboxWriter = new PostOutboxWriter(outboxMapper, objectMapper, idGenerator);
+        PostSearchCoordinator searchCoordinator =
+                new PostSearchCoordinator(searchIndexService, ragIndexService);
+        PostMutationCacheCoordinator cacheCoordinator =
+                new PostMutationCacheCoordinator(cacheInvalidator, postFeedService);
         service = new PostServiceImpl(
-                mapper, new SnowflakeIdGenerator(), new ObjectMapper(), new OssProperties(), userCounterService,
-                cacheInvalidator, ragIndexService, outboxMapper, tagService, searchIndexService, eventPublisher,
-                postFeedService, detailQueryService, backgroundQueryService);
+                new PostDraftCommandService(
+                        mapper, idGenerator, new OssProperties(), cacheCoordinator, searchCoordinator),
+                new PostMetadataCommandService(
+                        mapper, payloadCodec, tagService, outboxWriter, searchCoordinator, cacheCoordinator),
+                new PostPublicationCommandService(
+                        mapper, payloadCodec, tagService, userCounterService, outboxWriter,
+                        searchCoordinator, eventPublisher, cacheCoordinator),
+                new PostDeletionCommandService(
+                        mapper, payloadCodec, tagService, outboxWriter, searchCoordinator, cacheCoordinator),
+                detailQueryService,
+                backgroundQueryService);
     }
 
     @AfterEach

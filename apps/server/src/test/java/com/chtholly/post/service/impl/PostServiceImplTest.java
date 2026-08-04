@@ -91,21 +91,29 @@ class PostServiceImplTest {
         OssProperties ossProperties = new OssProperties();
         PostCacheInvalidator cacheInvalidator =
                 new PostCacheInvalidator(redis, feedPublicCache, postDetailCache);
+        SnowflakeIdGenerator idGenerator = new SnowflakeIdGenerator();
+        ObjectMapper objectMapper = new ObjectMapper();
+        PostPayloadCodec payloadCodec = new PostPayloadCodec(objectMapper);
+        PostOutboxWriter outboxWriter = new PostOutboxWriter(outboxMapper, objectMapper, idGenerator);
+        PostSearchCoordinator searchCoordinator =
+                new PostSearchCoordinator(searchIndexService, ragIndexService);
+        PostMutationCacheCoordinator cacheCoordinator =
+                new PostMutationCacheCoordinator(cacheInvalidator, postFeedService);
+        PostDraftCommandService draftCommandService = new PostDraftCommandService(
+                mapper, idGenerator, ossProperties, cacheCoordinator, searchCoordinator);
+        PostMetadataCommandService metadataCommandService = new PostMetadataCommandService(
+                mapper, payloadCodec, tagService, outboxWriter, searchCoordinator, cacheCoordinator);
+        PostPublicationCommandService publicationCommandService = new PostPublicationCommandService(
+                mapper, payloadCodec, tagService, userCounterService, outboxWriter,
+                searchCoordinator, eventPublisher, cacheCoordinator);
+        PostDeletionCommandService deletionCommandService = new PostDeletionCommandService(
+                mapper, payloadCodec, tagService, outboxWriter, searchCoordinator, cacheCoordinator);
 
-        // 构造参数顺序需与 PostServiceImpl 一致，末尾为 PostFeedService
         service = new PostServiceImpl(
-                mapper,
-                new SnowflakeIdGenerator(),
-                new ObjectMapper(),
-                ossProperties,
-                userCounterService,
-                cacheInvalidator,
-                ragIndexService,
-                outboxMapper,
-                tagService,
-                searchIndexService,
-                eventPublisher,
-                postFeedService,
+                draftCommandService,
+                metadataCommandService,
+                publicationCommandService,
+                deletionCommandService,
                 detailQueryService,
                 backgroundQueryService);
     }

@@ -1,547 +1,180 @@
 package com.chtholly.post.service.impl;
 
 import com.chtholly.content.ContentAnalysis;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.chtholly.counter.service.UserCounterService;
-import com.chtholly.post.event.PostPublishedEvent;
-import com.chtholly.post.service.PostFeedService;
-import com.chtholly.post.service.PostService;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.chtholly.common.exception.BusinessException;
-import com.chtholly.common.exception.ErrorCode;
-import com.chtholly.post.id.SnowflakeIdGenerator;
-import com.chtholly.post.mapper.PostMapper;
-import com.chtholly.post.model.Post;
-import com.chtholly.post.util.SlugUtils;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.api.dto.PostSummary;
-import com.chtholly.storage.config.OssProperties;
-import com.chtholly.llm.rag.PostRagIndexer;
-import com.chtholly.relation.outbox.OutboxMapper;
-import com.chtholly.tag.service.TagService;
-import com.chtholly.search.index.SearchIndexService;
-import jakarta.annotation.Resource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
+import com.chtholly.post.model.Post;
+import com.chtholly.post.service.PostService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
- * Post lifecycle service: draft CRUD, publish, metadata, and detail retrieval.
+ * Compatibility facade for post commands and queries.
  *
- * <p>Write path invalidates L1/L2 caches and emits Outbox events for search index sync.
- * Detail reads use Caffeine L1 → Redis L2 → MySQL with SingleFlight and hot-key TTL extension.
- *
- * @see PostFeedServiceImpl
- * @see SearchIndexService
+ * <p>The facade retains transaction entry points while dedicated collaborators own each use case.
  */
 @Service
 public class PostServiceImpl implements PostService {
 
-    private final PostMapper mapper;
-    @Resource
-    private final SnowflakeIdGenerator idGen;
-    private final ObjectMapper objectMapper;
-    private final OssProperties ossProperties;
-    private final UserCounterService userCounterService;
-    private final PostCacheInvalidator cacheInvalidator;
-    private static final Logger log = LoggerFactory.getLogger(PostServiceImpl.class);
-    private final PostDetailQueryService detailQueryService;
-    private final PostBackgroundQueryService backgroundQueryService;
-    private final PostRagIndexer ragIndexService;
-    private final OutboxMapper outboxMapper;
-    private final TagService tagService;
-    private final SearchIndexService searchIndexService;
-    private final ApplicationEventPublisher eventPublisher;
-    private final PostFeedService postFeedService;
+    private final PostDraftCommandService draftCommands;
+    private final PostMetadataCommandService metadataCommands;
+    private final PostPublicationCommandService publicationCommands;
+    private final PostDeletionCommandService deletionCommands;
+    private final PostDetailQueryService detailQueries;
+    private final PostBackgroundQueryService backgroundQueries;
 
-    // 手动编写构造器，Spring的@Qualifier直接标注在参数上（核心）
-    public PostServiceImpl(
-            PostMapper mapper,
-            SnowflakeIdGenerator idGen,
-            ObjectMapper objectMapper,
-            OssProperties ossProperties,
-            UserCounterService userCounterService,
-            PostCacheInvalidator cacheInvalidator,
-            PostRagIndexer ragIndexService,
-            OutboxMapper outboxMapper,
-            TagService tagService,
-            SearchIndexService searchIndexService,
-            ApplicationEventPublisher eventPublisher,
-            PostFeedService postFeedService,
-            PostDetailQueryService detailQueryService,
-            PostBackgroundQueryService backgroundQueryService
-    ) {
-        this.mapper = mapper;
-        this.idGen = idGen;
-        this.objectMapper = objectMapper;
-        this.ossProperties = ossProperties;
-        this.userCounterService = userCounterService;
-        this.cacheInvalidator = cacheInvalidator;
-        this.ragIndexService = ragIndexService;
-        this.outboxMapper = outboxMapper;
-        this.tagService = tagService;
-        this.searchIndexService = searchIndexService;
-        this.eventPublisher = eventPublisher;
-        this.postFeedService = postFeedService;
-        this.detailQueryService = detailQueryService;
-        this.backgroundQueryService = backgroundQueryService;
-    }
     /**
-     * Creates a new draft post and returns its snowflake ID.
-     *
-     * @param creatorId Owner user ID.
-     * @return New post ID.
+     * Creates the post compatibility facade.
      */
+    public PostServiceImpl(
+            PostDraftCommandService draftCommands,
+            PostMetadataCommandService metadataCommands,
+            PostPublicationCommandService publicationCommands,
+            PostDeletionCommandService deletionCommands,
+            PostDetailQueryService detailQueries,
+            PostBackgroundQueryService backgroundQueries) {
+        this.draftCommands = draftCommands;
+        this.metadataCommands = metadataCommands;
+        this.publicationCommands = publicationCommands;
+        this.deletionCommands = deletionCommands;
+        this.detailQueries = detailQueries;
+        this.backgroundQueries = backgroundQueries;
+    }
+
+    @Override
     @Transactional
     public long createDraft(long creatorId) {
-        long id = idGen.nextId();
-        Instant now = Instant.now();
-        Post post = Post.builder()
-                .id(id)
-                .creatorId(creatorId)
-                .status("draft")
-                .type("image_text")
-                .visible("public")
-                .isTop(false)
-                .createTime(now)
-                .updateTime(now)
-                .build();
-        mapper.insertDraft(post);
-        return id;
+        return draftCommands.createDraft(creatorId);
     }
 
     @Override
-    public List<PostSummary> getRecentPosts(Duration window) {
-        return backgroundQueryService.getRecentPosts(window);
-    }
-
-    @Override
-    public List<PostSummary> getRecentPosts(Duration window, int limit) {
-        return backgroundQueryService.getRecentPosts(window, limit);
-    }
-
-    @Override
-    public List<PostSummary> getPostSummariesByIds(List<Long> ids) {
-        return backgroundQueryService.getPostSummariesByIds(ids);
-    }
-
-    @Override
-    public List<Post> getRecentSeedPosts(Duration window) {
-        return backgroundQueryService.getRecentSeedPosts(window);
-    }
-
-    @Override
-    public long countSince(Duration window) {
-        return backgroundQueryService.countSince(window);
-    }
-
-    @Override
-    public List<Long> listFirstTimePublisherIds(Duration window) {
-        return backgroundQueryService.listFirstTimePublisherIds(window);
-    }
-
-    @Override
-    public List<Post> getPostsNeedingUnderstanding() {
-        return backgroundQueryService.getPostsNeedingUnderstanding();
-    }
-
-    @Override
-    public void saveContentAnalysis(Long postId, ContentAnalysis analysis) {
-        backgroundQueryService.saveContentAnalysis(postId, analysis);
-    }
-
-    @Override
-    public ContentAnalysis getContentAnalysis(Long postId) {
-        return backgroundQueryService.getContentAnalysis(postId);
-    }
-
-    @Override
-    public ContentAnalysis getContentAnalysisBySlug(String slug) {
-        return backgroundQueryService.getContentAnalysisBySlug(slug);
-    }
-
-    /**
-     * Confirms OSS content upload and stores object metadata on the draft.
-     *
-     * @param creatorId  Owner user ID.
-     * @param id           Post ID.
-     * @param objectKey    OSS object key.
-     * @param etag         OSS ETag.
-     * @param size         Content size in bytes.
-     * @param sha256       Content checksum.
-     */
     @Transactional
     public void confirmContent(long creatorId, long id, String objectKey, String etag, Long size, String sha256) {
-        // 双删缓存：写前删一次、写后再删，降低并发读读到旧详情的窗口
-        invalidateCacheBeforeWrite(id);
-
-        Post post = Post.builder()
-                .id(id)
-                .creatorId(creatorId)
-                .contentObjectKey(objectKey)
-                .contentEtag(etag)
-                .contentSize(size)
-                .contentSha256(sha256)
-                .contentUrl(publicUrl(objectKey))
-                .updateTime(Instant.now())
-                .build();
-
-        int updated = mapper.updateContent(post);
-        if (updated == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
-        }
-
-        invalidateCache(id);
-
-        // 触发一次预索引（草稿阶段可能因可见性/状态被跳过）
-        try {
-            ragIndexService.ensureIndexed(id);
-        } catch (Exception e) {
-            log.warn("Pre-index after content confirm failed, post {}: {}", id, e.getMessage());
-        }
+        draftCommands.confirmContent(creatorId, id, objectKey, etag, size, sha256);
     }
 
-    /**
-     * Updates post metadata (title, tags, visibility, pin, description).
-     */
+    @Override
     @Transactional
-    public void updateMetadata(long creatorId, long id, String title, Long tagId, List<String> tags, List<String> imgUrls, String visible, Boolean isTop, String description) {
-        invalidateCacheBeforeWrite(id);
-
-        Post existing = mapper.findById(id);
-        if (existing == null || !existing.getCreatorId().equals(creatorId)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
-        }
-        List<String> oldTags = parseStringArray(existing.getTags());
-        boolean wasPublished = "published".equals(existing.getStatus());
-
-        Post post = Post.builder()
-                .id(id)
-                .creatorId(creatorId)
-                .title(title)
-                .tagId(tagId)
-                .tags(toJsonOrNull(tags))
-                .imgUrls(toJsonOrNull(imgUrls))
-                .visible(visible)
-                .isTop(isTop)
-                .description(description)
-                .type("image_text")
-                .updateTime(Instant.now())
-                .build();
-
-        int updated = mapper.updateMetadata(post);
-
-        if (updated == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
-        }
-
-        if (wasPublished) {
-            tagService.syncPublishedPostTags(creatorId, oldTags, tags);
-            syncSearchIndexUpsert(id);
-        }
-
-        // 元数据变更后写入 Outbox 事件，驱动搜索索引更新
-        writePostOutbox(id, "PostMetadataUpdated", "upsert");
-
-        invalidateCache(id);
-        runAfterCommit(() -> postFeedService.invalidateMyPublishedCache(creatorId));
+    public void updateMetadata(
+            long creatorId,
+            long id,
+            String title,
+            Long tagId,
+            List<String> tags,
+            List<String> imgUrls,
+            String visible,
+            Boolean isTop,
+            String description) {
+        metadataCommands.updateMetadata(
+                creatorId, id, title, tagId, tags, imgUrls, visible, isTop, description);
     }
 
-    /** Publishes a draft: assigns slug, syncs tags, increments user post counter, indexes search/RAG. */
+    @Override
     @Transactional
     public void publish(long creatorId, long id) {
-        int updated = mapper.publish(id, creatorId);
-
-        if (updated == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
-        }
-
-        Post post = mapper.findById(id);
-        if (post != null && (post.getSlug() == null || post.getSlug().isBlank())) {
-            String base = SlugUtils.fromTitle(post.getTitle());
-            String unique = SlugUtils.ensureUnique(base, id, mapper::findIdBySlug);
-            mapper.updateSlug(id, creatorId, unique);
-            post = mapper.findById(id);
-        }
-
-        if (post != null) {
-            tagService.syncPublishedPostTags(creatorId, List.of(), parseStringArray(post.getTags()));
-        }
-
-        try {
-            userCounterService.incrementPosts(creatorId, 1);
-        } catch (Exception e) {
-            log.warn("Increment posts counter failed after publish, userId={}, postId={}: {}",
-                    creatorId, id, e.getMessage());
-        }
-
-        // 写入 Outbox 事件，驱动搜索索引增量更新
-        writePostOutbox(id, "PostPublished", "upsert");
-
-        syncSearchIndexUpsert(id);
-
-        // 发布成功后触发一次预索引，减少首次问答冷启动
-        try {
-            ragIndexService.ensureIndexed(id);
-        } catch (Exception e) {
-            log.warn("Pre-index after publish failed, post {} (RAG backfill may recover): {}", id, e.getMessage(), e);
-        }
-
-        if (post != null && post.getPublishTime() != null) {
-            try {
-                eventPublisher.publishEvent(new PostPublishedEvent(
-                        id, creatorId, post.getPublishTime(), post.getVisible()));
-            } catch (Exception e) {
-                log.warn("PostPublishedEvent failed, postId={}: {}", id, e.getMessage());
-            }
-        }
-        runAfterCommit(() -> {
-            cacheInvalidator.invalidate(id);
-            cacheInvalidator.invalidateAllPublicFeedPages();
-            postFeedService.invalidateMyPublishedCache(creatorId);
-        });
+        publicationCommands.publish(creatorId, id);
     }
 
-    /** Sets or clears pin status for the author's post. */
+    @Override
     @Transactional
     public void updateTop(long creatorId, long id, boolean isTop) {
-        invalidateCacheBeforeWrite(id);
-
-        int updated = mapper.updateTop(id, creatorId, isTop);
-
-        if (updated == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
-        }
-
-        invalidateCache(id);
-        // 置顶会改排序与 isTop 标记，必须立刻丢掉 feed:mine 旧页
-        runAfterCommit(() -> postFeedService.invalidateMyPublishedCache(creatorId));
+        metadataCommands.updateTop(creatorId, id, isTop);
     }
 
-    /** Updates visibility (public/followers/school/private/unlisted). */
+    @Override
     @Transactional
     public void updateVisibility(long creatorId, long id, String visible) {
-        if (!isValidVisible(visible)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
-        }
-
-        invalidateCacheBeforeWrite(id);
-
-        int updated = mapper.updateVisibility(id, creatorId, visible);
-
-        if (updated == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
-        }
-
-        writePostOutbox(id, "PostVisibilityChanged", "upsert");
-        invalidateCache(id);
-        runAfterCommit(() -> {
-            cacheInvalidator.invalidateAllPublicFeedPages();
-            postFeedService.invalidateMyPublishedCache(creatorId);
-            syncSearchIndexUpsert(id);
-        });
+        metadataCommands.updateVisibility(creatorId, id, visible);
     }
 
-    /** Soft-deletes a post and removes it from search index when previously published. */
+    @Override
     @Transactional
     public void delete(long creatorId, long id) {
-        invalidateCacheBeforeWrite(id);
-        runAfterCommit(() -> postFeedService.invalidateMyPublishedCache(creatorId));
-
-        Post existing = mapper.findById(id);
-        if (existing == null || !existing.getCreatorId().equals(creatorId)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
-        }
-        boolean wasPublished = "published".equals(existing.getStatus());
-        List<String> oldTags = parseStringArray(existing.getTags());
-
-        int updated = mapper.softDelete(id, creatorId);
-        if (updated == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
-        }
-
-        if (wasPublished) {
-            tagService.releasePublishedPostTags(oldTags);
-        }
-
-        // 写入 Outbox 事件，驱动搜索索引软删
-        writePostOutbox(id, "PostDeleted", "delete");
-
-        if (wasPublished) {
-            syncSearchIndexDelete(id);
-        }
-
-        invalidateCache(id);
+        deletionCommands.delete(creatorId, id);
     }
 
-    /** 管理员修改帖子可见性（不校验作者）。 */
-    @Transactional
     @Override
+    @Transactional
     public void adminUpdateVisibility(long id, String visible) {
-        if (!isValidVisible(visible)) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "可见性取值非法");
-        }
-        invalidateCacheBeforeWrite(id);
-        int updated = mapper.updateVisibilityById(id, visible);
-        if (updated == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "帖子不存在");
-        }
-        invalidateCache(id);
+        deletionCommands.adminUpdateVisibility(id, visible);
     }
 
-    /** 管理员软删帖子（不校验作者）。 */
-    @Transactional
     @Override
+    @Transactional
     public void adminDelete(long id) {
-        invalidateCacheBeforeWrite(id);
-        Post existing = mapper.findById(id);
-        if (existing == null || "deleted".equals(existing.getStatus())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "帖子不存在");
-        }
-        boolean wasPublished = "published".equals(existing.getStatus());
-        List<String> oldTags = parseStringArray(existing.getTags());
-
-        int updated = mapper.softDeleteById(id);
-        if (updated == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "帖子不存在");
-        }
-
-        if (wasPublished) {
-            tagService.releasePublishedPostTags(oldTags);
-        }
-
-        writePostOutbox(id, "PostDeleted", "delete");
-
-        if (wasPublished) {
-            syncSearchIndexDelete(id);
-        }
-
-        invalidateCache(id);
-    }
-
-    /** Canal 关闭时 Outbox 不经 Kafka，本地直连 ES 索引（与 Consumer 幂等）。 */
-    private void syncSearchIndexUpsert(long id) {
-        try {
-            searchIndexService.upsertPost(id);
-        } catch (Exception e) {
-            log.warn("Search index upsert failed, post {} (will retry on backfill): {}", id, e.getMessage(), e);
-        }
-    }
-
-    private void syncSearchIndexDelete(long id) {
-        try {
-            searchIndexService.softDeletePost(id);
-        } catch (Exception e) {
-            log.warn("Search index delete failed, post {} (will retry on backfill): {}", id, e.getMessage(), e);
-        }
-    }
-
-    /** Writes the post event in the caller's local transaction. */
-    private void writePostOutbox(long postId, String eventType, String operation) {
-        final String payload;
-        try {
-            payload = objectMapper.writeValueAsString(
-                    Map.of("entity", "post", "op", operation, "id", postId));
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize Outbox event for post " + postId, e);
-        }
-        outboxMapper.insert(idGen.nextId(), "post", postId, eventType, payload);
-    }
-
-    private boolean isValidVisible(String visible) {
-        if (visible == null) {
-            return false;
-        }
-
-        return switch (visible) {
-            case "public", "followers", "school", "private", "unlisted" -> true;
-            default -> false;
-        };
-    }
-
-    private String toJsonOrNull(List<String> list) {
-        if (list == null) {
-            return null;
-        }
-
-        try {
-            return objectMapper.writeValueAsString(list);
-        } catch (JsonProcessingException e) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "JSON 处理失败");
-        }
-    }
-
-    private String publicUrl(String objectKey) {
-        String publicDomain = ossProperties.getPublicDomain();
-
-        if (publicDomain != null && !publicDomain.isBlank()) {
-            return publicDomain.replaceAll("/$", "") + "/" + objectKey;
-        }
-
-        return "https://" + ossProperties.getBucket() + "." + ossProperties.getEndpoint() + "/" + objectKey;
+        deletionCommands.adminDelete(id);
     }
 
     @Override
     public PostDetailResponse getDetail(long id, Long currentUserIdNullable) {
-        return detailQueryService.getDetail(id, currentUserIdNullable);
+        return detailQueries.getDetail(id, currentUserIdNullable);
     }
 
     @Override
     public PostDetailResponse getDetailBySlug(String slug, Long currentUserIdNullable) {
-        return detailQueryService.getDetailBySlug(slug, currentUserIdNullable);
+        return detailQueries.getDetailBySlug(slug, currentUserIdNullable);
     }
 
     @Override
     public String computeDetailEtag(long id) {
-        return detailQueryService.computeEtag(id);
+        return detailQueries.computeEtag(id);
     }
 
     @Override
     public String computeDetailEtagBySlug(String slug) {
-        return detailQueryService.computeEtagBySlug(slug);
+        return detailQueries.computeEtagBySlug(slug);
     }
 
-    private void invalidateCache(long id) {
-        runAfterCommit(() -> cacheInvalidator.invalidate(id));
+    @Override
+    public List<PostSummary> getRecentPosts(Duration window) {
+        return backgroundQueries.getRecentPosts(window);
     }
 
-    private void invalidateCacheBeforeWrite(long id) {
-        cacheInvalidator.invalidate(id);
+    @Override
+    public List<PostSummary> getRecentPosts(Duration window, int limit) {
+        return backgroundQueries.getRecentPosts(window, limit);
     }
 
-    private void runAfterCommit(Runnable action) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()
-                && TransactionSynchronizationManager.isActualTransactionActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    action.run();
-                }
-            });
-            return;
-        }
-        action.run();
+    @Override
+    public List<PostSummary> getPostSummariesByIds(List<Long> ids) {
+        return backgroundQueries.getPostSummariesByIds(ids);
     }
 
-    private List<String> parseStringArray(String json) {
-        if (json == null || json.isBlank()) return Collections.emptyList();
-        try {
-            return objectMapper.readValue(json, new TypeReference<>() {
-            });
-        } catch (Exception e) {
-            return Collections.emptyList();
-        }
+    @Override
+    public List<Post> getRecentSeedPosts(Duration window) {
+        return backgroundQueries.getRecentSeedPosts(window);
+    }
+
+    @Override
+    public long countSince(Duration window) {
+        return backgroundQueries.countSince(window);
+    }
+
+    @Override
+    public List<Long> listFirstTimePublisherIds(Duration window) {
+        return backgroundQueries.listFirstTimePublisherIds(window);
+    }
+
+    @Override
+    public List<Post> getPostsNeedingUnderstanding() {
+        return backgroundQueries.getPostsNeedingUnderstanding();
+    }
+
+    @Override
+    public void saveContentAnalysis(Long postId, ContentAnalysis analysis) {
+        backgroundQueries.saveContentAnalysis(postId, analysis);
+    }
+
+    @Override
+    public ContentAnalysis getContentAnalysis(Long postId) {
+        return backgroundQueries.getContentAnalysis(postId);
+    }
+
+    @Override
+    public ContentAnalysis getContentAnalysisBySlug(String slug) {
+        return backgroundQueries.getContentAnalysisBySlug(slug);
     }
 }

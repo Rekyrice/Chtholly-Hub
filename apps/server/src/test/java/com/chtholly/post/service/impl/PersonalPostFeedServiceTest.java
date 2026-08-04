@@ -47,9 +47,10 @@ class PersonalPostFeedServiceTest {
         when(authorQuery.findByIds(List.of(42L))).thenReturn(Map.of(42L, new PublicAuthorSnapshot(
                 42L, "rekyrice", "Rekyrice", "/new.webp", "简介", "[\"动画\"]",
                 Instant.parse("2026-02-01T00:00:00Z"))));
+        FeedItemAssembler assembler = new FeedItemAssembler(counterService, commentService, authorQuery);
         PersonalPostFeedService service = new PersonalPostFeedService(
-                mapper, redis, new ObjectMapper(), counterService, commentService, cache, hotKey,
-                mock(FeedTimelineService.class), mock(FeedTimelineProperties.class), authorQuery);
+                mapper, redis, new ObjectMapper(), cache, hotKey,
+                mock(FeedTimelineService.class), mock(FeedTimelineProperties.class), assembler);
 
         FeedItemResponse result = service.getMyPublished(42L, 1, 10).items().getFirst();
 
