@@ -72,3 +72,23 @@ test("单节点 ES 与敏感目录使用安全默认值", () => {
   assert.match(gitignore, /^\.local-deploy\/$/m);
   assert.match(gitignore, /^\.production-secrets\/$/m);
 });
+
+test("首次部署脚本不执行 env 文件并在构建前校验配置", () => {
+  const bootstrap = read("scripts/deploy/ecs-bootstrap.sh");
+
+  assert.doesNotMatch(bootstrap, /^\s*(?:source|\.)\s+\.env\s*$/m);
+  assert.match(bootstrap, /validate_env_value/);
+  assert.match(bootstrap, /\.production-secrets\/jwt-private\.pem/);
+  assert.match(bootstrap, /COMPOSE_PROFILES/);
+});
+
+test("数据库初始化仅允许空库且 seed 必须显式启用", () => {
+  const initDb = read("scripts/deploy/ecs-init-db.sh");
+
+  assert.doesNotMatch(initDb, /^\s*(?:source|\.)\s+\.env\s*$/m);
+  assert.doesNotMatch(initDb, /-p\"?\$ROOT_PASS/);
+  assert.match(initDb, /information_schema\.tables/);
+  assert.match(initDb, /--with-seed/);
+  assert.match(initDb, /if \[\[ \"\$WITH_SEED\" == \"true\" \]\]/);
+  assert.match(initDb, /phase_a_seed\.sql/);
+});
