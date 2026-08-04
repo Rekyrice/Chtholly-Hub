@@ -2,6 +2,7 @@ package com.chtholly.agent.ws;
 
 import com.chtholly.agent.runtime.AgentTurnKeySupport;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -54,6 +55,7 @@ public class AgentTurnCoordinator {
      *
      * @param redis Redis template used for atomic lease scripts
      */
+    @Autowired
     public AgentTurnCoordinator(StringRedisTemplate redis) {
         this.redis = Objects.requireNonNull(redis, "redis");
         this.localActive = null;

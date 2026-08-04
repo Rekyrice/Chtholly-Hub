@@ -343,7 +343,11 @@ class ChthollyAgentTest {
         properties.setMaxResponseChars(5);
         when(memory.formatForPrompt()).thenReturn("history");
         when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
-                .thenReturn(snapshot("assembled system"));
+                .thenReturn(new AgentContextSnapshot(
+                        "loop ReAct system with {\"action\":\"final\"}",
+                        "final answer context",
+                        EvidenceSet.empty(),
+                        false));
         when(loopExecutor.execute(any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     Thread.sleep(80);
@@ -383,7 +387,9 @@ class ChthollyAgentTest {
         ArgumentCaptor<String> finalSystemCaptor = ArgumentCaptor.forClass(String.class);
         verify(llmInvoker).stream(
                 finalSystemCaptor.capture(), anyString(), eq(0.3), eq(1024), any(Duration.class));
-        assertThat(finalSystemCaptor.getValue()).contains("assembled system", "Answer with soul");
+        assertThat(finalSystemCaptor.getValue())
+                .contains("final answer context", "Answer with soul")
+                .doesNotContain("loop ReAct system", "{\"action\":\"final\"}");
         ArgumentCaptor<AgentExecutionTrace> traceCaptor = ArgumentCaptor.forClass(AgentExecutionTrace.class);
         verify(tracePersistenceService).persist(traceCaptor.capture());
         assertThat(traceCaptor.getValue().getTerminatedBy()).isEqualTo("final_answer");
@@ -409,13 +415,80 @@ class ChthollyAgentTest {
                 .isGreaterThan(finalCall.path("first_token_ms").asLong());
         com.fasterxml.jackson.databind.JsonNode finalEvent = findLlmEvent(payload, "FINAL_ANSWER");
         assertThat(finalEvent.path("details").path("systemPrompt").path("text").asText())
-                .contains("assembled system", "Answer with soul");
+                .contains("final answer context", "Answer with soul")
+                .doesNotContain("loop ReAct system", "{\"action\":\"final\"}");
         assertThat(finalEvent.path("details").path("userPrompt").path("text").asText())
                 .contains("history", "current question", "Produce final answer");
         assertThat(finalEvent.path("details").path("rawOutput").path("text").asText())
                 .isEqualTo("final answer");
         com.fasterxml.jackson.databind.JsonNode terminal = findNamedEvent(payload, "terminal");
         assertThat(terminal.path("details").path("answer").path("text").asText()).isEqualTo("final");
+    }
+
+    @Test
+    void actionEnvelopeFinalAnswerIsRetriedAsMarkdownBeforePersistenceAndDelivery() throws Exception {
+        String markdown = "**《迷宫饭》**\n\n- 评分：7.80\n- 集数：24 集";
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("final context"));
+        when(loopExecutor.execute(any(), any(), any(), any()))
+                .thenReturn(AgentLoopResult.finalReady(List.of("current question"), 2, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model"))
+                .thenReturn(llmSpan, skillSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(Flux.just("{\"action\":\"final\"}"));
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn(markdown);
+
+        agent.run("查询《迷宫饭》", 7L, memory, events::add);
+
+        verify(llmInvoker).call(anyString(), anyString(), eq(0.2), eq(1024));
+        ArgumentCaptor<AgentTurn> assistantTurn = ArgumentCaptor.forClass(AgentTurn.class);
+        verify(memory).addExchange(any(), assistantTurn.capture());
+        assertThat(assistantTurn.getValue().content()).isEqualTo(markdown);
+        assertThat(eventTypes()).containsExactly("delta", "final");
+        assertThat(eventContents()).containsExactly(markdown, markdown);
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor =
+                ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        var llmCalls = new ObjectMapper().valueToTree(traceCaptor.getValue().toPayloadMap())
+                .path("llmCalls");
+        assertThat(llmCalls).hasSize(2);
+        assertThat(llmCalls.path(0).path("purpose").asText()).isEqualTo("FINAL_ANSWER");
+        assertThat(llmCalls.path(0).path("status").asText()).isEqualTo("INVALID_OUTPUT");
+        assertThat(llmCalls.path(0).path("error_code").asText())
+                .isEqualTo("FINAL_ACTION_ENVELOPE");
+        assertThat(llmCalls.path(1).path("purpose").asText())
+                .isEqualTo("FINAL_ANSWER_REPAIR");
+        assertThat(llmCalls.path(1).path("status").asText()).isEqualTo("SUCCESS");
+    }
+
+    @Test
+    void repeatedActionEnvelopeFinalAnswerFailsClosedWithoutPersistenceOrDelivery() throws Exception {
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("final context"));
+        when(loopExecutor.execute(any(), any(), any(), any()))
+                .thenReturn(AgentLoopResult.finalReady(List.of("current question"), 2, 10));
+        when(observationService.startLlmSpan(agentSpan, "test-model"))
+                .thenReturn(llmSpan, skillSpan);
+        when(llmInvoker.stream(anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenReturn(Flux.just("```json\n{\"action\":\"final\"}\n```"));
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"final\"}");
+
+        agent.run("查询《迷宫饭》", 7L, memory, events::add);
+
+        verify(memory, never()).addExchange(any(), any());
+        assertThat(eventTypes()).containsExactly("error");
+        assertThat(events.getFirst().data().path("message").asText()).isEqualTo("RESPONSE_FAILED");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor =
+                ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        var payload = new ObjectMapper().valueToTree(traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("failureType").asText()).isEqualTo("LLM_INVALID_OUTPUT");
+        assertThat(payload.path("llmCalls").path(1).path("status").asText())
+                .isEqualTo("INVALID_OUTPUT");
     }
 
     @Test

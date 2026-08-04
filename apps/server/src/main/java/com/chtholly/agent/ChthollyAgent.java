@@ -458,9 +458,14 @@ public class ChthollyAgent {
                     budget,
                     "retrieval");
             if (selected) {
-                contextSnapshot = contextSnapshot.withSystemPrompt(
+                contextSnapshot = contextSnapshot.withSystemPrompts(
                         bindSkillPrompt(
                                 contextSnapshot.systemPrompt(),
+                                selection,
+                                taskPlan.evidencePolicy(),
+                                toolMap.keySet()),
+                        bindSkillPrompt(
+                                contextSnapshot.finalSystemPrompt(),
                                 selection,
                                 taskPlan.evidencePolicy(),
                                 toolMap.keySet()));
@@ -928,7 +933,7 @@ public class ChthollyAgent {
         String finalInstructions = agentDomainConfig.render(
                 agentDomainConfig.systemPrompt().finalAnswerSystem(),
                 "soul", characterSoulService.getSoulContent());
-        String contextualSystem = contextSnapshot.renderSystemPrompt(finalEvidenceSet);
+        String contextualSystem = contextSnapshot.renderFinalSystemPrompt(finalEvidenceSet);
         String system = contextualSystem.isBlank()
                 ? finalInstructions
                 : contextualSystem + "\n\n" + finalInstructions;
@@ -968,12 +973,13 @@ public class ChthollyAgent {
 
             String candidate = truncateAnswer(full.toString());
             streamMs = System.currentTimeMillis() - streamStart;
+            boolean actionEnvelope = isFinalActionEnvelope(candidate);
             trace.recordLlmCall(
                     stepIndex,
                     "FINAL_ANSWER",
                     properties.getModel(),
-                    "SUCCESS",
-                    "",
+                    actionEnvelope ? "INVALID_OUTPUT" : "SUCCESS",
+                    actionEnvelope ? "FINAL_ACTION_ENVELOPE" : "",
                     1,
                     budgetBeforeMs,
                     remainingBudgetMs(turnBudget),
@@ -986,11 +992,30 @@ public class ChthollyAgent {
                             userPrompt,
                             full.toString()));
             llmCallRecorded = true;
-            agentObservationService.finishSpan(
-                    llmSpan,
-                    AgentSpanAttributes.llm("ok"),
-                    Map.of());
+            if (actionEnvelope) {
+                agentObservationService.finishSpanError(
+                        llmSpan,
+                        "final_action_envelope",
+                        AgentSpanAttributes.llm("invalid_output"),
+                        Map.of("error.type", "FINAL_ACTION_ENVELOPE"));
+            } else {
+                agentObservationService.finishSpan(
+                        llmSpan,
+                        AgentSpanAttributes.llm("ok"),
+                        Map.of());
+            }
             llmSpanClosed = true;
+            if (actionEnvelope) {
+                firstTokenTurnMs.set(-1);
+                candidate = repairFinalActionEnvelope(
+                        system,
+                        userPrompt,
+                        trace,
+                        agentSpan,
+                        stepIndex,
+                        turnBudget);
+                streamMs = System.currentTimeMillis() - streamStart;
+            }
             EvidenceSet.ValidationResult evidenceValidation = finalEvidenceSet
                     .validate(candidate, finalEvidenceRequired);
             if (evidenceValidation.status() == EvidenceSet.ValidationStatus.MISSING_CITATION
@@ -1180,7 +1205,9 @@ public class ChthollyAgent {
             }
             log.warn("Agent streaming answer failed ({})", e.getClass().getSimpleName());
             trace.terminateError();
-            trace.markFailure(AgentExecutionTrace.FailureType.INTERNAL_ERROR);
+            trace.markFailure(e instanceof InvalidFinalAnswerException
+                    ? AgentExecutionTrace.FailureType.LLM_INVALID_OUTPUT
+                    : AgentExecutionTrace.FailureType.INTERNAL_ERROR);
             trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.MODEL_FAILURE);
             trace.setErrorMessage(agentDomainConfig.errors().responseFailed());
             emitError(sink, agentDomainConfig.errors().responseFailed());
@@ -1201,6 +1228,162 @@ public class ChthollyAgent {
         }
         emitFinal(sink, answer);
         return streamMs;
+    }
+
+    private String repairFinalActionEnvelope(
+            String system,
+            String userPrompt,
+            AgentExecutionTrace trace,
+            Observation agentSpan,
+            int stepIndex,
+            AgentTurnBudget turnBudget) {
+        String retryPrompt = userPrompt + """
+
+
+                上一次输出误用了内部工具协议。请重新回答当前问题：
+                只输出给用户阅读的自然语言 Markdown，不得输出 JSON、action 字段或工具调用协议。
+                """;
+        long startedAt = System.currentTimeMillis();
+        long budgetBeforeMs = remainingBudgetMs(turnBudget);
+        int inputChars = system.length() + retryPrompt.length();
+        Observation repairSpan = agentObservationService.startLlmSpan(agentSpan, properties.getModel());
+        boolean callRecorded = false;
+        boolean spanClosed = false;
+        try {
+            String rawRepaired = runWithinBudget(
+                    () -> llmInvoker.call(system, retryPrompt, 0.2, 1024),
+                    turnBudget,
+                    "final_answer_repair");
+            String repaired = truncateAnswer(rawRepaired);
+            boolean actionEnvelope = isFinalActionEnvelope(repaired);
+            trace.recordLlmCall(
+                    stepIndex,
+                    "FINAL_ANSWER_REPAIR",
+                    properties.getModel(),
+                    actionEnvelope ? "INVALID_OUTPUT" : "SUCCESS",
+                    actionEnvelope ? "FINAL_ACTION_ENVELOPE" : "",
+                    2,
+                    budgetBeforeMs,
+                    remainingBudgetMs(turnBudget),
+                    System.currentTimeMillis() - startedAt,
+                    inputChars,
+                    rawRepaired == null ? 0 : rawRepaired.length(),
+                    null,
+                    AgentExecutionTrace.LlmExchange.success(
+                            system,
+                            retryPrompt,
+                            rawRepaired));
+            callRecorded = true;
+            if (actionEnvelope) {
+                agentObservationService.finishSpanError(
+                        repairSpan,
+                        "final_action_envelope",
+                        AgentSpanAttributes.llm("invalid_output"),
+                        Map.of("error.type", "FINAL_ACTION_ENVELOPE"));
+                spanClosed = true;
+                throw new InvalidFinalAnswerException("FINAL_ACTION_ENVELOPE");
+            }
+            agentObservationService.finishSpan(
+                    repairSpan,
+                    AgentSpanAttributes.llm("ok"),
+                    Map.of());
+            spanClosed = true;
+            return repaired;
+        } catch (AgentTurnBudget.UnavailableException unavailable) {
+            if (!callRecorded) {
+                trace.recordLlmCall(
+                        stepIndex,
+                        "FINAL_ANSWER_REPAIR",
+                        properties.getModel(),
+                        unavailable.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                                ? "CANCELLED"
+                                : "TIMEOUT",
+                        unavailable.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                                ? "TURN_CANCELLED"
+                                : "TURN_TIMEOUT",
+                        2,
+                        budgetBeforeMs,
+                        remainingBudgetMs(turnBudget),
+                        System.currentTimeMillis() - startedAt,
+                        inputChars,
+                        0,
+                        null,
+                        AgentExecutionTrace.LlmExchange.failure(
+                                system,
+                                retryPrompt,
+                                "",
+                                unavailable));
+            }
+            if (!spanClosed) {
+                agentObservationService.finishSpanError(
+                        repairSpan,
+                        unavailable.reason() == AgentTurnBudget.UnavailableReason.CANCELLED
+                                ? "final_repair_cancelled"
+                                : "final_repair_timeout",
+                        AgentSpanAttributes.llm("aborted"),
+                        Map.of());
+            }
+            throw unavailable;
+        } catch (InvalidFinalAnswerException invalidAnswer) {
+            throw invalidAnswer;
+        } catch (Exception exception) {
+            if (!callRecorded) {
+                trace.recordLlmCall(
+                        stepIndex,
+                        "FINAL_ANSWER_REPAIR",
+                        properties.getModel(),
+                        isTimeout(exception) ? "TIMEOUT" : "ERROR",
+                        isTimeout(exception) ? "LLM_TIMEOUT" : "LLM_ERROR",
+                        2,
+                        budgetBeforeMs,
+                        remainingBudgetMs(turnBudget),
+                        System.currentTimeMillis() - startedAt,
+                        inputChars,
+                        0,
+                        null,
+                        AgentExecutionTrace.LlmExchange.failure(
+                                system,
+                                retryPrompt,
+                                "",
+                                exception));
+            }
+            if (!spanClosed) {
+                agentObservationService.finishSpanError(
+                        repairSpan,
+                        isTimeout(exception) ? "final_repair_timeout" : "final_repair_error",
+                        AgentSpanAttributes.llm("error"),
+                        Map.of());
+            }
+            throw new InvalidFinalAnswerException("FINAL_ANSWER_REPAIR_FAILED", exception);
+        }
+    }
+
+    private boolean isFinalActionEnvelope(String candidate) {
+        String normalized = unwrapSingleJsonFence(candidate);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        try {
+            var root = objectMapper.readTree(normalized);
+            return root != null
+                    && root.isObject()
+                    && root.path("action").isTextual();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static String unwrapSingleJsonFence(String candidate) {
+        String normalized = candidate == null ? "" : candidate.strip();
+        if (!normalized.startsWith("```") || !normalized.endsWith("```")) {
+            return normalized;
+        }
+        int firstLineEnd = normalized.indexOf('\n');
+        int closingFence = normalized.lastIndexOf("```");
+        if (firstLineEnd < 0 || closingFence <= firstLineEnd) {
+            return normalized;
+        }
+        return normalized.substring(firstLineEnd + 1, closingFence).strip();
     }
 
     private String repairMissingCitations(
@@ -1394,6 +1577,16 @@ public class ChthollyAgent {
     private static final class MemoryWriteException extends RuntimeException {
         private MemoryWriteException(String code) {
             super(code == null || code.isBlank() ? "MEMORY_WRITE_FAILED" : code);
+        }
+    }
+
+    private static final class InvalidFinalAnswerException extends RuntimeException {
+        private InvalidFinalAnswerException(String code) {
+            super(code);
+        }
+
+        private InvalidFinalAnswerException(String code, Throwable cause) {
+            super(code, cause);
         }
     }
 

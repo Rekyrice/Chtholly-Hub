@@ -13,6 +13,7 @@ import com.chtholly.agent.context.contributor.ProceduralContextContributor;
 import com.chtholly.agent.context.contributor.QuestionContextContributor;
 import com.chtholly.agent.context.contributor.RelationshipContextContributor;
 import com.chtholly.agent.context.contributor.ToolsContextContributor;
+import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.memory.AgentTurn;
 import com.chtholly.content.ContentAnalysis;
 import com.chtholly.content.ContentIntelligenceReader;
@@ -190,6 +191,28 @@ class ContextEngineTest {
 
                 你怎么看这篇文章？""");
         assertThat(prompt).doesNotContain("{\"action\":\"final\",\"answer\"");
+    }
+
+    @Test
+    void buildsFinalAnswerContextWithoutReactToolProtocol() {
+        AgentContextSnapshot snapshot = contextEngine.buildSnapshot(
+                7L,
+                "ws-1",
+                "页面：/post/dungeon-meshi",
+                List.of(mockTool()),
+                "User: 上一次的问题\nAssistant: 上一次的回答",
+                "查询《迷宫饭》的评分、集数、放送时间并列出角色",
+                false);
+
+        String finalPrompt = snapshot.renderFinalSystemPrompt(EvidenceSet.empty());
+
+        assertThat(snapshot.systemPrompt())
+                .contains("## 可用工具", "test_tool", "{\"action\":\"final\"}");
+        assertThat(finalPrompt)
+                .contains("## 你的身份", "## 当前状态", "## 用户当前在看")
+                .contains("## 对话历史", "User: 上一次的问题")
+                .contains("## 用户的问题", "查询《迷宫饭》的评分、集数、放送时间并列出角色")
+                .doesNotContain("## 可用工具", "test_tool", "{\"action\":\"final\"}");
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.chtholly.agent.memory;
 
 import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.runtime.AgentTurnControl;
+import com.chtholly.agent.runtime.AgentTurnKeySupport;
 import com.chtholly.agent.ws.AgentTurnCoordinator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterAll;
@@ -150,6 +151,40 @@ class AgentMemoryStoreRedisIT {
         assertThat(generationTtl).isPositive();
         assertThat(memoryTtl).isPositive();
         assertThat(Math.abs(generationTtl - memoryTtl)).isLessThan(1_000L);
+    }
+
+    @Test
+    void acceptedRedisLeaseAllowsTheSameTurnToCommitMemory() {
+        String requestId = "request-fenced-commit-it";
+        String turnId = "turn-fenced-commit-it";
+        AgentTurnCoordinator coordinator = new AgentTurnCoordinator(redis);
+        AgentTurnCoordinator.AcquireResult acquired = coordinator.acquire(
+                USER_ID,
+                SESSION_ID,
+                requestId,
+                turnId,
+                Duration.ofSeconds(30));
+        assertThat(acquired.status()).isEqualTo(AgentTurnCoordinator.AcquireStatus.ACQUIRED);
+        assertThat(redis.hasKey(AgentTurnKeySupport.activeKey(USER_ID, SESSION_ID))).isTrue();
+        assertThat(redis.hasKey(
+                AgentTurnKeySupport.requestKey(USER_ID, SESSION_ID, requestId))).isTrue();
+
+        AgentTurnControl control = AgentTurnControl.create(
+                requestId,
+                turnId,
+                SESSION_ID,
+                "connection-fenced-commit-it",
+                Duration.ofSeconds(30));
+        AgentConversationMemory snapshot = firstStore.getOrCreateMemory(USER_ID, SESSION_ID);
+        AgentMemoryStore.MemoryWriteResult result = snapshot.addExchange(
+                AgentTurn.user("fenced question"),
+                AgentTurn.assistant("fenced answer"),
+                control);
+
+        assertThat(result.status()).isEqualTo(AgentMemoryStore.MemoryWriteStatus.COMMITTED);
+        assertThat(result.failureCode()).isEmpty();
+        assertThat(firstStore.getTurns(USER_ID, SESSION_ID)).hasSize(2);
+        assertThat(coordinator.release(USER_ID, SESSION_ID, turnId)).isTrue();
     }
 
     @Test

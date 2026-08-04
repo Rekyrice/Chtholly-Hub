@@ -22,6 +22,8 @@ import java.util.TreeMap;
 @Service
 public class ContextEngine {
 
+    private static final String LOOP_ONLY_TOOLS_CONTRIBUTION = "tools";
+
     private final AnchorManager anchorManager;
     private final List<ContextContributor> contributors;
 
@@ -121,15 +123,18 @@ public class ContextEngine {
         boolean evidenceRequired = evidencePolicy == EvidencePolicy.REQUIRED || contributions.stream()
                 .anyMatch(ContextContribution::evidenceRequired);
 
-        String prompt = contributions.stream()
-                .filter(contribution -> !contribution.isEmpty())
-                .map(contribution -> contribution.content().strip())
-                .collect(java.util.stream.Collectors.joining("\n\n"));
-        String renderedEvidence = evidenceSet.renderForPrompt();
-        if (!renderedEvidence.isBlank()) {
-            prompt = prompt.isBlank() ? renderedEvidence : prompt + "\n\n" + renderedEvidence;
-        }
-        return new AgentContextSnapshot(prompt, evidenceSet, evidenceRequired, retrievalStatuses);
+        String prompt = renderPrompt(contributions, evidenceSet);
+        String finalPrompt = renderPrompt(
+                contributions.stream()
+                        .filter(contribution -> !LOOP_ONLY_TOOLS_CONTRIBUTION.equals(contribution.name()))
+                        .toList(),
+                evidenceSet);
+        return new AgentContextSnapshot(
+                prompt,
+                finalPrompt,
+                evidenceSet,
+                evidenceRequired,
+                retrievalStatuses);
     }
 
     ContextContribution safeContribution(ContextContributor contributor, ContextRequest request) {
@@ -158,6 +163,20 @@ public class ContextEngine {
             log.warn("Context contributor failed: {}", contributor.name(), e);
             return ContextContribution.empty(contributor.name(), contributor.order(), true);
         }
+    }
+
+    private static String renderPrompt(
+            List<ContextContribution> contributions,
+            EvidenceSet evidenceSet) {
+        String prompt = contributions.stream()
+                .filter(contribution -> !contribution.isEmpty())
+                .map(contribution -> contribution.content().strip())
+                .collect(java.util.stream.Collectors.joining("\n\n"));
+        String renderedEvidence = evidenceSet.renderForPrompt();
+        if (renderedEvidence.isBlank()) {
+            return prompt;
+        }
+        return prompt.isBlank() ? renderedEvidence : prompt + "\n\n" + renderedEvidence;
     }
 
     private static void validateContributors(List<ContextContributor> contributors) {

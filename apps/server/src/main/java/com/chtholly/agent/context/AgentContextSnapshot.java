@@ -12,21 +12,28 @@ import java.util.TreeMap;
 public record AgentContextSnapshot(
         String snapshotId,
         String systemPrompt,
+        String finalSystemPrompt,
         EvidenceSet evidenceSet,
         boolean evidenceRequired,
         Map<String, String> retrievalStatuses) {
 
     public AgentContextSnapshot {
         systemPrompt = systemPrompt == null ? "" : systemPrompt.strip();
+        finalSystemPrompt = finalSystemPrompt == null ? systemPrompt : finalSystemPrompt.strip();
         evidenceSet = evidenceSet == null ? EvidenceSet.empty() : evidenceSet;
         retrievalStatuses = retrievalStatuses == null ? Map.of() : Map.copyOf(retrievalStatuses);
         if (snapshotId == null || snapshotId.isBlank()) {
-            snapshotId = snapshotId(systemPrompt, evidenceSet, evidenceRequired, retrievalStatuses);
+            snapshotId = snapshotId(
+                    systemPrompt,
+                    finalSystemPrompt,
+                    evidenceSet,
+                    evidenceRequired,
+                    retrievalStatuses);
         }
     }
 
     public AgentContextSnapshot(String systemPrompt, EvidenceSet evidenceSet, boolean evidenceRequired) {
-        this(null, systemPrompt, evidenceSet, evidenceRequired, Map.of());
+        this(null, systemPrompt, systemPrompt, evidenceSet, evidenceRequired, Map.of());
     }
 
     public AgentContextSnapshot(
@@ -34,19 +41,61 @@ public record AgentContextSnapshot(
             EvidenceSet evidenceSet,
             boolean evidenceRequired,
             Map<String, String> retrievalStatuses) {
-        this(null, systemPrompt, evidenceSet, evidenceRequired, retrievalStatuses);
+        this(null, systemPrompt, systemPrompt, evidenceSet, evidenceRequired, retrievalStatuses);
     }
 
-    /** Rebinds immutable Skill instructions and derives a new snapshot identity. */
+    public AgentContextSnapshot(
+            String systemPrompt,
+            String finalSystemPrompt,
+            EvidenceSet evidenceSet,
+            boolean evidenceRequired) {
+        this(null, systemPrompt, finalSystemPrompt, evidenceSet, evidenceRequired, Map.of());
+    }
+
+    public AgentContextSnapshot(
+            String systemPrompt,
+            String finalSystemPrompt,
+            EvidenceSet evidenceSet,
+            boolean evidenceRequired,
+            Map<String, String> retrievalStatuses) {
+        this(null, systemPrompt, finalSystemPrompt, evidenceSet, evidenceRequired, retrievalStatuses);
+    }
+
+    /** Replaces both loop and final-answer instructions and derives a new snapshot identity. */
     public AgentContextSnapshot withSystemPrompt(String updatedSystemPrompt) {
         return new AgentContextSnapshot(
-                updatedSystemPrompt, evidenceSet, evidenceRequired, retrievalStatuses);
+                updatedSystemPrompt,
+                updatedSystemPrompt,
+                evidenceSet,
+                evidenceRequired,
+                retrievalStatuses);
+    }
+
+    /** Rebinds loop and final-answer instructions while preserving their protocol boundary. */
+    public AgentContextSnapshot withSystemPrompts(
+            String updatedSystemPrompt,
+            String updatedFinalSystemPrompt) {
+        return new AgentContextSnapshot(
+                updatedSystemPrompt,
+                updatedFinalSystemPrompt,
+                evidenceSet,
+                evidenceRequired,
+                retrievalStatuses);
     }
 
     /** Rebinds the final evidence snapshot without leaving stale citation content in the prompt. */
     public String renderSystemPrompt(EvidenceSet effectiveEvidenceSet) {
+        return renderPrompt(systemPrompt, effectiveEvidenceSet);
+    }
+
+    /** Renders the answer-only context without exposing the ReAct tool protocol. */
+    public String renderFinalSystemPrompt(EvidenceSet effectiveEvidenceSet) {
+        return renderPrompt(finalSystemPrompt, effectiveEvidenceSet);
+    }
+
+    private String renderPrompt(String basePrompt, EvidenceSet effectiveEvidenceSet) {
         EvidenceSet effective = effectiveEvidenceSet == null ? EvidenceSet.empty() : effectiveEvidenceSet;
-        String instructions = systemPrompt;
+        String instructions = basePrompt;
         String initialEvidence = evidenceSet.renderForPrompt();
         if (!initialEvidence.isBlank()) {
             int evidenceStart = instructions.indexOf(initialEvidence);
@@ -66,10 +115,12 @@ public record AgentContextSnapshot(
 
     private static String snapshotId(
             String systemPrompt,
+            String finalSystemPrompt,
             EvidenceSet evidenceSet,
             boolean evidenceRequired,
             Map<String, String> retrievalStatuses) {
-        String canonical = systemPrompt + "\n--evidence--\n" + evidenceSet.contentHash()
+        String canonical = systemPrompt + "\n--final-system--\n" + finalSystemPrompt
+                + "\n--evidence--\n" + evidenceSet.contentHash()
                 + "\n--required--\n" + evidenceRequired
                 + "\n--retrieval--\n" + new TreeMap<>(retrievalStatuses);
         try {

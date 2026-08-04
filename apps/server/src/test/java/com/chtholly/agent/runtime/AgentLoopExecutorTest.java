@@ -160,6 +160,12 @@ class AgentLoopExecutorTest {
                 request(Map.of(tool.name(), tool), 3), trace, agentSpan, events::add);
 
         assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(result.transcript())
+                .containsExactly(
+                        "Earlier conversation",
+                        "## Current question\nUser: What happened?",
+                        "Observation: tool result")
+                .noneMatch(entry -> entry.startsWith("Assistant:"));
         assertThat(eventTypes()).containsExactly("think", "act", "observe", "think");
         ArgumentCaptor<Map<String, Object>> inputCaptor = ArgumentCaptor.forClass(Map.class);
         verify(toolExecutor).execute(any(), inputCaptor.capture(), anyLong());
@@ -618,6 +624,9 @@ class AgentLoopExecutorTest {
                 request(Map.of(), 3), trace, agentSpan, events::add);
 
         assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(result.transcript()).containsExactly(
+                "Earlier conversation",
+                "## Current question\nUser: What happened?");
         assertThat(eventTypes()).containsExactly("think", "observe", "think");
         assertThat(events.get(0).data().path("content").asText()).isEqualTo("JSON parse failed");
         assertThat(events.get(1).data().path("content").asText()).isEqualTo("PARSE_ERROR_ORIGINAL");

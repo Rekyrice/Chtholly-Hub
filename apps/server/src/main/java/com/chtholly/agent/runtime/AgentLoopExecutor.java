@@ -66,6 +66,7 @@ public class AgentLoopExecutor {
             Observation agentSpan,
             Consumer<AgentEvent> sink) {
         List<String> transcript = initialTranscript(request);
+        int initialTranscriptSize = transcript.size();
         EvidenceState evidenceState = new EvidenceState(
                 request.evidenceSet(), request.evidenceRequired());
         boolean charactersRequired = requiresBangumiCharacters(request);
@@ -208,7 +209,9 @@ public class AgentLoopExecutor {
                     continue;
                 }
                 return AgentLoopResult.finalReady(
-                        evidenceState.transcriptForFinalAnswer(transcript),
+                        sanitizeFinalTranscript(
+                                evidenceState.transcriptForFinalAnswer(transcript),
+                                initialTranscriptSize),
                         step,
                         stepLlmMs,
                         evidenceState.evidenceSet(),
@@ -676,6 +679,29 @@ public class AgentLoopExecutor {
     private void appendExchange(List<String> transcript, String llmOut, String observation) {
         transcript.add(agentDomainConfig.context().assistantLabel() + " " + llmOut);
         transcript.add(agentDomainConfig.context().observationLabel() + " " + observation);
+    }
+
+    private List<String> sanitizeFinalTranscript(List<String> transcript, int preservedEntries) {
+        if (transcript == null || transcript.isEmpty()) {
+            return List.of();
+        }
+        int preserved = Math.min(Math.max(0, preservedEntries), transcript.size());
+        String assistantPrefix = agentDomainConfig.context().assistantLabel().strip();
+        String parseErrorEntry = (agentDomainConfig.context().observationLabel()
+                + " " + agentDomainConfig.systemPrompt().parseErrorObservation()).strip();
+        List<String> sanitized = new ArrayList<>(transcript.size());
+        for (int index = 0; index < transcript.size(); index++) {
+            String entry = transcript.get(index);
+            if (index >= preserved) {
+                String normalized = entry == null ? "" : entry.strip();
+                if (normalized.startsWith(assistantPrefix)
+                        || normalized.equals(parseErrorEntry)) {
+                    continue;
+                }
+            }
+            sanitized.add(entry);
+        }
+        return List.copyOf(sanitized);
     }
 
     private AgentAction parseAction(String llmOut) throws Exception {

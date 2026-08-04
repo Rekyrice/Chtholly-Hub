@@ -1572,6 +1572,7 @@ public class AgentExecutionTrace {
         SKILL_VALIDATION_FAILED,
         TOOL_FAILED,
         LLM_TIMEOUT,
+        LLM_INVALID_OUTPUT,
         TURN_TIMEOUT,
         TURN_CANCELLED,
         TURN_COORDINATION_FAILED,
