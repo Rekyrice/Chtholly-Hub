@@ -92,3 +92,25 @@ test("数据库初始化仅允许空库且 seed 必须显式启用", () => {
   assert.match(initDb, /if \[\[ \"\$WITH_SEED\" == \"true\" \]\]/);
   assert.match(initDb, /phase_a_seed\.sql/);
 });
+
+test("HTTP 入口提供 ACME challenge 且 Compose 预留 HTTPS 挂载", () => {
+  const nginx = read("docker/nginx/default.conf");
+  const config = composeConfig();
+  const proxy = config.services.nginx;
+
+  assert.match(nginx, /\.well-known\/acme-challenge/);
+  assert.ok(proxy.ports.some((port) => port.target === 443));
+  assert.ok(proxy.volumes.some((volume) => volume.target === "/var/www/certbot"));
+  assert.ok(proxy.volumes.some((volume) => volume.target === "/etc/letsencrypt"));
+});
+
+test("HTTPS 切换仅在证书和 Nginx 配置验证成功后执行", () => {
+  const template = read("docker/nginx/https.conf.template");
+  const enableHttps = read("scripts/deploy/ecs-enable-https.sh");
+
+  assert.match(template, /__DOMAIN__/);
+  assert.match(template, /ssl_certificate/);
+  assert.match(enableHttps, /certbot/);
+  assert.match(enableHttps, /nginx -t/);
+  assert.match(enableHttps, /NGINX_CONFIG_PATH/);
+});
