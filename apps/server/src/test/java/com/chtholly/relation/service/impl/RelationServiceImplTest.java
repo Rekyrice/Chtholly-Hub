@@ -2,6 +2,7 @@ package com.chtholly.relation.service.impl;
 
 import com.chtholly.relation.mapper.RelationMapper;
 import com.chtholly.relation.outbox.OutboxMapper;
+import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.user.mapper.UserMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,18 +47,29 @@ class RelationServiceImplTest {
     @Mock
     private RelationCacheInvalidator relationCacheInvalidator;
 
+    @Mock
+    private SnowflakeIdGenerator idGenerator;
+
     private RelationServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new RelationServiceImpl(
+        RelationCommandService commandService = new RelationCommandService(
                 relationMapper,
                 outboxMapper,
                 redis,
                 new ObjectMapper(),
                 userMapper,
                 eventPublisher,
-                relationCacheInvalidator);
+                idGenerator);
+        RelationProjectionCache projectionCache =
+                new RelationProjectionCache(
+                        relationMapper,
+                        redis,
+                        relationCacheInvalidator);
+        RelationQueryService queryService = new RelationQueryService(
+                relationMapper, projectionCache, userMapper);
+        service = new RelationServiceImpl(commandService, queryService);
     }
 
     @Test
@@ -65,6 +77,7 @@ class RelationServiceImplTest {
     void followPropagatesOutboxFailure() {
         when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any())).thenReturn(1L);
         when(relationMapper.insertFollowing(anyLong(), eq(11L), eq(22L), eq(1))).thenReturn(1);
+        when(idGenerator.nextId()).thenReturn(101L, 201L);
         doThrow(new IllegalStateException("outbox down"))
                 .when(outboxMapper)
                 .insert(anyLong(), eq("following"), anyLong(), eq("FollowCreated"), anyString());
@@ -77,6 +90,7 @@ class RelationServiceImplTest {
     @Test
     void unfollowPropagatesOutboxFailure() {
         when(relationMapper.cancelFollowing(11L, 22L)).thenReturn(1);
+        when(idGenerator.nextId()).thenReturn(201L);
         doThrow(new IllegalStateException("outbox down"))
                 .when(outboxMapper)
                 .insert(anyLong(), eq("following"), eq(null), eq("FollowCanceled"), anyString());

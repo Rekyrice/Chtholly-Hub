@@ -8,14 +8,23 @@
             <arg column="to_user_id" javaType="_long"/>
         </constructor>
     </resultMap>
+    <resultMap id="RelationPageRowMap" type="com.chtholly.relation.mapper.RelationMapper$RelationPageRow">
+        <constructor>
+            <arg column="related_user_id" javaType="_long"/>
+            <arg column="created_at" javaType="java.util.Date"/>
+        </constructor>
+    </resultMap>
     <insert id="insertFollowing">
-        INSERT INTO following (id, from_user_id, to_user_id, rel_status, created_at, updated_at)
+        INSERT IGNORE INTO following (id, from_user_id, to_user_id, rel_status, created_at, updated_at)
         VALUES (#{id}, #{fromUserId}, #{toUserId}, #{relStatus}, NOW(3), NOW(3))
-        ON DUPLICATE KEY UPDATE rel_status=VALUES(rel_status), updated_at=VALUES(updated_at)
     </insert>
+    <update id="activateFollowing">
+        UPDATE following SET rel_status=1, updated_at=NOW(3)
+        WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId} AND rel_status&lt;&gt;1
+    </update>
     <update id="cancelFollowing">
         UPDATE following SET rel_status=0, updated_at=NOW(3)
-        WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId}
+        WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId} AND rel_status&lt;&gt;0
     </update>
 
     <insert id="insertFollower">
@@ -44,26 +53,54 @@
 
     <select id="listFollowing" resultType="long">
         SELECT to_user_id FROM following WHERE from_user_id=#{fromUserId} AND rel_status=1
-        ORDER BY created_at DESC LIMIT #{limit} OFFSET #{offset}
+        ORDER BY created_at DESC, to_user_id DESC LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="listFollowers" resultType="long">
         SELECT from_user_id FROM follower WHERE to_user_id=#{toUserId} AND rel_status=1
-        ORDER BY created_at DESC LIMIT #{limit} OFFSET #{offset}
+        ORDER BY created_at DESC, from_user_id DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="listFollowingPage" resultMap="RelationPageRowMap">
+        SELECT to_user_id AS related_user_id, created_at
+        FROM following
+        WHERE from_user_id=#{fromUserId} AND rel_status=1
+        <if test="cursorCreatedAt != null">
+            AND (
+                created_at &lt; #{cursorCreatedAt}
+                OR (created_at = #{cursorCreatedAt} AND to_user_id &lt; #{cursorRelatedUserId})
+            )
+        </if>
+        ORDER BY created_at DESC, to_user_id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="listFollowerPage" resultMap="RelationPageRowMap">
+        SELECT from_user_id AS related_user_id, created_at
+        FROM follower
+        WHERE to_user_id=#{toUserId} AND rel_status=1
+        <if test="cursorCreatedAt != null">
+            AND (
+                created_at &lt; #{cursorCreatedAt}
+                OR (created_at = #{cursorCreatedAt} AND from_user_id &lt; #{cursorRelatedUserId})
+            )
+        </if>
+        ORDER BY created_at DESC, from_user_id DESC
+        LIMIT #{limit}
     </select>
 
     <select id="listFollowingRows" resultType="map">
         SELECT to_user_id AS toUserId, created_at AS createdAt
         FROM following
         WHERE from_user_id=#{fromUserId} AND rel_status=1
-        ORDER BY created_at DESC LIMIT #{limit} OFFSET #{offset}
+        ORDER BY created_at DESC, to_user_id DESC LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="listFollowerRows" resultType="map">
         SELECT from_user_id AS fromUserId, created_at AS createdAt
         FROM follower
         WHERE to_user_id=#{toUserId} AND rel_status=1
-        ORDER BY created_at DESC LIMIT #{limit} OFFSET #{offset}
+        ORDER BY created_at DESC, from_user_id DESC LIMIT #{limit} OFFSET #{offset}
     </select>
 
     <select id="countFollowingActive" resultType="int">

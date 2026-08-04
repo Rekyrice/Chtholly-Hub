@@ -16,6 +16,9 @@ import java.util.Date;
 public interface RelationMapper {
     record CalibrationCandidate(long id, long fromUserId, long toUserId) {}
 
+    /** One authoritative relation-list row used by composite keyset pagination. */
+    record RelationPageRow(long relatedUserId, Date createdAt) {}
+
     /**
      * 插入关注关系。
      * @param id 主键ID
@@ -28,6 +31,16 @@ public interface RelationMapper {
                         @Param("fromUserId") Long fromUserId,
                         @Param("toUserId") Long toUserId,
                         @Param("relStatus") Integer relStatus);
+
+    /**
+     * Activates an existing inactive relation without replacing its identity.
+     *
+     * @param fromUserId relation source
+     * @param toUserId relation target
+     * @return one only for an inactive-to-active transition
+     */
+    int activateFollowing(@Param("fromUserId") Long fromUserId,
+                          @Param("toUserId") Long toUserId);
 
     /**
      * 取消关注关系（逻辑更新）。
@@ -97,6 +110,36 @@ public interface RelationMapper {
     List<Long> listFollowers(@Param("toUserId") Long toUserId,
                                        @Param("limit") int limit,
                                        @Param("offset") int offset);
+
+    /**
+     * Reads a following page strictly after a composite cursor.
+     *
+     * @param fromUserId relation source
+     * @param cursorCreatedAt cursor creation time, or {@code null} for the first page
+     * @param cursorRelatedUserId cursor target id, or {@code null} for the first page
+     * @param limit maximum rows
+     * @return rows ordered by creation time and target id descending
+     */
+    List<RelationPageRow> listFollowingPage(
+            @Param("fromUserId") Long fromUserId,
+            @Param("cursorCreatedAt") Date cursorCreatedAt,
+            @Param("cursorRelatedUserId") Long cursorRelatedUserId,
+            @Param("limit") int limit);
+
+    /**
+     * Reads a follower page strictly after a composite cursor.
+     *
+     * @param toUserId relation target
+     * @param cursorCreatedAt cursor creation time, or {@code null} for the first page
+     * @param cursorRelatedUserId cursor source id, or {@code null} for the first page
+     * @param limit maximum rows
+     * @return rows ordered by creation time and source id descending
+     */
+    List<RelationPageRow> listFollowerPage(
+            @Param("toUserId") Long toUserId,
+            @Param("cursorCreatedAt") Date cursorCreatedAt,
+            @Param("cursorRelatedUserId") Long cursorRelatedUserId,
+            @Param("limit") int limit);
 
     /**
      * 列出关注行用于缓存回填（包含 createdAt）。
