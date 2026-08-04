@@ -44,9 +44,23 @@ public final class ImageUploadValidator {
      * 校验 multipart 文件的 magic bytes（供本地上传端点复用）。
      */
     public static void validateMagicBytes(MultipartFile file, String contentType) {
+        validateMagicBytes(file::getInputStream, contentType);
+    }
+
+    /**
+     * Validates magic bytes through the transport-neutral upload content port.
+     *
+     * @param content lazy upload content
+     * @param contentType normalized image content type
+     */
+    public static void validateMagicBytes(UploadContent content, String contentType) {
+        validateMagicBytes(content::openStream, contentType);
+    }
+
+    private static void validateMagicBytes(InputStreamSource source, String contentType) {
         byte[] header = new byte[12];
         int read;
-        try (InputStream in = file.getInputStream()) {
+        try (InputStream in = source.openStream()) {
             read = in.read(header);
         } catch (IOException e) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件读取失败");
@@ -122,5 +136,10 @@ public final class ImageUploadValidator {
                     && header[11] == 'P';
             default -> false;
         };
+    }
+
+    @FunctionalInterface
+    private interface InputStreamSource {
+        InputStream openStream() throws IOException;
     }
 }

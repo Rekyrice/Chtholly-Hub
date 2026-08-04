@@ -2,8 +2,6 @@ package com.chtholly.storage;
 
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
-import org.springframework.web.multipart.MultipartFile;
-
 import java.util.Locale;
 import java.util.Set;
 
@@ -30,40 +28,47 @@ public final class StorageUploadValidator {
     private StorageUploadValidator() {
     }
 
-    public static void validate(String objectKey, MultipartFile file) {
-        if (file == null || file.isEmpty()) {
+    /**
+     * Validates upload size, media type, and image signature for the object-key namespace.
+     *
+     * @param objectKey normalized storage object key
+     * @param content upload content to validate
+     * @throws BusinessException when the key namespace or content violates upload policy
+     */
+    public static void validate(String objectKey, UploadContent content) {
+        if (content == null || content.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "上传文件不能为空");
         }
-        String contentType = normalizeContentType(file.getContentType());
+        String contentType = normalizeContentType(content.contentType());
         if (isAvatarKey(objectKey)) {
-            validateAvatarUpload(file, contentType);
+            validateAvatarUpload(content, contentType);
         } else if (isPostContentKey(objectKey)) {
-            validatePostContentUpload(file, contentType);
+            validatePostContentUpload(content, contentType);
         } else if (isPostImageKey(objectKey)) {
-            validatePostImageUpload(file, contentType);
+            validatePostImageUpload(content, contentType);
         } else {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的上传路径");
         }
     }
 
-    private static void validateAvatarUpload(MultipartFile file, String contentType) {
-        if (file.getSize() > MAX_AVATAR_BYTES) {
+    private static void validateAvatarUpload(UploadContent content, String contentType) {
+        if (content.size() > MAX_AVATAR_BYTES) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "头像不能超过 10MB");
         }
         assertAllowedImageType(contentType);
-        ImageUploadValidator.validateMagicBytes(file, contentType);
+        ImageUploadValidator.validateMagicBytes(content, contentType);
     }
 
-    private static void validatePostImageUpload(MultipartFile file, String contentType) {
-        if (file.getSize() > MAX_POST_CONTENT_BYTES) {
+    private static void validatePostImageUpload(UploadContent content, String contentType) {
+        if (content.size() > MAX_POST_CONTENT_BYTES) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "图片不能超过 32MB");
         }
         assertAllowedImageType(contentType);
-        ImageUploadValidator.validateMagicBytes(file, contentType);
+        ImageUploadValidator.validateMagicBytes(content, contentType);
     }
 
-    private static void validatePostContentUpload(MultipartFile file, String contentType) {
-        if (file.getSize() > MAX_POST_CONTENT_BYTES) {
+    private static void validatePostContentUpload(UploadContent content, String contentType) {
+        if (content.size() > MAX_POST_CONTENT_BYTES) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "正文不能超过 32MB");
         }
         if (contentType == null || !ALLOWED_POST_CONTENT_TYPES.contains(contentType)) {

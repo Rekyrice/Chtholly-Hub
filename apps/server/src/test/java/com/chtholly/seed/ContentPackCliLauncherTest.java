@@ -1,6 +1,6 @@
-package com.chtholly;
+package com.chtholly.seed;
 
-import com.chtholly.seed.SeedRunner;
+import com.chtholly.ChthollyApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ConfigurableApplicationContext;
 
@@ -11,24 +11,24 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
-class ChthollyApplicationTest {
+class ContentPackCliLauncherTest {
 
     @Test
     void contentPackCliDetection_doesNotCaptureLegacyModesOrNormalServer() {
-        assertThat(ChthollyApplication.isContentPackCli(new String[]{"--seed.mode=content_pack"})).isTrue();
-        assertThat(ChthollyApplication.isContentPackCli(new String[]{"--mode=content-pack"})).isTrue();
-        assertThat(ChthollyApplication.isContentPackCli(new String[]{"--mode=full"})).isFalse();
-        assertThat(ChthollyApplication.isContentPackCli(new String[]{"--mode=unknown"})).isFalse();
-        assertThat(ChthollyApplication.isContentPackCli(new String[]{})).isFalse();
+        assertThat(ContentPackCliLauncher.isContentPackCli(new String[]{"--seed.mode=content_pack"})).isTrue();
+        assertThat(ContentPackCliLauncher.isContentPackCli(new String[]{"--mode=content-pack"})).isTrue();
+        assertThat(ContentPackCliLauncher.isContentPackCli(new String[]{"--mode=full"})).isFalse();
+        assertThat(ContentPackCliLauncher.isContentPackCli(new String[]{"--mode=unknown"})).isFalse();
+        assertThat(ContentPackCliLauncher.isContentPackCli(new String[]{})).isFalse();
     }
 
     @Test
-    void runContentPackCli_waitsForRunnerThenClosesOnceAndPropagatesExitCode() {
+    void launch_waitsForRunnerThenClosesOnceAndPropagatesExitCode() {
         ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
         SeedRunner seedRunner = mock(SeedRunner.class);
         when(context.getBean(SeedRunner.class)).thenReturn(seedRunner);
@@ -36,14 +36,16 @@ class ChthollyApplicationTest {
         List<String> lifecycle = new ArrayList<>();
         AtomicInteger handledCode = new AtomicInteger(-1);
 
-        ChthollyApplication.runContentPackCli(
+        ContentPackCliLauncher.launch(
+                ChthollyApplication.class,
                 new String[]{"--mode=content_pack"},
                 code -> {
                     lifecycle.add("handle");
                     handledCode.set(code);
                 },
-                args -> {
+                (applicationClass, args) -> {
                     lifecycle.add("run");
+                    assertThat(applicationClass).isEqualTo(ChthollyApplication.class);
                     return context;
                 },
                 (runningContext, generator) -> {
@@ -58,8 +60,8 @@ class ChthollyApplicationTest {
     }
 
     @Test
-    void normalizeContentPackCliArgs_givenStandardDryRun_injectsAllReadOnlyBoundaries() {
-        String[] normalized = ChthollyApplication.normalizeContentPackCliArgs(new String[]{
+    void normalizeArgs_givenStandardDryRun_injectsAllReadOnlyBoundaries() {
+        String[] normalized = ContentPackCliLauncher.normalizeArgs(new String[]{
                 "--seed.mode=content_pack",
                 "--seed.dry-run=true"
         });
@@ -76,46 +78,49 @@ class ChthollyApplicationTest {
     }
 
     @Test
-    void runContentPackCli_givenFormalReadOnlyConflict_rejectsBeforeSpringLaunch() {
-        ChthollyApplication.ApplicationLauncher launcher = mock(ChthollyApplication.ApplicationLauncher.class);
+    void launch_givenFormalReadOnlyConflict_rejectsBeforeSpringLaunch() {
+        ContentPackCliLauncher.ApplicationLauncher launcher = mock(ContentPackCliLauncher.ApplicationLauncher.class);
         AtomicInteger handledCode = new AtomicInteger(-1);
 
-        ChthollyApplication.runContentPackCli(
+        ContentPackCliLauncher.launch(
+                ChthollyApplication.class,
                 new String[]{"--mode=content-pack", "--seed.cli-read-only=true"},
                 handledCode::set,
                 launcher,
                 (context, generator) -> generator.getExitCode());
 
         assertThat(handledCode).hasValue(1);
-        verify(launcher, never()).run(org.mockito.ArgumentMatchers.any());
+        verify(launcher, never()).run(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
-    void runContentPackCli_givenDryRunSafetyConflict_rejectsBeforeSpringLaunch() {
-        ChthollyApplication.ApplicationLauncher launcher = mock(ChthollyApplication.ApplicationLauncher.class);
+    void launch_givenDryRunSafetyConflict_rejectsBeforeSpringLaunch() {
+        ContentPackCliLauncher.ApplicationLauncher launcher = mock(ContentPackCliLauncher.ApplicationLauncher.class);
         AtomicInteger handledCode = new AtomicInteger(-1);
 
-        ChthollyApplication.runContentPackCli(
+        ContentPackCliLauncher.launch(
+                ChthollyApplication.class,
                 new String[]{"--mode=content_pack", "--dry-run", "--kafka.enabled=true"},
                 handledCode::set,
                 launcher,
                 (context, generator) -> generator.getExitCode());
 
         assertThat(handledCode).hasValue(1);
-        verify(launcher, never()).run(org.mockito.ArgumentMatchers.any());
+        verify(launcher, never()).run(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
-    void runContentPackCli_givenStandardDryRun_launchesWithNormalizedSafetyArguments() {
+    void launch_givenStandardDryRun_launchesWithNormalizedSafetyArguments() {
         ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
         SeedRunner seedRunner = mock(SeedRunner.class);
         when(context.getBean(SeedRunner.class)).thenReturn(seedRunner);
         AtomicReference<String[]> launchedArgs = new AtomicReference<>();
 
-        ChthollyApplication.runContentPackCli(
+        ContentPackCliLauncher.launch(
+                ChthollyApplication.class,
                 new String[]{"--seed.mode=content_pack", "--seed.dry-run=true"},
                 ignored -> { },
-                args -> {
+                (applicationClass, args) -> {
                     launchedArgs.set(args);
                     return context;
                 },
@@ -131,9 +136,9 @@ class ChthollyApplicationTest {
     }
 
     @Test
-    void normalizeContentPackCliArgs_givenLegacyMode_returnsArgumentsUnchanged() {
+    void normalizeArgs_givenLegacyMode_returnsArgumentsUnchanged() {
         String[] legacy = {"--mode=accounts", "--dry-run"};
 
-        assertThat(ChthollyApplication.normalizeContentPackCliArgs(legacy)).containsExactly(legacy);
+        assertThat(ContentPackCliLauncher.normalizeArgs(legacy)).containsExactly(legacy);
     }
 }

@@ -4,9 +4,8 @@ import com.chtholly.admin.security.BannedUserFilter;
 import com.chtholly.auth.config.SecurityConfig;
 import com.chtholly.auth.token.JwtService;
 import com.chtholly.common.api.pagination.PageResponse;
-import com.chtholly.counter.service.UserCounterService;
 import com.chtholly.profile.api.dto.ProfileResponse;
-import com.chtholly.relation.mapper.RelationMapper;
+import com.chtholly.relation.service.RelationCounterQueryService;
 import com.chtholly.relation.service.RelationService;
 import com.chtholly.storage.config.LocalStorageWebConfig;
 import org.junit.jupiter.api.Test;
@@ -16,7 +15,6 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -52,13 +50,7 @@ class RelationControllerSecurityTest {
     private JwtService jwtService;
 
     @MockBean
-    private StringRedisTemplate redis;
-
-    @MockBean
-    private UserCounterService userCounterService;
-
-    @MockBean
-    private RelationMapper relationMapper;
+    private RelationCounterQueryService counterQueryService;
 
     @MockBean
     private BannedUserFilter bannedUserFilter;
@@ -88,8 +80,7 @@ class RelationControllerSecurityTest {
 
     @Test
     void given_anonymousUser_when_getCounter_then_permitsRequest() throws Exception {
-        when(redis.execute(org.mockito.ArgumentMatchers.<org.springframework.data.redis.core.RedisCallback<byte[]>>any()))
-                .thenReturn(null);
+        when(counterQueryService.getCounters(1L)).thenReturn(java.util.Map.of());
 
         mockMvc.perform(get("/api/v1/relation/counter")
                         .param("userId", "1"))
