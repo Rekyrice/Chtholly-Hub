@@ -15,12 +15,13 @@ import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.user.domain.User;
 import com.chtholly.user.service.UserService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Instant;
@@ -44,9 +45,48 @@ class AuthServiceHandleTest {
     @Mock private LoginFailureGuard loginFailureGuard;
     @Mock private AuthProperties authProperties;
     @Mock private UserBanService userBanService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
-    @InjectMocks
     private AuthService authService;
+
+    @BeforeEach
+    void setUp() {
+        AuthIdentityPolicy identityPolicy =
+                new AuthIdentityPolicy(userService, authProperties);
+        AuthTokenLifecycleService tokenLifecycleService =
+                new AuthTokenLifecycleService(
+                        jwtService,
+                        refreshTokenStore,
+                        userService,
+                        userBanService);
+        authService = new AuthService(
+                new AuthVerificationCodeService(
+                        identityPolicy, verificationService),
+                new AuthRegistrationService(
+                        userService,
+                        verificationService,
+                        passwordEncoder,
+                        identityPolicy,
+                        tokenLifecycleService,
+                        loginLogService,
+                        eventPublisher),
+                new AuthLoginService(
+                        verificationService,
+                        passwordEncoder,
+                        identityPolicy,
+                        tokenLifecycleService,
+                        loginLogService,
+                        loginFailureGuard,
+                        userBanService),
+                tokenLifecycleService,
+                new AuthPasswordRecoveryService(
+                        userService,
+                        verificationService,
+                        passwordEncoder,
+                        identityPolicy,
+                        refreshTokenStore),
+                new AuthCurrentUserService(identityPolicy));
+    }
 
     private void stubPasswordPolicy() {
         AuthProperties.Password password = new AuthProperties.Password();
