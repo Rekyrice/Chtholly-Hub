@@ -5,7 +5,8 @@
 | [`dev/`](dev/) | `start-backend.ps1`、`start-frontend.ps1`、`stop-backend.ps1` | 加载根 `.env`，启动/停止本地应用 |
 | [`dev/`](dev/) | `apply-migrations.ps1`、`run-seed.ps1`、`ensure-kafka-topics.ps1` | 本地数据库增量、应用 seed、Kafka 主题 |
 | [`backup/`](backup/) | `backup-mysql.ps1`、`backup-redis.ps1` | MySQL/Redis 一致性备份、校验与恢复前材料 |
-| [`deploy/`](deploy/) | `ecs-bootstrap.sh`、`ecs-init-db.sh` | 单机生产 Compose 首次部署与数据库初始化 |
+| [`deploy/`](deploy/) | `ecs-bootstrap.sh`、`ecs-init-db.sh`、`ecs-enable-https.sh` | 单机生产 Compose 首次部署、空库初始化与 HTTPS 安全切换 |
+| [`deploy/`](deploy/) | `production-config.test.mjs` | 验证低成本/Kafka profile、LLM/JWT、初始化与 HTTPS 配置契约 |
 | [`git-hooks/`](git-hooks/) | `prepare-commit-msg` | 可选 Git 提交信息钩子；仓库不会自动安装 |
 | [`oss/`](oss/README.md) | `upload-seed-markdown.mjs`、`upload-markdown.mjs` | 上传 Phase A 或单篇 Markdown 正文 |
 | [`seed-content/`](seed-content/) | `render-community-interaction-review.mjs` | 生成 content-v3 社区资料与互动的本地只读审阅页 |

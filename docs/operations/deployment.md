@@ -4,14 +4,14 @@
 
 仓库没有通用的本地开发基础设施 Compose。维护者机器现有 MySQL、Redis、Kafka、Elasticsearch 容器的名称、端口与排障命令记录在 [Docker 操作入口](../../docker/README.md)，它们是本机约定，不是可复制的开发环境定义。
 
-当前受支持的一键生产入口是 [`docker-compose.prod.yml`](../../docker-compose.prod.yml) + Nginx：MySQL、Redis、Elasticsearch、Kafka、Spring Boot、Next.js standalone 与 Nginx 运行在同一 Compose 网络，只有 Nginx 暴露 `${HTTP_PORT:-80}`。默认正文存储为具名卷 `uploads_data`；需要 OSS 时必须同时调整存储配置和凭据。
+当前受支持的一键生产入口是 [`docker-compose.prod.yml`](../../docker-compose.prod.yml) + Nginx：MySQL、Redis、Elasticsearch、Spring Boot、Next.js standalone 与 Nginx 运行在同一 Compose 网络；Kafka 位于可选的 `kafka` profile，低成本默认不会创建 broker。只有 Nginx 暴露 `${HTTP_PORT:-80}` 与 `${HTTPS_PORT:-443}`。默认正文存储为具名卷 `uploads_data`；需要 OSS 时必须同时调整存储配置和凭据。
 
 ## 部署前准备
 
 1. 安装 Docker Engine 与 Compose 插件，准备可持久化的宿主机磁盘和备份策略。
-2. 将 [`.env.prod.example`](../../.env.prod.example) 复制为不会提交的 `.env`，替换数据库密码、站点域名与实际启用功能的凭据。
+2. 使用维护机本地的 `.local-deploy/prepare-production.ps1` 生成生产配置包，或将 [`.env.prod.example`](../../.env.prod.example) 复制为不会提交的 `.env` 后手工替换密码、域名与凭据。
 3. 确认 80/443、安全组、DNS 与 TLS 方案；确认 MySQL 业务事实、Redis 运行态、上传卷/OSS 的备份边界。
-4. 确认互动传输配置成对：当前一键 Compose 固定 `CANAL_ENABLED=false`，因此点赞/收藏使用本地 `AFTER_COMMIT` 路径；另行设置 `KAFKA_ENABLED=true`、`CANAL_ENABLED=true` 时，代码会选择 Kafka 路径。开关不探测 CDC 健康，也不会在运行中自动回退，启用前必须部署并验证可达 CDC。
+4. 默认保留 `COMPOSE_PROFILES=`、`KAFKA_ENABLED=false`、`CANAL_ENABLED=false`，让计数和互动 Outbox 使用项目已有的本地路径。启用 Kafka 时必须同时设置 `COMPOSE_PROFILES=kafka` 与 `KAFKA_ENABLED=true`；只有已部署并验证 CDC 后才能再启用 Canal。开关不探测 CDC 健康，也不会在运行中自动回退。
 5. 完整 Kafka 互动模式需预检 `canal-outbox`、`canal-outbox-retry`、`canal-outbox-dlq`，为应用 Kafka 身份配置 CREATE（如需自动建主题）、DESCRIBE、READ、WRITE 与消费组权限，并单独核验 Canal 的 MySQL 复制账号权限。
 6. 当前 Redisson 配置使用 `singleServer`，互动投影的多 key Lua 也没有 Redis Cluster hash-tag 合同；部署必须使用已验证的 standalone Redis 拓扑，不得把本章解释为支持 Cluster 或 Sentinel。
 7. 在隔离环境验证镜像构建、数据库脚本和健康检查，再操作已有生产数据。
@@ -20,15 +20,48 @@
 
 ## 受支持的一键路径：生产 Compose + Nginx
 
-从仓库根目录运行：
+### 推荐：从本地生成并上传配置包
+
+维护机主工作区已有一个被 Git 忽略、不会随仓库提交的 `.local-deploy/prepare-production.ps1`。它读取当前根 `.env` 中的 DeepSeek、DashScope 与 Agent 参数，自动生成数据库密码、所有者初始密码、JWT RSA 密钥和服务器安装脚本；密钥不会打印到终端。
+
+在 Windows 主工作区运行：
+
+```powershell
+.\.local-deploy\prepare-production.ps1
+scp -r .\.local-deploy\production-bundle <ecs-user>@<ECS公网IP>:/tmp/chtholly-config
+```
+
+脚本会询问生产域名和证书通知邮箱。已有域名正在服务其他应用时，应新增独立子域名（例如 `hub.example.com`），不要把原域名的现有解析直接覆盖。
+
+服务器上的仓库目录应归部署账号所有，且部署账号已加入 `docker` 组。安装配置并首次启动：
+
+```bash
+cd /tmp/chtholly-config
+bash install.sh /opt/chtholly-hub
+cd /opt/chtholly-hub
+bash scripts/deploy/ecs-bootstrap.sh
+```
+
+配置包把 `.env` 设为 0600，把 `.production-secrets/` 目录设为 0700。JWT 文件在该私有目录内使用 0644，以便非 root 的 Spring Boot 容器读取只读 bind mount；宿主机其他普通用户无法穿过 0700 目录。
+
+### 手工配置备用路径
+
+从服务器仓库根目录运行：
 
 ```bash
 cp .env.prod.example .env
-# 编辑 .env
-docker compose -f docker-compose.prod.yml up -d --build
+# 编辑 .env，并生成 .production-secrets/jwt-private.pem 与 jwt-public.pem
+docker compose -f docker-compose.prod.yml config --quiet
+bash scripts/deploy/ecs-bootstrap.sh
 ```
 
-[`docker/nginx/default.conf`](../../docker/nginx/default.conf) 将 `/api/`、Agent WebSocket 和 `/health` 转给 Spring Boot，将 `/uploads/` 读自共享卷，其余请求转给 Next.js。文件末尾提供手工证书模板，但 `docker-compose.prod.yml` 默认只挂载 HTTP 配置。
+[`docker/nginx/default.conf`](../../docker/nginx/default.conf) 将 `/api/`、Agent WebSocket 和 `/health` 转给 Spring Boot，将 `/uploads/` 读自共享卷，其余请求转给 Next.js，并提供 ACME challenge。首次 HTTP 验证和 DNS 生效后执行：
+
+```bash
+bash scripts/deploy/ecs-enable-https.sh hub.example.com your-email@example.com
+```
+
+脚本通过 Certbot webroot 签发证书，渲染 [`https.conf.template`](../../docker/nginx/https.conf.template)，在临时 Nginx 容器执行 `nginx -t`；只有全部成功后才更新 `.env` 的 `NGINX_CONFIG_PATH` 并重建 Nginx。失败时继续保留 HTTP 配置。
 
 [`ecs-bootstrap.sh`](../../scripts/deploy/ecs-bootstrap.sh) 与 [`ecs-init-db.sh`](../../scripts/deploy/ecs-init-db.sh) 只适用于这条 Nginx 路径：两个脚本都把 Compose 文件硬编码为 `docker-compose.prod.yml`。首次部署可运行：
 
@@ -36,7 +69,18 @@ docker compose -f docker-compose.prod.yml up -d --build
 bash scripts/deploy/ecs-bootstrap.sh
 ```
 
-脚本构建并启动服务，调用 `ecs-init-db.sh`，重启后端以触发索引回灌，再检查首页与 Feed。数据库脚本的真实顺序是 `schema.sql` → 当前 `migration/V*.sql` → `phase_a_seed.sql`，不是应用内 Flyway 自动迁移。详细关系与已有库边界见[数据库](../development/database.md)。OSS seed 正文需另行执行 `node scripts/oss/upload-seed-markdown.mjs`。
+脚本先校验密码、域名、LLM key、Kafka/profile 配对和 JWT 文件，再构建并启动服务。`ecs-init-db.sh` 只接受空库，真实默认顺序是 `schema.sql` → 当前 `migration/V*.sql`；只有显式执行 `ecs-init-db.sh --with-seed` 或设置 `SEED_PHASE_A=true` 才导入 `phase_a_seed.sql`。已有库必须按[数据库](../development/database.md)审核增量 migration，禁止用首次脚本重放。OSS seed 正文需另行执行 `node scripts/oss/upload-seed-markdown.mjs`。
+
+## 可选 Kafka 模式
+
+低成本默认无需修改。确实需要 Kafka 时，先在 `.env` 同时设置：
+
+```dotenv
+COMPOSE_PROFILES=kafka
+KAFKA_ENABLED=true
+```
+
+然后运行 `docker compose -f docker-compose.prod.yml --profile kafka up -d`。`CANAL_ENABLED` 仍保持 `false`，直到外部 Canal/CDC 与三个 Outbox 主题完成独立部署和验证。
 
 `V25__counter_reaction.sql` 按干净迁移设计，不会读取旧 Redis Bitmap。需要保留 Redis-only 互动的已有环境不得直接切换：先停止互动写入、生成同一维护窗口的 MySQL/Redis 备份，完成单独评审的一次性有界导入并核对 `counter_reaction`，再启动新应用并从 MySQL 重建 Redis 投影。新链路稳定后不保留双写兼容层。
 

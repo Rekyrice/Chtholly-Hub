@@ -34,7 +34,7 @@ JWT 私钥和公钥位于服务器仓库根目录的 `.production-secrets/`，�
 
 本地脚本 `.local-deploy/prepare-production.ps1` 不进入 Git。脚本读取主工作区现有 `.env`，只把所需变量复制到 `.local-deploy/production-bundle/.env`，不会输出密钥。脚本用 .NET RSA API 生成 PKCS#8 私钥和 SubjectPublicKeyInfo 公钥，并生成服务器端 `install.sh`。
 
-上传整个 bundle 后，执行 `sudo bash install.sh /opt/chtholly-hub`：安装脚本复制 `.env` 和 `.production-secrets/`，设置 600/644 权限并运行 Compose 配置检查。所有本地输出与服务器密钥目录都由 `.gitignore` 覆盖。
+上传整个 bundle 后，以拥有服务器仓库的部署账号执行 `bash install.sh /opt/chtholly-hub`：安装脚本复制 `.env` 和 `.production-secrets/`，将 `.env` 设为 0600、密钥目录设为 0700，并让目录内 JWT 文件以 0644 供非 root 容器读取只读 bind mount；宿主机其他普通用户无法穿过私有目录。脚本最后运行 Compose 配置检查。所有本地输出与服务器密钥目录都由 `.gitignore` 覆盖。
 
 ### 数据库初始化
 
