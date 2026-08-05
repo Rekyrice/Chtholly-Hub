@@ -2,6 +2,7 @@ package com.chtholly.notification.listener;
 
 import com.chtholly.counter.event.CounterEvent;
 import com.chtholly.notification.event.CommentCreatedEvent;
+import com.chtholly.notification.event.FollowCreatedEvent;
 import com.chtholly.notification.model.NotificationType;
 import com.chtholly.notification.service.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,11 +12,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.lang.reflect.Method;
 import java.util.Map;
 
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -39,13 +41,56 @@ class NotificationEventListenerTest {
     }
 
     @Test
-    void given_notificationCreateFails_when_onCommentCreated_then_doesNotPropagate() {
+    void given_notificationCreateFails_when_onCommentCreated_then_propagatesToOwningTransaction() {
         CommentCreatedEvent event = new CommentCreatedEvent(
                 100L, 1L, null, 3L, "nick", "avatar", 2L, "title", "slug", null);
         doThrow(new RuntimeException("db down")).when(notificationService)
                 .create(eq(2L), eq(NotificationType.COMMENT_POST), any());
 
-        assertThatCode(() -> listener.onCommentCreated(event)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> listener.onCommentCreated(event))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("db down");
+    }
+
+    @Test
+    void given_followCreated_when_calledDirectly_then_createsNotificationForCompatibility() {
+        FollowCreatedEvent event = new FollowCreatedEvent(
+                11L, "Alice", "avatar.png", 22L);
+
+        listener.onFollowCreated(event);
+
+        verify(notificationService).create(
+                eq(22L), eq(NotificationType.FOLLOW), any());
+    }
+
+    @Test
+    void followNotificationParticipatesSynchronouslyBeforeCommit()
+            throws Exception {
+        Method method = NotificationEventListener.class.getMethod(
+                "onFollowCreated", FollowCreatedEvent.class);
+        Async async = method.getAnnotation(Async.class);
+        TransactionalEventListener transactional =
+                method.getAnnotation(TransactionalEventListener.class);
+
+        assertThat(async).isNull();
+        assertThat(transactional).isNotNull();
+        assertThat(transactional.phase()).isEqualTo(TransactionPhase.BEFORE_COMMIT);
+        assertThat(transactional.fallbackExecution()).isFalse();
+    }
+
+    @Test
+    void commentNotificationParticipatesSynchronouslyBeforeCommit()
+            throws Exception {
+        Method method = NotificationEventListener.class.getMethod(
+                "onCommentCreated", CommentCreatedEvent.class);
+        Async async = method.getAnnotation(Async.class);
+        TransactionalEventListener transactional =
+                method.getAnnotation(TransactionalEventListener.class);
+
+        assertThat(async).isNull();
+        assertThat(transactional).isNotNull();
+        assertThat(transactional.phase()).isEqualTo(TransactionPhase.BEFORE_COMMIT);
+        assertThat(transactional.fallbackExecution()).isFalse();
     }
 
     @Test

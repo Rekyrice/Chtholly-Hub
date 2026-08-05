@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * HTTP adapter for presigned and local multipart storage uploads.
+ * HTTP adapter for post-scoped upload contracts and validated multipart uploads.
  */
 @RestController
 @RequestMapping("/api/v1/storage")
@@ -60,7 +60,7 @@ public class StorageController {
     }
 
     /**
-     * Accepts a validated multipart object in local-storage mode.
+     * Accepts a validated multipart object and delegates persistence to the configured storage.
      *
      * @param jwt authenticated user JWT
      * @param objectKey authorized post-scoped storage key

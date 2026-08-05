@@ -22,6 +22,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -186,10 +187,13 @@ public class PostController {
                                  @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
         PageResponse<FeedItemResponse> body = feedService.getPublicFeed(page, cursor, size, ownerId, tag, userId);
+        if (userId != null) {
+            return varyAuthorization(HttpCacheHelper.okPrivate(body));
+        }
         String pageKey = feedService.publicFeedPageKey(page, cursor, size, ownerId, tag);
         long hourSlot = System.currentTimeMillis() / 3600000L;
         String etag = computeFeedEtag(body, pageKey, hourSlot);
-        return HttpCacheHelper.conditionalPublic(body, etag, ifNoneMatch);
+        return varyAuthorization(HttpCacheHelper.conditionalPublic(body, etag, ifNoneMatch));
     }
 
     static String computeFeedEtag(PageResponse<FeedItemResponse> body, String pageKey, long hourSlot) {
@@ -244,12 +248,15 @@ public class PostController {
                                          @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
                                          @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        String etag = service.computeDetailEtag(id);
-        if (HttpCacheHelper.matchesIfNoneMatch(ifNoneMatch, etag)) {
-            return HttpCacheHelper.notModifiedPublic(etag);
-        }
         PostDetailResponse body = service.getDetail(id, userId);
-        return HttpCacheHelper.okPublic(body, etag);
+        if (userId != null) {
+            return varyAuthorization(HttpCacheHelper.okPrivate(body));
+        }
+        String etag = computeDetailResponseEtag(service.computeDetailEtag(id), body);
+        if (HttpCacheHelper.matchesIfNoneMatch(ifNoneMatch, etag)) {
+            return varyAuthorization(HttpCacheHelper.notModifiedPublic(etag));
+        }
+        return varyAuthorization(HttpCacheHelper.okPublic(body, etag));
     }
 
     /**
@@ -265,12 +272,15 @@ public class PostController {
                                          @RequestHeader(value = "If-None-Match", required = false) String ifNoneMatch,
                                          @AuthenticationPrincipal Jwt jwt) {
         Long userId = (jwt == null) ? null : jwtService.extractUserId(jwt);
-        String etag = service.computeDetailEtagBySlug(slug);
-        if (HttpCacheHelper.matchesIfNoneMatch(ifNoneMatch, etag)) {
-            return HttpCacheHelper.notModifiedPublic(etag);
-        }
         PostDetailResponse body = service.getDetailBySlug(slug, userId);
-        return HttpCacheHelper.okPublic(body, etag);
+        if (userId != null) {
+            return varyAuthorization(HttpCacheHelper.okPrivate(body));
+        }
+        String etag = computeDetailResponseEtag(service.computeDetailEtagBySlug(slug), body);
+        if (HttpCacheHelper.matchesIfNoneMatch(ifNoneMatch, etag)) {
+            return varyAuthorization(HttpCacheHelper.notModifiedPublic(etag));
+        }
+        return varyAuthorization(HttpCacheHelper.okPublic(body, etag));
     }
 
     /**
@@ -283,5 +293,16 @@ public class PostController {
     @GetMapping("/{id}/related")
     public List<RelatedPostDto> related(@PathVariable("id") long id) {
         return contentUnderstandingService.getRelatedPosts(id);
+    }
+
+    static String computeDetailResponseEtag(String persistedVersion, PostDetailResponse body) {
+        return HttpCacheHelper.hashEtag(persistedVersion, body.toString());
+    }
+
+    private static <T> ResponseEntity<T> varyAuthorization(ResponseEntity<T> response) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.putAll(response.getHeaders());
+        headers.setVary(List.of(HttpHeaders.AUTHORIZATION));
+        return new ResponseEntity<>(response.getBody(), headers, response.getStatusCode());
     }
 }

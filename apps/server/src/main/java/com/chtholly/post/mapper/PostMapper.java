@@ -1,6 +1,7 @@
 package com.chtholly.post.mapper;
 
 import com.chtholly.post.model.Post;
+import com.chtholly.post.model.PostDetailAudienceRow;
 import com.chtholly.post.model.PostDetailEtagRow;
 import com.chtholly.post.model.PostDetailRow;
 
@@ -16,6 +17,8 @@ public interface PostMapper {
     void insertDraft(Post post);
 
     Post findById(@Param("id") Long id);
+
+    Post findByIdForUpdate(@Param("id") Long id);
 
     Post findDraftByIdForUpdate(@Param("id") Long id);
 
@@ -71,6 +74,9 @@ public interface PostMapper {
     // 详情查询（含作者信息）
     PostDetailRow findDetailById(@Param("id") Long id);
 
+    /** Reads only authoritative fields needed to authorize a shared detail-cache payload. */
+    PostDetailAudienceRow findDetailAudienceById(@Param("id") Long id);
+
     PostDetailRow findDetailBySlug(@Param("slug") String slug);
 
     PostDetailEtagRow findDetailEtagById(@Param("id") long id);
@@ -96,6 +102,28 @@ public interface PostMapper {
 
     /** 按 ID 批量查询 Feed 行（仅已发布且 public/followers 可见）。 */
     List<PostFeedRow> listFeedRowsByIds(@Param("ids") List<Long> ids);
+
+    /**
+     * Hydrates following-feed candidates while requiring a current active relation in MySQL.
+     *
+     * @param ids candidate post identifiers from derived timelines
+     * @param viewerId authenticated viewer
+     * @return published rows currently visible to the viewer
+     */
+    List<PostFeedRow> listFollowingFeedRowsByIds(@Param("ids") List<Long> ids,
+                                                 @Param("viewerId") long viewerId);
+
+    /**
+     * Reads a bounded authoritative following-feed page directly from active MySQL relations.
+     *
+     * @param viewerId authenticated viewer
+     * @param limit page size plus look-ahead row
+     * @param offset offset among currently visible posts of active follows
+     * @return current authoritative feed rows
+     */
+    List<PostFeedRow> listFollowingFeedAuthoritative(@Param("viewerId") long viewerId,
+                                                      @Param("limit") int limit,
+                                                      @Param("offset") int offset);
 
     /** 创作者在指定时间之后发布的公开/粉丝可见帖子 ID（用于 timeline 清理）。 */
     List<Long> listPublishedIdsByCreatorSince(@Param("creatorId") long creatorId,

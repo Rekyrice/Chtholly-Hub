@@ -8,8 +8,9 @@ import com.chtholly.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -22,8 +23,8 @@ public class NotificationEventListener {
 
     private final NotificationService notificationService;
 
-    @Async("notificationExecutor")
-    @EventListener
+    @TransactionalEventListener(
+            phase = TransactionPhase.BEFORE_COMMIT)
     public void onCommentCreated(CommentCreatedEvent event) {
         try {
             Map<String, Object> base = basePayload(event.authorUserId(), event.authorNickname(), event.authorAvatar());
@@ -46,11 +47,15 @@ public class NotificationEventListener {
             }
         } catch (Exception ex) {
             log.error("评论通知写入失败 commentId={}: {}", event.commentId(), ex.getMessage(), ex);
+            if (ex instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Comment notification persistence failed", ex);
         }
     }
 
-    @Async("notificationExecutor")
-    @EventListener
+    @TransactionalEventListener(
+            phase = TransactionPhase.BEFORE_COMMIT)
     public void onFollowCreated(FollowCreatedEvent event) {
         try {
             if (event.fromUserId() == event.toUserId()) {
@@ -61,6 +66,10 @@ public class NotificationEventListener {
         } catch (Exception ex) {
             log.error("关注通知写入失败 fromUserId={} toUserId={}: {}",
                     event.fromUserId(), event.toUserId(), ex.getMessage(), ex);
+            if (ex instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Follow notification persistence failed", ex);
         }
     }
 

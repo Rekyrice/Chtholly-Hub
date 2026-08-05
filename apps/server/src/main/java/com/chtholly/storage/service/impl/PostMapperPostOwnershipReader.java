@@ -23,15 +23,18 @@ public class PostMapperPostOwnershipReader implements PostOwnershipReader {
     }
 
     /**
-     * Checks ownership from the authoritative post row.
+     * Checks draft ownership from the authoritative post row.
      *
      * @param postId post ID
      * @param userId expected owner ID
-     * @return whether the post belongs to the user
+     * @return whether the post is still the user's draft
      */
     @Override
-    public boolean isOwnedBy(long postId, long userId) {
+    public boolean isDraftOwnedBy(long postId, long userId) {
         Post post = postMapper.findById(postId);
-        return post != null && post.getCreatorId() != null && post.getCreatorId() == userId;
+        return post != null
+                && "draft".equals(post.getStatus())
+                && post.getCreatorId() != null
+                && post.getCreatorId() == userId;
     }
 }

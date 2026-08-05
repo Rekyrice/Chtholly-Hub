@@ -20,16 +20,17 @@ public interface StorageService {
     String uploadAvatar(long userId, InputStream inputStream, String contentType) throws IOException;
 
     /**
-     * Generates a direct or local-service upload URL.
+     * Creates the application-mediated upload contract exposed to a client.
      *
      * @param objectKey storage object key
      * @param contentType expected content type
      * @return upload contract
      */
-    PresignedUrl generatePresignedPutUrl(String objectKey, String contentType);
+    PresignedUrl createUploadContract(String objectKey, String contentType);
 
     /**
-     * Writes ordinary application content to the supplied object key.
+     * Writes ordinary application content to the supplied mutable object key.
+     * Immutable namespaces must use {@link #uploadVerifiedObject(String, InputStream, String, long, String)}.
      *
      * @param objectKey storage object key
      * @param inputStream object bytes

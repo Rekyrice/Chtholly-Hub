@@ -74,8 +74,8 @@ class LocalFileStorageServiceTest {
     }
 
     @Test
-    void generatePresignedPutUrl_returnsLocalUploadEndpoint() {
-        PresignedUrl presigned = service.generatePresignedPutUrl("posts/1/content.md", "text/markdown");
+    void createUploadContract_returnsLocalUploadEndpoint() {
+        PresignedUrl presigned = service.createUploadContract("posts/1/content.md", "text/markdown");
 
         assertThat(presigned.url()).isEqualTo("/api/v1/storage/upload");
         assertThat(presigned.method()).isEqualTo("POST");
@@ -97,6 +97,20 @@ class LocalFileStorageServiceTest {
         service.deleteObject(key);
         assertThat(Files.exists(target)).isFalse();
         assertThat(service.objectExists(key)).isFalse();
+    }
+
+    @Test
+    void uploadObject_whenImmutableKeyDoesNotExist_thenRejectsWithoutTargetOrTemporaryFile() {
+        String key = "posts/42/content-uploads/" + "a".repeat(32) + ".md";
+        byte[] data = "unverified-content".getBytes(StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> service.uploadObject(
+                key, new ByteArrayInputStream(data), "text/markdown", data.length))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("verified upload");
+
+        assertThat(Files.exists(service.resolveObjectPath(key))).isFalse();
+        assertThat(findUploadTemps()).isEmpty();
     }
 
     @Test
@@ -187,6 +201,39 @@ class LocalFileStorageServiceTest {
         service.uploadVerifiedObject(key, new ByteArrayInputStream(data), "text/markdown", data.length, sha256(data));
 
         assertThat(service.objectMatches(key, sha256(data), data.length)).isTrue();
+        assertThat(findUploadTemps()).isEmpty();
+    }
+
+    @Test
+    void uploadVerifiedObject_whenPostContentUploadMatches_thenIsIdempotent() throws Exception {
+        byte[] data = "same-post-content".getBytes(StandardCharsets.UTF_8);
+        String key = "posts/42/content-uploads/" + "a".repeat(32) + ".md";
+
+        service.uploadVerifiedObject(key, new ByteArrayInputStream(data), "text/markdown", data.length, sha256(data));
+        service.uploadVerifiedObject(key, new ByteArrayInputStream(data), "text/markdown", data.length, sha256(data));
+
+        assertThat(service.objectMatches(key, sha256(data), data.length)).isTrue();
+        assertThat(findUploadTemps()).isEmpty();
+    }
+
+    @Test
+    void uploadVerifiedObject_whenPostContentUploadDiffers_thenKeepsOriginalAndFails() throws Exception {
+        byte[] original = "original-post-content".getBytes(StandardCharsets.UTF_8);
+        byte[] replacement = "replacement-post-content".getBytes(StandardCharsets.UTF_8);
+        String key = "posts/42/content-uploads/" + "a".repeat(32) + ".md";
+        service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(original), "text/markdown", original.length, sha256(original));
+
+        assertThatThrownBy(() -> service.uploadVerifiedObject(
+                key,
+                new ByteArrayInputStream(replacement),
+                "text/markdown",
+                replacement.length,
+                sha256(replacement)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("immutable object already exists with different content");
+
+        assertThat(Files.readAllBytes(service.resolveObjectPath(key))).containsExactly(original);
         assertThat(findUploadTemps()).isEmpty();
     }
 

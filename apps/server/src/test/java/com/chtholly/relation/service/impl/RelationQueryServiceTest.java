@@ -49,6 +49,14 @@ class RelationQueryServiceTest {
     }
 
     @Test
+    void activeFollowingReaderUsesTheAuthoritativeRelationRow() {
+        when(relationMapper.existsFollowing(11L, 22L)).thenReturn(1);
+
+        assertThat(queryService.isActiveFollowing(11L, 22L)).isTrue();
+        assertThat(queryService.isActiveFollowing(11L, 33L)).isFalse();
+    }
+
+    @Test
     void cursorProfilePagePreservesRelationOrderAndBuildsNextCursor() {
         Date newest = new Date(2_345L);
         Date boundary = new Date(1_234L);

@@ -53,6 +53,21 @@ public class PostFeedServiceImpl implements PostFeedService {
     }
 
     @Override
+    public void invalidateMyPublishedCacheStrict(long userId) {
+        personalFeedService.invalidateMyPublishedCacheStrict(userId);
+    }
+
+    @Override
+    public void invalidateFollowingAuthorCache(long authorId) {
+        personalFeedService.invalidateFollowingAuthorCache(authorId);
+    }
+
+    @Override
+    public void invalidateFollowingAuthorCacheStrict(long authorId) {
+        personalFeedService.invalidateFollowingAuthorCacheStrict(authorId);
+    }
+
+    @Override
     public PageResponse<FeedItemResponse> getMyPublished(long userId, int page, int size) {
         return personalFeedService.getMyPublished(userId, page, size);
     }

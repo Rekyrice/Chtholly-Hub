@@ -19,8 +19,8 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 搜索索引的 Outbox 消费者：监听 canal-outbox，驱动 ES 索引的增量更新。
- * 仅处理 entity=post 的 upsert 与软删。
+ * 搜索索引的 Outbox 消费者：监听用户资料变化并重建作者公开文档。
+ * 帖子事件由带 MySQL 完成回执的 PostOutboxProjectionConsumer 统一处理。
  */
 @Slf4j
 @Service
@@ -63,7 +63,7 @@ public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
 
     private void processOutboxRow(JsonNode row) throws Exception {
         String aggregateType = row.path("aggregate_type").asText();
-        if (!"post".equals(aggregateType) && !"user".equals(aggregateType)) {
+        if (!"user".equals(aggregateType)) {
             return;
         }
         Long eventId = OutboxMessageUtil.extractEventId(row);
@@ -86,17 +86,6 @@ public class CanalOutboxConsumerSearch extends AbstractKafkaConsumer {
 
         if ("user".equals(entity) && "author_profile_changed".equalsIgnoreCase(op)) {
             indexService.reindexPublishedPostsByAuthor(aggregateId);
-        } else if ("post".equals(entity)) {
-            if ("delete".equalsIgnoreCase(op)) {
-                indexService.softDeletePost(aggregateId);
-            } else {
-                try {
-                    indexService.upsertPost(aggregateId);
-                } catch (Exception e) {
-                    log.error("Canal outbox processing failed", e);
-                    throw e;
-                }
-            }
         } else {
             return;
         }

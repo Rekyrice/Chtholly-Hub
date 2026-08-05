@@ -46,4 +46,35 @@ class StorageObjectKeyValidatorTest {
                 "posts/42/content-edits/" + "a".repeat(64) + ".txt"))
                 .isFalse();
     }
+
+    @Test
+    void immutableObjectKey_acceptsOnlyCanonicalPostContentUploadAddresses() {
+        assertThat(StorageObjectKeyValidator.isImmutableObjectKey(
+                "posts/42/content-uploads/" + "a".repeat(32) + ".md"))
+                .isTrue();
+
+        assertThat(StorageObjectKeyValidator.isImmutableObjectKey(
+                "posts/42/content-uploads/" + "a".repeat(31) + ".md"))
+                .isFalse();
+        assertThat(StorageObjectKeyValidator.isImmutableObjectKey(
+                "posts/42/content-uploads/" + "A".repeat(32) + ".md"))
+                .isFalse();
+        assertThat(StorageObjectKeyValidator.isImmutableObjectKey("posts/42/content.md"))
+                .isFalse();
+    }
+
+    @Test
+    void postContentObjectKeyBelongsToPost_acceptsNewAndHistoricalKeysButRejectsAnotherPost() {
+        assertThatCode(() -> StorageObjectKeyValidator.assertPostContentObjectKeyBelongsToPost(
+                "posts/42/content-uploads/" + "a".repeat(32) + ".json", 42L))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> StorageObjectKeyValidator.assertPostContentObjectKeyBelongsToPost(
+                "posts/42/content.txt", 42L))
+                .doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> StorageObjectKeyValidator.assertPostContentObjectKeyBelongsToPost(
+                "posts/43/content-uploads/" + "a".repeat(32) + ".md", 42L))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        error -> assertThat(error.getMessage()).isEqualTo("正文对象不属于该文章"));
+    }
 }

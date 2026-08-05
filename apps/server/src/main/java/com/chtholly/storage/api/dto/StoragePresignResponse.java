@@ -3,7 +3,7 @@ package com.chtholly.storage.api.dto;
 import java.util.Map;
 
 /**
- * 预签名直传响应。
+ * Backward-compatible HTTP response describing an upload contract.
  */
 public record StoragePresignResponse(
         String objectKey,

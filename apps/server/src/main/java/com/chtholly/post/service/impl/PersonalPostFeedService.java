@@ -3,8 +3,6 @@ package com.chtholly.post.service.impl;
 import com.chtholly.cache.hotkey.HotKeyDetector;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.post.api.dto.FeedItemResponse;
-import com.chtholly.post.feed.FeedTimelineProperties;
-import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.post.util.FeedCursor;
@@ -20,19 +18,13 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
-/** Owns user-scoped published feeds and the hybrid following timeline. */
+/** Owns the user's published feed and delegates following-feed queries. */
 @Service
 public class PersonalPostFeedService {
     private static final Logger log = LoggerFactory.getLogger(PersonalPostFeedService.class);
@@ -42,9 +34,8 @@ public class PersonalPostFeedService {
     private final ObjectMapper objectMapper;
     private final Cache<String, PageResponse<FeedItemResponse>> feedMineCache;
     private final HotKeyDetector hotKey;
-    private final FeedTimelineService feedTimelineService;
-    private final FeedTimelineProperties feedTimelineProperties;
     private final FeedItemAssembler assembler;
+    private final FollowingPostFeedQueryService followingFeedQueryService;
 
     /**
      * Creates the user-scoped feed service.
@@ -54,9 +45,8 @@ public class PersonalPostFeedService {
      * @param objectMapper cached payload codec
      * @param feedMineCache process-local personal-feed cache
      * @param hotKey hot-key detector for adaptive TTLs
-     * @param feedTimelineService following timeline reader
-     * @param feedTimelineProperties following timeline configuration
      * @param assembler shared feed-item assembler
+     * @param followingFeedQueryService following-feed query application service
      */
     public PersonalPostFeedService(
             PostMapper mapper,
@@ -64,18 +54,16 @@ public class PersonalPostFeedService {
             ObjectMapper objectMapper,
             @Qualifier("feedMineCache") Cache<String, PageResponse<FeedItemResponse>> feedMineCache,
             HotKeyDetector hotKey,
-            FeedTimelineService feedTimelineService,
-            FeedTimelineProperties feedTimelineProperties,
-            FeedItemAssembler assembler
+            FeedItemAssembler assembler,
+            FollowingPostFeedQueryService followingFeedQueryService
     ) {
         this.mapper = mapper;
         this.redis = redis;
         this.objectMapper = objectMapper;
         this.feedMineCache = feedMineCache;
         this.hotKey = hotKey;
-        this.feedTimelineService = feedTimelineService;
-        this.feedTimelineProperties = feedTimelineProperties;
         this.assembler = assembler;
+        this.followingFeedQueryService = followingFeedQueryService;
     }
 
     private String nextCursorFromRows(List<PostFeedRow> rows) {
@@ -109,30 +97,60 @@ public class PersonalPostFeedService {
     public void invalidateMyPublishedCache(long userId) {
         String prefix = "feed:mine:" + userId + ":";
         try {
-            feedMineCache.asMap().keySet().removeIf(key -> key != null && key.startsWith(prefix));
+            invalidateMyPublishedLocalCache(prefix);
         } catch (Exception e) {
             log.warn("feed.mine L1 invalidate failed, userId={}", userId, e);
         }
 
-        String pattern = prefix + "*";
+        try {
+            int redisKeys = invalidateMyPublishedRedisCache(prefix);
+            log.info("feed.mine invalidated userId={} redisKeys={}", userId, redisKeys);
+        } catch (Exception e) {
+            log.warn("feed.mine Redis invalidate failed, pattern={}", prefix + "*", e);
+        }
+    }
+
+    public void invalidateMyPublishedCacheStrict(long userId) {
+        String prefix = "feed:mine:" + userId + ":";
+        invalidateMyPublishedLocalCache(prefix);
+        int redisKeys = invalidateMyPublishedRedisCache(prefix);
+        log.info("feed.mine strictly invalidated userId={} redisKeys={}", userId, redisKeys);
+    }
+
+    private void invalidateMyPublishedLocalCache(String prefix) {
+        feedMineCache.asMap().keySet().removeIf(key -> key != null && key.startsWith(prefix));
+    }
+
+    private int invalidateMyPublishedRedisCache(String prefix) {
         Set<String> keys = new HashSet<>();
-        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
+        ScanOptions options = ScanOptions.scanOptions().match(prefix + "*").count(100).build();
         try (Cursor<String> cursor = redis.scan(options)) {
             while (cursor.hasNext()) {
                 keys.add(cursor.next());
             }
-        } catch (Exception e) {
-            log.warn("feed.mine Redis SCAN failed, pattern={}", pattern, e);
-            return;
         }
         if (!keys.isEmpty()) {
-            try {
-                redis.delete(keys);
-            } catch (Exception e) {
-                log.warn("feed.mine Redis delete failed, userId={} size={}", userId, keys.size(), e);
-            }
+            redis.delete(keys);
         }
-        log.info("feed.mine invalidated userId={} redisKeys={}", userId, keys.size());
+        return keys.size();
+    }
+
+    /**
+     * Drops the author-scoped pull cache used while composing following feeds.
+     *
+     * @param authorId author whose recent-post snapshot changed
+     */
+    public void invalidateFollowingAuthorCache(long authorId) {
+        followingFeedQueryService.invalidateAuthorCache(authorId);
+    }
+
+    /**
+     * Drops the author-scoped pull cache and propagates Redis failures to the caller.
+     *
+     * @param authorId author whose recent-post snapshot changed
+     */
+    public void invalidateFollowingAuthorCacheStrict(long authorId) {
+        followingFeedQueryService.invalidateAuthorCacheStrict(authorId);
     }
 
     /**
@@ -210,85 +228,10 @@ public class PersonalPostFeedService {
      * 关注时间线：合并 Redis 推模式 timeline 与大 V 拉模式近期文章，按发布时间降序分页。
      */
     public PageResponse<FeedItemResponse> getFollowingFeed(long userId, int page, int size) {
-        int safeSize = Math.min(Math.max(size, 1), 50);
-        int safePage = Math.max(page, 1);
-        int candidateLimit = safePage * safeSize + safeSize + 1;
-
-        List<Long> timelineIds = feedTimelineService.getTimelinePostIds(userId, candidateLimit);
-        List<PostFeedRow> bigVRows = loadBigVRecentPosts(feedTimelineService.getFollowedBigVAuthors(userId));
-
-        List<PostFeedRow> timelineRows = timelineIds.isEmpty()
-                ? Collections.emptyList()
-                : mapper.listFeedRowsByIds(timelineIds);
-
-        Map<Long, PostFeedRow> merged = new LinkedHashMap<>();
-        for (PostFeedRow row : timelineRows) {
-            merged.putIfAbsent(row.getId(), row);
-        }
-        for (PostFeedRow row : bigVRows) {
-            merged.putIfAbsent(row.getId(), row);
-        }
-
-        List<PostFeedRow> sorted = new ArrayList<>(merged.values());
-        sorted.sort(Comparator.comparing(
-                PostFeedRow::getPublishTime,
-                Comparator.nullsLast(Comparator.reverseOrder())));
-
-        int offset = (safePage - 1) * safeSize;
-        List<PostFeedRow> slice = sorted.stream()
-                .skip(offset)
-                .limit(safeSize + 1L)
-                .toList();
-        boolean hasMore = slice.size() > safeSize;
-        List<PostFeedRow> pageRows = hasMore ? slice.subList(0, safeSize) : slice;
-
-        List<FeedItemResponse> items = assembler.fromRowsBatch(pageRows, userId);
-        log.info("feed.following user={} page={} size={} timeline={} bigv={} merged={} hasMore={}",
-                userId, safePage, safeSize, timelineRows.size(), bigVRows.size(), sorted.size(), hasMore);
-        return PageResponse.offset(items, safePage, safeSize, 0L, hasMore,
-                hasMore ? nextCursorFromRows(pageRows) : null);
+        return followingFeedQueryService.getFollowingFeed(userId, page, size);
     }
 
-    /**
-     * 拉模式：读取所关注大 V 的近期文章，按作者维度缓存 5 分钟。
-     */
-    private List<PostFeedRow> loadBigVRecentPosts(List<Long> authorIds) {
-        if (authorIds.isEmpty()) {
-            return Collections.emptyList();
-        }
-        int pullHours = feedTimelineProperties.getTimeline().getBigvPullHours();
-        int cacheSeconds = feedTimelineProperties.getTimeline().getBigvCacheSeconds();
-        Instant since = Instant.now().minus(pullHours, ChronoUnit.HOURS);
-
-        List<PostFeedRow> all = new ArrayList<>();
-        for (Long authorId : authorIds) {
-            String cacheKey = "feed:bigv:posts:" + authorId;
-            String cached = redis.opsForValue().get(cacheKey);
-            if (cached != null) {
-                try {
-                    List<PostFeedRow> rows = objectMapper.readValue(cached, new TypeReference<>() {});
-                    if (rows.stream().allMatch(row -> row.getAuthorId() != null)) {
-                        all.addAll(rows);
-                        continue;
-                    }
-                    log.debug("feed.following bigv cache layout miss authorId={}", authorId);
-                } catch (Exception e) {
-                    log.debug("feed.following bigv cache parse miss authorId={}", authorId);
-                }
-            }
-
-            List<PostFeedRow> rows = mapper.listRecentPublicByCreators(List.of(authorId), since, 50);
-            try {
-                redis.opsForValue().set(cacheKey, objectMapper.writeValueAsString(rows),
-                        Duration.ofSeconds(cacheSeconds));
-            } catch (Exception e) {
-                log.warn("feed.following bigv cache write failed authorId={}: {}", authorId, e.getMessage());
-            }
-            all.addAll(rows);
-        }
-        return all;
-    }
-
+    /** Restores the current owner ID before enriching legacy personal-feed cache entries. */
     private List<FeedItemResponse> ensureMineAuthorId(List<FeedItemResponse> items, long userId) {
         if (items == null || items.isEmpty()) {
             return Collections.emptyList();

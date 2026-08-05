@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.chtholly.post.outbox.PostProjectionReceiptMapper">
+    <resultMap id="ReplayRowMap" type="com.chtholly.post.outbox.PostProjectionReceiptMapper$ReplayRow">
+        <constructor>
+            <arg column="id" javaType="_long"/>
+            <arg column="type" javaType="java.lang.String"/>
+            <arg column="post_id" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="countReceipt" resultType="int">
+        SELECT COUNT(1)
+        FROM post_projection_receipt
+        WHERE event_id = #{eventId}
+    </select>
+
+    <select id="countOutboxEvent" resultType="int">
+        SELECT COUNT(1)
+        FROM outbox
+        WHERE id = #{eventId}
+    </select>
+
+    <insert id="insertCursorIfAbsent">
+        INSERT IGNORE INTO post_projection_cursor (post_id, last_event_id, updated_at)
+        VALUES (#{postId}, 0, NOW(3))
+    </insert>
+
+    <select id="lockCursor" resultType="java.lang.Long">
+        SELECT last_event_id
+        FROM post_projection_cursor
+        WHERE post_id = #{postId}
+        FOR UPDATE
+    </select>
+
+    <insert id="insertReceipt">
+        INSERT IGNORE INTO post_projection_receipt (event_id, post_id, completed_at)
+        VALUES (#{eventId}, #{postId}, NOW(3))
+    </insert>
+
+    <update id="advanceCursor">
+        UPDATE post_projection_cursor
+        SET last_event_id = #{eventId}, updated_at = NOW(3)
+        WHERE post_id = #{postId}
+          AND last_event_id = #{previousEventId}
+    </update>
+
+    <select id="findReplayHighWatermark" resultType="java.lang.Long">
+        SELECT COALESCE(MAX(id), 0)
+        FROM outbox
+        WHERE aggregate_type = 'post'
+          AND type IN (
+            'PostContentConfirmed',
+            'PostMetadataUpdated',
+            'PostPublished',
+            'PostTopChanged',
+            'PostVisibilityChanged',
+            'PostDeleted'
+          )
+          AND created_at &lt;= TIMESTAMPADD(SECOND, -5, NOW(3))
+    </select>
+
+    <select id="listReplayPage" resultMap="ReplayRowMap">
+        SELECT o.id, o.type, o.aggregate_id AS post_id
+        FROM outbox o
+        LEFT JOIN post_projection_receipt r ON r.event_id = o.id
+        WHERE o.aggregate_type = 'post'
+          AND o.type IN (
+            'PostContentConfirmed',
+            'PostMetadataUpdated',
+            'PostPublished',
+            'PostTopChanged',
+            'PostVisibilityChanged',
+            'PostDeleted'
+          )
+          AND o.id &gt; #{afterId}
+          AND o.id &lt;= #{throughId}
+          AND o.created_at &lt;= TIMESTAMPADD(SECOND, -5, NOW(3))
+          AND r.event_id IS NULL
+        ORDER BY o.id
+        LIMIT #{limit}
+    </select>
+</mapper>

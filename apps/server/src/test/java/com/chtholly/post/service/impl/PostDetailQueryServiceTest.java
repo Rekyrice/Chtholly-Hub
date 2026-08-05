@@ -7,8 +7,10 @@ import com.chtholly.common.exception.BusinessException;
 import com.chtholly.counter.service.CounterService;
 import com.chtholly.post.api.dto.PostDetailResponse;
 import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.PostDetailAudienceRow;
 import com.chtholly.post.model.PostDetailEtagRow;
 import com.chtholly.post.model.PostDetailRow;
+import com.chtholly.relation.service.ActiveFollowingReader;
 import com.chtholly.user.model.PublicAuthorSnapshot;
 import com.chtholly.user.service.PublicAuthorQueryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,6 +57,7 @@ class PostDetailQueryServiceTest {
     @Mock private HotKeyDetector hotKey;
     @Mock private PublicAuthorQueryService publicAuthorQueryService;
     @Mock private CacheMetrics cacheMetrics;
+    @Mock private ActiveFollowingReader activeFollowingReader;
 
     @Test
     void cacheHitOverlaysLatestAuthorProfileFromMysql() {
@@ -67,6 +70,7 @@ class PostDetailQueryServiceTest {
                 "[\"旧标签\"]"
         );
         cache.put(PostDetailQueryService.cacheKey(42L), stale);
+        when(mapper.findDetailAudienceById(42L)).thenReturn(audience("published", "public"));
         when(counterService.getCounts("post", "42", List.of("like", "fav")))
                 .thenReturn(Map.of("like", 3L, "fav", 2L));
         when(redis.getExpire(PostDetailQueryService.cacheKey(42L))).thenReturn(120L);
@@ -97,6 +101,7 @@ class PostDetailQueryServiceTest {
         Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
         PostDetailResponse stale = detail("old-handle", "/old.webp", "旧昵称", "旧简介", "[]");
         cache.put(PostDetailQueryService.cacheKey(42L), stale);
+        when(mapper.findDetailAudienceById(42L)).thenReturn(audience("published", "public"));
         when(counterService.getCounts("post", "42", List.of("like", "fav"))).thenReturn(Map.of());
         when(redis.getExpire(PostDetailQueryService.cacheKey(42L))).thenReturn(120L);
         when(redis.getExpire("feed:item:42")).thenReturn(120L);
@@ -111,13 +116,128 @@ class PostDetailQueryServiceTest {
     }
 
     @Test
-    void cachedPrivateDetailIsRejectedForNonOwner() {
+    void anonymousCannotReadRedisStalePublicCacheAfterMysqlBecomesPrivate() throws Exception {
         Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
-        cache.put(PostDetailQueryService.cacheKey(42L), detailWithVisibility("private"));
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> values = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        ObjectMapper cacheCodec = new ObjectMapper().findAndRegisterModules();
+        when(values.get(PostDetailQueryService.cacheKey(42L)))
+                .thenReturn(cacheCodec.writeValueAsString(
+                        detail("cached", "/cached.webp", "Cached", "Cached", "[]")));
+        when(mapper.findDetailAudienceById(42L)).thenReturn(audience("published", "private"));
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
+
+        assertThatThrownBy(() -> service.getDetail(42L, null))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void inactiveFollowerCannotReadLocalStalePublicCacheAfterMysqlBecomesFollowersOnly() {
+        Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
+        cache.put(PostDetailQueryService.cacheKey(42L),
+                detail("cached", "/cached.webp", "Cached", "Cached", "[]"));
+        when(mapper.findDetailAudienceById(42L)).thenReturn(audience("published", "followers"));
         PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
 
         assertThatThrownBy(() -> service.getDetail(42L, 9L))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void ownerReloadsLocalStalePublicCacheAfterMysqlBecomesFollowersOnly() {
+        Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
+        cache.put(PostDetailQueryService.cacheKey(42L),
+                detail("cached", "/cached.webp", "Cached", "Cached", "[]"));
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> values = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        when(values.get(PostDetailQueryService.cacheKey(42L))).thenReturn(null);
+        PostDetailRow authoritative = publicRow();
+        authoritative.setVisible("followers");
+        authoritative.setTitle("Fresh owner detail");
+        when(mapper.findDetailAudienceById(42L)).thenReturn(audience("published", "followers"));
+        when(mapper.findDetailById(42L)).thenReturn(authoritative);
+        when(counterService.getCounts("post", "42", List.of("like", "fav"))).thenReturn(Map.of());
+        when(publicAuthorQueryService.findById(7L)).thenReturn(Optional.empty());
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
+
+        PostDetailResponse response = service.getDetail(42L, 7L);
+
+        assertThat(response.title()).isEqualTo("Fresh owner detail");
+        assertThat(cache.getIfPresent(PostDetailQueryService.cacheKey(42L))).isNull();
+    }
+
+    @Test
+    void cachedPrivateDetailIsRejectedForNonOwner() {
+        Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
+        cache.put(PostDetailQueryService.cacheKey(42L), detailWithVisibility("private"));
+        when(mapper.findDetailAudienceById(42L)).thenReturn(audience("published", "private"));
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
+
+        assertThatThrownBy(() -> service.getDetail(42L, 9L))
+                .isInstanceOf(BusinessException.class);
+        assertThat(cache.getIfPresent(PostDetailQueryService.cacheKey(42L))).isNull();
+        verify(redis).delete(PostDetailQueryService.cacheKey(42L));
+        verifyNoInteractions(activeFollowingReader);
+    }
+
+    @Test
+    void ownerReloadsFollowersDetailFromMysqlInsteadOfSharedCache() {
+        Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
+        cache.put(PostDetailQueryService.cacheKey(42L), detailWithVisibility("followers"));
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> values = mock(ValueOperations.class);
+        when(redis.opsForValue()).thenReturn(values);
+        when(values.get(PostDetailQueryService.cacheKey(42L))).thenReturn(null);
+        PostDetailRow row = publicRow();
+        row.setVisible("followers");
+        row.setTitle("Fresh followers detail");
+        when(mapper.findDetailAudienceById(42L)).thenReturn(audience("published", "followers"));
+        when(mapper.findDetailById(42L)).thenReturn(row);
+        when(counterService.getCounts("post", "42", List.of("like", "fav"))).thenReturn(Map.of());
+        when(publicAuthorQueryService.findById(7L)).thenReturn(Optional.empty());
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.FULL);
+
+        PostDetailResponse response = service.getDetail(42L, 7L);
+
+        assertThat(response.title()).isEqualTo("Fresh followers detail");
+        assertThat(cache.getIfPresent(PostDetailQueryService.cacheKey(42L))).isNull();
+        verify(redis).delete(PostDetailQueryService.cacheKey(42L));
+    }
+
+    @Test
+    void activeFollowerCanReadPublishedFollowersDetailFromMysql() {
+        Cache<String, PostDetailResponse> cache = Caffeine.newBuilder().build();
+        PostDetailRow row = publicRow();
+        row.setVisible("followers");
+        when(mapper.findDetailById(42L)).thenReturn(row);
+        when(activeFollowingReader.isActiveFollowing(9L, 7L)).thenReturn(true);
+        when(counterService.getCounts("post", "42", List.of("like", "fav"))).thenReturn(Map.of());
+        when(publicAuthorQueryService.findById(7L)).thenReturn(Optional.empty());
+        PostDetailQueryService service = newService(cache, CacheProperties.ReadMode.DB_ONLY);
+
+        PostDetailResponse response = service.getDetail(42L, 9L);
+
+        assertThat(response.id()).isEqualTo("42");
+        assertThat(response.visible()).isEqualTo("followers");
+        verify(activeFollowingReader).isActiveFollowing(9L, 7L);
+        assertThat(cache.getIfPresent(PostDetailQueryService.cacheKey(42L))).isNull();
+    }
+
+    @Test
+    void inactiveViewerCannotReadPublishedFollowersDetail() {
+        PostDetailRow row = publicRow();
+        row.setVisible("followers");
+        when(mapper.findDetailById(42L)).thenReturn(row);
+        PostDetailQueryService service = newService(
+                Caffeine.newBuilder().build(), CacheProperties.ReadMode.DB_ONLY);
+
+        assertThatThrownBy(() -> service.getDetail(42L, 9L))
+                .isInstanceOf(BusinessException.class);
+
+        verify(activeFollowingReader).isActiveFollowing(9L, 7L);
+        verifyNoInteractions(counterService, publicAuthorQueryService);
     }
 
     @Test
@@ -218,6 +338,7 @@ class PostDetailQueryServiceTest {
         }).when(values).set(anyString(), anyString(), any(Duration.class));
         when(counterService.getCounts("post", "42", List.of("like", "fav"))).thenReturn(Map.of());
         when(publicAuthorQueryService.findById(7L)).thenReturn(Optional.empty());
+        when(mapper.findDetailAudienceById(42L)).thenReturn(audience("published", "public"));
         CountDownLatch loadEntered = new CountDownLatch(1);
         CountDownLatch releaseLoad = new CountDownLatch(1);
         when(mapper.findDetailById(42L)).thenAnswer(ignored -> {
@@ -274,9 +395,11 @@ class PostDetailQueryServiceTest {
     ) {
         CacheProperties properties = new CacheProperties();
         properties.setReadMode(readMode);
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        PostDetailViewerService viewerService = new PostDetailViewerService(
+                objectMapper, counterService, publicAuthorQueryService, activeFollowingReader);
         return new PostDetailQueryService(
-                mapper, new ObjectMapper(), counterService, redis, cache, hotKey, publicAuthorQueryService,
-                properties, cacheMetrics);
+                mapper, objectMapper, redis, cache, hotKey, viewerService, properties, cacheMetrics);
     }
 
     private PostDetailResponse detail(
@@ -309,6 +432,14 @@ class PostDetailQueryServiceTest {
         row.setTitle("Published");
         row.setVisible("public");
         row.setStatus("published");
+        return row;
+    }
+
+    private PostDetailAudienceRow audience(String status, String visibility) {
+        PostDetailAudienceRow row = new PostDetailAudienceRow();
+        row.setCreatorId(7L);
+        row.setStatus(status);
+        row.setVisible(visibility);
         return row;
     }
 

@@ -126,7 +126,8 @@ public abstract class AbstractGoldenPathIT {
     protected void cleanDatabase() {
         jdbc.execute("SET FOREIGN_KEY_CHECKS = 0");
         for (String table : new String[]{
-                "draft_edit_preview", "counter_event_inbox", "counter_reaction",
+                "draft_edit_preview", "post_projection_receipt", "post_projection_cursor",
+                "counter_event_inbox", "counter_reaction",
                 "counter_snapshot", "dead_letter_messages", "outbox",
                 "follower", "following", "posts", "users"}) {
             jdbc.execute("TRUNCATE TABLE " + table);
@@ -135,9 +136,21 @@ public abstract class AbstractGoldenPathIT {
     }
 
     protected String canalEnvelope(long eventId, String aggregateType, String eventType, String payload) {
+        return canalEnvelope(eventId, aggregateType, null, eventType, payload);
+    }
+
+    protected String canalEnvelope(
+            long eventId,
+            String aggregateType,
+            Long aggregateId,
+            String eventType,
+            String payload) {
         ObjectNode row = objectMapper.createObjectNode();
         row.put("id", eventId);
         row.put("aggregate_type", aggregateType);
+        if (aggregateId != null) {
+            row.put("aggregate_id", aggregateId);
+        }
         row.put("type", eventType);
         row.put("payload", payload);
         ArrayNode data = objectMapper.createArrayNode().add(row);

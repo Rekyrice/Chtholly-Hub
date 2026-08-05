@@ -8,9 +8,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.lang.reflect.Method;
 import java.time.Instant;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -68,5 +73,21 @@ class FeedTimelineListenerTest {
         listener.onFollowCanceled(event);
 
         verify(feedTimelineService).removeAuthorFromTimeline(100L, 20L);
+    }
+
+    @Test
+    void unfollowCleanupIsAsynchronousAfterCommitWithNonTransactionalFallback()
+            throws Exception {
+        Method method = FeedTimelineListener.class.getMethod(
+                "onFollowCanceled", FollowCanceledEvent.class);
+        Async async = method.getAnnotation(Async.class);
+        TransactionalEventListener transactional =
+                method.getAnnotation(TransactionalEventListener.class);
+
+        assertThat(async).isNotNull();
+        assertThat(async.value()).isEqualTo("notificationExecutor");
+        assertThat(transactional).isNotNull();
+        assertThat(transactional.phase()).isEqualTo(TransactionPhase.AFTER_COMMIT);
+        assertThat(transactional.fallbackExecution()).isFalse();
     }
 }

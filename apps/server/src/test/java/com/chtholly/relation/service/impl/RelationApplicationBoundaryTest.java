@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,6 +64,9 @@ class RelationApplicationBoundaryTest {
                 userMapper,
                 eventPublisher,
                 idGenerator);
+        lenient().when(outboxMapper.insert(
+                anyLong(), anyString(), any(), anyString(), anyString()))
+                .thenReturn(1);
     }
 
     @Test
@@ -80,17 +84,12 @@ class RelationApplicationBoundaryTest {
     @Test
     @SuppressWarnings("unchecked")
     void followWritesOutboxBeforePublishingNotificationEvent() {
+        allowExistingUsers();
         when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any()))
                 .thenReturn(1L);
         when(relationMapper.insertFollowing(anyLong(), eq(11L), eq(22L), eq(1)))
                 .thenReturn(1);
         when(idGenerator.nextId()).thenReturn(101L, 201L);
-        when(userMapper.findById(11L)).thenReturn(User.builder()
-                .id(11L)
-                .nickname("actor")
-                .avatar("avatar.png")
-                .build());
-
         assertThat(commandService.follow(11L, 22L)).isTrue();
 
         InOrder order = inOrder(outboxMapper, eventPublisher);
@@ -131,6 +130,7 @@ class RelationApplicationBoundaryTest {
     @Test
     @SuppressWarnings("unchecked")
     void duplicateFollowDoesNotWriteOutboxOrPublishEvent() {
+        allowExistingUsers();
         when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any()))
                 .thenReturn(1L);
         when(relationMapper.insertFollowing(anyLong(), eq(11L), eq(22L), eq(1)))
@@ -147,6 +147,7 @@ class RelationApplicationBoundaryTest {
     @Test
     @SuppressWarnings("unchecked")
     void reactivatedFollowUsesPersistedRelationIdExactlyOnce() {
+        allowExistingUsers();
         when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any()))
                 .thenReturn(1L);
         when(relationMapper.insertFollowing(anyLong(), eq(11L), eq(22L), eq(1)))
@@ -170,6 +171,7 @@ class RelationApplicationBoundaryTest {
     @Test
     @SuppressWarnings("unchecked")
     void duplicateActiveFollowMustNotTreatLegacyDuplicateUpdateCountAsStateChange() {
+        allowExistingUsers();
         when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any()))
                 .thenReturn(1L);
         when(relationMapper.insertFollowing(anyLong(), eq(11L), eq(22L), eq(1)))
@@ -215,6 +217,29 @@ class RelationApplicationBoundaryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void zeroRowOutboxInsertFailsTheRelationCommand() {
+        allowExistingUsers();
+        when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any()))
+                .thenReturn(1L);
+        when(relationMapper.insertFollowing(101L, 11L, 22L, 1))
+                .thenReturn(1);
+        when(idGenerator.nextId()).thenReturn(101L, 201L);
+        when(outboxMapper.insert(
+                eq(201L),
+                eq("following"),
+                eq(101L),
+                eq("FollowCreated"),
+                anyString()))
+                .thenReturn(0);
+
+        assertThatThrownBy(() -> commandService.follow(11L, 22L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("affected 0 rows");
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void outboxSerializationLogDoesNotExposePayloadOrFailureMessage()
             throws Exception {
         ObjectMapper failingMapper = mock(ObjectMapper.class);
@@ -229,6 +254,7 @@ class RelationApplicationBoundaryTest {
                 userMapper,
                 eventPublisher,
                 idGenerator);
+        allowExistingUsers();
         when(redis.execute(any(DefaultRedisScript.class), anyList(), any(), any()))
                 .thenReturn(1L);
         when(idGenerator.nextId()).thenReturn(101L);
@@ -258,5 +284,17 @@ class RelationApplicationBoundaryTest {
                             "toUserId");
             assertThat(event.getThrowableProxy()).isNull();
         });
+    }
+
+    private void allowExistingUsers() {
+        when(userMapper.findById(11L)).thenReturn(User.builder()
+                .id(11L)
+                .nickname("actor")
+                .avatar("avatar.png")
+                .build());
+        when(userMapper.findById(22L)).thenReturn(User.builder()
+                .id(22L)
+                .nickname("target")
+                .build());
     }
 }

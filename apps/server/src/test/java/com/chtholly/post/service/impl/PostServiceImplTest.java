@@ -15,7 +15,8 @@ import com.chtholly.relation.outbox.OutboxMapper;
 import com.chtholly.tag.service.TagService;
 import com.chtholly.search.index.SearchIndexService;
 import com.chtholly.post.model.Post;
-import com.chtholly.storage.config.OssProperties;
+import com.chtholly.post.outbox.PostOutboxProjectionProcessor;
+import com.chtholly.storage.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -75,6 +76,10 @@ class PostServiceImplTest {
     private PostDetailQueryService detailQueryService;
     @Mock
     private PostBackgroundQueryService backgroundQueryService;
+    @Mock
+    private PostOutboxProjectionProcessor projectionProcessor;
+    @Mock
+    private StorageService storageService;
 
     private Cache<String, PageResponse<FeedItemResponse>> feedPublicCache;
     private Cache<String, PostDetailResponse> postDetailCache;
@@ -87,27 +92,27 @@ class PostServiceImplTest {
 
         lenient().when(redis.opsForSet()).thenReturn(setOperations);
         lenient().when(redis.opsForZSet()).thenReturn(zSetOperations);
+        lenient().when(outboxMapper.insert(anyLong(), anyString(), anyLong(), anyString(), anyString()))
+                .thenReturn(1);
 
-        OssProperties ossProperties = new OssProperties();
         PostCacheInvalidator cacheInvalidator =
                 new PostCacheInvalidator(redis, feedPublicCache, postDetailCache);
         SnowflakeIdGenerator idGenerator = new SnowflakeIdGenerator();
         ObjectMapper objectMapper = new ObjectMapper();
         PostPayloadCodec payloadCodec = new PostPayloadCodec(objectMapper);
         PostOutboxWriter outboxWriter = new PostOutboxWriter(outboxMapper, objectMapper, idGenerator);
-        PostSearchCoordinator searchCoordinator =
-                new PostSearchCoordinator(searchIndexService, ragIndexService);
+        PostCommittedSideEffectCoordinator sideEffectCoordinator =
+                new PostCommittedSideEffectCoordinator(projectionProcessor, eventPublisher);
         PostMutationCacheCoordinator cacheCoordinator =
                 new PostMutationCacheCoordinator(cacheInvalidator, postFeedService);
         PostDraftCommandService draftCommandService = new PostDraftCommandService(
-                mapper, idGenerator, ossProperties, cacheCoordinator, searchCoordinator);
+                mapper, idGenerator, storageService, outboxWriter, sideEffectCoordinator, cacheCoordinator);
         PostMetadataCommandService metadataCommandService = new PostMetadataCommandService(
-                mapper, payloadCodec, tagService, outboxWriter, searchCoordinator, cacheCoordinator);
+                mapper, payloadCodec, tagService, outboxWriter, sideEffectCoordinator, cacheCoordinator);
         PostPublicationCommandService publicationCommandService = new PostPublicationCommandService(
-                mapper, payloadCodec, tagService, userCounterService, outboxWriter,
-                searchCoordinator, eventPublisher, cacheCoordinator);
+                mapper, payloadCodec, tagService, outboxWriter, sideEffectCoordinator, cacheCoordinator);
         PostDeletionCommandService deletionCommandService = new PostDeletionCommandService(
-                mapper, payloadCodec, tagService, outboxWriter, searchCoordinator, cacheCoordinator);
+                mapper, payloadCodec, tagService, outboxWriter, sideEffectCoordinator, cacheCoordinator);
 
         service = new PostServiceImpl(
                 draftCommandService,
@@ -123,6 +128,16 @@ class PostServiceImplTest {
                 .id(postId)
                 .creatorId(creatorId)
                 .status("draft")
+                .tags("[]")
+                .build();
+    }
+
+    private Post publishedOwnedBy(long postId, long creatorId) {
+        return Post.builder()
+                .id(postId)
+                .creatorId(creatorId)
+                .status("published")
+                .visible("public")
                 .tags("[]")
                 .build();
     }
@@ -149,6 +164,7 @@ class PostServiceImplTest {
     void publishPropagatesOutboxFailure() {
         long creatorId = 9L;
         long postId = 42L;
+        when(mapper.findDraftByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, creatorId));
         when(mapper.publish(postId, creatorId)).thenReturn(1);
         when(mapper.findById(postId)).thenReturn(null);
         doThrow(new IllegalStateException("outbox down"))
@@ -161,20 +177,97 @@ class PostServiceImplTest {
     }
 
     @Test
+    void nonDraftPublishDoesNotEmitOutboxOrDerivedEffects() {
+        long creatorId = 9L;
+        long postId = 42L;
+
+        assertThatThrownBy(() -> service.publish(creatorId, postId))
+                .isInstanceOf(com.chtholly.common.exception.BusinessException.class);
+
+        verify(outboxMapper, never()).insert(anyLong(), anyString(), anyLong(), anyString(), anyString());
+        verify(userCounterService, never()).invalidateReactionCounters(creatorId);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void zeroRowOutboxInsertAbortsPublication() {
+        long creatorId = 9L;
+        long postId = 42L;
+        when(mapper.findDraftByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, creatorId));
+        when(mapper.publish(postId, creatorId)).thenReturn(1);
+        when(mapper.findById(postId)).thenReturn(null);
+        when(outboxMapper.insert(anyLong(), eq("post"), eq(postId), eq("PostPublished"), anyString()))
+                .thenReturn(0);
+
+        assertThatThrownBy(() -> service.publish(creatorId, postId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Post Outbox insert affected 0 rows");
+
+        verify(userCounterService, never()).invalidateReactionCounters(creatorId);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
     void updateTopInvalidatesMyPublishedCache() {
         long creatorId = 9L;
         long postId = 42L;
+        when(mapper.findByIdForUpdate(postId)).thenReturn(publishedOwnedBy(postId, creatorId));
         when(mapper.updateTop(postId, creatorId, true)).thenReturn(1);
 
         service.updateTop(creatorId, postId, true);
 
+        verify(outboxMapper).insert(
+                anyLong(), eq("post"), eq(postId), eq("PostTopChanged"), anyString());
         verify(postFeedService).invalidateMyPublishedCache(creatorId);
+        verify(postFeedService, never()).invalidateFollowingAuthorCacheStrict(creatorId);
+        verify(redis, never()).delete("feed:public:pages");
+    }
+
+    @Test
+    void publishedMetadataPatchWithoutTagsPreservesTagUsage() {
+        long creatorId = 9L;
+        long postId = 45L;
+        Post published = Post.builder()
+                .id(postId)
+                .creatorId(creatorId)
+                .status("published")
+                .visible("public")
+                .tags("[\"animation\"]")
+                .build();
+        when(mapper.findByIdForUpdate(postId)).thenReturn(published);
+        when(mapper.updateMetadata(any())).thenReturn(1);
+
+        service.updateMetadata(
+                creatorId, postId, "new title", null, null, null, null, null, "new description");
+
+        verify(tagService, never()).syncPublishedPostTags(anyLong(), any(), any());
+    }
+
+    @Test
+    void publishedMetadataPatchWithExplicitEmptyTagsReleasesTagUsage() {
+        long creatorId = 9L;
+        long postId = 46L;
+        Post published = Post.builder()
+                .id(postId)
+                .creatorId(creatorId)
+                .status("published")
+                .visible("public")
+                .tags("[\"animation\"]")
+                .build();
+        when(mapper.findByIdForUpdate(postId)).thenReturn(published);
+        when(mapper.updateMetadata(any())).thenReturn(1);
+
+        service.updateMetadata(
+                creatorId, postId, null, null, List.of(), null, null, null, null);
+
+        verify(tagService).syncPublishedPostTags(creatorId, List.of("animation"), List.of());
     }
 
     @Test
     void updateVisibilitySynchronizesSearchAndInvalidatesAllPublicFeeds() {
         long creatorId = 9L;
         long postId = 42L;
+        when(mapper.findByIdForUpdate(postId)).thenReturn(publishedOwnedBy(postId, creatorId));
         when(mapper.updateVisibility(postId, creatorId, "private")).thenReturn(1);
         when(zSetOperations.range("feed:public:pages", 0, -1)).thenReturn(Set.of());
 
@@ -182,9 +275,45 @@ class PostServiceImplTest {
 
         verify(outboxMapper).insert(
                 anyLong(), eq("post"), eq(postId), eq("PostVisibilityChanged"), anyString());
-        verify(searchIndexService).upsertPost(postId);
+        verify(projectionProcessor).process(anyLong(), eq("PostVisibilityChanged"), eq(postId));
         verify(redis).delete("feed:public:pages");
         verify(postFeedService).invalidateMyPublishedCache(creatorId);
+        verify(postFeedService, never()).invalidateFollowingAuthorCacheStrict(creatorId);
+        verify(postFeedService).invalidateFollowingAuthorCache(creatorId);
+    }
+
+    @Test
+    void adminVisibilityUsesTheSameOutboxSearchAndAuthorCacheBoundary() {
+        long creatorId = 9L;
+        long postId = 43L;
+        when(mapper.findByIdForUpdate(postId)).thenReturn(publishedOwnedBy(postId, creatorId));
+        when(mapper.updateVisibilityById(postId, "private")).thenReturn(1);
+        when(zSetOperations.range("feed:public:pages", 0, -1)).thenReturn(Set.of());
+
+        service.adminUpdateVisibility(postId, "private");
+
+        verify(outboxMapper).insert(
+                anyLong(), eq("post"), eq(postId), eq("PostVisibilityChanged"), anyString());
+        verify(projectionProcessor).process(anyLong(), eq("PostVisibilityChanged"), eq(postId));
+        verify(redis).delete("feed:public:pages");
+        verify(postFeedService).invalidateMyPublishedCache(creatorId);
+        verify(postFeedService, never()).invalidateFollowingAuthorCacheStrict(creatorId);
+        verify(postFeedService).invalidateFollowingAuthorCache(creatorId);
+    }
+
+    @Test
+    void deletingPublishedPostUpdatesSearchCounterAndAuthorCaches() {
+        long creatorId = 9L;
+        long postId = 44L;
+        when(mapper.findByIdForUpdate(postId)).thenReturn(publishedOwnedBy(postId, creatorId));
+        when(mapper.softDelete(postId, creatorId)).thenReturn(1);
+
+        service.delete(creatorId, postId);
+
+        verify(projectionProcessor).process(anyLong(), eq("PostDeleted"), eq(postId));
+        verify(postFeedService).invalidateMyPublishedCache(creatorId);
+        verify(postFeedService, never()).invalidateFollowingAuthorCacheStrict(creatorId);
+        verify(postFeedService).invalidateFollowingAuthorCache(creatorId);
     }
 
     @Test
@@ -199,7 +328,7 @@ class PostServiceImplTest {
         feedPublicCache.put(currentPageKey, PageResponse.offset(List.of(), 1, 20, 0L));
         feedPublicCache.put(previousPageKey, PageResponse.offset(List.of(), 2, 20, 0L));
 
-        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(mapper.findByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(currentIndexKey)).thenReturn(Set.of(currentPageKey, ""));
         when(setOperations.members(previousIndexKey)).thenReturn(Set.of(previousPageKey));
@@ -219,7 +348,7 @@ class PostServiceImplTest {
         String currentIndexKey = "feed:public:index:" + postId + ":" + hourSlot;
         String stalePageKey = "feed:public:10:9:v1";
 
-        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(mapper.findByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(currentIndexKey)).thenReturn(Set.of(stalePageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
@@ -237,7 +366,7 @@ class PostServiceImplTest {
         String pageKey = "feed:public:20:3:v1";
         feedPublicCache.put(pageKey, PageResponse.offset(List.of(), 3, 20, 0L));
 
-        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(mapper.findByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(setOperations.members(indexKey)).thenReturn(Set.of(pageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
         when(mapper.softDelete(postId, 1L)).thenReturn(1);
@@ -249,8 +378,10 @@ class PostServiceImplTest {
     }
 
     @Test
-    void confirmContentAlsoInvalidatesLocalPublicFeedBecauseItUsesDoubleDelete() {
+    void confirmContentAlsoInvalidatesLocalPublicFeedBecauseItUsesDoubleDelete() throws Exception {
         long postId = 9527L;
+        String objectKey = "posts/9527/content-uploads/" + "a".repeat(32) + ".md";
+        String sha256 = "b".repeat(64);
         long hourSlot = System.currentTimeMillis() / 3600000L;
         String indexKey = "feed:public:index:" + postId + ":" + hourSlot;
         String pageKey = "feed:public:20:4:v1";
@@ -258,11 +389,17 @@ class PostServiceImplTest {
 
         when(setOperations.members(indexKey)).thenReturn(Set.of(pageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
+        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(mapper.findDraftByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(storageService.objectMatches(objectKey, sha256, 100L)).thenReturn(true);
+        when(storageService.resolvePublicUrl(objectKey)).thenReturn("/uploads/" + objectKey);
         when(mapper.updateContent(any())).thenReturn(1);
 
-        service.confirmContent(1L, postId, "object-key", "etag", 100L, "sha256");
+        service.confirmContent(1L, postId, objectKey, "etag", 100L, sha256);
 
         assertThat(feedPublicCache.getIfPresent(pageKey)).isNull();
+        verify(outboxMapper).insert(
+                anyLong(), eq("post"), eq(postId), eq("PostContentConfirmed"), anyString());
         verify(setOperations, times(2)).members(indexKey);
     }
 
@@ -291,7 +428,7 @@ class PostServiceImplTest {
         System.out.println("  └─ feedPublicCache.getIfPresent('" + pageKey + "') = "
                 + (feedPublicCache.getIfPresent(pageKey) != null ? "✅ 存在" : "❌ 不存在"));
 
-        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(mapper.findByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(indexKey)).thenReturn(Set.of(pageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
@@ -332,7 +469,7 @@ class PostServiceImplTest {
         System.out.println("  └─ feedPublicCache.getIfPresent('" + stalePageKey + "') = "
                 + (feedPublicCache.getIfPresent(stalePageKey) != null ? "❌ 意外存在" : "✅ 不存在（符合预期）"));
 
-        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(mapper.findByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(indexKey)).thenReturn(Set.of(stalePageKey));
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
@@ -369,7 +506,7 @@ class PostServiceImplTest {
         System.out.println("  ├─ Redis 索引 Key: " + indexKey);
         System.out.println("  └─ 模拟脏数据集合: [" + validPageKey + ", null, \"\"]");
 
-        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(mapper.findByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(indexKey)).thenReturn(keysWithNulls);
         when(setOperations.members("feed:public:index:" + postId + ":" + (hourSlot - 1))).thenReturn(Set.of());
@@ -417,7 +554,7 @@ class PostServiceImplTest {
         System.out.println("  ├─ 当前小时缓存 '" + currentPageKey + "': ✅ 存在");
         System.out.println("  └─ 前一小时缓存 '" + previousPageKey + "': ✅ 存在");
 
-        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(mapper.findByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(currentIndexKey)).thenReturn(Set.of(currentPageKey));
         when(setOperations.members(previousIndexKey)).thenReturn(Set.of(previousPageKey));
@@ -463,7 +600,7 @@ class PostServiceImplTest {
         System.out.println("\n📦 [初始状态] 该帖子尚未被任何 feed 流缓存");
         System.out.println("  └─ Redis Set 返回空集合: Set.of()");
 
-        when(mapper.findById(postId)).thenReturn(draftOwnedBy(postId, 1L));
+        when(mapper.findByIdForUpdate(postId)).thenReturn(draftOwnedBy(postId, 1L));
         when(mapper.updateMetadata(any())).thenReturn(1);
         when(setOperations.members(currentIndexKey)).thenReturn(Set.of());
         when(setOperations.members(previousIndexKey)).thenReturn(Set.of());

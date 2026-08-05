@@ -12,7 +12,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Verifies the reaction recovery retention boundary with real MySQL syntax. */
+/** Verifies durable projection receipt retention boundaries with real MySQL syntax. */
 @Testcontainers(disabledWithoutDocker = true)
 class DataCleanupJobOutboxIT {
 
@@ -30,6 +30,7 @@ class DataCleanupJobOutboxIT {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
         jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute("DROP TABLE IF EXISTS post_projection_receipt");
         jdbc.execute("DROP TABLE IF EXISTS counter_event_inbox");
         jdbc.execute("DROP TABLE IF EXISTS outbox");
         jdbc.execute("""
@@ -40,6 +41,15 @@ class DataCleanupJobOutboxIT {
                     type VARCHAR(64) NOT NULL,
                     payload JSON NOT NULL,
                     created_at TIMESTAMP(3) NOT NULL
+                ) ENGINE=InnoDB
+                """);
+        jdbc.execute("""
+                CREATE TABLE post_projection_receipt (
+                    event_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+                    post_id BIGINT UNSIGNED NOT NULL,
+                    completed_at DATETIME(3) NOT NULL,
+                    CONSTRAINT fk_cleanup_post_projection_outbox
+                        FOREIGN KEY (event_id) REFERENCES outbox(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB
                 """);
         jdbc.execute("""
@@ -76,12 +86,20 @@ class DataCleanupJobOutboxIT {
         insertOutbox(5L, "counter_reaction", "CounterReactionChanged", false);
         insertInbox(5L, "2026-01-01 00:00:01.000");
         insertOutbox(6L, "counter_reaction", "UnexpectedReactionEvent", true);
+        insertOutbox(7L, "post", "PostPublished", true);
+        insertOutbox(8L, "post", "PostPublished", true);
+        jdbc.update("""
+                INSERT INTO post_projection_receipt (event_id, post_id, completed_at)
+                VALUES (8, 42, '2026-01-01 00:00:01.000')
+                """);
 
-        assertThat(cleanupJob.cleanOutbox()).isEqualTo(2);
+        assertThat(cleanupJob.cleanOutbox()).isEqualTo(3);
 
         List<Long> remaining = jdbc.queryForList(
                 "SELECT id FROM outbox ORDER BY id", Long.class);
-        assertThat(remaining).containsExactly(1L, 2L, 5L, 6L);
+        assertThat(remaining).containsExactly(1L, 2L, 5L, 6L, 7L);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM post_projection_receipt", Integer.class)).isZero();
     }
 
     private void insertOutbox(

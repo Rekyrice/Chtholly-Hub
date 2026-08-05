@@ -77,7 +77,7 @@ public class LocalFileStorageService implements StorageService {
     }
 
     @Override
-    public PresignedUrl generatePresignedPutUrl(String objectKey, String contentType) {
+    public PresignedUrl createUploadContract(String objectKey, String contentType) {
         StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
         Map<String, String> headers = contentType != null && !contentType.isBlank()
                 ? Map.of("Content-Type", contentType.trim().toLowerCase())
@@ -89,6 +89,9 @@ public class LocalFileStorageService implements StorageService {
     public void uploadObject(String objectKey, InputStream inputStream, String contentType, long size)
             throws IOException {
         StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
+        if (StorageObjectKeyValidator.isImmutableObjectKey(objectKey)) {
+            throw new IOException("immutable object key requires verified upload: " + objectKey);
+        }
         writeObject(objectKey, inputStream, size, null);
     }
 

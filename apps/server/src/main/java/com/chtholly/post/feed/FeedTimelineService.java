@@ -1,6 +1,8 @@
 package com.chtholly.post.feed;
 
 import com.chtholly.post.mapper.PostMapper;
+import com.chtholly.post.model.Post;
+import com.chtholly.post.model.PostFeedRow;
 import com.chtholly.relation.mapper.RelationMapper;
 import com.chtholly.relation.service.RelationService;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class FeedTimelineService {
 
+    /** One bounded Redis rank window and its raw scan progress. */
+    public record TimelineCandidateBatch(List<Long> postIds, int scannedCount, boolean exhausted) {
+        public TimelineCandidateBatch {
+            postIds = postIds == null ? List.of() : List.copyOf(postIds);
+        }
+    }
+
     static final String TIMELINE_KEY_PREFIX = "feed:timeline:";
     static final String BIGV_AUTHORS_KEY = "feed:bigv:authors";
 
@@ -41,37 +50,118 @@ public class FeedTimelineService {
      */
     public void onPostPublished(long authorId, long postId, Instant publishTime) {
         int threshold = properties.getBigv().getThreshold();
-        int followerCount = relationMapper.countFollowerActive(authorId);
+        String authorMember = String.valueOf(authorId);
 
-        if (followerCount >= threshold) {
-            redis.opsForSet().add(BIGV_AUTHORS_KEY, String.valueOf(authorId));
-            log.debug("feed.timeline push skipped bigv authorId={} followers={}", authorId, followerCount);
+        if (threshold <= 0) {
+            redis.opsForSet().add(BIGV_AUTHORS_KEY, authorMember);
+            log.debug("feed.timeline push skipped bigv authorId={} threshold={}", authorId, threshold);
             return;
         }
 
-        double score = publishTime.toEpochMilli();
-        String postIdStr = String.valueOf(postId);
-        int offset = 0;
-        int pushed = 0;
-
-        while (true) {
-            List<Long> followerIds = relationService.followers(authorId, FOLLOWER_PAGE_SIZE, offset);
-            if (followerIds.isEmpty()) {
-                break;
-            }
-            for (Long followerId : followerIds) {
-                String key = timelineKey(followerId);
-                redis.opsForZSet().add(key, postIdStr, score);
-                trimOldEntries(followerId);
-            }
-            pushed += followerIds.size();
-            if (followerIds.size() < FOLLOWER_PAGE_SIZE) {
-                break;
-            }
-            offset += FOLLOWER_PAGE_SIZE;
+        List<Long> followerSnapshot = authoritativeFollowerSnapshot(authorId, threshold);
+        if (followerSnapshot.size() >= threshold) {
+            redis.opsForSet().add(BIGV_AUTHORS_KEY, authorMember);
+            log.debug("feed.timeline push skipped bigv authorId={} followersAtLeast={}",
+                    authorId, followerSnapshot.size());
+            return;
         }
 
-        log.info("feed.timeline pushed postId={} authorId={} followers={}", postId, authorId, pushed);
+        if (Boolean.TRUE.equals(redis.opsForSet().isMember(BIGV_AUTHORS_KEY, authorMember))) {
+            backfillAuthorTimeline(authorId, followerSnapshot);
+            redis.opsForSet().remove(BIGV_AUTHORS_KEY, authorMember);
+            log.info("feed.timeline bigv backfill completed authorId={} followers={}",
+                    authorId, followerSnapshot.size());
+            return;
+        }
+        redis.opsForSet().remove(BIGV_AUTHORS_KEY, authorMember);
+
+        pushPostToFollowers(authorId, postId, publishTime, followerSnapshot);
+    }
+
+    private List<Long> authoritativeFollowerSnapshot(long authorId, int limit) {
+        List<Long> followerIds = relationMapper.listActiveFollowerIdsByTarget(authorId, limit);
+        if (followerIds == null || followerIds.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new IllegalStateException("Authoritative follower snapshot is invalid for author " + authorId);
+        }
+        return List.copyOf(followerIds);
+    }
+
+    private void backfillAuthorTimeline(long authorId, List<Long> followerIds) {
+        Instant since = Instant.now().minus(
+                properties.getTimeline().getRetentionDays(), ChronoUnit.DAYS);
+        List<PostFeedRow> rows = postMapper.listRecentPublicByCreators(
+                List.of(authorId), since, 10_000);
+        for (Long followerId : followerIds) {
+            String key = timelineKey(followerId);
+            for (PostFeedRow row : rows) {
+                if (row != null && row.getId() != null && row.getPublishTime() != null) {
+                    redis.opsForZSet().add(
+                            key,
+                            String.valueOf(row.getId()),
+                            row.getPublishTime().toEpochMilli());
+                }
+            }
+            trimOldEntries(followerId);
+        }
+    }
+
+    private void pushPostToFollowers(
+            long authorId,
+            long postId,
+            Instant publishTime,
+            List<Long> followerIds) {
+        double score = publishTime.toEpochMilli();
+        String postIdStr = String.valueOf(postId);
+        for (Long followerId : followerIds) {
+            String key = timelineKey(followerId);
+            redis.opsForZSet().add(key, postIdStr, score);
+            trimOldEntries(followerId);
+        }
+        log.info("feed.timeline pushed postId={} authorId={} followers={}",
+                postId, authorId, followerIds.size());
+    }
+
+    /**
+     * Reconciles one post in follower timelines from its authoritative MySQL state.
+     * ZSET add/remove operations are idempotent, so this method is safe for Outbox replay.
+     */
+    public void reconcilePost(long postId, Post post) {
+        if (post == null || post.getCreatorId() == null) {
+            return;
+        }
+        boolean visibleToFollowers = "published".equals(post.getStatus())
+                && ("public".equals(post.getVisible()) || "followers".equals(post.getVisible()))
+                && post.getPublishTime() != null;
+        if (visibleToFollowers) {
+            onPostPublished(post.getCreatorId(), postId, post.getPublishTime());
+            return;
+        }
+        removePostFromFollowers(post.getCreatorId(), postId);
+    }
+
+    private void removePostFromFollowers(long authorId, long postId) {
+        String member = String.valueOf(postId);
+        long afterFollowerId = 0L;
+        while (true) {
+            List<Long> followerIds = relationMapper.listActiveFollowerIdsByTargetAfter(
+                    authorId, afterFollowerId, FOLLOWER_PAGE_SIZE);
+            if (followerIds == null) {
+                throw new IllegalStateException("Authoritative follower page is invalid for author " + authorId);
+            }
+            if (followerIds.isEmpty()) {
+                return;
+            }
+            for (Long followerId : followerIds) {
+                if (followerId == null || followerId <= afterFollowerId) {
+                    throw new IllegalStateException("Authoritative follower page is not strictly ordered");
+                }
+                redis.opsForZSet().remove(timelineKey(followerId), member);
+                afterFollowerId = followerId;
+            }
+            if (followerIds.size() < FOLLOWER_PAGE_SIZE) {
+                return;
+            }
+        }
     }
 
     /**
@@ -94,13 +184,26 @@ public class FeedTimelineService {
      * 从 timeline ZSet 倒序读取 postId 列表。
      */
     public List<Long> getTimelinePostIds(long userId, int limit) {
-        if (limit <= 0) {
-            return Collections.emptyList();
+        return getTimelinePostIdBatch(userId, 0L, limit).postIds();
+    }
+
+    /**
+     * Reads one bounded descending-rank window without treating unauthorized gaps as timeline end.
+     *
+     * @param userId timeline owner
+     * @param startRank zero-based inclusive Redis rank
+     * @param limit maximum raw members to scan
+     * @return parsed identifiers plus raw progress and end-of-timeline state
+     */
+    public TimelineCandidateBatch getTimelinePostIdBatch(long userId, long startRank, int limit) {
+        if (startRank < 0 || limit <= 0) {
+            return new TimelineCandidateBatch(List.of(), 0, true);
         }
         String key = timelineKey(userId);
-        Set<String> members = redis.opsForZSet().reverseRange(key, 0, limit - 1L);
+        Set<String> members = redis.opsForZSet().reverseRange(
+                key, startRank, startRank + limit - 1L);
         if (members == null || members.isEmpty()) {
-            return Collections.emptyList();
+            return new TimelineCandidateBatch(List.of(), 0, true);
         }
         List<Long> ids = new ArrayList<>(members.size());
         for (String m : members) {
@@ -110,7 +213,21 @@ public class FeedTimelineService {
                 // 跳过脏数据
             }
         }
-        return ids;
+        return new TimelineCandidateBatch(ids, members.size(), members.size() < limit);
+    }
+
+    /** Best-effort caller hook for removing rejected numeric candidates from a derived timeline. */
+    public void removeTimelinePostIds(long userId, List<Long> postIds) {
+        if (postIds == null || postIds.isEmpty()) {
+            return;
+        }
+        Object[] members = postIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::valueOf)
+                .toArray();
+        if (members.length > 0) {
+            redis.opsForZSet().remove(timelineKey(userId), members);
+        }
     }
 
     /**

@@ -33,24 +33,32 @@ public class PostMutationCacheCoordinator {
         afterCommit(() -> cacheInvalidator.invalidate(postId));
     }
 
-    void invalidateMineAfterCommit(long creatorId) {
-        afterCommit(() -> postFeedService.invalidateMyPublishedCache(creatorId));
+    void invalidateAuthorFeedsAfterCommit(long creatorId) {
+        afterCommit(() -> invalidateAuthorFeeds(creatorId));
+    }
+
+    void invalidatePublicStructureAfterCommit(long creatorId) {
+        afterCommit(() -> {
+            cacheInvalidator.invalidateAllPublicFeedPages();
+            invalidateAuthorFeeds(creatorId);
+        });
     }
 
     void invalidatePublicationAfterCommit(long postId, long creatorId) {
         afterCommit(() -> {
             cacheInvalidator.invalidate(postId);
             cacheInvalidator.invalidateAllPublicFeedPages();
-            postFeedService.invalidateMyPublishedCache(creatorId);
+            invalidateAuthorFeeds(creatorId);
         });
     }
 
-    void invalidateVisibilityAfterCommit(long creatorId, Runnable searchRefresh) {
-        afterCommit(() -> {
-            cacheInvalidator.invalidateAllPublicFeedPages();
-            postFeedService.invalidateMyPublishedCache(creatorId);
-            searchRefresh.run();
-        });
+    void invalidateVisibilityAfterCommit(long creatorId) {
+        invalidatePublicStructureAfterCommit(creatorId);
+    }
+
+    private void invalidateAuthorFeeds(long creatorId) {
+        postFeedService.invalidateMyPublishedCache(creatorId);
+        postFeedService.invalidateFollowingAuthorCache(creatorId);
     }
 
     private void afterCommit(Runnable action) {

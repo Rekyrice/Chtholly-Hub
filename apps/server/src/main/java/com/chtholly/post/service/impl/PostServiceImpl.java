@@ -51,9 +51,10 @@ public class PostServiceImpl implements PostService {
     }
 
     @Override
-    @Transactional
     public void confirmContent(long creatorId, long id, String objectKey, String etag, Long size, String sha256) {
-        draftCommands.confirmContent(creatorId, id, objectKey, etag, size, sha256);
+        PostDraftCommandService.PreparedContentBinding prepared = draftCommands.prepareContentBinding(
+                creatorId, id, objectKey, etag, size, sha256);
+        draftCommands.bindPreparedContent(prepared);
     }
 
     @Override

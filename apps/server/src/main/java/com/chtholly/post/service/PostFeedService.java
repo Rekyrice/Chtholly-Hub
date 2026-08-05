@@ -21,6 +21,33 @@ public interface PostFeedService {
      */
     void invalidateMyPublishedCache(long userId);
 
+    /**
+     * Invalidates personal published-feed caches and propagates storage failures.
+     *
+     * <p>Durable Outbox projection uses this variant so a failed Redis invalidation
+     * does not receive a completion receipt and remains replayable.</p>
+     *
+     * @param userId owner whose {@code feed:mine:*} pages should be dropped
+     */
+    void invalidateMyPublishedCacheStrict(long userId);
+
+    /**
+     * Invalidates the pull-mode following-feed cache for one author.
+     *
+     * @param authorId author whose cached recent posts should be dropped
+     */
+    void invalidateFollowingAuthorCache(long authorId);
+
+    /**
+     * Invalidates the pull-mode following-feed cache and propagates storage failures.
+     *
+     * <p>Durable Outbox projection uses this fail-closed variant so failed cache
+     * repairs remain replayable.</p>
+     *
+     * @param authorId author whose cached recent posts should be dropped
+     */
+    void invalidateFollowingAuthorCacheStrict(long authorId);
+
     /** 公开 Feed 页面缓存 Key，用于 ETag 计算。 */
     String publicFeedPageKey(Integer page, String cursor, int size, Long ownerId, String tag);
 }

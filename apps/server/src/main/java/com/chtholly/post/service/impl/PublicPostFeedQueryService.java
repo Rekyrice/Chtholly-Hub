@@ -102,7 +102,7 @@ public class PublicPostFeedQueryService {
 
         PageResponse<FeedItemResponse> cached = readFragments(idsKey, hasMoreKey, page, safeSize, currentUserId);
         if (cached != null) {
-            cacheGateway.putLocal(localPageKey, cached);
+            cacheGateway.putLocal(localPageKey, cacheGateway.stripUserFlags(cached));
             cacheGateway.recordItemHotKeys(cached.items());
             log.info("feed.public source=3tier localPageKey={} page={} size={}", localPageKey, page, safeSize);
             return cached;
@@ -112,7 +112,7 @@ public class PublicPostFeedQueryService {
             PageResponse<FeedItemResponse> afterFlight =
                     readFragments(idsKey, hasMoreKey, page, safeSize, currentUserId);
             if (afterFlight != null) {
-                cacheGateway.putLocal(localPageKey, afterFlight);
+                cacheGateway.putLocal(localPageKey, cacheGateway.stripUserFlags(afterFlight));
                 cacheGateway.recordItemHotKeys(afterFlight.items());
                 log.info("feed.public source=3tier(after-flight) localPageKey={} page={} size={}",
                         localPageKey, page, safeSize);

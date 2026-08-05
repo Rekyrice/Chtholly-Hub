@@ -19,7 +19,7 @@
         VALUES (#{id}, #{fromUserId}, #{toUserId}, #{relStatus}, NOW(3), NOW(3))
     </insert>
     <update id="activateFollowing">
-        UPDATE following SET rel_status=1, updated_at=NOW(3)
+        UPDATE following SET rel_status=1, created_at=NOW(3), updated_at=NOW(3)
         WHERE from_user_id=#{fromUserId} AND to_user_id=#{toUserId} AND rel_status&lt;&gt;1
     </update>
     <update id="cancelFollowing">
@@ -31,6 +31,7 @@
         INSERT INTO follower (id, to_user_id, from_user_id, rel_status, created_at, updated_at)
         VALUES (#{id}, #{toUserId}, #{fromUserId}, #{relStatus}, #{createdAt}, NOW(3))
         ON DUPLICATE KEY UPDATE
+            id=VALUES(id),
             updated_at=IF(rel_status &lt;&gt; VALUES(rel_status) OR created_at &lt;&gt; VALUES(created_at),
                           VALUES(updated_at), updated_at),
             created_at=VALUES(created_at),
@@ -59,6 +60,24 @@
     <select id="listFollowers" resultType="long">
         SELECT from_user_id FROM follower WHERE to_user_id=#{toUserId} AND rel_status=1
         ORDER BY created_at DESC, from_user_id DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="listActiveFollowerIdsByTarget" resultType="long">
+        SELECT from_user_id
+        FROM following
+        WHERE to_user_id=#{toUserId} AND rel_status=1
+        ORDER BY from_user_id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="listActiveFollowerIdsByTargetAfter" resultType="long">
+        SELECT from_user_id
+        FROM following
+        WHERE to_user_id=#{toUserId}
+          AND rel_status=1
+          AND from_user_id &gt; #{afterFromUserId}
+        ORDER BY from_user_id ASC
+        LIMIT #{limit}
     </select>
 
     <select id="listFollowingPage" resultMap="RelationPageRowMap">

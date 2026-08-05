@@ -40,6 +40,10 @@
         SELECT * FROM posts WHERE id = #{id}
     </select>
 
+    <select id="findByIdForUpdate" parameterType="long" resultMap="PostResultMap">
+        SELECT * FROM posts WHERE id = #{id} FOR UPDATE
+    </select>
+
     <select id="findDraftByIdForUpdate" parameterType="long" resultMap="PostResultMap">
         SELECT * FROM posts WHERE id = #{id} AND status = 'draft' FOR UPDATE
     </select>
@@ -62,7 +66,7 @@
             <if test="contentSha256 != null">content_sha256 = #{contentSha256},</if>
             update_time = #{updateTime}
         </set>
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status = 'draft'
     </update>
 
     <update id="applyDraftEdit">
@@ -93,34 +97,34 @@
             <if test="type != null">type = #{type},</if>
             update_time = #{updateTime}
         </set>
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status != 'deleted'
     </update>
 
     <update id="publish">
         UPDATE posts
         SET status = 'published', publish_time = NOW(), update_time = NOW()
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status = 'draft'
     </update>
 
     <!-- 设置置顶 -->
     <update id="updateTop">
         UPDATE posts
         SET is_top = #{isTop}, update_time = NOW()
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status != 'deleted'
     </update>
 
     <!-- 设置可见性 -->
     <update id="updateVisibility">
         UPDATE posts
         SET visible = #{visible}, update_time = NOW()
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status != 'deleted'
     </update>
 
     <!-- 软删除（保留记录，仅状态修改） -->
     <update id="softDelete">
         UPDATE posts
         SET status = 'deleted', update_time = NOW()
-        WHERE id = #{id} AND creator_id = #{creatorId}
+        WHERE id = #{id} AND creator_id = #{creatorId} AND status != 'deleted'
     </update>
 
     <update id="updateVisibilityById">
@@ -132,7 +136,7 @@
     <update id="softDeleteById">
         UPDATE posts
         SET status = 'deleted', update_time = NOW()
-        WHERE id = #{id}
+        WHERE id = #{id} AND status != 'deleted'
     </update>
 
     <!-- 首页 Feed 列表查询（公开可见 + 已发布），置顶优先，其次按发布时间倒序 -->
@@ -383,6 +387,13 @@
         WHERE p.id = #{id}
     </select>
 
+    <select id="findDetailAudienceById" parameterType="long"
+            resultType="com.chtholly.post.model.PostDetailAudienceRow">
+        SELECT creator_id AS creatorId, status, visible
+        FROM posts
+        WHERE id = #{id}
+    </select>
+
     <select id="findDetailBySlug" parameterType="string" resultType="com.chtholly.post.model.PostDetailRow">
         SELECT
             p.id,
@@ -489,6 +500,64 @@
           AND p.visible IN ('public', 'followers')
     </select>
 
+    <select id="listFollowingFeedRowsByIds" resultType="com.chtholly.post.model.PostFeedRow">
+        SELECT
+            p.id,
+            p.title,
+            p.slug,
+            p.description,
+            p.tags,
+            p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
+            u.avatar AS authorAvatar,
+            u.nickname AS authorNickname,
+            u.tags_json AS authorTagJson,
+            p.publish_time AS publishTime,
+            p.is_top AS isTop
+        FROM posts p
+        JOIN users u ON p.creator_id = u.id
+        WHERE p.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+          </foreach>
+          AND p.status = 'published'
+          AND p.visible IN ('public', 'followers')
+          AND EXISTS (
+              SELECT 1
+              FROM following f
+              WHERE f.from_user_id = #{viewerId}
+                AND f.to_user_id = p.creator_id
+                AND f.rel_status = 1
+          )
+    </select>
+
+    <select id="listFollowingFeedAuthoritative" resultType="com.chtholly.post.model.PostFeedRow">
+        SELECT
+            p.id,
+            p.title,
+            p.slug,
+            p.description,
+            p.tags,
+            p.img_urls AS imgUrls,
+            p.creator_id AS authorId,
+            u.handle AS authorHandle,
+            u.avatar AS authorAvatar,
+            u.nickname AS authorNickname,
+            u.tags_json AS authorTagJson,
+            p.publish_time AS publishTime,
+            p.is_top AS isTop
+        FROM following f
+        JOIN posts p ON p.creator_id = f.to_user_id
+        JOIN users u ON u.id = p.creator_id
+        WHERE f.from_user_id = #{viewerId}
+          AND f.rel_status = 1
+          AND p.status = 'published'
+          AND p.visible IN ('public', 'followers')
+        ORDER BY p.publish_time DESC, p.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
     <select id="listPublishedIdsByCreatorSince" resultType="long">
         SELECT id
         FROM posts
@@ -522,7 +591,7 @@
             #{cid}
         </foreach>
           AND p.status = 'published'
-          AND p.visible = 'public'
+          AND p.visible IN ('public', 'followers')
           AND p.publish_time &gt;= #{since}
         ORDER BY p.publish_time DESC
         LIMIT #{limit}

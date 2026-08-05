@@ -123,17 +123,44 @@ class RelationMapperIT {
     }
 
     @Test
-    void inactiveRowCanBeActivatedOnceWithoutReplacingItsAuthorityId() {
+    void inactiveRowReactivationRefreshesTimestampsWithoutReplacingItsAuthorityId() {
         try (SqlSession session = sqlSessionFactory.openSession(true)) {
             RelationMapper mapper = session.getMapper(RelationMapper.class);
             mapper.insertFollowing(101L, 11L, 22L, 1);
             mapper.cancelFollowing(11L, 22L);
+            jdbc.update("""
+                    UPDATE following
+                    SET created_at=DATE_SUB(NOW(3), INTERVAL 2 DAY),
+                        updated_at=DATE_SUB(NOW(3), INTERVAL 2 DAY)
+                    WHERE id=101
+                    """);
+            mapper.insertFollowing(102L, 11L, 33L, 1);
+            jdbc.update("""
+                    UPDATE following
+                    SET created_at=DATE_SUB(NOW(3), INTERVAL 1 DAY),
+                        updated_at=DATE_SUB(NOW(3), INTERVAL 1 DAY)
+                    WHERE id=102
+                    """);
+            Timestamp previousNewest = jdbc.queryForObject(
+                    "SELECT created_at FROM following WHERE id=102",
+                    Timestamp.class);
 
             assertThat(mapper.activateFollowing(11L, 22L)).isEqualTo(1);
             assertThat(mapper.activateFollowing(11L, 22L)).isEqualTo(0);
             assertThat(jdbc.queryForObject(
                     "SELECT id FROM following WHERE from_user_id=11 AND to_user_id=22",
                     Long.class)).isEqualTo(101L);
+            Timestamp reactivatedCreatedAt = jdbc.queryForObject(
+                    "SELECT created_at FROM following WHERE id=101",
+                    Timestamp.class);
+            Timestamp reactivatedUpdatedAt = jdbc.queryForObject(
+                    "SELECT updated_at FROM following WHERE id=101",
+                    Timestamp.class);
+            assertThat(reactivatedCreatedAt).isAfter(previousNewest);
+            assertThat(reactivatedUpdatedAt).isEqualTo(reactivatedCreatedAt);
+            assertThat(mapper.listFollowingPage(11L, null, null, 10))
+                    .extracting(RelationMapper.RelationPageRow::relatedUserId)
+                    .containsExactly(22L, 33L);
         }
     }
 
@@ -163,6 +190,30 @@ class RelationMapperIT {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void followerReconciliationRestoresTheAuthoritativeRelationId() {
+        Timestamp stale = Timestamp.from(Instant.parse("2026-01-01T00:00:00Z"));
+        Timestamp authoritative =
+                Timestamp.from(Instant.parse("2026-01-02T00:00:00Z"));
+        insertFollowerRow(999L, 22L, 11L, stale);
+
+        try (SqlSession session = sqlSessionFactory.openSession(true)) {
+            RelationMapper mapper = session.getMapper(RelationMapper.class);
+
+            assertThat(mapper.insertFollower(
+                    101L, 22L, 11L, 1, authoritative)).isEqualTo(2);
+        }
+
+        assertThat(jdbc.queryForObject("""
+                SELECT id FROM follower
+                WHERE to_user_id=22 AND from_user_id=11
+                """, Long.class)).isEqualTo(101L);
+        assertThat(jdbc.queryForObject("""
+                SELECT created_at FROM follower
+                WHERE to_user_id=22 AND from_user_id=11
+                """, Timestamp.class)).isEqualTo(authoritative);
     }
 
     @Test

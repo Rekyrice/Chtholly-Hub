@@ -6,6 +6,7 @@ import com.chtholly.common.util.SensitiveDataUtil;
 import com.chtholly.profile.api.dto.ProfileResponse;
 import com.chtholly.relation.mapper.RelationMapper;
 import com.chtholly.relation.mapper.RelationMapper.RelationPageRow;
+import com.chtholly.relation.service.ActiveFollowingReader;
 import com.chtholly.relation.util.RelationCursor;
 import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
@@ -19,7 +20,7 @@ import java.util.Map;
 
 /** Coordinates relation status, pagination, and ordered profile assembly queries. */
 @Service
-public class RelationQueryService {
+public class RelationQueryService implements ActiveFollowingReader {
 
     private final RelationMapper relationMapper;
     private final RelationProjectionCache projectionCache;
@@ -37,7 +38,13 @@ public class RelationQueryService {
 
     /** Returns whether a directed relation exists in the authoritative store. */
     public boolean isFollowing(long fromUserId, long toUserId) {
-        return relationMapper.existsFollowing(fromUserId, toUserId) > 0;
+        return isActiveFollowing(fromUserId, toUserId);
+    }
+
+    /** Reads one active directed-follow fact from MySQL. */
+    @Override
+    public boolean isActiveFollowing(long viewerId, long authorId) {
+        return relationMapper.existsFollowing(viewerId, authorId) > 0;
     }
 
     /** Returns the stable following, followedBy, and mutual status map. */

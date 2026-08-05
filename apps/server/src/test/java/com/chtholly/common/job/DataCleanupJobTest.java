@@ -44,18 +44,22 @@ class DataCleanupJobTest {
     }
 
     @Test
-    void cleanOutboxPreservesCounterReactionRowsUntilTheirReceiptExists() {
+    void cleanOutboxPreservesCounterAndPostRowsUntilDurableReceiptsExist() {
         when(batchDeleteService.deleteInBatches(any(), eq(7))).thenReturn(4);
 
         assertThat(job.cleanOutbox()).isEqualTo(4);
 
         verify(batchDeleteService).deleteInBatches(
                 eq("DELETE FROM outbox WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY) "
-                        + "AND (aggregate_type <> 'counter_reaction' "
-                        + "OR EXISTS (SELECT 1 FROM counter_event_inbox i "
+                        + "AND ((aggregate_type = 'counter_reaction' "
+                        + "AND EXISTS (SELECT 1 FROM counter_event_inbox i "
                         + "WHERE i.event_id = CAST(outbox.id AS CHAR CHARACTER SET ascii) "
                         + "AND i.metric IN ('like', 'fav') "
-                        + "AND i.side_effects_published_at IS NOT NULL)) LIMIT 1000"),
+                        + "AND i.side_effects_published_at IS NOT NULL)) "
+                        + "OR (aggregate_type = 'post' "
+                        + "AND EXISTS (SELECT 1 FROM post_projection_receipt r "
+                        + "WHERE r.event_id = outbox.id)) "
+                        + "OR aggregate_type NOT IN ('counter_reaction', 'post')) LIMIT 1000"),
                 eq(7));
     }
 

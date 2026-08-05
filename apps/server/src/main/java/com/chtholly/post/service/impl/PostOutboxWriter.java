@@ -36,7 +36,7 @@ public class PostOutboxWriter {
         this.idGenerator = idGenerator;
     }
 
-    void write(long postId, String eventType, String operation) {
+    long write(long postId, String eventType, String operation) {
         final String payload;
         try {
             payload = objectMapper.writeValueAsString(
@@ -45,6 +45,12 @@ public class PostOutboxWriter {
             log.error("Failed to serialize Outbox event for post {}", postId, failure);
             throw new IllegalStateException("Failed to serialize Outbox event for post " + postId, failure);
         }
-        outboxMapper.insert(idGenerator.nextId(), "post", postId, eventType, payload);
+        long eventId = idGenerator.nextId();
+        int inserted = outboxMapper.insert(eventId, "post", postId, eventType, payload);
+        if (inserted != 1) {
+            throw new IllegalStateException(
+                    "Post Outbox insert affected " + inserted + " rows for post " + postId);
+        }
+        return eventId;
     }
 }

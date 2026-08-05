@@ -1,16 +1,16 @@
 package com.chtholly.storage.service;
 
 /**
- * Narrow read port used by storage use cases to authorize post-scoped object keys.
+ * Narrow read port used by storage use cases to authorize draft-scoped object keys.
  */
 public interface PostOwnershipReader {
 
     /**
-     * Checks whether a post exists and belongs to a user.
+     * Checks whether a post is still a draft and belongs to a user.
      *
      * @param postId post ID
      * @param userId expected owner ID
-     * @return {@code true} only when the persisted post belongs to the user
+     * @return {@code true} only when the persisted post is the user's draft
      */
-    boolean isOwnedBy(long postId, long userId);
+    boolean isDraftOwnedBy(long postId, long userId);
 }

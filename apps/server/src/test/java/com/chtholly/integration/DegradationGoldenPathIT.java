@@ -5,6 +5,8 @@ import com.chtholly.counter.schema.CounterKeys;
 import com.chtholly.counter.service.CounterReactionCommandService;
 import com.chtholly.post.service.PostService;
 import com.chtholly.relation.outbox.OutboxTopics;
+import com.chtholly.search.service.SearchService;
+import com.chtholly.search.service.SearchSort;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +46,9 @@ class DegradationGoldenPathIT extends AbstractGoldenPathIT {
     @Autowired
     private KafkaTemplate<String, String> kafka;
 
+    @Autowired
+    private SearchService searchService;
+
     @BeforeEach
     void setUpData() {
         cleanRedis();
@@ -77,6 +82,7 @@ class DegradationGoldenPathIT extends AbstractGoldenPathIT {
         String envelope = canalEnvelope(
                 eventId,
                 String.valueOf(outbox.get("aggregate_type")),
+                postId,
                 String.valueOf(outbox.get("type")),
                 String.valueOf(outbox.get("payload")));
         kafka.send(OutboxTopics.CANAL_OUTBOX, envelope).get(10, TimeUnit.SECONDS);
@@ -87,13 +93,25 @@ class DegradationGoldenPathIT extends AbstractGoldenPathIT {
                         WHERE source_topic = ? AND message_value LIKE ?
                         """, Long.class, OutboxTopics.CANAL_OUTBOX, "%" + eventId + "%"))
                         .isPositive());
-        assertThat(redis.hasKey("consumed:outbox:search:" + eventId)).isFalse();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM post_projection_receipt WHERE event_id = ?",
+                Long.class,
+                eventId)).isZero();
         assertThat(jdbc.queryForObject(
                 "SELECT status FROM posts WHERE id = ?", String.class, postId)).isEqualTo("published");
 
         ELASTICSEARCH_PROXY.setConnectionCut(false);
-        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
-                assertThat(redis.hasKey("consumed:outbox:search:" + eventId)).isTrue());
+        Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM post_projection_receipt WHERE event_id = ?",
+                    Long.class,
+                    eventId)).isEqualTo(1L);
+            var result = searchService.search(
+                    "Recoverable Search Post", 10, null, null, SearchSort.RELEVANCE, null);
+            assertThat(result.degraded()).isFalse();
+            assertThat(result.items()).anySatisfy(item ->
+                    assertThat(item.id()).isEqualTo(String.valueOf(postId)));
+        });
     }
 
     @Test

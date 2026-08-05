@@ -112,6 +112,30 @@ public interface RelationMapper {
                                        @Param("offset") int offset);
 
     /**
+     * Reads a bounded snapshot of active followers from the authoritative following table.
+     *
+     * @param toUserId followed user
+     * @param limit maximum rows
+     * @return follower user IDs ordered by ID
+     */
+    List<Long> listActiveFollowerIdsByTarget(
+            @Param("toUserId") Long toUserId,
+            @Param("limit") int limit);
+
+    /**
+     * Reads active follower IDs after a stable keyset cursor from the authoritative table.
+     *
+     * @param toUserId followed user
+     * @param afterFromUserId exclusive follower-ID cursor
+     * @param limit maximum rows
+     * @return follower user IDs ordered by ID
+     */
+    List<Long> listActiveFollowerIdsByTargetAfter(
+            @Param("toUserId") Long toUserId,
+            @Param("afterFromUserId") Long afterFromUserId,
+            @Param("limit") int limit);
+
+    /**
      * Reads a following page strictly after a composite cursor.
      *
      * @param fromUserId relation source

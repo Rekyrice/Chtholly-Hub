@@ -1,5 +1,7 @@
 package com.chtholly.relation.service.impl;
 
+import com.chtholly.common.exception.BusinessException;
+import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.notification.event.FollowCreatedEvent;
 import com.chtholly.post.id.SnowflakeIdGenerator;
 import com.chtholly.relation.event.FollowCanceledEvent;
@@ -61,6 +63,9 @@ public class RelationCommandService {
     /** Follows one user within the original transaction and event ordering. */
     @Transactional
     public boolean follow(long fromUserId, long toUserId) {
+        if (fromUserId == toUserId) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "不能关注自己");
+        }
         Long allowed = redis.execute(
                 tokenScript,
                 List.of("rl:follow:" + fromUserId),
@@ -69,6 +74,7 @@ public class RelationCommandService {
         if (!Long.valueOf(1L).equals(allowed)) {
             return false;
         }
+        User actor = validateFollowParticipants(fromUserId, toUserId);
 
         long relationId = idGenerator.nextId();
         int inserted = relationMapper.insertFollowing(
@@ -93,13 +99,27 @@ public class RelationCommandService {
                         fromUserId,
                         toUserId,
                         relationId));
-        User actor = userMapper.findById(fromUserId);
         eventPublisher.publishEvent(new FollowCreatedEvent(
                 fromUserId,
-                actor == null ? null : actor.getNickname(),
-                actor == null ? null : actor.getAvatar(),
+                actor.getNickname(),
+                actor.getAvatar(),
                 toUserId));
         return true;
+    }
+
+    private User validateFollowParticipants(long fromUserId, long toUserId) {
+        User source = userMapper.findById(fromUserId);
+        if (source == null) {
+            throw new BusinessException(
+                    ErrorCode.RESOURCE_NOT_FOUND,
+                    "发起关注的用户不存在");
+        }
+        if (userMapper.findById(toUserId) == null) {
+            throw new BusinessException(
+                    ErrorCode.RESOURCE_NOT_FOUND,
+                    "被关注的用户不存在");
+        }
+        return source;
     }
 
     private long activeRelationId(long fromUserId, long toUserId) {
@@ -156,12 +176,16 @@ public class RelationCommandService {
         }
         long outboxId = idGenerator.nextId();
         try {
-            outboxMapper.insert(
+            int inserted = outboxMapper.insert(
                     outboxId,
                     "following",
                     aggregateId,
                     eventType,
                     payload);
+            if (inserted != 1) {
+                throw new IllegalStateException(
+                        "Relation Outbox insert affected " + inserted + " rows");
+            }
         } catch (RuntimeException failure) {
             log.warn(
                     "Relation Outbox insert failed, eventType={}, aggregateId={}, errorType={}",

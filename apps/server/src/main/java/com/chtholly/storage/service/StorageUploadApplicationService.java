@@ -10,16 +10,20 @@ import com.chtholly.storage.StorageUploadValidator;
 import com.chtholly.storage.UploadContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.HexFormat;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -44,6 +48,7 @@ public class StorageUploadApplicationService {
      * @param storageService object storage boundary
      * @param postOwnershipReader post ownership read port
      */
+    @Autowired
     public StorageUploadApplicationService(
             StorageService storageService,
             PostOwnershipReader postOwnershipReader) {
@@ -51,7 +56,7 @@ public class StorageUploadApplicationService {
                 storageService,
                 postOwnershipReader,
                 Clock.systemUTC(),
-                () -> UUID.randomUUID().toString().replace("-", "").substring(0, 8));
+                () -> UUID.randomUUID().toString().replace("-", ""));
     }
 
     StorageUploadApplicationService(
@@ -66,13 +71,14 @@ public class StorageUploadApplicationService {
     }
 
     /**
-     * Authorizes a post-scoped upload and creates its presigned storage contract.
+     * Authorizes a draft-scoped upload and creates its storage contract.
      *
      * @param userId authenticated user ID
      * @param rawPostId post ID as received from the precision-safe HTTP payload
      * @param scene supported upload scene
      * @param contentType declared content type
-     * @param extension optional file extension
+     * @param extension compatibility metadata; the server derives the authoritative suffix from
+     *                  the validated content type
      * @return presigned upload result
      */
     public PresignResult presign(
@@ -87,8 +93,8 @@ public class StorageUploadApplicationService {
         if ("post_image".equals(scene)) {
             ImageUploadValidator.validateImageContentType(contentType);
         }
-        String objectKey = buildObjectKey(postId, scene, contentType, extension);
-        PresignedUrl presigned = storageService.generatePresignedPutUrl(objectKey, contentType);
+        String objectKey = buildObjectKey(postId, scene, contentType);
+        PresignedUrl presigned = storageService.createUploadContract(objectKey, contentType);
         return new PresignResult(
                 objectKey,
                 presigned.url(),
@@ -99,7 +105,7 @@ public class StorageUploadApplicationService {
     }
 
     /**
-     * Authorizes, validates, and persists a local multipart upload.
+     * Authorizes, validates, and persists an application-mediated multipart upload.
      *
      * @param userId authenticated user ID
      * @param objectKey requested post-scoped object key
@@ -114,11 +120,20 @@ public class StorageUploadApplicationService {
 
         byte[] data = readBytes(content);
         try {
-            storageService.uploadObject(
-                    objectKey,
-                    new ByteArrayInputStream(data),
-                    content.contentType(),
-                    data.length);
+            if (StorageObjectKeyValidator.isPostContentUploadObjectKey(objectKey)) {
+                storageService.uploadVerifiedObject(
+                        objectKey,
+                        new ByteArrayInputStream(data),
+                        content.contentType(),
+                        data.length,
+                        sha256(data));
+            } else {
+                storageService.uploadObject(
+                        objectKey,
+                        new ByteArrayInputStream(data),
+                        content.contentType(),
+                        data.length);
+            }
         } catch (IOException failure) {
             log.warn("Storage upload failed, objectKey={}: {}", objectKey, failure.getMessage(), failure);
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文件写入失败");
@@ -126,21 +141,23 @@ public class StorageUploadApplicationService {
         return DigestUtils.md5DigestAsHex(data);
     }
 
-    private String buildObjectKey(long postId, String scene, String contentType, String extension) {
-        String normalizedExtension = normalizeExtension(extension, contentType, scene);
+    private String buildObjectKey(long postId, String scene, String contentType) {
         if ("post_content".equals(scene)) {
-            return "posts/" + postId + "/content" + normalizedExtension;
+            return "posts/" + postId + "/content-uploads/"
+                    + randomKeySegmentSupplier.get()
+                    + StorageUploadValidator.extensionForPostContentType(contentType);
         }
         if ("post_image".equals(scene)) {
+            String extension = StorageUploadValidator.extensionForPostImageType(contentType);
             String date = DATE_FORMATTER.format(Instant.now(clock));
             return "posts/" + postId + "/images/" + date + "/"
-                    + randomKeySegmentSupplier.get() + normalizedExtension;
+                    + randomKeySegmentSupplier.get().substring(0, 8) + extension;
         }
         throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的上传场景");
     }
 
     private void requireOwnership(long postId, long userId) {
-        if (!postOwnershipReader.isOwnedBy(postId, userId)) {
+        if (!postOwnershipReader.isDraftOwnedBy(postId, userId)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
     }
@@ -179,26 +196,12 @@ public class StorageUploadApplicationService {
         }
     }
 
-    private static String normalizeExtension(String extension, String contentType, String scene) {
-        if (extension != null && !extension.isBlank()) {
-            return extension.startsWith(".") ? extension : "." + extension;
+    private static String sha256(byte[] data) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (NoSuchAlgorithmException failure) {
+            throw new IllegalStateException("SHA-256 is unavailable", failure);
         }
-        if ("post_content".equals(scene)) {
-            return switch (contentType) {
-                case "text/markdown" -> ".md";
-                case "text/html" -> ".html";
-                case "text/plain" -> ".txt";
-                case "application/json" -> ".json";
-                default -> ".bin";
-            };
-        }
-        return switch (contentType) {
-            case "image/jpeg" -> ".jpg";
-            case "image/png" -> ".png";
-            case "image/webp" -> ".webp";
-            case "image/gif" -> ".gif";
-            default -> ".img";
-        };
     }
 
     /**

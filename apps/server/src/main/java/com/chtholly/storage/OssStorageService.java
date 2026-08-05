@@ -1,10 +1,10 @@
 package com.chtholly.storage;
 
-import com.aliyun.oss.HttpMethod;
+import com.aliyun.oss.ClientException;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
+import com.aliyun.oss.OSSException;
 import com.aliyun.oss.model.CannedAccessControlList;
-import com.aliyun.oss.model.GeneratePresignedUrlRequest;
 import com.aliyun.oss.model.ObjectMetadata;
 import com.aliyun.oss.model.OSSObject;
 import com.aliyun.oss.model.PutObjectRequest;
@@ -19,14 +19,12 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URL;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.Date;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
@@ -41,6 +39,7 @@ import java.util.UUID;
 public class OssStorageService implements StorageService {
 
     private static final int PRESIGN_EXPIRES_SECONDS = 600;
+    private static final String UPLOAD_ENDPOINT = "/api/v1/storage/upload";
 
     private final OssProperties props;
 
@@ -62,31 +61,27 @@ public class OssStorageService implements StorageService {
     }
 
     @Override
-    public PresignedUrl generatePresignedPutUrl(String objectKey, String contentType) {
+    public PresignedUrl createUploadContract(String objectKey, String contentType) {
         ensureConfigured();
         StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
-        OSS client = newClient();
-        try {
-            Date expiration = new Date(System.currentTimeMillis() + PRESIGN_EXPIRES_SECONDS * 1000L);
-            GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
-                    props.getBucket(), objectKey, HttpMethod.PUT);
-            request.setExpiration(expiration);
-            if (contentType != null && !contentType.isBlank()) {
-                request.setContentType(contentType);
-            }
-            URL url = client.generatePresignedUrl(request);
-            Map<String, String> headers = contentType != null && !contentType.isBlank()
-                    ? Map.of("Content-Type", contentType)
-                    : Map.of();
-            return new PresignedUrl(url.toString(), headers, PRESIGN_EXPIRES_SECONDS, "PUT");
-        } finally {
-            client.shutdown();
-        }
+        Map<String, String> headers = contentType != null && !contentType.isBlank()
+                ? Map.of("Content-Type", contentType.trim().toLowerCase(Locale.ROOT))
+                : Map.of();
+        return new PresignedUrl(UPLOAD_ENDPOINT, headers, PRESIGN_EXPIRES_SECONDS, "POST");
     }
 
     @Override
-    public void uploadObject(String objectKey, InputStream inputStream, String contentType, long size) {
-        uploadObject(objectKey, inputStream, contentType, size, null);
+    public void uploadObject(String objectKey, InputStream inputStream, String contentType, long size)
+            throws IOException {
+        StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
+        if (StorageObjectKeyValidator.isImmutableObjectKey(objectKey)) {
+            throw new IOException("immutable object key requires verified upload: " + objectKey);
+        }
+        try {
+            uploadObject(objectKey, inputStream, contentType, size, null);
+        } catch (OSSException | ClientException failure) {
+            throw ossIOException("upload", objectKey, failure);
+        }
     }
 
     @Override
@@ -106,7 +101,16 @@ public class OssStorageService implements StorageService {
         if (!actualSha256.equalsIgnoreCase(sha256)) {
             throw new IOException("upload sha256 mismatch for " + objectKey);
         }
-        uploadObject(objectKey, new ByteArrayInputStream(bytes), contentType, size, actualSha256);
+        try {
+            uploadImmutableVerifiedObject(
+                    objectKey,
+                    new ByteArrayInputStream(bytes),
+                    contentType,
+                    size,
+                    actualSha256);
+        } catch (OSSException | ClientException failure) {
+            throw ossIOException("verified upload", objectKey, failure);
+        }
     }
 
     @Override
@@ -126,30 +130,10 @@ public class OssStorageService implements StorageService {
         ensureConfigured();
         StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
         requireSha256(sha256);
-        OSS client = newClient();
         try {
-            ObjectMetadata metadata = client.getObjectMetadata(props.getBucket(), objectKey);
-            if (metadata.getContentLength() != size) {
-                return false;
-            }
-            Map<String, String> userMetadata = metadata.getUserMetadata();
-            String storedSha256 = userMetadata == null ? null : userMetadata.entrySet().stream()
-                    .filter(entry -> "sha256".equalsIgnoreCase(entry.getKey()))
-                    .map(Map.Entry::getValue)
-                    .findFirst()
-                    .orElse(null);
-            if (storedSha256 != null && !storedSha256.isBlank()) {
-                return storedSha256.equalsIgnoreCase(sha256);
-            }
-
-            // 旧对象没有摘要元数据时下载校验，不能仅凭 object key 或 ETag 接受。
-            try (OSSObject object = client.getObject(props.getBucket(), objectKey);
-                 InputStream input = object.getObjectContent()) {
-                FileIdentity identity = digest(input);
-                return identity.size() == size && identity.sha256().equalsIgnoreCase(sha256);
-            }
-        } finally {
-            client.shutdown();
+            return objectMatchesWithClient(objectKey, sha256, size);
+        } catch (OSSException | ClientException failure) {
+            throw ossIOException("object verification", objectKey, failure);
         }
     }
 
@@ -196,6 +180,93 @@ public class OssStorageService implements StorageService {
         } finally {
             client.shutdown();
         }
+    }
+
+    private void uploadImmutableVerifiedObject(
+            String objectKey,
+            InputStream inputStream,
+            String contentType,
+            long size,
+            String sha256) throws IOException {
+        ensureConfigured();
+        StorageObjectKeyValidator.assertSafeObjectKey(objectKey);
+        OSS client = newClient();
+        try {
+            ObjectMetadata metadata = objectMetadata(contentType, size, sha256);
+            metadata.setHeader("x-oss-forbid-overwrite", "true");
+            try {
+                client.putObject(new PutObjectRequest(
+                        props.getBucket(), objectKey, inputStream, metadata));
+            } catch (OSSException conflict) {
+                if (!"FileAlreadyExists".equals(conflict.getErrorCode())) {
+                    throw conflict;
+                }
+                if (!objectMatches(client, objectKey, sha256, size)) {
+                    throw new IOException(
+                            "immutable object already exists with different content: " + objectKey,
+                            conflict);
+                }
+            }
+            client.setObjectAcl(props.getBucket(), objectKey, CannedAccessControlList.PublicRead);
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    private ObjectMetadata objectMetadata(String contentType, long size, String sha256) {
+        ObjectMetadata metadata = new ObjectMetadata();
+        if (contentType != null && !contentType.isBlank()) {
+            metadata.setContentType(contentType.trim());
+        }
+        if (size >= 0) {
+            metadata.setContentLength(size);
+        }
+        if (sha256 != null) {
+            metadata.addUserMetadata("sha256", sha256);
+        }
+        return metadata;
+    }
+
+    private boolean objectMatches(OSS client, String objectKey, String sha256, long size) throws IOException {
+        ObjectMetadata metadata = client.getObjectMetadata(props.getBucket(), objectKey);
+        if (metadata.getContentLength() != size) {
+            return false;
+        }
+        Map<String, String> userMetadata = metadata.getUserMetadata();
+        String storedSha256 = userMetadata == null ? null : userMetadata.entrySet().stream()
+                .filter(entry -> "sha256".equalsIgnoreCase(entry.getKey()))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
+        if (storedSha256 != null && !storedSha256.isBlank()) {
+            return storedSha256.equalsIgnoreCase(sha256);
+        }
+
+        try (OSSObject object = client.getObject(props.getBucket(), objectKey);
+             InputStream input = object.getObjectContent()) {
+            FileIdentity identity = digest(input);
+            return identity.size() == size && identity.sha256().equalsIgnoreCase(sha256);
+        }
+    }
+
+    private boolean objectMatchesWithClient(String objectKey, String sha256, long size) throws IOException {
+        OSS client = newClient();
+        try {
+            try {
+                return objectMatches(client, objectKey, sha256, size);
+            } catch (OSSException failure) {
+                if ("NoSuchKey".equals(failure.getErrorCode())) {
+                    return false;
+                }
+                throw failure;
+            }
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    private IOException ossIOException(String operation, String objectKey, RuntimeException failure) {
+        return new IOException("OSS " + operation + " failed for " + objectKey, failure);
     }
 
     private String publicUrl(String objectKey) {

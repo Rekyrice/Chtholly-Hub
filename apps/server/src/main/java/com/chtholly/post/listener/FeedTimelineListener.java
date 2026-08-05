@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.Set;
 
@@ -42,7 +44,8 @@ public class FeedTimelineListener {
     }
 
     @Async("notificationExecutor")
-    @EventListener
+    @TransactionalEventListener(
+            phase = TransactionPhase.AFTER_COMMIT)
     public void onFollowCanceled(FollowCanceledEvent event) {
         try {
             feedTimelineService.removeAuthorFromTimeline(event.fromUserId(), event.toUserId());

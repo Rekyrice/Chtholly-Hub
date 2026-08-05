@@ -60,4 +60,13 @@ public class PostSearchCoordinator {
                     postId, failure.getMessage(), failure);
         }
     }
+
+    void refreshRagAfterVisibilityChange(long postId) {
+        try {
+            ragIndexer.ensureIndexed(postId);
+        } catch (Exception failure) {
+            log.warn("RAG visibility refresh failed, post {} (Outbox replay may recover): {}",
+                    postId, failure.getMessage(), failure);
+        }
+    }
 }

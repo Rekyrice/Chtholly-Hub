@@ -46,11 +46,15 @@ public class DataCleanupJob {
     int cleanOutbox() {
         int days = cleanupProperties.outbox().retentionDays();
         String sql = "DELETE FROM outbox WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY) "
-                + "AND (aggregate_type <> 'counter_reaction' "
-                + "OR EXISTS (SELECT 1 FROM counter_event_inbox i "
+                + "AND ((aggregate_type = 'counter_reaction' "
+                + "AND EXISTS (SELECT 1 FROM counter_event_inbox i "
                 + "WHERE i.event_id = CAST(outbox.id AS CHAR CHARACTER SET ascii) "
                 + "AND i.metric IN ('like', 'fav') "
-                + "AND i.side_effects_published_at IS NOT NULL)) LIMIT "
+                + "AND i.side_effects_published_at IS NOT NULL)) "
+                + "OR (aggregate_type = 'post' "
+                + "AND EXISTS (SELECT 1 FROM post_projection_receipt r "
+                + "WHERE r.event_id = outbox.id)) "
+                + "OR aggregate_type NOT IN ('counter_reaction', 'post')) LIMIT "
                 + BatchDeleteService.BATCH_SIZE;
         return batchDeleteService.deleteInBatches(sql, days);
     }

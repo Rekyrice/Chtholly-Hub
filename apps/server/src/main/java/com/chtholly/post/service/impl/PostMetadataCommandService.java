@@ -18,7 +18,7 @@ public class PostMetadataCommandService {
     private final PostPayloadCodec payloadCodec;
     private final TagService tagService;
     private final PostOutboxWriter outboxWriter;
-    private final PostSearchCoordinator searchCoordinator;
+    private final PostCommittedSideEffectCoordinator sideEffectCoordinator;
     private final PostMutationCacheCoordinator cacheCoordinator;
 
     /**
@@ -28,7 +28,7 @@ public class PostMetadataCommandService {
      * @param payloadCodec stored JSON codec
      * @param tagService tag aggregate service
      * @param outboxWriter transactional Outbox writer
-     * @param searchCoordinator best-effort search coordinator
+     * @param sideEffectCoordinator committed side-effect boundary
      * @param cacheCoordinator mutation cache coordinator
      */
     public PostMetadataCommandService(
@@ -36,13 +36,13 @@ public class PostMetadataCommandService {
             PostPayloadCodec payloadCodec,
             TagService tagService,
             PostOutboxWriter outboxWriter,
-            PostSearchCoordinator searchCoordinator,
+            PostCommittedSideEffectCoordinator sideEffectCoordinator,
             PostMutationCacheCoordinator cacheCoordinator) {
         this.mapper = mapper;
         this.payloadCodec = payloadCodec;
         this.tagService = tagService;
         this.outboxWriter = outboxWriter;
-        this.searchCoordinator = searchCoordinator;
+        this.sideEffectCoordinator = sideEffectCoordinator;
         this.cacheCoordinator = cacheCoordinator;
     }
 
@@ -56,9 +56,14 @@ public class PostMetadataCommandService {
             String visible,
             Boolean top,
             String description) {
+        if (visible != null) {
+            requireValidVisibility(visible);
+        }
         cacheCoordinator.invalidateBeforeWrite(postId);
-        Post existing = mapper.findById(postId);
-        if (existing == null || !existing.getCreatorId().equals(creatorId)) {
+        Post existing = mapper.findByIdForUpdate(postId);
+        if (existing == null
+                || !existing.getCreatorId().equals(creatorId)
+                || "deleted".equals(existing.getStatus())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
         List<String> oldTags = payloadCodec.parseStringArray(existing.getTags());
@@ -79,35 +84,52 @@ public class PostMetadataCommandService {
         if (mapper.updateMetadata(post) == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
-        if (wasPublished) {
+        if (wasPublished && tags != null) {
             tagService.syncPublishedPostTags(creatorId, oldTags, tags);
-            searchCoordinator.upsert(postId);
         }
-        outboxWriter.write(postId, "PostMetadataUpdated", "upsert");
+        long eventId = outboxWriter.write(postId, "PostMetadataUpdated", "upsert");
         cacheCoordinator.invalidatePostAfterCommit(postId);
-        cacheCoordinator.invalidateMineAfterCommit(creatorId);
+        if (wasPublished && (visible != null || top != null)) {
+            cacheCoordinator.invalidatePublicStructureAfterCommit(creatorId);
+        } else {
+            cacheCoordinator.invalidateAuthorFeedsAfterCommit(creatorId);
+        }
+        sideEffectCoordinator.afterMetadataUpdated(eventId, postId);
     }
 
     void updateTop(long creatorId, long postId, boolean top) {
         cacheCoordinator.invalidateBeforeWrite(postId);
+        Post existing = mapper.findByIdForUpdate(postId);
+        if (existing == null
+                || !existing.getCreatorId().equals(creatorId)
+                || "deleted".equals(existing.getStatus())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
+        }
         if (mapper.updateTop(postId, creatorId, top) == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
+        long eventId = outboxWriter.write(postId, "PostTopChanged", "upsert");
         cacheCoordinator.invalidatePostAfterCommit(postId);
-        cacheCoordinator.invalidateMineAfterCommit(creatorId);
+        cacheCoordinator.invalidateAuthorFeedsAfterCommit(creatorId);
+        sideEffectCoordinator.afterTopChanged(eventId, postId);
     }
 
     void updateVisibility(long creatorId, long postId, String visible) {
         requireValidVisibility(visible);
         cacheCoordinator.invalidateBeforeWrite(postId);
+        Post existing = mapper.findByIdForUpdate(postId);
+        if (existing == null
+                || !existing.getCreatorId().equals(creatorId)
+                || "deleted".equals(existing.getStatus())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
+        }
         if (mapper.updateVisibility(postId, creatorId, visible) == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "草稿不存在或无权限");
         }
-        outboxWriter.write(postId, "PostVisibilityChanged", "upsert");
+        long eventId = outboxWriter.write(postId, "PostVisibilityChanged", "upsert");
         cacheCoordinator.invalidatePostAfterCommit(postId);
-        cacheCoordinator.invalidateVisibilityAfterCommit(
-                creatorId,
-                () -> searchCoordinator.upsert(postId));
+        cacheCoordinator.invalidateVisibilityAfterCommit(creatorId);
+        sideEffectCoordinator.afterVisibilityChanged(eventId, postId);
     }
 
     static void requireValidVisibility(String visible) {

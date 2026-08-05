@@ -91,6 +91,7 @@ class PostPublishingGoldenPathIT extends AbstractGoldenPathIT {
         kafka.send(OutboxTopics.CANAL_OUTBOX, canalEnvelope(
                 eventId,
                 String.valueOf(outbox.get("aggregate_type")),
+                postId,
                 String.valueOf(outbox.get("type")),
                 payload)).get();
 
@@ -102,7 +103,10 @@ class PostPublishingGoldenPathIT extends AbstractGoldenPathIT {
                 assertThat(item.id()).isEqualTo(String.valueOf(postId));
                 assertThat(item.title()).isEqualTo("Golden Kafka Search");
             });
-            assertThat(redis.hasKey("consumed:outbox:search:" + eventId)).isTrue();
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM post_projection_receipt WHERE event_id = ?",
+                    Long.class,
+                    eventId)).isEqualTo(1L);
         });
     }
 }
