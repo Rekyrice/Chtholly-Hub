@@ -2,6 +2,7 @@ package com.chtholly.auth.audit;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -15,7 +16,7 @@ public class LoginLogService {
     /**
      * 记录一次登录/注册成功事件。
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordSuccess(Long userId, String identifier, String channel, String ip, String userAgent) {
         record(userId, identifier, channel, ip, userAgent, "SUCCESS", null);
     }

@@ -2,8 +2,6 @@ package com.chtholly.auth.service;
 
 import com.chtholly.auth.api.dto.AuthResponse;
 import com.chtholly.auth.api.dto.RegisterRequest;
-import com.chtholly.auth.audit.LoginLogService;
-import com.chtholly.auth.event.UserRegisteredEvent;
 import com.chtholly.auth.model.ClientInfo;
 import com.chtholly.auth.model.IdentifierType;
 import com.chtholly.auth.verification.VerificationScene;
@@ -12,27 +10,21 @@ import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.user.domain.User;
 import com.chtholly.user.service.UserService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /** Coordinates handle and verified-identifier registration use cases. */
 @Service
 public class AuthRegistrationService {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(AuthRegistrationService.class);
-
     private final UserService userService;
     private final VerificationService verificationService;
     private final PasswordEncoder passwordEncoder;
     private final AuthIdentityPolicy identityPolicy;
     private final AuthTokenLifecycleService tokenLifecycleService;
-    private final LoginLogService loginLogService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final AuthRegistrationSideEffectCoordinator sideEffectCoordinator;
 
     /** Creates the registration use case. */
     public AuthRegistrationService(
@@ -41,18 +33,17 @@ public class AuthRegistrationService {
             PasswordEncoder passwordEncoder,
             AuthIdentityPolicy identityPolicy,
             AuthTokenLifecycleService tokenLifecycleService,
-            LoginLogService loginLogService,
-            ApplicationEventPublisher eventPublisher) {
+            AuthRegistrationSideEffectCoordinator sideEffectCoordinator) {
         this.userService = userService;
         this.verificationService = verificationService;
         this.passwordEncoder = passwordEncoder;
         this.identityPolicy = identityPolicy;
         this.tokenLifecycleService = tokenLifecycleService;
-        this.loginLogService = loginLogService;
-        this.eventPublisher = eventPublisher;
+        this.sideEffectCoordinator = sideEffectCoordinator;
     }
 
     /** Registers a user and preserves token, audit, and event ordering. */
+    @Transactional
     public AuthResponse register(
             RegisterRequest request,
             ClientInfo clientInfo) {
@@ -90,7 +81,7 @@ public class AuthRegistrationService {
                 .bio(null)
                 .tagsJson("[]")
                 .passwordHash(passwordEncoder.encode(
-                        request.password().trim()))
+                        request.password()))
                 .build();
         return createAndAuthenticate(user, handle, clientInfo);
     }
@@ -127,10 +118,10 @@ public class AuthRegistrationService {
                 .bio(null)
                 .tagsJson("[]")
                 .build();
-        if (StringUtils.hasText(request.password())) {
+        if (request.password() != null && !request.password().isEmpty()) {
             identityPolicy.validatePassword(request.password());
             user.setPasswordHash(passwordEncoder.encode(
-                    request.password().trim()));
+                    request.password()));
         }
         return createAndAuthenticate(user, identifier, clientInfo);
     }
@@ -140,25 +131,9 @@ public class AuthRegistrationService {
             String auditIdentifier,
             ClientInfo clientInfo) {
         userService.createUser(user);
-        var token = tokenLifecycleService.issue(user);
-        loginLogService.recordSuccess(
-                user.getId(),
-                auditIdentifier,
-                "REGISTER",
-                clientInfo.ip(),
-                clientInfo.userAgent());
-        publishUserRegistered(user);
+        var token = tokenLifecycleService.issueForPendingRegistration(user);
+        sideEffectCoordinator.afterCommit(
+                user, auditIdentifier, clientInfo);
         return new AuthResponse(AuthResponseMapper.toUser(user), token);
-    }
-
-    private void publishUserRegistered(User user) {
-        try {
-            eventPublisher.publishEvent(new UserRegisteredEvent(user));
-        } catch (Exception failure) {
-            log.warn(
-                    "UserRegisteredEvent failed, userId={}: {}",
-                    user.getId(),
-                    failure.getMessage());
-        }
     }
 }

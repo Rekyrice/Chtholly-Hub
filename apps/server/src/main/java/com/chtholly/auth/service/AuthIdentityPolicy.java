@@ -73,15 +73,14 @@ public class AuthIdentityPolicy {
                     ErrorCode.PASSWORD_POLICY_VIOLATION,
                     "密码不能为空");
         }
-        String trimmed = password.trim();
         int minLength = authProperties.getPassword().getMinLength();
-        if (trimmed.length() < minLength) {
+        if (password.length() < minLength) {
             throw new BusinessException(
                     ErrorCode.PASSWORD_POLICY_VIOLATION,
                     "密码长度至少" + minLength + "位");
         }
-        boolean hasLetter = trimmed.chars().anyMatch(Character::isLetter);
-        boolean hasDigit = trimmed.chars().anyMatch(Character::isDigit);
+        boolean hasLetter = password.chars().anyMatch(Character::isLetter);
+        boolean hasDigit = password.chars().anyMatch(Character::isDigit);
         if (!hasLetter || !hasDigit) {
             throw new BusinessException(
                     ErrorCode.PASSWORD_POLICY_VIOLATION,

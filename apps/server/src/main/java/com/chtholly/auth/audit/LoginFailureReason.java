@@ -4,5 +4,6 @@ package com.chtholly.auth.audit;
 public enum LoginFailureReason {
     WRONG_PASSWORD,
     ACCOUNT_LOCKED,
-    ACCOUNT_NOT_FOUND
+    ACCOUNT_NOT_FOUND,
+    USER_BANNED
 }

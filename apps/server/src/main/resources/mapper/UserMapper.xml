@@ -115,9 +115,23 @@
         )
     </select>
 
-    <update id="updatePassword">
+    <select id="findRefreshSessionEpoch" resultType="long">
+        SELECT refresh_session_epoch
+        FROM users
+        WHERE id = #{id}
+    </select>
+
+    <update id="advanceRefreshSessionEpoch">
+        UPDATE users
+        SET refresh_session_epoch = refresh_session_epoch + 1,
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updatePasswordAndAdvanceRefreshSessionEpoch">
         UPDATE users
         SET password_hash = #{passwordHash},
+            refresh_session_epoch = refresh_session_epoch + 1,
             updated_at = NOW()
         WHERE id = #{id}
     </update>

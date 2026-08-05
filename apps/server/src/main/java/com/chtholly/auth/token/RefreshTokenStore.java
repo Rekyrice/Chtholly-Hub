@@ -3,44 +3,92 @@ package com.chtholly.auth.token;
 import java.time.Duration;
 
 /**
- * 刷新令牌白名单存储接口。
- * <p>
- * 负责管理 Refresh Token 的有效性：存储、校验、撤销单个令牌与撤销用户全部令牌。
- * 实现可使用 Redis、数据库或其它持久化方案。
+ * Authority port for refresh-token membership and revocation.
+ *
+ * <p>Implementations may use Redis, a database, or another shared store, but
+ * must preserve cross-instance one-time rotation and user-wide revocation.</p>
  */
 public interface RefreshTokenStore {
 
     /**
-     * 存储刷新令牌白名单记录。
+     * Captures the user's current revocation epoch.
      *
-     * @param userId  用户 ID。
-     * @param tokenId 刷新令牌 ID（jti）。
-     * @param ttl     生存时间（过期后自动失效）。
+     * <p>The returned value can be supplied to
+     * {@link #storeTokenIfEpochMatches(long, String, Duration, long)} to
+     * fence token issuance across credential changes and user-wide
+     * revocation.</p>
+     *
+     * @param userId user ID
+     * @return current positive revocation epoch
+     */
+    long captureEpoch(long userId);
+
+    /**
+     * Stores one refresh-token membership record.
+     *
+     * @param userId user ID
+     * @param tokenId refresh-token JTI
+     * @param ttl token lifetime
      */
     void storeToken(long userId, String tokenId, Duration ttl);
 
     /**
-     * 校验刷新令牌是否仍然有效（在白名单内且未过期）。
+     * Stores one refresh-token membership record only when the user's
+     * current revocation epoch still matches a previously captured value.
      *
-     * @param userId  用户 ID。
-     * @param tokenId 刷新令牌 ID（jti）。
-     * @return 是否有效。
+     * @param userId user ID
+     * @param tokenId refresh-token JTI
+     * @param ttl token lifetime
+     * @param expectedEpoch epoch captured before credential validation
+     * @return whether the token was stored in the expected epoch
+     */
+    boolean storeTokenIfEpochMatches(
+            long userId,
+            String tokenId,
+            Duration ttl,
+            long expectedEpoch);
+
+    /**
+     * Checks whether one refresh token is still a current member.
+     *
+     * @param userId user ID
+     * @param tokenId refresh-token JTI
+     * @return whether the token is current and unexpired
      */
     boolean isTokenValid(long userId, String tokenId);
 
     /**
-     * 撤销指定刷新令牌（从白名单移除）。
+     * Atomically consumes one current token and stores its replacement.
      *
-     * @param userId  用户 ID。
-     * @param tokenId 刷新令牌 ID（jti）。
+     * <p>Every adapter must implement this operation using the authority's
+     * native concurrency primitive. A process-local default cannot preserve
+     * one-time semantics across adapter instances or application nodes.</p>
+     *
+     * @param userId user ID
+     * @param currentTokenId token ID being consumed
+     * @param replacementTokenId replacement token ID
+     * @param replacementTtl replacement lifetime
+     * @return {@code true} only when the current token existed and was
+     *     consumed by this call
+     */
+    boolean rotateToken(
+            long userId,
+            String currentTokenId,
+            String replacementTokenId,
+            Duration replacementTtl);
+
+    /**
+     * Revokes one refresh token.
+     *
+     * @param userId user ID
+     * @param tokenId refresh-token JTI
      */
     void revokeToken(long userId, String tokenId);
 
     /**
-     * 撤销用户的所有刷新令牌（强制该用户所有会话下线）。
+     * Revokes every refresh token issued to one user.
      *
-     * @param userId 用户 ID。
+     * @param userId user ID
      */
     void revokeAll(long userId);
 }
-

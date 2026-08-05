@@ -1,42 +1,89 @@
 package com.chtholly.auth.verification;
 
 import java.time.Duration;
+import java.util.Objects;
+import java.util.UUID;
 
 /**
- * 验证码存储接口。
- * <p>
- * 抽象验证码的保存、校验与失效操作，允许使用 Redis 等实现。
- * 需支持最大尝试次数与 TTL 以保证安全性。
+ * Authoritative store for short-lived, one-time verification codes.
+ *
+ * <p>Implementations must make both writes and verification attempts atomic.
+ * A versioned code allows a failed delivery attempt to remove only the value
+ * that it wrote, without deleting a newer code produced by another request.</p>
  */
 public interface VerificationCodeStore {
 
     /**
-     * 保存验证码。
+     * Atomically stores a new versioned code and its expiration metadata.
      *
-     * @param scene       场景名称。
-     * @param identifier  标识（手机号或邮箱）。
-     * @param code        验证码字符串。
-     * @param ttl         有效期。
-     * @param maxAttempts 最大尝试次数。
+     * @param scene verification-code purpose
+     * @param identifier phone number or email destination
+     * @param issuedCode generated value and unique write version
+     * @param ttl usable lifetime
+     * @param maxAttempts maximum failed verification attempts
      */
-    void saveCode(String scene, String identifier, String code, Duration ttl, int maxAttempts);
+    void saveCode(
+            String scene,
+            String identifier,
+            IssuedCode issuedCode,
+            Duration ttl,
+            int maxAttempts);
 
     /**
-     * 校验验证码。
+     * Atomically consumes a matching code or records one failed attempt.
      *
-     * @param scene      场景名称。
-     * @param identifier 标识（手机号或邮箱）。
-     * @param code       用户输入的验证码。
-     * @return 校验结果，包含状态与尝试次数统计。
+     * @param scene verification-code purpose
+     * @param identifier phone number or email destination
+     * @param code user-provided value
+     * @return verification outcome and attempt state
      */
     VerificationCheckResult verify(String scene, String identifier, String code);
 
     /**
-     * 使验证码失效（删除存储记录）。
+     * Invalidates the current code regardless of its write version.
      *
-     * @param scene      场景名称。
-     * @param identifier 标识（手机号或邮箱）。
+     * @param scene verification-code purpose
+     * @param identifier phone number or email destination
      */
     void invalidate(String scene, String identifier);
-}
 
+    /**
+     * Invalidates a code only when the stored version still belongs to the caller.
+     *
+     * @param scene verification-code purpose
+     * @param identifier phone number or email destination
+     * @param version unique version supplied when the code was saved
+     * @return whether this call removed the current code
+     */
+    boolean invalidateIfCurrent(String scene, String identifier, String version);
+
+    /** A verification-code value paired with a unique write version. */
+    record IssuedCode(String value, String version) {
+
+        public IssuedCode {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException("Verification code must not be blank");
+            }
+            if (version == null || version.isBlank()) {
+                throw new IllegalArgumentException("Verification code version must not be blank");
+            }
+        }
+
+        /**
+         * Creates a code write with a collision-resistant ownership version.
+         *
+         * @param value generated verification-code value
+         * @return versioned code ready for persistence
+         */
+        public static IssuedCode issue(String value) {
+            Objects.requireNonNull(value, "value");
+            return new IssuedCode(value, UUID.randomUUID().toString());
+        }
+
+        /** Keeps the one-time secret out of incidental logs and assertions. */
+        @Override
+        public String toString() {
+            return "IssuedCode[value=<redacted>, version=" + version + "]";
+        }
+    }
+}

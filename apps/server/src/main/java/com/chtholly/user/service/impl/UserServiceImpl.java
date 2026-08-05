@@ -94,14 +94,15 @@ public class UserServiceImpl implements UserService {
         return user;
     }
 
-    /**
-     * Updates a user's password hash and refresh timestamp.
-     *
-     * @param user user entity containing ID and new password hash
-     */
     @Transactional
-    public void updatePassword(User user) {
-        user.setUpdatedAt(Instant.now());
-        userMapper.updatePassword(user.getId(), user.getPasswordHash());
+    public void updatePasswordAndAdvanceRefreshSessionEpoch(
+            long userId,
+            String passwordHash) {
+        int affected = userMapper.updatePasswordAndAdvanceRefreshSessionEpoch(
+                userId, passwordHash);
+        if (affected != 1) {
+            throw new IllegalStateException(
+                    "Password and refresh-session epoch update failed");
+        }
     }
 }

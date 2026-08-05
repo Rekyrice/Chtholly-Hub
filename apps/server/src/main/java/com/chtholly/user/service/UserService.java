@@ -24,5 +24,14 @@ public interface UserService {
 
     User createUser(User user);
 
-    void updatePassword(User user);
+    /**
+     * Atomically changes a password and advances its refresh-session epoch.
+     *
+     * @param userId user ID
+     * @param passwordHash encoded password
+     * @throws IllegalStateException when the user cannot be updated exactly once
+     */
+    void updatePasswordAndAdvanceRefreshSessionEpoch(
+            long userId,
+            String passwordHash);
 }

@@ -13,6 +13,8 @@ import com.chtholly.auth.verification.VerificationService;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.common.exception.ErrorCode;
 import com.chtholly.user.domain.User;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -22,6 +24,9 @@ import java.util.Optional;
 /** Authenticates password or verification-code login attempts. */
 @Service
 public class AuthLoginService {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(AuthLoginService.class);
 
     private final VerificationService verificationService;
     private final PasswordEncoder passwordEncoder;
@@ -52,13 +57,14 @@ public class AuthLoginService {
     /** Authenticates one login while preserving guard and audit side effects. */
     public AuthResponse login(LoginRequest request, ClientInfo clientInfo) {
         String identifier = resolveLoginIdentifier(request);
+        String channel = resolveLoginChannel(request);
         try {
             loginFailureGuard.assertNotLocked(identifier, clientInfo.ip());
         } catch (BusinessException failure) {
-            loginLogService.recordFailure(
+            recordFailureBestEffort(
                     null,
                     identifier,
-                    "PASSWORD",
+                    channel,
                     clientInfo.ip(),
                     clientInfo.userAgent(),
                     LoginFailureReason.ACCOUNT_LOCKED);
@@ -68,25 +74,38 @@ public class AuthLoginService {
         Optional<User> userOptional = identityPolicy.findUserByIdentifier(
                 request.identifierType(), identifier);
         if (userOptional.isEmpty()) {
-            loginLogService.recordFailure(
+            loginFailureGuard.onFailure(identifier, clientInfo.ip());
+            recordFailureBestEffort(
                     null,
                     identifier,
-                    resolveLoginChannel(request),
+                    channel,
                     clientInfo.ip(),
                     clientInfo.userAgent(),
                     LoginFailureReason.ACCOUNT_NOT_FOUND);
-            if (StringUtils.hasText(request.password())) {
-                loginFailureGuard.onFailure(identifier, clientInfo.ip());
-            }
-            throw new BusinessException(ErrorCode.IDENTIFIER_NOT_FOUND);
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
 
-        User user = userOptional.get();
-        String channel = authenticate(request, clientInfo, identifier, user);
-        userBanService.assertNotBanned(user);
+        long userId = userOptional.get().getId();
+        long issueEpoch = tokenLifecycleService.captureIssueEpoch(userId);
+        User user = identityPolicy.findUserById(userId)
+                .orElseThrow(() ->
+                        new BusinessException(ErrorCode.INVALID_CREDENTIALS));
+        channel = authenticate(request, clientInfo, identifier, user);
+        try {
+            userBanService.assertNotBanned(user);
+        } catch (BusinessException failure) {
+            recordFailureBestEffort(
+                    user.getId(),
+                    identifier,
+                    channel,
+                    clientInfo.ip(),
+                    clientInfo.userAgent(),
+                    LoginFailureReason.USER_BANNED);
+            throw failure;
+        }
+        var token = tokenLifecycleService.issueAtEpoch(user, issueEpoch);
         loginFailureGuard.onSuccess(identifier);
-        var token = tokenLifecycleService.issue(user);
-        loginLogService.recordSuccess(
+        recordSuccessBestEffort(
                 user.getId(),
                 identifier,
                 channel,
@@ -104,14 +123,14 @@ public class AuthLoginService {
             if (!StringUtils.hasText(user.getPasswordHash())
                     || !passwordEncoder.matches(
                             request.password(), user.getPasswordHash())) {
-                loginLogService.recordFailure(
+                loginFailureGuard.onFailure(identifier, clientInfo.ip());
+                recordFailureBestEffort(
                         user.getId(),
                         identifier,
                         "PASSWORD",
                         clientInfo.ip(),
                         clientInfo.userAgent(),
                         LoginFailureReason.WRONG_PASSWORD);
-                loginFailureGuard.onFailure(identifier, clientInfo.ip());
                 throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
             }
             return "PASSWORD";
@@ -123,15 +142,15 @@ public class AuthLoginService {
                         identifier,
                         request.code()));
             } catch (BusinessException failure) {
-                loginLogService.recordFailure(
+                loginFailureGuard.onFailure(identifier, clientInfo.ip());
+                recordFailureBestEffort(
                         user.getId(),
                         identifier,
                         "CODE",
                         clientInfo.ip(),
                         clientInfo.userAgent(),
                         null);
-                loginFailureGuard.onFailure(identifier, clientInfo.ip());
-                throw failure;
+                throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
             }
             return "CODE";
         }
@@ -155,5 +174,50 @@ public class AuthLoginService {
 
     private String resolveLoginChannel(LoginRequest request) {
         return StringUtils.hasText(request.password()) ? "PASSWORD" : "CODE";
+    }
+
+    private void recordSuccessBestEffort(
+            Long userId,
+            String identifier,
+            String channel,
+            String ip,
+            String userAgent) {
+        try {
+            loginLogService.recordSuccess(
+                    userId, identifier, channel, ip, userAgent);
+        } catch (Exception failure) {
+            logAuditFailure("success", channel, failure);
+        }
+    }
+
+    private void recordFailureBestEffort(
+            Long userId,
+            String identifier,
+            String channel,
+            String ip,
+            String userAgent,
+            LoginFailureReason reason) {
+        try {
+            loginLogService.recordFailure(
+                    userId,
+                    identifier,
+                    channel,
+                    ip,
+                    userAgent,
+                    reason);
+        } catch (Exception failure) {
+            logAuditFailure("failure", channel, failure);
+        }
+    }
+
+    private void logAuditFailure(
+            String outcome,
+            String channel,
+            Exception failure) {
+        log.warn(
+                "Login audit write failed, outcome={}, channel={}, errorType={}",
+                outcome,
+                channel,
+                failure.getClass().getSimpleName());
     }
 }

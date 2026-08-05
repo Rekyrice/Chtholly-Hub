@@ -5,6 +5,7 @@ import com.chtholly.auth.util.IdentifierValidator;
 import com.chtholly.config.SiteProperties;
 import com.chtholly.user.domain.User;
 import com.chtholly.user.mapper.UserMapper;
+import com.chtholly.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -30,6 +31,7 @@ public class OwnerAccountBootstrap implements ApplicationRunner {
     private final SiteProperties siteProperties;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final UserService userService;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -60,7 +62,9 @@ public class OwnerAccountBootstrap implements ApplicationRunner {
                 .build());
 
         if (!StringUtils.hasText(existing.getPasswordHash())) {
-            userMapper.updatePassword(ownerId, passwordEncoder.encode(rawPassword.trim()));
+            userService.updatePasswordAndAdvanceRefreshSessionEpoch(
+                    ownerId,
+                    passwordEncoder.encode(rawPassword.trim()));
             log.info("owner.bootstrap set password for owner userId={} handle={}", ownerId, handle);
         } else {
             log.info("owner.bootstrap password already configured for userId={}, skip password sync", ownerId);

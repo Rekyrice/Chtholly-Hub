@@ -26,7 +26,32 @@ public interface UserMapper {
 
     boolean existsByHandle(@Param("handle") String handle);
 
-    void updatePassword(@Param("id") Long id, @Param("passwordHash") String passwordHash);
+    /**
+     * Reads the authoritative refresh-session epoch for one user.
+     *
+     * @param id user ID
+     * @return current epoch, or {@code null} when the user does not exist
+     */
+    Long findRefreshSessionEpoch(@Param("id") Long id);
+
+    /**
+     * Atomically advances the authoritative refresh-session epoch.
+     *
+     * @param id user ID
+     * @return affected row count
+     */
+    int advanceRefreshSessionEpoch(@Param("id") Long id);
+
+    /**
+     * Atomically changes a password and invalidates every refresh session.
+     *
+     * @param id user ID
+     * @param passwordHash encoded password
+     * @return affected row count
+     */
+    int updatePasswordAndAdvanceRefreshSessionEpoch(
+            @Param("id") Long id,
+            @Param("passwordHash") String passwordHash);
 
     void updateProfile(User user);
 

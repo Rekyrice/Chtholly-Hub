@@ -1,7 +1,6 @@
 package com.chtholly.auth.service;
 
 import com.chtholly.auth.api.dto.PasswordResetRequest;
-import com.chtholly.auth.token.RefreshTokenStore;
 import com.chtholly.auth.verification.VerificationScene;
 import com.chtholly.auth.verification.VerificationService;
 import com.chtholly.common.exception.BusinessException;
@@ -19,20 +18,17 @@ public class AuthPasswordRecoveryService {
     private final VerificationService verificationService;
     private final PasswordEncoder passwordEncoder;
     private final AuthIdentityPolicy identityPolicy;
-    private final RefreshTokenStore refreshTokenStore;
 
     /** Creates the password recovery use case. */
     public AuthPasswordRecoveryService(
             UserService userService,
             VerificationService verificationService,
             PasswordEncoder passwordEncoder,
-            AuthIdentityPolicy identityPolicy,
-            RefreshTokenStore refreshTokenStore) {
+            AuthIdentityPolicy identityPolicy) {
         this.userService = userService;
         this.verificationService = verificationService;
         this.passwordEncoder = passwordEncoder;
         this.identityPolicy = identityPolicy;
-        this.refreshTokenStore = refreshTokenStore;
     }
 
     /** Verifies ownership, updates the password, and invalidates all sessions. */
@@ -50,9 +46,9 @@ public class AuthPasswordRecoveryService {
                 VerificationScene.RESET_PASSWORD,
                 identifier,
                 request.code()));
-        user.setPasswordHash(passwordEncoder.encode(
-                request.newPassword().trim()));
-        userService.updatePassword(user);
-        refreshTokenStore.revokeAll(user.getId());
+        String encodedPassword = passwordEncoder.encode(
+                request.newPassword());
+        userService.updatePasswordAndAdvanceRefreshSessionEpoch(
+                user.getId(), encodedPassword);
     }
 }
