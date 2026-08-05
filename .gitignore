@@ -22,6 +22,8 @@ scripts/oss/node_modules/
 .worktrees/
 .codex-tmp/
 .superpowers/
+.local-deploy/
+.production-secrets/
 content/seed/**/.media-prepare.lock/
 content/seed/**/.media-staging-*/
 .benchmark-results/
