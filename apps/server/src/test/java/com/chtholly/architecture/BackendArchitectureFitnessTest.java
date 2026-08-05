@@ -2,6 +2,10 @@ package com.chtholly.architecture;
 
 import com.chtholly.agent.proactive.ProactiveTriggerEngine;
 import com.chtholly.agent.ws.AgentWebSocketHandler;
+import com.chtholly.post.feed.FeedTimelineService;
+import com.chtholly.post.service.impl.FollowingPostFeedQueryService;
+import com.chtholly.post.service.impl.PersonalPostFeedService;
+import com.chtholly.storage.service.StorageUploadApplicationService;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -31,6 +35,7 @@ import java.util.stream.Stream;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Protects the backend's application boundaries and prevents structural debt from growing.
@@ -45,8 +50,7 @@ class BackendArchitectureFitnessTest {
             "jakarta.inject.Inject",
             "javax.annotation.Resource",
             "javax.inject.Inject");
-    private static final Set<String> LEGACY_FIELD_INJECTION_POINTS = Set.of(
-            "com.chtholly.post.service.impl.PostServiceImpl#idGen");
+    private static final Set<String> LEGACY_FIELD_INJECTION_POINTS = Set.of();
     private static final Set<String> BUSINESS_PACKAGE_ROOTS = Set.of(
             "admin", "agent", "auth", "bangumi", "cache", "comment", "content", "counter",
             "llm", "notification", "post", "profile", "recommendation", "relation", "search",
@@ -61,33 +65,25 @@ class BackendArchitectureFitnessTest {
             "com.chtholly.common.ratelimit.RateLimitContextResolver"
                     + " -> com.chtholly.auth.token.JwtService");
     private static final Map<String, Integer> LEGACY_COMPONENT_DEPENDENCY_BUDGETS = Map.ofEntries(
-            Map.entry("com.chtholly.agent.ChthollyAgent", 16),
+            Map.entry("com.chtholly.agent.ChthollyAgent", 2),
             Map.entry("com.chtholly.agent.draftedit.DraftEditService", 11),
             Map.entry("com.chtholly.agent.proactive.ContentProactiveService", 10),
-            Map.entry("com.chtholly.agent.ws.AgentWebSocketHandler", 13),
-            Map.entry("com.chtholly.auth.service.AuthService", 10),
-            Map.entry("com.chtholly.post.service.impl.PersonalPostFeedService", 10),
-            Map.entry("com.chtholly.post.service.impl.PostFeedServiceImpl", 11),
-            Map.entry("com.chtholly.post.service.impl.PostServiceImpl", 14),
+            Map.entry("com.chtholly.agent.ws.AgentWebSocketHandler", 2),
+            Map.entry("com.chtholly.auth.service.AuthService", 6),
+            Map.entry("com.chtholly.post.service.impl.PostFeedServiceImpl", 2),
+            Map.entry("com.chtholly.post.service.impl.PostServiceImpl", 6),
             Map.entry("com.chtholly.relation.outbox.CanalKafkaBridge", 13),
             Map.entry("com.chtholly.seed.contentpack.ContentPackImportService", 13));
     private static final Map<String, Integer> LEGACY_SOURCE_FILE_LINE_BUDGETS = Map.ofEntries(
-            Map.entry("com.chtholly.agent.ChthollyAgent", 1593),
             Map.entry("com.chtholly.agent.content.TopicClusteringService", 712),
             Map.entry("com.chtholly.agent.draftedit.DraftEditService", 569),
             Map.entry("com.chtholly.agent.learning.InsightService", 532),
             Map.entry("com.chtholly.agent.observability.AgentExecutionTrace", 1594),
             Map.entry("com.chtholly.agent.observability.AgentTraceSanitizer", 510),
-            Map.entry("com.chtholly.agent.runtime.AgentLoopExecutor", 1029),
             Map.entry("com.chtholly.agent.tools.WebFetchTool", 677),
             Map.entry("com.chtholly.agent.trace.dto.TraceDetailProjector", 1156),
-            Map.entry("com.chtholly.agent.ws.AgentWebSocketHandler", 680),
-            Map.entry("com.chtholly.auth.service.AuthService", 567),
             Map.entry("com.chtholly.bangumi.service.impl.BangumiServiceImpl", 572),
             Map.entry("com.chtholly.counter.service.impl.CounterServiceImpl", 559),
-            Map.entry("com.chtholly.post.service.impl.PostFeedServiceImpl", 697),
-            Map.entry("com.chtholly.post.service.impl.PostServiceImpl", 547),
-            Map.entry("com.chtholly.relation.service.impl.RelationServiceImpl", 529),
             Map.entry("com.chtholly.search.service.impl.SearchServiceImpl", 534),
             Map.entry("com.chtholly.seed.contentpack.ContentPackDatabaseWriter", 798),
             Map.entry("com.chtholly.seed.contentpack.ContentPackMediaPublisher", 581),
@@ -155,7 +151,37 @@ class BackendArchitectureFitnessTest {
                 .isEqualTo(3);
         assertThat(springInjectionConstructorParameters(AgentWebSocketHandler.class))
                 .as("AgentWebSocketHandler production constructor")
-                .isEqualTo(13);
+                .isEqualTo(2);
+        assertThat(springInjectionConstructorParameters(
+                StorageUploadApplicationService.class))
+                .as("StorageUploadApplicationService production constructor")
+                .isEqualTo(2);
+    }
+
+    @Test
+    void personalFeedFacadeKeepsFollowingWorkflowExtracted() throws IOException {
+        Set<Class<?>> fieldTypes = Stream.of(PersonalPostFeedService.class.getDeclaredFields())
+                .map(Field::getType)
+                .collect(Collectors.toSet());
+
+        assertThat(fieldTypes)
+                .as("personal feed facade delegates the following workflow to one application service")
+                .contains(FollowingPostFeedQueryService.class)
+                .doesNotContain(FeedTimelineService.class);
+        Path source = productionSourceRoot().resolve(
+                "com/chtholly/post/service/impl/PersonalPostFeedService.java");
+        assertThat(lineCount(source))
+                .as("personal feed facade source-line budget")
+                .isLessThanOrEqualTo(260);
+    }
+
+    @Test
+    void ambiguousMultiConstructorComponentsAreRejectedInsteadOfCountedAsZero() {
+        assertThatThrownBy(() -> springInjectionConstructorParameters(
+                AmbiguousConstructorType.class))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("AmbiguousConstructorType")
+                .hasMessageContaining("multiple constructors");
     }
 
     @Test
@@ -288,7 +314,10 @@ class BackendArchitectureFitnessTest {
                 .filter(constructor -> constructor.getParameterCount() == 0)
                 .mapToInt(Constructor::getParameterCount)
                 .findFirst()
-                .orElse(0);
+                .orElseThrow(() -> new IllegalStateException(
+                        type.getName()
+                                + " has multiple constructors without @Autowired"
+                                + " and no default constructor"));
     }
 
     private int componentDependencyBudget(String className) {
@@ -348,5 +377,13 @@ class BackendArchitectureFitnessTest {
     }
 
     private record ComponentDependencyCount(String className, int dependencies) {
+    }
+
+    private static final class AmbiguousConstructorType {
+        private AmbiguousConstructorType(String first) {
+        }
+
+        private AmbiguousConstructorType(String first, String second) {
+        }
     }
 }

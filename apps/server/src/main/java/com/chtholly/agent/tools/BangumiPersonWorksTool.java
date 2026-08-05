@@ -111,7 +111,7 @@ public class BangumiPersonWorksTool implements AgentTool {
         }
 
         if (lastApiError != null) {
-            return lastApiError.getMessage();
+            throw BangumiToolFailures.unavailable(lastApiError);
         }
         return "Bangumi 未找到相关人物或作品列表。";
     }

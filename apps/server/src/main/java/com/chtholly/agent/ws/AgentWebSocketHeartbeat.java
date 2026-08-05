@@ -1,5 +1,6 @@
 package com.chtholly.agent.ws;
 
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -7,7 +8,9 @@ import org.springframework.web.socket.PingMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -23,13 +26,18 @@ public class AgentWebSocketHeartbeat {
     static final long PING_INTERVAL_MS = 30_000L;
     static final long PONG_TIMEOUT_MS = 10_000L;
 
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "agent-ws-heartbeat");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ScheduledExecutorService scheduler;
 
     private final Map<String, SessionHeartbeat> sessions = new ConcurrentHashMap<>();
+
+    /** Creates the production heartbeat scheduler. */
+    public AgentWebSocketHeartbeat() {
+        this(newScheduler());
+    }
+
+    AgentWebSocketHeartbeat(ScheduledExecutorService scheduler) {
+        this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
+    }
 
     void start(WebSocketSession session) {
         SessionHeartbeat hb = new SessionHeartbeat(session);
@@ -37,7 +45,12 @@ public class AgentWebSocketHeartbeat {
         if (previous != null) {
             previous.stop();
         }
-        hb.schedulePing();
+        try {
+            hb.schedulePing();
+        } catch (RuntimeException exception) {
+            hb.stop();
+            throw exception;
+        }
     }
 
     void recordPong(String sessionId) {
@@ -54,9 +67,20 @@ public class AgentWebSocketHeartbeat {
         }
     }
 
+    /** Stops all heartbeat work during application shutdown. */
+    @PreDestroy
+    public void shutdown() {
+        for (SessionHeartbeat heartbeat : List.copyOf(sessions.values())) {
+            heartbeat.stop();
+        }
+        sessions.clear();
+        scheduler.shutdownNow();
+    }
+
     private final class SessionHeartbeat {
         private final WebSocketSession session;
         private final AtomicBoolean awaitingPong = new AtomicBoolean(false);
+        private final AtomicBoolean stopped = new AtomicBoolean(false);
         private volatile ScheduledFuture<?> pingFuture;
         private volatile ScheduledFuture<?> timeoutFuture;
 
@@ -65,10 +89,21 @@ public class AgentWebSocketHeartbeat {
         }
 
         private void schedulePing() {
-            pingFuture = scheduler.scheduleAtFixedRate(this::sendPing, PING_INTERVAL_MS, PING_INTERVAL_MS, TimeUnit.MILLISECONDS);
+            ScheduledFuture<?> scheduled = scheduler.scheduleAtFixedRate(
+                    this::sendPing,
+                    PING_INTERVAL_MS,
+                    PING_INTERVAL_MS,
+                    TimeUnit.MILLISECONDS);
+            pingFuture = scheduled;
+            if (stopped.get()) {
+                scheduled.cancel(false);
+            }
         }
 
         private void sendPing() {
+            if (stopped.get()) {
+                return;
+            }
             if (!session.isOpen()) {
                 stop();
                 return;
@@ -87,11 +122,14 @@ public class AgentWebSocketHeartbeat {
                 }, PONG_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             } catch (Exception e) {
                 log.debug("Agent WS ping failed sessionId={}: {}", session.getId(), e.getMessage());
-                stop();
+                closeSession("heartbeat ping failed");
             }
         }
 
         private void recordPong() {
+            if (stopped.get()) {
+                return;
+            }
             awaitingPong.set(false);
             if (timeoutFuture != null) {
                 timeoutFuture.cancel(false);
@@ -110,6 +148,7 @@ public class AgentWebSocketHeartbeat {
         }
 
         private void stop() {
+            stopped.set(true);
             if (pingFuture != null) {
                 pingFuture.cancel(false);
             }
@@ -118,5 +157,14 @@ public class AgentWebSocketHeartbeat {
             }
             sessions.remove(session.getId(), this);
         }
+    }
+
+    private static ScheduledExecutorService newScheduler() {
+        return Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(
+                    runnable, "agent-ws-heartbeat");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 }

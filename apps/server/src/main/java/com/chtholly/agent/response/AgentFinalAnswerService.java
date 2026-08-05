@@ -4,6 +4,7 @@ import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.context.AgentContextSnapshot;
 import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.memory.AgentConversationMemory;
+import com.chtholly.agent.memory.AgentMemoryWriteException;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.runtime.AgentTurnBudget;
 import com.chtholly.agent.runtime.AgentTurnCompletion;
@@ -161,6 +162,8 @@ public class AgentFinalAnswerService {
             return modelDurationMs;
         } catch (AgentTurnBudget.UnavailableException unavailable) {
             throw unavailable;
+        } catch (AgentMemoryWriteException memoryFailure) {
+            throw memoryFailure;
         } catch (Exception failure) {
             if (turnBudget.isCancelled() || turnBudget.isExpired()) {
                 throw AgentTurnBudget.unavailableForStage(

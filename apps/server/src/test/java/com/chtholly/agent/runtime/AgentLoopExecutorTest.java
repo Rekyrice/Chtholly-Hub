@@ -79,14 +79,21 @@ class AgentLoopExecutorTest {
         lenient().when(llmInvoker.timeoutSeconds()).thenReturn(3);
         lenient().when(observationService.startLlmSpan(any(), anyString())).thenReturn(childSpan);
         lenient().when(observationService.startToolSpan(any(), anyString())).thenReturn(childSpan);
-        executor = new AgentLoopExecutor(
-                llmInvoker,
-                toolExecutor,
-                new AgentJsonExtractor(objectMapper),
-                objectMapper,
-                observationService,
-                domainConfig);
+        executor = createExecutor(toolExecutor);
         events = new ArrayList<>();
+    }
+
+    private AgentLoopExecutor createExecutor(AgentToolExecutor executorDelegate) {
+        AgentActionParser parser = new AgentActionParser(
+                new AgentJsonExtractor(objectMapper), objectMapper);
+        return new AgentLoopExecutor(
+                new AgentDecisionGateway(llmInvoker, observationService),
+                new AgentToolCallService(
+                        executorDelegate, parser, observationService, domainConfig),
+                parser,
+                new AgentLoopCompletionPolicy(),
+                objectMapper,
+                domainConfig);
     }
 
     @AfterEach
@@ -346,12 +353,76 @@ class AgentLoopExecutorTest {
     }
 
     @Test
-    void failedWebFetchDoesNotAuthorizeSearchOnlyFinalAnswer() throws Exception {
+    void malformedOrEmptyWebSearchRequiresOnlyOneRetryBeforeGracefulFinal() throws Exception {
         AgentTool search = tool("web_search");
         AgentTool fetch = tool("web_fetch");
         when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
-                .thenReturn("{\"action\":\"web_fetch\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}")
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult("malformed", AgentToolResult.Status.SUCCESS))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation(), AgentToolResult.Status.SUCCESS));
+        AgentExecutionTrace trace = trace(4);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search, fetch.name(), fetch), 4),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(trace.getStepActions()).containsExactly(
+                "web_search",
+                "web_search_retry_required",
+                "web_search");
+        assertThat(events.stream()
+                .filter(event -> "observe".equals(event.type()))
+                .map(event -> event.data().path("content").asText()))
+                .anyMatch(message -> message.contains("SEARCH_RETRY_REQUIRED"))
+                .noneMatch(message -> message.contains("FETCH_REQUIRED"));
+        verify(toolExecutor, never()).execute(eq(fetch), anyMap(), anyLong());
+    }
+
+    @Test
+    void terminalFailureOnTheRequiredSearchRetryAllowsGracefulFinal() throws Exception {
+        AgentTool search = tool("web_search");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}")
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation(), AgentToolResult.Status.SUCCESS))
+                .thenReturn(new AgentToolResult(
+                        "provider unavailable", AgentToolResult.Status.ERROR));
+        AgentExecutionTrace trace = trace(4);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search), 4),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(trace.getStepActions()).containsExactly(
+                "web_search",
+                "web_search_retry_required",
+                "web_search");
+        assertThat(traceEvents(trace, "tool").get(1).path("status").asText())
+                .isEqualTo("ERROR");
+    }
+
+    @Test
+    void failedOnlyWebFetchCandidateAllowsGracefulFinalWithoutDisguisingTheFailure() throws Exception {
+        AgentTool search = tool("web_search");
+        AgentTool fetch = tool("web_fetch");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{\"url\":\"https://example.com/article\"}}")
                 .thenReturn("{\"action\":\"final\"}");
         when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
                 .thenReturn(new AgentToolResult(
@@ -367,14 +438,77 @@ class AgentLoopExecutorTest {
                 agentSpan,
                 events::add);
 
-        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.MAX_STEPS);
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
         assertThat(result.evidenceSet()).isSameAs(EvidenceSet.empty());
         assertThat(trace.getStepActions())
-                .containsExactly("web_search", "web_fetch", "web_fetch_pending");
-        assertThat(events.stream()
-                .filter(event -> "observe".equals(event.type()))
-                .map(event -> event.data().path("content").asText()))
-                .anyMatch(message -> message.contains("WEB_RESEARCH_INCOMPLETE"));
+                .containsExactly("web_search", "web_fetch");
+        assertThat(traceEvents(trace, "tool").get(1).path("status").asText())
+                .isEqualTo("ERROR");
+    }
+
+    @Test
+    void webFetchGateRemainsPendingUntilEveryCandidateHasTerminallyFailed() throws Exception {
+        AgentTool search = tool("web_search");
+        AgentTool fetch = tool("web_fetch");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{\"url\":\"https://example.com/first\"}}")
+                .thenReturn("{\"action\":\"final\"}")
+                .thenReturn("{\"action\":\"web_fetch\",\"input\":{\"url\":\"https://example.com/second\"}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        webSearchObservation(
+                                "https://example.com/first",
+                                "https://example.com/second"),
+                        AgentToolResult.Status.SUCCESS));
+        when(toolExecutor.execute(eq(fetch), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        "first failed", AgentToolResult.Status.ERROR))
+                .thenReturn(new AgentToolResult(
+                        "second timed out", AgentToolResult.Status.TIMEOUT));
+        AgentExecutionTrace trace = trace(5);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search, fetch.name(), fetch), 5),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(trace.getStepActions()).containsExactly(
+                "web_search",
+                "web_fetch",
+                "web_fetch_pending",
+                "web_fetch");
+        assertThat(traceEvents(trace, "tool").get(1).path("status").asText())
+                .isEqualTo("ERROR");
+        assertThat(traceEvents(trace, "tool").get(2).path("status").asText())
+                .isEqualTo("TIMEOUT");
+    }
+
+    @Test
+    void webSearchValidationErrorStillRequiresCorrectedParameters() throws Exception {
+        AgentTool search = tool("web_search");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"web_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        "query is required", AgentToolResult.Status.VALIDATION_ERROR));
+        AgentExecutionTrace trace = trace(2);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search), 2),
+                trace,
+                agentSpan,
+                events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.MAX_STEPS);
+        assertThat(trace.getStepActions())
+                .containsExactly("web_search", "web_search_retry_required");
+        assertThat(traceEvents(trace, "tool").getFirst().path("status").asText())
+                .isEqualTo("VALIDATION_ERROR");
     }
 
     @Test
@@ -574,6 +708,91 @@ class AgentLoopExecutorTest {
     }
 
     @Test
+    void compoundBangumiQuestionAllowsGracefulFinalWhenSearchProviderFails() throws Exception {
+        AgentTool search = tool("bangumi_search");
+        AgentTool characters = tool("bangumi_characters");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"bangumi_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult("search failed", AgentToolResult.Status.ERROR));
+        AgentExecutionTrace trace = trace(2);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system",
+                "查询《迷宫饭》的评分、集数和主要角色",
+                7L,
+                "",
+                Map.of(search.name(), search, characters.name(), characters),
+                2);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(trace.getStepActions())
+                .containsExactly("bangumi_search");
+        assertThat(traceEvents(trace, "tool").getFirst().path("status").asText())
+                .isEqualTo("ERROR");
+        verify(toolExecutor, never()).execute(eq(characters), anyMap(), anyLong());
+    }
+
+    @Test
+    void compoundBangumiQuestionAllowsGracefulFinalWhenCharactersTimeOut() throws Exception {
+        AgentTool search = tool("bangumi_search");
+        AgentTool characters = tool("bangumi_characters");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"bangumi_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"bangumi_characters\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult("评分 8.1", AgentToolResult.Status.SUCCESS));
+        when(toolExecutor.execute(eq(characters), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult("timed out", AgentToolResult.Status.TIMEOUT));
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system",
+                "查询《迷宫饭》的评分、集数和主要角色",
+                7L,
+                "",
+                Map.of(search.name(), search, characters.name(), characters),
+                3);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(trace.getStepActions())
+                .containsExactly("bangumi_search", "bangumi_characters");
+        assertThat(traceEvents(trace, "tool").get(1).path("status").asText())
+                .isEqualTo("TIMEOUT");
+    }
+
+    @Test
+    void compoundBangumiValidationErrorStillRequiresCorrectedSearchInput() throws Exception {
+        AgentTool search = tool("bangumi_search");
+        AgentTool characters = tool("bangumi_characters");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"bangumi_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        "keyword is required", AgentToolResult.Status.VALIDATION_ERROR));
+        AgentExecutionTrace trace = trace(2);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system",
+                "查询《迷宫饭》的评分、集数和主要角色",
+                7L,
+                "",
+                Map.of(search.name(), search, characters.name(), characters),
+                2);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.MAX_STEPS);
+        assertThat(trace.getStepActions())
+                .containsExactly("bangumi_search", "compound_tool_pending");
+        verify(toolExecutor, never()).execute(eq(characters), anyMap(), anyLong());
+    }
+
+    @Test
     void compoundBangumiQuestionAcceptsFinalActionWithLiteralLineBreaks() throws Exception {
         AgentTool search = tool("bangumi_search");
         AgentTool characters = tool("bangumi_characters");
@@ -634,6 +853,23 @@ class AgentLoopExecutorTest {
         verify(llmInvoker, times(2)).call(anyString(), promptCaptor.capture(), anyDouble(), anyInt());
         assertThat(promptCaptor.getAllValues().get(1)).contains("Observation: PARSE_ERROR_ORIGINAL");
         assertThat(trace.getStepActions()).containsExactly("parse_error");
+    }
+
+    @Test
+    void nonObjectActionInputUsesTheRecoverableParseErrorPath() throws Exception {
+        AgentTool search = tool("search");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"search\",\"input\":\"not-an-object\"}")
+                .thenReturn("{\"action\":\"final\"}");
+        AgentExecutionTrace trace = trace(2);
+
+        AgentLoopResult result = executor.execute(
+                request(Map.of(search.name(), search), 2), trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(trace.getStepActions()).containsExactly("parse_error");
+        assertThat(eventTypes()).containsExactly("think", "observe", "think");
+        verify(toolExecutor, never()).execute(any(), anyMap(), anyLong());
     }
 
     @Test
@@ -1003,6 +1239,37 @@ class AgentLoopExecutorTest {
     }
 
     @Test
+    void requiredToolProviderInterruptionIsObservedBeforeAnHonestFinalAnswer() throws Exception {
+        AgentTool search = tool("bangumi_search");
+        AgentTool characters = tool("bangumi_characters");
+        when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("{\"action\":\"bangumi_search\",\"input\":{}}")
+                .thenReturn("{\"action\":\"final\"}");
+        when(toolExecutor.execute(eq(search), anyMap(), anyLong()))
+                .thenReturn(new AgentToolResult(
+                        "provider interrupted", AgentToolResult.Status.INTERRUPTED));
+        AgentExecutionTrace trace = trace(3);
+        AgentLoopRequest request = new AgentLoopRequest(
+                "system prompt",
+                "list the character details",
+                42L,
+                "",
+                Map.of(search.name(), search, characters.name(), characters),
+                3,
+                EvidenceSet.empty(),
+                false);
+
+        AgentLoopResult result = executor.execute(request, trace, agentSpan, events::add);
+
+        assertThat(result.status()).isEqualTo(AgentLoopResult.Status.FINAL_READY);
+        assertThat(result.transcript()).anyMatch(line -> line.contains("provider interrupted"));
+        assertThat(eventTypes()).containsExactly("think", "act", "observe", "think");
+        assertThat(trace.getStepActions()).containsExactly("bangumi_search");
+        assertThat(Thread.currentThread().isInterrupted()).isFalse();
+        verify(llmInvoker, times(2)).call(anyString(), anyString(), anyDouble(), anyInt());
+    }
+
+    @Test
     void timedOutBangumiToolMarksFailedErrorSpanAndAddsGuidance() throws Exception {
         AgentTool tool = tool("bangumi_search");
         when(llmInvoker.call(anyString(), anyString(), anyDouble(), anyInt()))
@@ -1251,6 +1518,7 @@ class AgentLoopExecutorTest {
         ObjectNode root = objectMapper.createObjectNode();
         root.put("kind", "web_fetched_page");
         root.put("requestedUrl", requestedUrl);
+        root.put("finalUrl", requestedUrl);
         return objectMapper.writeValueAsString(root);
     }
 

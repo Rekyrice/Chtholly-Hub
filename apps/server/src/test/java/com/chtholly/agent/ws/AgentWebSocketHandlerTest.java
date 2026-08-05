@@ -38,6 +38,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -53,6 +54,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -91,6 +93,8 @@ class AgentWebSocketHandlerTest {
         objectMapper = new ObjectMapper();
         rateLimiter = new AgentSessionRateLimiter();
         heartbeat = new AgentWebSocketHeartbeat();
+        org.mockito.Mockito.lenient().when(rawSession.isOpen())
+                .thenReturn(true);
         // 不用 mock ObjectProvider：CI 上 mock stub 可能不生效
         ObjectProvider<CognitiveEngine> cognitiveProvider = new ObjectProvider<>() {
             @Override
@@ -116,11 +120,11 @@ class AgentWebSocketHandlerTest {
         StaticListableBeanFactory extensionFactory = new StaticListableBeanFactory();
         extensionFactory.addBean("insightService", insightService);
         extensionFactory.addBean("notificationService", notificationService);
-        handler = new AgentWebSocketHandler(agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
-                agentMetrics, characterStateService,
+        handler = handler(
+                AgentTurnCoordinator.inMemory(),
+                Runnable::run,
                 extensionFactory.getBeanProvider(InsightService.class), cognitiveProvider,
-                extensionFactory.getBeanProvider(NotificationService.class),
-                Runnable::run);
+                extensionFactory.getBeanProvider(NotificationService.class));
     }
 
     @Test
@@ -434,7 +438,8 @@ class AgentWebSocketHandlerTest {
     }
 
     @Test
-    void terminalEventIsSentOnlyAfterAgentReturnsAndTheLeaseIsReleased() throws Exception {
+    void terminalEventWaitsForAgentReturnAndPrecedesLeaseRelease()
+            throws Exception {
         ExecutorService asyncExecutor = Executors.newVirtualThreadPerTaskExecutor();
         AgentTurnCoordinator coordinator = AgentTurnCoordinator.inMemory();
         AgentWebSocketHandler asyncHandler = handler(coordinator, asyncExecutor);
@@ -497,7 +502,8 @@ class AgentWebSocketHandlerTest {
     }
 
     @Test
-    void releaseFailureReplacesFinalWithBoundCoordinationErrorAndClosesConnection() throws Exception {
+    void releaseFailureKeepsTheDeliveredFinalAndClosesConnection()
+            throws Exception {
         AgentTurnCoordinator coordinator = org.mockito.Mockito.mock(AgentTurnCoordinator.class);
         AgentWebSocketHandler releaseFailureHandler = handler(coordinator, Runnable::run);
         when(coordinator.acquire(anyLong(), anyString(), anyString(), anyString(), any(Duration.class)))
@@ -532,11 +538,14 @@ class AgentWebSocketHandlerTest {
         releaseFailureHandler.handleTextMessage(rawSession, new TextMessage(
                 chatPayload("sess-chat-release-failure", "hello", "request-release-failure")));
 
-        assertThat(payloads).anyMatch(payload -> payload.contains("TURN_COORDINATION_UNAVAILABLE"));
-        assertThat(payloads).noneMatch(payload -> payload.contains("\"type\":\"final\""));
+        assertThat(payloads).anyMatch(payload ->
+                payload.contains("\"type\":\"final\""));
+        assertThat(payloads).noneMatch(payload ->
+                payload.contains("TURN_COORDINATION_UNAVAILABLE"));
         assertThat(controlRef.get().clientDeliveryStatus())
                 .isEqualTo(AgentTurnControl.ClientDeliveryStatus.DELIVERED);
-        assertThat(controlRef.get().clientTerminalType()).isEqualTo("error");
+        assertThat(controlRef.get().clientTerminalType()).isEqualTo("final");
+        verify(agentMetrics).recordError("turn_coordination_release");
         verify(rawSession).close(any());
     }
 
@@ -579,6 +588,17 @@ class AgentWebSocketHandlerTest {
 
     @Test
     void eventDeliveryFailureCancelsTheAcceptedTurn() throws Exception {
+        AgentTurnCoordinator coordinator = org.mockito.Mockito.mock(
+                AgentTurnCoordinator.class);
+        AgentWebSocketHandler failingHandler = handler(
+                coordinator, Runnable::run);
+        when(coordinator.acquire(
+                anyLong(), anyString(), anyString(), anyString(), any(Duration.class)))
+                .thenAnswer(invocation -> new AgentTurnCoordinator.AcquireResult(
+                        AgentTurnCoordinator.AcquireStatus.ACQUIRED,
+                        invocation.getArgument(3)));
+        when(coordinator.release(anyLong(), anyString(), anyString()))
+                .thenReturn(true);
         when(rawSession.getId()).thenReturn("sess-delivery-failure");
         when(rawSession.getUri()).thenReturn(
                 URI.create("ws://localhost/api/v1/agent/ws?ticket=delivery-failure"));
@@ -586,6 +606,7 @@ class AgentWebSocketHandlerTest {
         when(ticketStore.consume("delivery-failure")).thenReturn(72L);
         when(memoryStore.getOrCreateMemory(72L, "sess-chat-delivery-failure")).thenReturn(memory);
         AtomicReference<AgentTurnControl> controlRef = new AtomicReference<>();
+        AtomicInteger deliveryCompletions = new AtomicInteger();
         doAnswer(invocation -> {
             TextMessage sent = invocation.getArgument(0);
             if (sent.getPayload().contains("\"type\":\"delta\"")) {
@@ -596,6 +617,8 @@ class AgentWebSocketHandlerTest {
         doAnswer(invocation -> {
             AgentTurnControl control = invocation.getArgument(3);
             controlRef.set(control);
+            control.onClientDeliveryResolved(
+                    deliveryCompletions::incrementAndGet);
             @SuppressWarnings("unchecked")
             Consumer<AgentEvent> sink = invocation.getArgument(6);
             sink.accept(new AgentEvent(
@@ -606,12 +629,379 @@ class AgentWebSocketHandlerTest {
         }).when(agent).run(
                 any(), anyLong(), any(), any(AgentTurnControl.class), any(), any(), any());
 
-        handler.afterConnectionEstablished(rawSession);
-        handler.handleTextMessage(rawSession, new TextMessage(
+        failingHandler.afterConnectionEstablished(rawSession);
+        failingHandler.handleTextMessage(rawSession, new TextMessage(
                 chatPayload("sess-chat-delivery-failure", "hello", "request-delivery-failure")));
 
         assertThat(controlRef.get()).isNotNull();
         assertThat(controlRef.get().isCancelled()).isTrue();
+        assertThat(controlRef.get().clientDeliveryStatus())
+                .isEqualTo(AgentTurnControl.ClientDeliveryStatus.FAILED);
+        assertThat(deliveryCompletions).hasValue(1);
+        verify(coordinator, times(1)).release(
+                72L,
+                "sess-chat-delivery-failure",
+                controlRef.get().turnId());
+        verify(rawSession).close(any());
+    }
+
+    @Test
+    void firstTerminalSealsTheTurnAgainstLaterEvents() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-terminal-seal");
+        when(rawSession.getUri()).thenReturn(
+                URI.create("ws://localhost/api/v1/agent/ws?ticket=terminal-seal"));
+        when(rawSession.isOpen()).thenReturn(true);
+        when(ticketStore.consume("terminal-seal")).thenReturn(76L);
+        when(memoryStore.getOrCreateMemory(76L, "logical-terminal-seal"))
+                .thenReturn(memory);
+        List<String> payloads = new CopyOnWriteArrayList<>();
+        doAnswer(invocation -> {
+            TextMessage sent = invocation.getArgument(0);
+            payloads.add(sent.getPayload());
+            return null;
+        }).when(rawSession).sendMessage(any());
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Consumer<AgentEvent> sink = invocation.getArgument(6);
+            sink.accept(new AgentEvent(
+                    "final",
+                    objectMapper.createObjectNode().put("content", "first")));
+            sink.accept(new AgentEvent(
+                    "delta",
+                    objectMapper.createObjectNode().put("content", "late")));
+            sink.accept(new AgentEvent(
+                    "error",
+                    objectMapper.createObjectNode().put("code", "SECOND")));
+            return null;
+        }).when(agent).run(
+                any(), anyLong(), any(), any(AgentTurnControl.class), any(), any(), any());
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.handleTextMessage(rawSession, new TextMessage(
+                chatPayload(
+                        "logical-terminal-seal",
+                        "hello",
+                        "request-terminal-seal")));
+
+        List<String> types = payloads.stream().map(payload -> {
+            try {
+                return objectMapper.readTree(payload).path("type").asText();
+            } catch (Exception exception) {
+                throw new IllegalStateException(exception);
+            }
+        }).toList();
+        assertThat(types).containsExactly("accepted", "final");
+        assertThat(payloads.getLast())
+                .contains("first")
+                .doesNotContain("late", "SECOND");
+    }
+
+    @Test
+    void closeAndWorkerReleaseTheSameLeaseExactlyOnce() throws Exception {
+        ExecutorService asyncExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        AgentTurnCoordinator coordinator = org.mockito.Mockito.mock(
+                AgentTurnCoordinator.class);
+        AgentWebSocketHandler asyncHandler = handler(
+                coordinator, asyncExecutor);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch finished = new CountDownLatch(1);
+        AtomicReference<AgentTurnControl> controlRef = new AtomicReference<>();
+        when(coordinator.acquire(
+                anyLong(), anyString(), anyString(), anyString(), any(Duration.class)))
+                .thenAnswer(invocation -> new AgentTurnCoordinator.AcquireResult(
+                        AgentTurnCoordinator.AcquireStatus.ACQUIRED,
+                        invocation.getArgument(3)));
+        when(coordinator.release(anyLong(), anyString(), anyString()))
+                .thenReturn(true);
+        when(rawSession.getId()).thenReturn("sess-release-race");
+        when(rawSession.getUri()).thenReturn(
+                URI.create("ws://localhost/api/v1/agent/ws?ticket=release-race"));
+        when(rawSession.isOpen()).thenReturn(true);
+        when(ticketStore.consume("release-race")).thenReturn(77L);
+        when(memoryStore.getOrCreateMemory(77L, "logical-release-race"))
+                .thenReturn(memory);
+        doAnswer(invocation -> {
+            AgentTurnControl control = invocation.getArgument(3);
+            controlRef.set(control);
+            started.countDown();
+            while (!control.isCancelled()) {
+                Thread.onSpinWait();
+            }
+            finished.countDown();
+            return null;
+        }).when(agent).run(
+                any(), anyLong(), any(), any(AgentTurnControl.class), any(), any(), any());
+
+        try {
+            asyncHandler.afterConnectionEstablished(rawSession);
+            asyncHandler.handleTextMessage(rawSession, new TextMessage(
+                    chatPayload(
+                            "logical-release-race",
+                            "hello",
+                            "request-release-race")));
+            assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+
+            asyncHandler.afterConnectionClosed(
+                    rawSession,
+                    org.springframework.web.socket.CloseStatus.NORMAL);
+
+            assertThat(finished.await(2, TimeUnit.SECONDS)).isTrue();
+            verify(coordinator, timeout(2_000).times(1)).release(
+                    77L,
+                    "logical-release-race",
+                    controlRef.get().turnId());
+        } finally {
+            asyncExecutor.shutdownNow();
+        }
+    }
+
+    @Test
+    void closeBeforeAgentRunKeepsLeaseUntilWorkerTerminates()
+            throws Exception {
+        ExecutorService asyncExecutor =
+                Executors.newVirtualThreadPerTaskExecutor();
+        AgentTurnCoordinator coordinator = AgentTurnCoordinator.inMemory();
+        AgentWebSocketHandler asyncHandler = handler(
+                coordinator, asyncExecutor);
+        CountDownLatch acceptedSendStarted = new CountDownLatch(1);
+        CountDownLatch allowAcceptedSendToFinish = new CountDownLatch(1);
+        when(rawSession.getId()).thenReturn("sess-close-before-run");
+        when(rawSession.getUri()).thenReturn(URI.create(
+                "ws://localhost/api/v1/agent/ws?ticket=close-before-run"));
+        when(rawSession.isOpen()).thenReturn(true);
+        when(ticketStore.consume("close-before-run")).thenReturn(80L);
+        when(memoryStore.getOrCreateMemory(80L, "logical-close-before-run"))
+                .thenReturn(memory);
+        doAnswer(invocation -> {
+            TextMessage sent = invocation.getArgument(0);
+            if (sent.getPayload().contains("\"type\":\"accepted\"")) {
+                acceptedSendStarted.countDown();
+                while (allowAcceptedSendToFinish.getCount() > 0) {
+                    try {
+                        allowAcceptedSendToFinish.await(
+                                20, TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException ignored) {
+                        // The close callback cancels the worker; keep the
+                        // transport seam blocked until the test releases it.
+                    }
+                }
+            }
+            return null;
+        }).when(rawSession).sendMessage(any());
+
+        try {
+            asyncHandler.afterConnectionEstablished(rawSession);
+            asyncHandler.handleTextMessage(rawSession, new TextMessage(
+                    chatPayload(
+                            "logical-close-before-run",
+                            "hello",
+                            "request-close-before-run")));
+            assertThat(acceptedSendStarted.await(2, TimeUnit.SECONDS))
+                    .isTrue();
+
+            asyncHandler.afterConnectionClosed(
+                    rawSession,
+                    org.springframework.web.socket.CloseStatus.NORMAL);
+
+            assertThat(coordinator.acquire(
+                    80L,
+                    "logical-close-before-run",
+                    "request-probe-before-worker-exit",
+                    "turn-probe-before-worker-exit",
+                    Duration.ofSeconds(30)).status())
+                    .isEqualTo(
+                            AgentTurnCoordinator.AcquireStatus.TURN_IN_PROGRESS);
+            verifyNoInteractions(agent);
+
+            allowAcceptedSendToFinish.countDown();
+            await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+                    assertThat(coordinator.acquire(
+                            80L,
+                            "logical-close-before-run",
+                            "request-probe-after-worker-exit",
+                            "turn-probe-after-worker-exit",
+                            Duration.ofSeconds(30)).status())
+                            .isEqualTo(
+                                    AgentTurnCoordinator.AcquireStatus.ACQUIRED));
+            verifyNoInteractions(agent);
+            coordinator.release(
+                    80L,
+                    "logical-close-before-run",
+                    "turn-probe-after-worker-exit");
+        } finally {
+            allowAcceptedSendToFinish.countDown();
+            asyncExecutor.shutdownNow();
+        }
+    }
+
+    @Test
+    void websocketCallbacksRestoreTheCallingMdcContext() throws Exception {
+        when(rawSession.getId()).thenReturn("sess-mdc-restore");
+        when(rawSession.getAttributes()).thenReturn(
+                new java.util.concurrent.ConcurrentHashMap<>());
+        when(rawSession.getUri()).thenReturn(
+                URI.create("ws://localhost/api/v1/agent/ws?ticket=mdc-restore"));
+        when(ticketStore.consume("mdc-restore")).thenReturn(78L);
+        when(memoryStore.getOrCreateMemory(78L, "logical-mdc-restore"))
+                .thenReturn(memory);
+        doAnswer(invocation -> {
+            assertThat(MDC.get(CorrelationIdSupport.MDC_CORRELATION_ID))
+                    .isNotBlank()
+                    .isNotEqualTo("outer-correlation");
+            return null;
+        }).when(agent).run(
+                any(), anyLong(), any(), any(AgentTurnControl.class), any(), any(), any());
+
+        MDC.put(CorrelationIdSupport.MDC_CORRELATION_ID, "outer-correlation");
+        MDC.put("caller", "preserved");
+        try {
+            handler.afterConnectionEstablished(rawSession);
+            assertThat(MDC.get(CorrelationIdSupport.MDC_CORRELATION_ID))
+                    .isEqualTo("outer-correlation");
+            assertThat(MDC.get("caller")).isEqualTo("preserved");
+
+            handler.handleTextMessage(rawSession, new TextMessage(
+                    chatPayload(
+                            "logical-mdc-restore",
+                            "hello",
+                            "request-mdc-restore")));
+            assertThat(MDC.get(CorrelationIdSupport.MDC_CORRELATION_ID))
+                    .isEqualTo("outer-correlation");
+            assertThat(MDC.get("caller")).isEqualTo("preserved");
+
+            handler.afterConnectionClosed(
+                    rawSession,
+                    org.springframework.web.socket.CloseStatus.NORMAL);
+            assertThat(MDC.get(CorrelationIdSupport.MDC_CORRELATION_ID))
+                    .isEqualTo("outer-correlation");
+            assertThat(MDC.get("caller")).isEqualTo("preserved");
+        } finally {
+            MDC.clear();
+        }
+    }
+
+    @Test
+    void notificationReplayFailureDoesNotAbortConnectionSetup()
+            throws Exception {
+        when(rawSession.getId()).thenReturn("sess-notification-failure");
+        when(rawSession.getAttributes()).thenReturn(
+                new java.util.concurrent.ConcurrentHashMap<>());
+        when(rawSession.getUri()).thenReturn(URI.create(
+                "ws://localhost/api/v1/agent/ws?ticket=notification-failure"));
+        when(ticketStore.consume("notification-failure")).thenReturn(79L);
+        when(notificationService.getPendingNotifications(79L))
+                .thenThrow(new IllegalStateException("redis unavailable"));
+
+        assertDoesNotThrow(() ->
+                handler.afterConnectionEstablished(rawSession));
+
+        verify(notificationService).registerSession(
+                eq(79L),
+                eq("sess-notification-failure"),
+                any());
+        verify(agentMetrics).wsConnected();
+    }
+
+    @Test
+    void memoryRejectionDeliveryFailureClosesTheConnection()
+            throws Exception {
+        when(rawSession.getId()).thenReturn("sess-memory-reject-send");
+        when(rawSession.getUri()).thenReturn(URI.create(
+                "ws://localhost/api/v1/agent/ws?ticket=memory-reject-send"));
+        when(rawSession.isOpen()).thenReturn(true);
+        when(ticketStore.consume("memory-reject-send")).thenReturn(81L);
+        when(memoryStore.getOrCreateMemory(
+                81L, "logical-memory-reject-send"))
+                .thenThrow(new IllegalStateException("memory unavailable"));
+        org.mockito.Mockito.doThrow(new java.io.IOException("send failed"))
+                .when(rawSession).sendMessage(any());
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.handleTextMessage(rawSession, new TextMessage(chatPayload(
+                "logical-memory-reject-send",
+                "hello",
+                "request-memory-reject-send")));
+
+        verify(rawSession).close(any());
+    }
+
+    @Test
+    void acquireRejectionDeliveryFailureClosesTheConnection()
+            throws Exception {
+        AgentTurnCoordinator coordinator = org.mockito.Mockito.mock(
+                AgentTurnCoordinator.class);
+        AgentWebSocketHandler rejectingHandler = handler(
+                coordinator, Runnable::run);
+        when(coordinator.acquire(
+                anyLong(), anyString(), anyString(), anyString(),
+                any(Duration.class)))
+                .thenReturn(new AgentTurnCoordinator.AcquireResult(
+                        AgentTurnCoordinator.AcquireStatus.TURN_IN_PROGRESS,
+                        "existing-turn"));
+        when(rawSession.getId()).thenReturn("sess-acquire-reject-send");
+        when(rawSession.getUri()).thenReturn(URI.create(
+                "ws://localhost/api/v1/agent/ws?ticket=acquire-reject-send"));
+        when(rawSession.isOpen()).thenReturn(true);
+        when(ticketStore.consume("acquire-reject-send")).thenReturn(82L);
+        when(memoryStore.getOrCreateMemory(
+                82L, "logical-acquire-reject-send"))
+                .thenReturn(memory);
+        org.mockito.Mockito.doThrow(new java.io.IOException("send failed"))
+                .when(rawSession).sendMessage(any());
+
+        rejectingHandler.afterConnectionEstablished(rawSession);
+        rejectingHandler.handleTextMessage(rawSession, new TextMessage(
+                chatPayload(
+                        "logical-acquire-reject-send",
+                        "hello",
+                        "request-acquire-reject-send")));
+
+        verify(rawSession).close(any());
+        verifyNoInteractions(agent);
+    }
+
+    @Test
+    void genericProtocolErrorDeliveryFailureClosesTheConnection()
+            throws Exception {
+        when(rawSession.getId()).thenReturn("sess-generic-error-send");
+        when(rawSession.getUri()).thenReturn(URI.create(
+                "ws://localhost/api/v1/agent/ws?ticket=generic-error-send"));
+        when(rawSession.isOpen()).thenReturn(true);
+        when(ticketStore.consume("generic-error-send")).thenReturn(83L);
+        org.mockito.Mockito.doThrow(new java.io.IOException("send failed"))
+                .when(rawSession).sendMessage(any());
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.handleTextMessage(
+                rawSession, new TextMessage("{not-json"));
+
+        verify(rawSession).close(any());
+        verifyNoInteractions(agent, memoryStore);
+    }
+
+    @Test
+    void unknownTypeDeliveryFailureClosesWithoutASecondErrorWrite()
+            throws Exception {
+        when(rawSession.getId()).thenReturn("sess-unknown-type-send");
+        when(rawSession.getUri()).thenReturn(URI.create(
+                "ws://localhost/api/v1/agent/ws?ticket=unknown-type-send"));
+        when(rawSession.isOpen()).thenReturn(true);
+        when(ticketStore.consume("unknown-type-send")).thenReturn(84L);
+        AtomicInteger sends = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (sends.incrementAndGet() == 1) {
+                throw new java.io.IOException("unknown-type send failed");
+            }
+            return null;
+        }).when(rawSession).sendMessage(any());
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.handleTextMessage(rawSession, new TextMessage(
+                "{\"type\":\"unsupported\"}"));
+
+        verify(rawSession).close(any());
+        assertThat(sends).hasValue(1);
+        verifyNoInteractions(agent, memoryStore);
     }
 
     @Test
@@ -714,6 +1104,29 @@ class AgentWebSocketHandlerTest {
                         .contains("\"type\":\"proactive\"")
                         .contains("I kept your seat by the window."));
         verify(notificationService).registerSession(eq(77L), eq("sess-proactive"), any());
+    }
+
+    @Test
+    void proactiveNotificationDeliveryFailureClosesTheConnection()
+            throws Exception {
+        when(rawSession.getId()).thenReturn("sess-proactive-send-failure");
+        when(rawSession.getUri()).thenReturn(URI.create(
+                "ws://localhost/api/v1/agent/ws?ticket=proactive-send-failure"));
+        when(rawSession.isOpen()).thenReturn(true);
+        when(ticketStore.consume("proactive-send-failure")).thenReturn(78L);
+        when(notificationService.getPendingNotifications(78L)).thenReturn(
+                List.of(new Notification(
+                        "missing-you",
+                        "Welcome back.",
+                        java.time.Instant.parse("2026-07-04T12:00:00Z"),
+                        NotificationChannel.FLOATING)));
+        org.mockito.Mockito.doThrow(new java.io.IOException("send failed"))
+                .when(rawSession).sendMessage(any());
+
+        handler.afterConnectionEstablished(rawSession);
+
+        verify(agentMetrics).recordError("proactive_delivery");
+        verify(rawSession).close(any());
     }
 
     @Test
@@ -824,6 +1237,42 @@ class AgentWebSocketHandlerTest {
     }
 
     @Test
+    void reflectsEveryLogicalConversationUsedByOneConnection()
+            throws Exception {
+        when(rawSession.getId()).thenReturn("sess-reflect-all");
+        when(rawSession.getUri()).thenReturn(URI.create(
+                "ws://localhost/api/v1/agent/ws?ticket=reflect-all"));
+        when(ticketStore.consume("reflect-all")).thenReturn(103L);
+        when(memoryStore.getOrCreateMemory(103L, "logical-reflect-a"))
+                .thenReturn(memory);
+        when(memoryStore.getOrCreateMemory(103L, "logical-reflect-b"))
+                .thenReturn(memory);
+        doNothing().when(agent).run(
+                any(), anyLong(), any(), any(AgentTurnControl.class),
+                any(), any(), any());
+        List<AgentTurn> first = List.of(
+                AgentTurn.user("first"), AgentTurn.assistant("answer-a"));
+        List<AgentTurn> second = List.of(
+                AgentTurn.user("second"), AgentTurn.assistant("answer-b"));
+        when(memoryStore.getTurns(103L, "logical-reflect-a"))
+                .thenReturn(first);
+        when(memoryStore.getTurns(103L, "logical-reflect-b"))
+                .thenReturn(second);
+
+        handler.afterConnectionEstablished(rawSession);
+        handler.handleTextMessage(rawSession, new TextMessage(chatPayload(
+                "logical-reflect-a", "first", "request-reflect-a")));
+        handler.handleTextMessage(rawSession, new TextMessage(chatPayload(
+                "logical-reflect-b", "second", "request-reflect-b")));
+        handler.afterConnectionClosed(
+                rawSession,
+                org.springframework.web.socket.CloseStatus.NORMAL);
+
+        verify(insightService).reflectOnConversation(103L, first);
+        verify(insightService).reflectOnConversation(103L, second);
+    }
+
+    @Test
     void triggersCognitiveCycleAfterConnectionClosed() throws Exception {
         when(rawSession.getId()).thenReturn("sess-cognitive");
         when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=t6"));
@@ -838,13 +1287,12 @@ class AgentWebSocketHandlerTest {
     @Test
     void chatLifecycleWorksWhenOptionalLearningAndNotificationExtensionsAreDisabled() {
         StaticListableBeanFactory emptyFactory = new StaticListableBeanFactory();
-        AgentWebSocketHandler coreOnlyHandler = new AgentWebSocketHandler(
-                agent, objectMapper, memoryStore, ticketStore, rateLimiter, heartbeat,
-                agentMetrics, characterStateService,
+        AgentWebSocketHandler coreOnlyHandler = handler(
+                AgentTurnCoordinator.inMemory(),
+                Runnable::run,
                 emptyFactory.getBeanProvider(InsightService.class),
                 emptyFactory.getBeanProvider(CognitiveEngine.class),
-                emptyFactory.getBeanProvider(NotificationService.class),
-                Runnable::run);
+                emptyFactory.getBeanProvider(NotificationService.class));
         when(rawSession.getId()).thenReturn("sess-core-only");
         when(rawSession.getUri()).thenReturn(URI.create("ws://localhost/api/v1/agent/ws?ticket=core-only"));
         when(ticketStore.consume("core-only")).thenReturn(201L);
@@ -868,21 +1316,71 @@ class AgentWebSocketHandlerTest {
         StaticListableBeanFactory extensionFactory = new StaticListableBeanFactory();
         extensionFactory.addBean("insightService", insightService);
         extensionFactory.addBean("notificationService", notificationService);
-        return new AgentWebSocketHandler(
-                agent,
-                objectMapper,
-                memoryStore,
-                ticketStore,
-                rateLimiter,
-                heartbeat,
-                agentMetrics,
-                characterStateService,
+        return handler(
+                coordinator,
+                executor,
                 extensionFactory.getBeanProvider(InsightService.class),
                 new StaticListableBeanFactory().getBeanProvider(CognitiveEngine.class),
-                extensionFactory.getBeanProvider(NotificationService.class),
-                coordinator,
-                new com.chtholly.agent.config.AgentProperties(),
-                executor);
+                extensionFactory.getBeanProvider(NotificationService.class));
+    }
+
+    private AgentWebSocketHandler handler(
+            AgentTurnCoordinator coordinator,
+            java.util.concurrent.Executor executor,
+            ObjectProvider<InsightService> insightProvider,
+            ObjectProvider<CognitiveEngine> cognitiveProvider,
+            ObjectProvider<NotificationService> notificationProvider) {
+        AgentWebSocketConnectionRegistry registry =
+                new AgentWebSocketConnectionRegistry();
+        AgentWebSocketProtocolCodec protocol =
+                new AgentWebSocketProtocolCodec(objectMapper);
+        AgentWebSocketTaskExecutor taskExecutor =
+                new AgentWebSocketTaskExecutor(executor);
+        AgentWebSocketDeliveryService delivery =
+                new AgentWebSocketDeliveryService(protocol, agentMetrics);
+        AgentWebSocketExtensionLifecycle extensions =
+                new AgentWebSocketExtensionLifecycle(
+                        characterStateService,
+                        memoryStore,
+                        insightProvider,
+                        cognitiveProvider,
+                        notificationProvider,
+                        delivery,
+                        taskExecutor);
+        AgentWebSocketTurnAdmissionService admission =
+                new AgentWebSocketTurnAdmissionService(
+                        memoryStore,
+                        coordinator,
+                        new com.chtholly.agent.config.AgentProperties(),
+                        registry,
+                        delivery);
+        AgentWebSocketAcceptedTurnRunner acceptedTurnRunner =
+                new AgentWebSocketAcceptedTurnRunner(
+                        agent,
+                        coordinator,
+                        registry,
+                        delivery,
+                        extensions);
+        AgentWebSocketTurnSubmissionService turnSubmission =
+                new AgentWebSocketTurnSubmissionService(
+                        admission, acceptedTurnRunner);
+        AgentWebSocketProtocolDispatcher dispatcher =
+                new AgentWebSocketProtocolDispatcher(
+                        protocol,
+                        rateLimiter,
+                        registry,
+                        turnSubmission,
+                        taskExecutor);
+        AgentWebSocketConnectionLifecycle lifecycle =
+                new AgentWebSocketConnectionLifecycle(
+                        ticketStore,
+                        registry,
+                        protocol,
+                        heartbeat,
+                        agentMetrics,
+                        rateLimiter,
+                        extensions);
+        return new AgentWebSocketHandler(lifecycle, dispatcher);
     }
 
     private String chatPayload(String sessionId, String message, String requestId) {

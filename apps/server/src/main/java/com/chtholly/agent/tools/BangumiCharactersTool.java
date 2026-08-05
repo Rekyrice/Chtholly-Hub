@@ -90,7 +90,7 @@ public class BangumiCharactersTool implements AgentTool {
         }
 
         if (lastApiError != null) {
-            return lastApiError.getMessage();
+            throw BangumiToolFailures.unavailable(lastApiError);
         }
         return "Bangumi 未找到与「" + keywords.get(0) + "」相关的角色信息。";
     }

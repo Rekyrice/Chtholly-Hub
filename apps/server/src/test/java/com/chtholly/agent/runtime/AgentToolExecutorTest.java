@@ -7,6 +7,8 @@ import com.chtholly.agent.config.AgentErrorMessages;
 import com.chtholly.agent.config.AgentProperties;
 import com.chtholly.agent.observability.AgentToolDiagnostics;
 import com.chtholly.agent.evidence.Evidence;
+import com.chtholly.agent.tools.BangumiCharactersTool;
+import com.chtholly.bangumi.service.BangumiService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +25,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class AgentToolExecutorTest {
 
@@ -126,6 +130,32 @@ class AgentToolExecutorTest {
         assertThat(result.diagnostics().attributes())
                 .containsEntry("requestedUrl", "https://example.com/private");
         assertThat(result.diagnostics().attributes().get("robots").toString()).contains("DENY");
+    }
+
+    @Test
+    void bangumiUnavailableIsAnErrorWhileAnEmptyLookupRemainsSuccessful() {
+        BangumiService service = mock(BangumiService.class);
+        AgentDomainConfig config = domainConfig();
+        BangumiCharactersTool tool = new BangumiCharactersTool(service, config);
+        when(service.describeSubjectCharacters("不可用条目"))
+                .thenThrow(new IllegalStateException("Bangumi 服务暂时不可用，请稍后再试。"));
+        when(service.describeSubjectCharacters("空条目"))
+                .thenReturn("Bangumi 暂无角色信息");
+
+        AgentToolResult unavailable = executor(5).execute(
+                tool, Map.of("keyword", "不可用条目"), 7L);
+        AgentToolResult empty = executor(5).execute(
+                tool, Map.of("keyword", "空条目"), 7L);
+
+        assertThat(unavailable.status()).isEqualTo(AgentToolResult.Status.ERROR);
+        assertThat(unavailable.errorCode()).isEqualTo("BANGUMI_UNAVAILABLE");
+        assertThat(unavailable.observation())
+                .isEqualTo("Bangumi 服务暂时不可用，请稍后再试。");
+        assertThat(unavailable.diagnostics().attributes())
+                .containsEntry("provider", "bangumi");
+        assertThat(empty.status()).isEqualTo(AgentToolResult.Status.SUCCESS);
+        assertThat(empty.errorCode()).isEmpty();
+        assertThat(empty.observation()).contains("未找到", "空条目");
     }
 
     @Test

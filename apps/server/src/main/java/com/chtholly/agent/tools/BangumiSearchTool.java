@@ -100,7 +100,7 @@ public class BangumiSearchTool implements AgentTool {
         }
 
         if (lastApiError != null) {
-            return lastApiError.getMessage();
+            throw BangumiToolFailures.unavailable(lastApiError);
         }
         return agentDomainConfig.render(
                 agentDomainConfig.bangumi().noSubjectResult(),
@@ -123,7 +123,7 @@ public class BangumiSearchTool implements AgentTool {
 
         if (merged.isEmpty()) {
             if (lastApiError != null) {
-                return lastApiError.getMessage();
+                throw BangumiToolFailures.unavailable(lastApiError);
             }
             return agentDomainConfig.render(
                     agentDomainConfig.bangumi().noAnimeResult(),
@@ -143,7 +143,11 @@ public class BangumiSearchTool implements AgentTool {
         if (q == null) {
             return false;
         }
-        return Pattern.compile(agentDomainConfig.bangumi().seasonQuestionRegex())
+        String regex = agentDomainConfig.bangumi().seasonQuestionRegex();
+        if (!StringUtils.hasText(regex)) {
+            return false;
+        }
+        return Pattern.compile(regex)
                 .matcher(String.valueOf(q))
                 .find();
     }
@@ -191,8 +195,8 @@ public class BangumiSearchTool implements AgentTool {
             return keyword;
         }
         String s = keyword.trim();
-        s = s.replaceAll(agentDomainConfig.bangumi().shortSeriesRegex(), "");
-        s = s.replaceAll(agentDomainConfig.bangumi().shortSeriesSuffixRegex(), "");
+        s = replaceAllIfConfigured(s, agentDomainConfig.bangumi().shortSeriesRegex());
+        s = replaceAllIfConfigured(s, agentDomainConfig.bangumi().shortSeriesSuffixRegex());
         if (s.length() >= 2 && s.length() < keyword.length()) {
             return s;
         }
@@ -203,11 +207,15 @@ public class BangumiSearchTool implements AgentTool {
         if (!StringUtils.hasText(question)) {
             return "";
         }
-        return question.trim()
-                .replaceAll(agentDomainConfig.bangumi().titleStopRegex(), "")
-                .replaceAll(agentDomainConfig.bangumi().titlePrefixRegex(), "")
-                .replaceAll(agentDomainConfig.bangumi().titleSuffixRegex(), "")
-                .trim();
+        String title = question.trim();
+        title = replaceAllIfConfigured(title, agentDomainConfig.bangumi().titleStopRegex());
+        title = replaceAllIfConfigured(title, agentDomainConfig.bangumi().titlePrefixRegex());
+        title = replaceAllIfConfigured(title, agentDomainConfig.bangumi().titleSuffixRegex());
+        return title.trim();
+    }
+
+    private String replaceAllIfConfigured(String value, String regex) {
+        return StringUtils.hasText(regex) ? value.replaceAll(regex, "") : value;
     }
 
     private String formatSubject(BangumiSubjectRow row) {

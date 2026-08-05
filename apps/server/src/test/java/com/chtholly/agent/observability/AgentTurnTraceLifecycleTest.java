@@ -20,6 +20,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -63,6 +64,29 @@ class AgentTurnTraceLifecycleTest {
 
         assertThat(visibleError).isNull();
         assertThat(trace.getFailureType()).isEqualTo(AgentExecutionTrace.FailureType.TURN_CANCELLED);
+    }
+
+    @Test
+    void alreadyTerminatedLoopTimeoutIsClassifiedWithoutRepeatingItsVisibleTerminal() {
+        AgentTurnControl control = AgentTurnControl.standalone(
+                "session", Duration.ofSeconds(1));
+        AgentExecutionTrace trace = spy(new AgentExecutionTrace(7L, control, 4));
+        trace.recordTimeoutStage("loop_llm");
+        trace.terminateTimeout();
+        AgentTurnBudget.UnavailableException unavailable = AgentTurnBudget.unavailableForStage(
+                AgentTurnBudget.UnavailableReason.TIMEOUT,
+                "agent_loop");
+
+        String visibleError = lifecycle.recordUnavailable(
+                unavailable, control, trace, "response timeout");
+
+        assertThat(visibleError).isNull();
+        assertThat(trace.getFailureType())
+                .isEqualTo(AgentExecutionTrace.FailureType.TURN_TIMEOUT);
+        assertThat(trace.toPayloadMap())
+                .containsEntry("outcomeReason", "MODEL_FAILURE");
+        assertThat(trace.getTimeoutStage()).isEqualTo("loop_llm");
+        verify(trace, times(1)).terminateTimeout();
     }
 
     @Test

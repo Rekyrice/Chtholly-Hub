@@ -4,6 +4,7 @@ import com.chtholly.agent.AgentEvent;
 import com.chtholly.agent.context.AgentContextSnapshot;
 import com.chtholly.agent.evidence.EvidenceSet;
 import com.chtholly.agent.memory.AgentConversationMemory;
+import com.chtholly.agent.memory.AgentMemoryWriteException;
 import com.chtholly.agent.observability.AgentExecutionTrace;
 import com.chtholly.agent.runtime.AgentTurnBudget;
 import com.chtholly.agent.runtime.AgentTurnCompletion;
@@ -16,10 +17,13 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -88,5 +92,77 @@ class AgentFinalAnswerServiceTest {
                 eq(sink),
                 eq(11L),
                 anyLong());
+    }
+
+    @Test
+    void memoryWriteFailureEscapesToTheTurnOrchestratorWithoutClientOutput() {
+        AgentFinalCandidateGenerator generator = mock(AgentFinalCandidateGenerator.class);
+        AgentFinalAnswerValidationPipeline validation =
+                mock(AgentFinalAnswerValidationPipeline.class);
+        AgentTurnCompletion completion = mock(AgentTurnCompletion.class);
+        AgentExecutionTrace trace = mock(AgentExecutionTrace.class);
+        AgentTurnControl control = mock(AgentTurnControl.class);
+        AgentFinalAnswerPromptFactory promptFactory =
+                mock(AgentFinalAnswerPromptFactory.class);
+        when(trace.getTurnControl()).thenReturn(control);
+        when(trace.getStartedAtMs()).thenReturn(System.currentTimeMillis());
+        when(generator.generate(any())).thenReturn(new AgentFinalCandidateGenerator.Result(
+                AgentFinalCandidateGenerator.Status.SUCCESS,
+                "draft",
+                "system",
+                "prompt",
+                23L,
+                11L,
+                false,
+                "",
+                null));
+        when(validation.validate(any())).thenReturn(
+                new AgentFinalAnswerValidationPipeline.Result(
+                        AgentFinalAnswerValidationPipeline.Status.APPROVED,
+                        "answer",
+                        AgentExecutionTrace.OutcomeReason.NONE,
+                        "",
+                        "",
+                        0L));
+        AgentMemoryWriteException failure =
+                new AgentMemoryWriteException("STORE_REJECTED");
+        @SuppressWarnings("unchecked")
+        Consumer<AgentEvent> sink = mock(Consumer.class);
+        AgentConversationMemory memory = mock(AgentConversationMemory.class);
+        AgentTurnBudget budget =
+                AgentTurnBudget.start(Duration.ofSeconds(1), () -> false);
+        doThrow(failure).when(completion).completeVisibleAnswer(
+                eq(memory),
+                eq("question"),
+                eq("answer"),
+                eq(budget),
+                eq(control),
+                eq(trace),
+                eq(sink),
+                eq(11L),
+                anyLong());
+        AgentFinalAnswerService service = new AgentFinalAnswerService(
+                generator,
+                validation,
+                mock(AgentBoundaryResponseService.class),
+                completion,
+                promptFactory);
+
+        assertThatThrownBy(() -> service.stream(
+                sink,
+                "question",
+                List.of("transcript"),
+                memory,
+                trace,
+                mock(Observation.class),
+                2,
+                mock(AgentContextSnapshot.class),
+                EvidenceSet.empty(),
+                false,
+                null,
+                budget))
+                .isSameAs(failure);
+
+        verify(completion, never()).emitError(any(), any());
     }
 }

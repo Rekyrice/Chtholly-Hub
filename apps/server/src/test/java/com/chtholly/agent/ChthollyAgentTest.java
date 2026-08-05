@@ -23,6 +23,7 @@ import com.chtholly.agent.runtime.AgentLoopResult;
 import com.chtholly.agent.runtime.AgentToolExecutor;
 import com.chtholly.agent.runtime.AgentToolPlanner;
 import com.chtholly.agent.runtime.AgentToolResult;
+import com.chtholly.agent.runtime.AgentTurnBudget;
 import com.chtholly.agent.runtime.AgentTurnControl;
 import com.chtholly.agent.skill.SkillDefinition;
 import com.chtholly.agent.skill.EvidencePolicy;
@@ -110,7 +111,7 @@ class ChthollyAgentTest {
         domainConfig = domainConfig();
         when(observationService.startAgentSpan(anyString(), anyLong())).thenReturn(agentSpan);
         org.mockito.Mockito.lenient().when(memory.addExchange(any(), any())).thenReturn(true);
-        agent = new ChthollyAgent(
+        agent = AgentTestComposition.createAgent(
                 llmInvoker,
                 loopExecutor,
                 new AgentToolPlanner(),
@@ -183,6 +184,59 @@ class ChthollyAgentTest {
         assertThat(payload.path("terminatedBy").asText()).isEqualTo("timeout");
         assertThat(payload.path("failureType").asText()).isEqualTo("TURN_TIMEOUT");
         assertThat(payload.path("turn").path("timeoutStage").asText()).isEqualTo("turn_start");
+    }
+
+    @Test
+    void timeoutReturnedByRealLoopEmitsOneTerminalErrorAndKeepsTraceClassification()
+            throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        AgentToolExecutor toolExecutor = org.mockito.Mockito.mock(AgentToolExecutor.class);
+        AgentLoopExecutor realLoopExecutor = AgentTestComposition.createLoopExecutor(
+                llmInvoker, toolExecutor, objectMapper, observationService, domainConfig);
+        agent = AgentTestComposition.createAgent(
+                llmInvoker,
+                realLoopExecutor,
+                new AgentToolPlanner(),
+                properties,
+                objectMapper,
+                List.of(tool("search")),
+                agentMetrics,
+                observationService,
+                new CharacterSoulService("soul"),
+                contextEngine,
+                tracePersistenceService,
+                domainConfig,
+                skillRegistry,
+                skillSelector,
+                new SkillRequestPlanner(),
+                new SkillOutputValidator());
+        when(memory.formatForPrompt()).thenReturn("");
+        when(contextEngine.buildSnapshot(
+                anyLong(), any(), any(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(snapshot("assembled system"));
+        org.mockito.Mockito.lenient().when(
+                observationService.startLlmSpan(eq(agentSpan), isNull())).thenReturn(llmSpan);
+        when(llmInvoker.call(
+                anyString(), anyString(), anyDouble(), anyInt(), any(Duration.class)))
+                .thenThrow(AgentTurnBudget.unavailableForStage(
+                        AgentTurnBudget.UnavailableReason.TIMEOUT,
+                        "loop_llm"));
+
+        agent.run("question", 7L, memory, events::add);
+
+        assertThat(eventTypes()).containsExactly("error");
+        assertThat(events.getFirst().data().path("message").asText())
+                .isEqualTo("RESPONSE_TIMEOUT");
+        ArgumentCaptor<AgentExecutionTrace> traceCaptor =
+                ArgumentCaptor.forClass(AgentExecutionTrace.class);
+        verify(tracePersistenceService).persist(traceCaptor.capture());
+        com.fasterxml.jackson.databind.JsonNode payload = objectMapper.valueToTree(
+                traceCaptor.getValue().toPayloadMap());
+        assertThat(payload.path("terminatedBy").asText()).isEqualTo("timeout");
+        assertThat(payload.path("failureType").asText()).isEqualTo("TURN_TIMEOUT");
+        assertThat(payload.path("outcomeReason").asText()).isEqualTo("MODEL_FAILURE");
+        assertThat(payload.path("turn").path("timeoutStage").asText())
+                .isEqualTo("loop_llm");
     }
 
     @Test
@@ -536,15 +590,10 @@ class ChthollyAgentTest {
     void finalAnswerDropsSupersededDynamicEvidenceButKeepsLoopVisibilityAndTrace() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         AgentToolExecutor toolExecutor = org.mockito.Mockito.mock(AgentToolExecutor.class);
-        AgentLoopExecutor realLoopExecutor = new AgentLoopExecutor(
-                llmInvoker,
-                toolExecutor,
-                new AgentJsonExtractor(objectMapper),
-                objectMapper,
-                observationService,
-                domainConfig);
+        AgentLoopExecutor realLoopExecutor = AgentTestComposition.createLoopExecutor(
+                llmInvoker, toolExecutor, objectMapper, observationService, domainConfig);
         AgentTool webFetch = tool("web_fetch");
-        agent = new ChthollyAgent(
+        agent = AgentTestComposition.createAgent(
                 llmInvoker,
                 realLoopExecutor,
                 new AgentToolPlanner(),
@@ -1123,7 +1172,7 @@ class ChthollyAgentTest {
 
     @Test
     void requiredEmptyInitialEvidenceCanBeSatisfiedByWebFetchBeforeFinalValidation() {
-        agent = new ChthollyAgent(
+        agent = AgentTestComposition.createAgent(
                 llmInvoker,
                 loopExecutor,
                 new AgentToolPlanner(),
@@ -1173,7 +1222,7 @@ class ChthollyAgentTest {
 
     @Test
     void requiredWebTurnStillReturnsNoEvidenceWhenLoopAddsNothing() {
-        agent = new ChthollyAgent(
+        agent = AgentTestComposition.createAgent(
                 llmInvoker,
                 loopExecutor,
                 new AgentToolPlanner(),

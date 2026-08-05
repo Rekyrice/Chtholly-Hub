@@ -72,28 +72,44 @@ public class AgentTurnTraceLifecycle {
 
     /**
      * Applies stable timeout or cancellation state and returns an optional visible error message.
+     * A lower phase may already have emitted the matching terminal event while returning its
+     * typed outcome; in that case this method enriches the trace without emitting it again.
      */
     public String recordUnavailable(
             AgentTurnBudget.UnavailableException unavailable,
             AgentTurnControl control,
             AgentExecutionTrace trace,
             String timeoutMessage) {
+        boolean terminalAlreadyRecorded = hasMatchingTerminal(trace, unavailable.reason());
         trace.recordCancellation(control.isCancelled());
         if (unavailable.reason() == AgentTurnBudget.UnavailableReason.TIMEOUT
                 && trace.getTimeoutStage().isBlank()) {
             trace.recordTimeoutStage(unavailable.stage());
         }
         if (unavailable.reason() == AgentTurnBudget.UnavailableReason.CANCELLED) {
-            trace.terminateCancelled();
+            if (!terminalAlreadyRecorded) {
+                trace.terminateCancelled();
+            }
             trace.markFailure(AgentExecutionTrace.FailureType.TURN_CANCELLED);
             trace.setErrorMessage("TURN_CANCELLED");
             return null;
         }
-        trace.terminateTimeout();
+        if (!terminalAlreadyRecorded) {
+            trace.terminateTimeout();
+        }
         trace.markFailure(AgentExecutionTrace.FailureType.TURN_TIMEOUT);
         trace.recordOutcomeReason(AgentExecutionTrace.OutcomeReason.MODEL_FAILURE);
         trace.setErrorMessage(timeoutMessage);
-        return timeoutMessage;
+        return terminalAlreadyRecorded ? null : timeoutMessage;
+    }
+
+    private boolean hasMatchingTerminal(
+            AgentExecutionTrace trace,
+            AgentTurnBudget.UnavailableReason reason) {
+        return switch (reason) {
+            case TIMEOUT -> "timeout".equals(trace.getTerminatedBy());
+            case CANCELLED -> "cancelled".equals(trace.getTerminatedBy());
+        };
     }
 
     private void finalizeTrace(TraceScope scope, AgentTurnControl control) {
