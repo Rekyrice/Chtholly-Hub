@@ -16,25 +16,31 @@ class NginxLocalStorageSecurityContractTest {
 
     @Test
     void nginxRejectsUnsafeLegacyPostBodiesBeforeServingTheUploadsAlias() throws IOException {
-        String config = Files.readString(findNginxConfig()).replace("\r\n", "\n");
+        assertRejectsUnsafeLegacyPostBodiesBeforeServingTheUploadsAlias(findNginxConfig("default.conf"));
+        assertRejectsUnsafeLegacyPostBodiesBeforeServingTheUploadsAlias(findNginxConfig("https.conf.template"));
+    }
+
+    private static void assertRejectsUnsafeLegacyPostBodiesBeforeServingTheUploadsAlias(Path configPath)
+            throws IOException {
+        String config = Files.readString(configPath).replace("\r\n", "\n");
 
         int activeBlock = config.indexOf("    " + UNSAFE_LEGACY_CONTENT_LOCATION);
         int activeUploadsAlias = config.indexOf("    location /uploads/ {");
         assertThat(activeBlock).isGreaterThanOrEqualTo(0).isLessThan(activeUploadsAlias);
         assertThat(config.substring(activeBlock, activeUploadsAlias))
                 .contains("return 404;");
-        assertThat(countOccurrences(config, UNSAFE_LEGACY_CONTENT_LOCATION)).isEqualTo(2);
+        assertThat(countOccurrences(config, UNSAFE_LEGACY_CONTENT_LOCATION)).isEqualTo(1);
     }
 
-    private static Path findNginxConfig() {
+    private static Path findNginxConfig(String fileName) {
         return List.of(
-                        Path.of("..", "..", "docker", "nginx", "default.conf"),
-                        Path.of("docker", "nginx", "default.conf"))
+                        Path.of("..", "..", "docker", "nginx", fileName),
+                        Path.of("docker", "nginx", fileName))
                 .stream()
                 .map(path -> path.toAbsolutePath().normalize())
                 .filter(Files::isRegularFile)
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("docker/nginx/default.conf is missing"));
+                .orElseThrow(() -> new IllegalStateException("docker/nginx/" + fileName + " is missing"));
     }
 
     private static int countOccurrences(String source, String expected) {
