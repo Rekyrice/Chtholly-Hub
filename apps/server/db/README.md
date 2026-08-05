@@ -7,7 +7,7 @@ Chtholly Hub 使用 MySQL。稳定的 schema、增量、seed 关系与生产边�
 ```text
 db/
 ├── schema.sql          # 开发阶段全量建表脚本
-├── migration/          # 已有数据库的增量脚本（当前 V20–V27）
+├── migration/          # 已有数据库的增量脚本（当前 V20–V29）
 └── seed/               # 开发/演示用种子数据
     └── phase_a_seed.sql
 ```
@@ -39,6 +39,8 @@ db/
 - [`V25__counter_reaction.sql`](migration/V25__counter_reaction.sql)：点赞/收藏成员关系事实。
 - [`V26__counter_reaction_side_effect_receipt.sql`](migration/V26__counter_reaction_side_effect_receipt.sql)：互动事件级副作用回执与 Outbox 回放索引。
 - [`V27__dead_letter_replay_state.sql`](migration/V27__dead_letter_replay_state.sql)：人工死信重放状态、attempt token 与数据库时钟截止时间。
+- [`V28__post_projection_receipt.sql`](migration/V28__post_projection_receipt.sql)：文章派生投影的每帖顺序游标与 MySQL 完成回执。
+- [`V29__user_refresh_session_epoch.sql`](migration/V29__user_refresh_session_epoch.sql)：用户级 refresh session 失效代际的 MySQL 权威列。
 
 `schema.sql` 已包含当前最终表形，空库无需为 V0–V19 逐个找历史脚本。本地已有库可从根目录运行 `.\scripts\dev\apply-migrations.ps1`；它使用 `schema_migrations` 登记，不代表应用启用了 Flyway。新增变更只追加更高版本的 `V*.sql`，已应用脚本不得修改。
 
@@ -47,6 +49,10 @@ db/
 `V26` 通过内部 checkpoint 只在首次执行时把已有 reaction Inbox 的副作用回执回填为 `applied_at`；新事件保持待发布，历史上仍无 Inbox 的 Outbox 保持可恢复。清理任务只有在对应回执非空后才允许删除 reaction Outbox。详细边界见[数据库章节](../../../docs/development/database.md#v26-回放与清理边界)。
 
 `V27` 保留旧死信状态，扩展 `REPLAYING`/`UNCERTAIN`，并可重入地增加 `replay_attempt_token`、`replay_started_at`、`replay_deadline_at`；已有库必须先迁移，再启动会写入新状态与列的应用。详细边界见[数据库章节](../../../docs/development/database.md#v27-死信重放状态边界)。
+
+`V28` 创建 `post_projection_cursor` 与 Outbox 级联的 `post_projection_receipt`。同一帖子以 `SELECT ... FOR UPDATE` 跨实例串行：已有回执的重复事件直接跳过；事件 ID 不大于游标但父 Outbox 仍存在且回执缺失时，仍按 MySQL 当前事实重跑全部幂等投影并补回执，但不回退游标；父 Outbox 与级联回执已被保留期清理时，由仍保留的游标高水位把旧消息识别为迟到重复并跳过。只有较新的事件在全部投影与回执成功后才推进游标；较新消息缺少父 Outbox 时，回执父行约束使 MySQL 事务失败、游标不变并向调用方传播，不能使用清理快路径或静默确认。清理任务不会提前删除缺少回执的文章 Outbox。详细边界见[数据库章节](../../../docs/development/database.md#v28-文章投影回放边界)。
+
+`V29` 为 `users` 增加 `refresh_session_epoch BIGINT NOT NULL DEFAULT 1`。新版本只接受 Redis 中携带 `mysql:<epoch>` 的 refresh membership；旧裸值不迁移，因此已有 refresh session 会在切换时一次性失效。该版本禁止新旧应用混部：必须在维护窗口排空认证流量并停止全部旧节点，应用 V29，确认列定义与存量正 epoch 后，再一次性启动新节点；回滚旧实现前必须先安全失效全部 refresh membership。注册首枚 membership 由外层 MySQL 事务中的 pending-token 窄端口建立，回滚或完成状态未知时 best-effort 补偿，注册审计与事件只在提交后执行。详细边界见[数据库章节](../../../docs/development/database.md#v29-refresh-session-权威切换边界)。
 
 ## 数据库与 OSS 的分工
 

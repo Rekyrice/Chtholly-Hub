@@ -24,6 +24,21 @@ CI 也保持相同隔离：`backend-test` 运行 `mvn test -Dspring.profiles.act
 - 前端行为：Vitest 与生产构建都运行；只有单测不能证明 Next.js 生产边界可构建。
 - 数据库或部署：除静态检查外，在隔离环境验证 schema/增量顺序和健康检查，避免对生产数据试跑。
 
+## 后端应用层架构护栏
+
+`BackendArchitectureFitnessTest` 扫描生产 class 与源码，禁止 Controller 直接依赖 Mapper、Redis、Kafka、Elasticsearch，禁止 Mapper 反向依赖 API/Service 和字段注入，并对 Spring 构造依赖、生产文件长度采用“全局上限 + 精确遗留预算”。`AgentLoopExecutorArchitectureTest` 与 `AgentWebSocketArchitectureTest` 再约束 Agent 门面、循环和 WebSocket 适配层，防止把旧 God Class 原样迁到新的编排类。
+
+```powershell
+cd apps/server
+mvn -q '-Dtest=BackendArchitectureFitnessTest,AgentLoopExecutorArchitectureTest,AgentWebSocketArchitectureTest' test
+```
+
+认证状态改动至少运行 `AuthUseCaseBoundaryTest,AuthPendingRegistrationTransactionTest,AuthRegistrationSideEffectCoordinatorTest,RedisRefreshTokenStoreTest,VerificationSendGuardTest,VerificationServiceTest`；Redis Lua 的并发与补偿语义另由 `RedisRefreshTokenStoreIT,VerificationSendGuardIT` 在真实 Redis 固定。`RefreshSessionEpochRedisStoreIT` 还固定注册 token 失败回滚用户、pending membership 的回滚补偿、审计/事件只在提交后执行、验证码消费不恢复，以及签发/校验/轮换期间 epoch 变化时的失败关闭。
+
+关系写模型改动至少运行 `RelationApplicationBoundaryTest,RelationServiceImplTest,RelationTransactionProxyTest,RelationTransactionalEventListenerTest`，并用 `RelationMapperIT` 验证权威 ID、时间和复合游标。文章发布/Feed 改动要同时覆盖两阶段正文确认、Outbox、HTTP 缓存变体、MySQL 授权和提交后副作用，至少包含 `PostDraftCommandServiceContentBindingTest,PostMapperStateTransitionContractTest,PostOutboxProjectionProcessorTest,PostProjectionRecoveryJobTest,PersonalPostFeedServiceTest,PostDetailQueryServiceTest,PostCacheInvalidatorTest,RagIndexServiceTest`，不能只运行兼容门面测试。`PostOutboxProjectionProcessorTest` 必须保留“旧事件父行仍在时补投影/回执但不回退游标、父行已清理时迟到重复直接跳过、较新消息缺父行时投影后回执失败且不推进游标”三组合同；`PostProjectionCursorMapperIT` 用真实 MySQL 固定游标锁、游标 CAS、回执父行约束和清理后的父行缺失探测，`DataCleanupJobOutboxIT` 固定只有已完成文章 Outbox 才能清理且回执随父行级联删除。
+
+Agent 工具或完成门槛改动至少运行 `AgentLoopExecutorTest,AgentLoopCompletionPolicyTest,AgentToolExecutorTest,BangumiToolFailureContractTest`：provider `ERROR/TIMEOUT/INTERRUPTED` 必须解除复合工具的待完成门槛；provider interruption 要保留 Observation 并进入诚实 final，调用线程中断或整轮取消仍立即终止。已有 Evidence 时只能据此收束并说明缺失，没有 Evidence 时只报告 provider 不可用。参数 `VALIDATION_ERROR` 仍要求修正，任何失败调用都不得生成 Evidence。
+
 ## 最小基准合同
 
 根目录依次执行：
