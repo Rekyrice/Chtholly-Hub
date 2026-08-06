@@ -30,7 +30,9 @@ curl -fsS http://127.0.0.1/health
 
 当前 Compose 默认不创建 Kafka，server 使用 `KAFKA_ENABLED=false`、`CANAL_ENABLED=false`；需要 broker 时同时设置 `COMPOSE_PROFILES=kafka`、`KAFKA_ENABLED=true`。LLM 默认通过 `SPRING_PROFILES_ACTIVE=llm` 与 `LLM_ENABLED=true` 启用，两个 API key 和外部 JWT 密钥必须由配置包或人工提供。存储默认 `local`，通过 `uploads_data` 供 server 写入、Nginx 读取。
 
-这是当前受支持的 Nginx 一键生产路径。首次部署可运行 `bash scripts/deploy/ecs-bootstrap.sh`；它只初始化空数据库，生产默认不导入 seed。HTTP 可用且 DNS 生效后运行 `bash scripts/deploy/ecs-enable-https.sh <domain> <email>`。三个 ECS 脚本都硬编码 `docker-compose.prod.yml`，只能用于本节路径。数据库真实流程见[数据库章节](../docs/development/database.md)，不要把 SQL 文件名约定理解为已启用 Flyway。
+默认资源参数针对 2 vCPU、4 GiB 低流量单机：核心容器内存上限合计约 3.3 GiB，日志单文件 10 MiB、保留 3 个文件，bootstrap 会确保至少 2 GiB swap，并按 server、web 的顺序构建镜像。Kafka 的 1 GiB 上限只对显式 profile 生效；4 GiB 主机不应默认启用它。详细预算和覆盖变量见[生产部署](../docs/operations/deployment.md)与 [`.env.prod.example`](../.env.prod.example)。
+
+这是当前受支持的 Nginx 一键生产路径。首次部署可运行 `bash scripts/deploy/ecs-bootstrap.sh`；它会调用 `ecs-ensure-swap.sh` 并且只初始化空数据库，生产默认不导入 seed。HTTP 可用且 DNS 生效后运行 `bash scripts/deploy/ecs-enable-https.sh <domain> <email>`。`ecs-bootstrap.sh`、`ecs-init-db.sh` 与 `ecs-enable-https.sh` 都硬编码 `docker-compose.prod.yml`，只能用于本节路径。数据库真实流程见[数据库章节](../docs/development/database.md)，不要把 SQL 文件名约定理解为已启用 Flyway。
 
 ## Nginx 与 Caddy 参考模板
 

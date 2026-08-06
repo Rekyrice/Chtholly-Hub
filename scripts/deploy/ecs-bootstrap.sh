@@ -78,11 +78,18 @@ if [[ "$(env_value STORAGE_TYPE)" == "oss" ]]; then
   validate_env_value OSS_BUCKET
 fi
 
+swap_size_gib="$(env_value HOST_SWAP_SIZE_GB)"
+echo ">> 检查宿主机 swap"
+bash scripts/deploy/ecs-ensure-swap.sh "${swap_size_gib:-2}"
+
 echo ">> 校验 Docker Compose 配置"
 "${COMPOSE[@]}" config --quiet
 
-echo ">> 构建 server 与 web 镜像（首次约 5–10 分钟）"
-"${COMPOSE[@]}" build server web
+echo ">> 构建 server 镜像（首次约 5–10 分钟）"
+"${COMPOSE[@]}" build server
+
+echo ">> 构建 web 镜像"
+"${COMPOSE[@]}" build web
 
 echo ">> 启动生产服务"
 "${COMPOSE[@]}" up -d

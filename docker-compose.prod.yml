@@ -1,14 +1,22 @@
 # Chtholly Hub 单机生产 Compose
 # 用法见 docker/README.md — 部署章节
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: "${LOG_MAX_FILE:-3}"
+
 services:
   mysql:
     image: mysql:8.0
     restart: unless-stopped
+    logging: *default-logging
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
-      --max_connections=200
+      --max_connections=${MYSQL_MAX_CONNECTIONS:-50}
+      --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-128M}
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-${MYSQL_PASSWORD:?set MYSQL_ROOT_PASSWORD or MYSQL_PASSWORD in .env}}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-chtholly}
@@ -26,14 +34,15 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: ${MYSQL_MEMORY_LIMIT:-640M}
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *default-logging
     command: >
       redis-server
-      --maxmemory 256mb
+      --maxmemory ${REDIS_MAXMEMORY:-128mb}
       --maxmemory-policy allkeys-lru
       --save 900 1
       --save 300 10
@@ -49,15 +58,16 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: ${REDIS_MEMORY_LIMIT:-192M}
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.18.1
     restart: unless-stopped
+    logging: *default-logging
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
-      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
       cluster.routing.allocation.disk.watermark.low: 95%
       cluster.routing.allocation.disk.watermark.high: 97%
       cluster.routing.allocation.disk.watermark.flood_stage: 99%
@@ -69,11 +79,16 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: ${ELASTICSEARCH_MEMORY_LIMIT:-1200M}
 
   kafka:
     image: apache/kafka:4.2.0
     profiles: ["kafka"]
     restart: unless-stopped
+    logging: *default-logging
     hostname: kafka
     environment:
       KAFKA_NODE_ID: 1
@@ -94,11 +109,16 @@ services:
       timeout: 10s
       retries: 10
       start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: ${KAFKA_MEMORY_LIMIT:-1G}
 
   server:
     build:
       context: ./apps/server
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       mysql:
         condition: service_healthy
@@ -110,6 +130,7 @@ services:
         condition: service_healthy
         required: false
     environment:
+      JAVA_TOOL_OPTIONS: ${SERVER_JAVA_TOOL_OPTIONS:--Xms256m -Xmx512m -XX:MaxMetaspaceSize=192m}
       SERVER_PORT: 8888
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-llm}
       KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
@@ -174,6 +195,10 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: ${SERVER_MEMORY_LIMIT:-896M}
 
   web:
     build:
@@ -183,11 +208,13 @@ services:
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
         NEXT_PUBLIC_OSS_PUBLIC_URL: ${NEXT_PUBLIC_OSS_PUBLIC_URL}
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       server:
         condition: service_healthy
     environment:
       API_SERVER_URL: http://server:8888
+      NODE_OPTIONS: ${WEB_NODE_OPTIONS:---max-old-space-size=256}
       PORT: 3000
       HOSTNAME: 0.0.0.0
     healthcheck:
@@ -196,10 +223,15 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY_LIMIT:-384M}
 
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
@@ -219,6 +251,10 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: ${NGINX_MEMORY_LIMIT:-64M}
 
 volumes:
   mysql_data:

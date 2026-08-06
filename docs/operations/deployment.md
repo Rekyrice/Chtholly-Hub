@@ -6,6 +6,8 @@
 
 当前受支持的一键生产入口是 [`docker-compose.prod.yml`](../../docker-compose.prod.yml) + Nginx：MySQL、Redis、Elasticsearch、Spring Boot、Next.js standalone 与 Nginx 运行在同一 Compose 网络；Kafka 位于可选的 `kafka` profile，低成本默认不会创建 broker。只有 Nginx 暴露 `${HTTP_PORT:-80}` 与 `${HTTPS_PORT:-443}`。默认正文存储为具名卷 `uploads_data`；需要 OSS 时必须同时调整存储配置和凭据。
 
+该生产 Compose 的默认资源参数面向 2 vCPU、4 GiB 内存的低流量个人站。它不会被本地开发启动脚本使用，因此生产限制不改变维护机现有 MySQL、Redis、Kafka、Elasticsearch 或应用进程。
+
 ## 部署前准备
 
 1. 安装 Docker Engine 与 Compose 插件，准备可持久化的宿主机磁盘和备份策略。
@@ -17,6 +19,23 @@
 7. 在隔离环境验证镜像构建、数据库脚本和健康检查，再操作已有生产数据。
 
 不要把 `.env`、证书私钥、OSS/LLM/Bangumi 密钥提交到仓库或粘贴进日志与文档。
+
+## 4 GiB 单机资源边界
+
+默认生产预算如下；值来自 [`.env.prod.example`](../../.env.prod.example)，服务器 `.env` 可以覆盖，但下调时必须重新验证健康检查与峰值行为。
+
+| 服务 | 容器内存上限 | 进程内限制 |
+|------|--------------|------------|
+| MySQL | 640 MiB | 50 连接，InnoDB Buffer Pool 128 MiB |
+| Redis | 192 MiB | `maxmemory=128mb` |
+| Elasticsearch | 1200 MiB | JVM Heap 512 MiB |
+| Spring Boot | 896 MiB | JVM Heap 256–512 MiB，Metaspace 192 MiB |
+| Next.js | 384 MiB | Node old space 256 MiB |
+| Nginx | 64 MiB | 无额外应用缓存 |
+
+默认服务的上限合计约 3.3 GiB，并统一使用 `json-file` 日志轮转：单文件 10 MiB、保留 3 个文件。首次引导会调用 [`ecs-ensure-swap.sh`](../../scripts/deploy/ecs-ensure-swap.sh) 检查至少 2 GiB swap；swap 仅用于吸收瞬时峰值，持续交换或容器 OOM 表示需要排查或扩容。脚本不会覆盖大小异常的既有 `/swapfile`。
+
+4 GiB 模式不支持 Kafka、Elasticsearch 和全部应用服务同时长期运行。Kafka/Canal 代码仍保留，但默认必须维持 `COMPOSE_PROFILES=`、`KAFKA_ENABLED=false`、`CANAL_ENABLED=false`；确需演示 Kafka 时，先停止 Elasticsearch 或升级内存。50 GiB 系统盘还需预留 swap、镜像、数据卷和构建缓存空间，持续监控 `docker system df`，清理前先确认没有删除仍需回滚的镜像。
 
 ## 受支持的一键路径：生产 Compose + Nginx
 
@@ -69,7 +88,7 @@ bash scripts/deploy/ecs-enable-https.sh hub.example.com your-email@example.com
 bash scripts/deploy/ecs-bootstrap.sh
 ```
 
-脚本先校验密码、域名、LLM key、Kafka/profile 配对和 JWT 文件，再构建并启动服务。`ecs-init-db.sh` 只接受空库，真实默认顺序是 `schema.sql` → 当前 `migration/V*.sql`；只有显式执行 `ecs-init-db.sh --with-seed` 或设置 `SEED_PHASE_A=true` 才导入 `phase_a_seed.sql`。已有库必须按[数据库](../development/database.md)审核增量 migration，禁止用首次脚本重放。OSS seed 正文需另行执行 `node scripts/oss/upload-seed-markdown.mjs`。
+脚本先校验密码、域名、LLM key、Kafka/profile 配对和 JWT 文件，再检查或创建 swap；为避免 4 GiB 主机同时承受 Maven 与 Next.js 构建峰值，server 与 web 镜像按顺序构建，随后才启动服务。`ecs-init-db.sh` 只接受空库，真实默认顺序是 `schema.sql` → 当前 `migration/V*.sql`；只有显式执行 `ecs-init-db.sh --with-seed` 或设置 `SEED_PHASE_A=true` 才导入 `phase_a_seed.sql`。已有库必须按[数据库](../development/database.md)审核增量 migration，禁止用首次脚本重放。OSS seed 正文需另行执行 `node scripts/oss/upload-seed-markdown.mjs`。
 
 ## 可选 Kafka 模式
 
@@ -102,6 +121,9 @@ KAFKA_ENABLED=true
 ```bash
 docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs --tail=100 server web nginx
+free -h
+docker stats --no-stream
+docker system df
 curl -fsS http://127.0.0.1/health
 curl -fsS 'http://127.0.0.1/api/v1/posts/feed?page=1&size=1'
 ```
