@@ -40,40 +40,37 @@ export default async function UserPage({ params }: Props) {
     notFound();
   }
 
-  let items: Awaited<ReturnType<typeof postService.feed>>["items"] = [];
-  try {
-    const feed = await postService.feed(1, 50, user.id);
-    items = feed.items;
-  } catch {
-    items = [];
-  }
-
-  let counter: UserCounter | undefined;
-  try {
-    counter = await relationService.counter(user.id);
-  } catch {
-    counter = {
+  const feedRequest = postService
+    .feed(1, 50, user.id)
+    .then((feed) => feed.items)
+    .catch((): Awaited<ReturnType<typeof postService.feed>>["items"] => []);
+  const counterRequest = relationService.counter(user.id).catch(
+    (): UserCounter => ({
       followings: 0,
       followers: 0,
       posts: user.publicPostCount,
       likedPosts: 0,
       favedPosts: 0,
-    };
-  }
-
-  let initialComments: UserCommentActivityPage = {
+    }),
+  );
+  const emptyComments: UserCommentActivityPage = {
     items: [],
     total: 0,
     page: 1,
     size: 20,
     hasMore: false,
   };
-  let commentsInitialLoadFailed = false;
-  try {
-    initialComments = await commentService.listByUser(String(user.id), 1, 20);
-  } catch {
-    commentsInitialLoadFailed = true;
-  }
+  const commentsRequest = commentService
+    .listByUser(String(user.id), 1, 20)
+    .then((initialComments) => ({ initialComments, commentsInitialLoadFailed: false }))
+    .catch(() => ({ initialComments: emptyComments, commentsInitialLoadFailed: true }));
+
+  const [items, counter, commentState] = await Promise.all([
+    feedRequest,
+    counterRequest,
+    commentsRequest,
+  ]);
+  const { initialComments, commentsInitialLoadFailed } = commentState;
 
   const displayName = user.nickname || user.handle;
   const initial = displayName.charAt(0) || "?";

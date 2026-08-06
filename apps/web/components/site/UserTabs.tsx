@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Heart, MessageSquareText, Newspaper, ScrollText } from "lucide-react";
 import PostCard from "@/components/site/PostCard";
 import PostOwnerActions from "@/components/site/PostOwnerActions";
+import UserCommentActivityList from "@/components/site/UserCommentActivityList";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getStoredAuth } from "@/lib/auth/tokens";
+import { commentService } from "@/lib/services/commentService";
 import { postService } from "@/lib/services/postService";
 import type { UserCommentActivityPage } from "@/lib/types/comment";
 import type { FeedItem } from "@/lib/types/post";
@@ -29,13 +31,58 @@ const TABS: Array<{ key: UserTabKey; label: string; icon: typeof ScrollText }> =
   { key: "likes", label: "点赞", icon: Heart },
 ];
 
-export default function UserTabs({ posts, displayName, userId, userHandle }: UserTabsProps) {
+type CommentLoadError = {
+  message: string;
+  mode: "initial" | "more";
+};
+
+export default function UserTabs({
+  posts,
+  displayName,
+  userId,
+  userHandle,
+  initialComments,
+  commentsInitialLoadFailed,
+}: UserTabsProps) {
   const [activeTab, setActiveTab] = useState<UserTabKey>("overview");
   const [items, setItems] = useState<FeedItem[]>(posts);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [loadingMine, setLoadingMine] = useState(false);
   const [mineError, setMineError] = useState<string | null>(null);
+  const [commentItems, setCommentItems] = useState(initialComments.items);
+  const [commentPage, setCommentPage] = useState(initialComments.page);
+  const [commentsHasMore, setCommentsHasMore] = useState(initialComments.hasMore);
+  const [commentError, setCommentError] = useState<CommentLoadError | null>(
+    commentsInitialLoadFailed
+      ? { message: "回应暂时没有加载出来", mode: "initial" }
+      : null,
+  );
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const commentsRequestEpoch = useRef(0);
+  const commentsLoadingRef = useRef(false);
   const recentPosts = useMemo(() => items.slice(0, 3), [items]);
+  const recentComments = useMemo(() => commentItems.slice(0, 2), [commentItems]);
+
+  useEffect(() => {
+    const epoch = ++commentsRequestEpoch.current;
+    commentsLoadingRef.current = false;
+    setCommentItems(initialComments.items);
+    setCommentPage(initialComments.page);
+    setCommentsHasMore(initialComments.hasMore);
+    setCommentError(
+      commentsInitialLoadFailed
+        ? { message: "回应暂时没有加载出来", mode: "initial" }
+        : null,
+    );
+    setCommentsLoading(false);
+
+    return () => {
+      if (commentsRequestEpoch.current === epoch) {
+        commentsRequestEpoch.current += 1;
+      }
+      commentsLoadingRef.current = false;
+    };
+  }, [commentsInitialLoadFailed, initialComments, userId]);
 
   useEffect(() => {
     let alive = true;
@@ -92,6 +139,48 @@ export default function UserTabs({ posts, displayName, userId, userHandle }: Use
 
   const removePost = (postId: string) => {
     setItems((current) => current.filter((post) => post.id !== postId));
+  };
+
+  const loadComments = async (targetPage: number, replace: boolean) => {
+    if (commentsLoadingRef.current) return;
+
+    commentsLoadingRef.current = true;
+    setCommentsLoading(true);
+    const requestEpoch = commentsRequestEpoch.current;
+
+    try {
+      const response = await commentService.listByUser(String(userId), targetPage, 20);
+      if (commentsRequestEpoch.current !== requestEpoch) return;
+
+      setCommentItems((current) => {
+        if (replace) return response.items;
+        const knownIds = new Set(current.map((item) => item.id));
+        return [...current, ...response.items.filter((item) => !knownIds.has(item.id))];
+      });
+      setCommentPage(response.page);
+      setCommentsHasMore(response.hasMore);
+      setCommentError(null);
+    } catch {
+      if (commentsRequestEpoch.current !== requestEpoch) return;
+      setCommentError(
+        replace
+          ? { message: "回应暂时没有加载出来", mode: "initial" }
+          : { message: "更多回应暂时没有加载出来", mode: "more" },
+      );
+    } finally {
+      if (commentsRequestEpoch.current === requestEpoch) {
+        commentsLoadingRef.current = false;
+        setCommentsLoading(false);
+      }
+    }
+  };
+
+  const retryComments = () => {
+    if (commentError?.mode === "initial") {
+      void loadComments(1, true);
+      return;
+    }
+    void loadComments(commentPage + 1, false);
   };
 
   const renderPost = (post: FeedItem) =>
@@ -163,7 +252,12 @@ export default function UserTabs({ posts, displayName, userId, userHandle }: Use
                 <p>最近的回应</p>
                 <h2>最近 2 条评论</h2>
               </div>
-              <ComingSoonCard message="按用户筛选评论的接口还没接上。等后端准备好，这里会显示最近的回应。" />
+              <UserCommentActivityList
+                items={recentComments}
+                error={commentError?.message}
+                onRetry={commentError ? retryComments : undefined}
+                retrying={commentsLoading}
+              />
             </section>
           </div>
         )}
@@ -183,7 +277,25 @@ export default function UserTabs({ posts, displayName, userId, userHandle }: Use
         )}
 
         {activeTab === "comments" && (
-          <ComingSoonCard message="评论列表需要后端提供按用户筛选的接口。这里先替她留着位置。" />
+          <div className="member-comment-panel">
+            <UserCommentActivityList
+              items={commentItems}
+              error={commentError?.message}
+              onRetry={commentError ? retryComments : undefined}
+              retrying={commentsLoading}
+            />
+            {commentsHasMore && !commentError && (
+              <div className="member-comment-panel__more">
+                <button
+                  type="button"
+                  onClick={() => void loadComments(commentPage + 1, false)}
+                  disabled={commentsLoading}
+                >
+                  {commentsLoading ? "正在加载…" : "加载更多"}
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === "likes" && (

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UserCommentActivityPage } from "@/lib/types/comment";
 import type { FeedItem } from "@/lib/types/post";
@@ -187,4 +187,43 @@ describe("UserPage", () => {
       },
     });
   });
+
+  it("starts posts, counters, and comment activity in parallel after resolving the user", async () => {
+    const feedRequest = deferred<{
+      items: FeedItem[];
+      page: number;
+      size: number;
+      hasMore: boolean;
+    }>();
+    const counterRequest = deferred<UserCounter>();
+    const commentsRequest = deferred<UserCommentActivityPage>();
+    serviceMocks.feed.mockImplementation(() => feedRequest.promise);
+    serviceMocks.counter.mockImplementation(() => counterRequest.promise);
+    serviceMocks.listByUser.mockImplementation(() => commentsRequest.promise);
+
+    const pageRequest = UserPage({ params: Promise.resolve({ handle: "Alice" }) });
+
+    await waitFor(() => {
+      expect(serviceMocks.feed).toHaveBeenCalledWith(1, 50, user.id);
+      expect(serviceMocks.counter).toHaveBeenCalledWith(user.id);
+      expect(serviceMocks.listByUser).toHaveBeenCalledWith(String(user.id), 1, 20);
+    });
+
+    feedRequest.resolve({ items: [post], page: 1, size: 50, hasMore: false });
+    counterRequest.resolve(counter);
+    commentsRequest.resolve(comments);
+    render(await pageRequest);
+
+    expect(screen.getByRole("heading", { name: "Alice" })).toBeVisible();
+  });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
