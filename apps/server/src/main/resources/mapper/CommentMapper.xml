@@ -118,6 +118,35 @@
         GROUP BY post_id
     </select>
 
+    <select id="listPublicActivityByUserId" resultType="com.chtholly.comment.model.UserCommentActivityRow">
+        SELECT
+            c.id,
+            p.id AS postId,
+            p.slug AS postSlug,
+            p.title AS postTitle,
+            c.parent_id AS parentId,
+            c.content,
+            c.created_at AS createdAt
+        FROM comments c
+        JOIN posts p ON p.id = c.post_id
+        WHERE c.user_id = #{userId}
+          AND c.deleted_at IS NULL
+          AND p.status = 'published'
+          AND p.visible = 'public'
+        ORDER BY c.created_at DESC, c.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPublicActivityByUserId" resultType="long">
+        SELECT COUNT(1)
+        FROM comments c
+        JOIN posts p ON p.id = c.post_id
+        WHERE c.user_id = #{userId}
+          AND c.deleted_at IS NULL
+          AND p.status = 'published'
+          AND p.visible = 'public'
+    </select>
+
     <update id="softDelete">
         UPDATE comments
         SET deleted_at = NOW()

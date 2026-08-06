@@ -2,6 +2,7 @@ package com.chtholly.comment.mapper;
 
 import com.chtholly.comment.model.CommentCountRow;
 import com.chtholly.comment.model.CommentRow;
+import com.chtholly.comment.model.UserCommentActivityRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -43,6 +44,26 @@ public interface CommentMapper {
 
     /** Counts all active comment rows, including replies, grouped by post. */
     List<CommentCountRow> countActiveByPostIds(@Param("postIds") List<Long> postIds);
+
+    /**
+     * Lists one user's active comments on published public posts.
+     *
+     * @param userId comment author ID
+     * @param limit maximum number of rows
+     * @param offset number of rows to skip
+     * @return comment activity ordered newest first
+     */
+    List<UserCommentActivityRow> listPublicActivityByUserId(@Param("userId") long userId,
+                                                            @Param("limit") int limit,
+                                                            @Param("offset") int offset);
+
+    /**
+     * Counts one user's active comments on published public posts.
+     *
+     * @param userId comment author ID
+     * @return visible activity count
+     */
+    long countPublicActivityByUserId(@Param("userId") long userId);
 
     /** 评论作者软删除。 */
     int softDelete(@Param("id") long id, @Param("userId") long userId);

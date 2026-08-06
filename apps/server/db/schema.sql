@@ -236,6 +236,7 @@ CREATE TABLE IF NOT EXISTS comments (
     updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY ix_comments_post_ct (post_id, created_at),
+    KEY ix_comments_user_deleted_ct (user_id, deleted_at, created_at, id),
     KEY ix_comments_parent (parent_id),
     KEY idx_comments_chtholly_created (is_chtholly, created_at),
     CONSTRAINT fk_comments_post FOREIGN KEY (post_id) REFERENCES posts(id),
