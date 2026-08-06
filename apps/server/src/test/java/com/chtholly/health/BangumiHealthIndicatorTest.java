@@ -28,8 +28,8 @@ class BangumiHealthIndicatorTest {
 
     @Test
     void health_up_whenApiReachable() {
-        when(bangumiClient.fetchCalendar())
-                .thenReturn(Optional.of(new ObjectMapper().createArrayNode()));
+        when(bangumiClient.getSubject(2L))
+                .thenReturn(Optional.of(new ObjectMapper().createObjectNode()));
 
         Health health = indicator.health();
 
@@ -39,7 +39,7 @@ class BangumiHealthIndicatorTest {
 
     @Test
     void health_down_whenApiUnreachable() {
-        when(bangumiClient.fetchCalendar()).thenReturn(Optional.empty());
+        when(bangumiClient.getSubject(2L)).thenReturn(Optional.empty());
 
         Health health = indicator.health();
 
@@ -49,12 +49,12 @@ class BangumiHealthIndicatorTest {
 
     @Test
     void health_usesCache_withinFiveMinutes() {
-        when(bangumiClient.fetchCalendar())
-                .thenReturn(Optional.of(new ObjectMapper().createArrayNode()));
+        when(bangumiClient.getSubject(2L))
+                .thenReturn(Optional.of(new ObjectMapper().createObjectNode()));
 
         indicator.health();
         indicator.health();
 
-        verify(bangumiClient, times(1)).fetchCalendar();
+        verify(bangumiClient, times(1)).getSubject(2L);
     }
 }

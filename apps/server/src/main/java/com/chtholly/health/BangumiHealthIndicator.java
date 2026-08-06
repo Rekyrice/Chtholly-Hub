@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class BangumiHealthIndicator implements HealthIndicator {
 
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
+    private static final long HEALTH_PROBE_SUBJECT_ID = 2L;
 
     private final BangumiClient bangumiClient;
     private final AtomicReference<CachedResult> cache = new AtomicReference<>();
@@ -40,8 +41,8 @@ public class BangumiHealthIndicator implements HealthIndicator {
     }
 
     private Health probeApi() {
-        Optional<JsonNode> calendar = bangumiClient.fetchCalendar();
-        if (calendar.isPresent()) {
+        Optional<JsonNode> subject = bangumiClient.getSubject(HEALTH_PROBE_SUBJECT_ID);
+        if (subject.isPresent()) {
             return Health.up().withDetail("api_reachable", true).build();
         }
         return Health.down().withDetail("error", "Bangumi API unreachable").build();
