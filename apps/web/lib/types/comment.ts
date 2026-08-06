@@ -20,6 +20,24 @@ export type CommentListResponse = {
   hasMore: boolean;
 };
 
+export type UserCommentActivityItem = {
+  id: string;
+  postId: string;
+  postSlug: string;
+  postTitle: string;
+  parentId: string | null;
+  content: string;
+  createdAt: string;
+};
+
+export type UserCommentActivityPage = {
+  items: UserCommentActivityItem[];
+  total: number;
+  page: number;
+  size: number;
+  hasMore: boolean;
+};
+
 export type CreateCommentRequest = {
   content: string;
   parentId?: string;

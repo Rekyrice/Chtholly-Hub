@@ -7,6 +7,7 @@ import PostOwnerActions from "@/components/site/PostOwnerActions";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { getStoredAuth } from "@/lib/auth/tokens";
 import { postService } from "@/lib/services/postService";
+import type { UserCommentActivityPage } from "@/lib/types/comment";
 import type { FeedItem } from "@/lib/types/post";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,8 @@ type UserTabsProps = {
   displayName: string;
   userId: string | number;
   userHandle?: string | null;
+  initialComments: UserCommentActivityPage;
+  commentsInitialLoadFailed: boolean;
 };
 
 const TABS: Array<{ key: UserTabKey; label: string; icon: typeof ScrollText }> = [

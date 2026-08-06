@@ -6,9 +6,11 @@ import Sidebar from "@/components/site/Sidebar";
 import UserRelationPanel from "@/components/site/UserRelationPanel";
 import ChthollyImpression from "@/components/site/ChthollyImpression";
 import UserTabs from "@/components/site/UserTabs";
+import { commentService } from "@/lib/services/commentService";
 import { postService } from "@/lib/services/postService";
 import { relationService } from "@/lib/services/relationService";
 import { userService } from "@/lib/services/userService";
+import type { UserCommentActivityPage } from "@/lib/types/comment";
 import type { UserCounter } from "@/lib/types/relation";
 
 interface Props {
@@ -57,6 +59,20 @@ export default async function UserPage({ params }: Props) {
       likedPosts: 0,
       favedPosts: 0,
     };
+  }
+
+  let initialComments: UserCommentActivityPage = {
+    items: [],
+    total: 0,
+    page: 1,
+    size: 20,
+    hasMore: false,
+  };
+  let commentsInitialLoadFailed = false;
+  try {
+    initialComments = await commentService.listByUser(String(user.id), 1, 20);
+  } catch {
+    commentsInitialLoadFailed = true;
   }
 
   const displayName = user.nickname || user.handle;
@@ -136,6 +152,8 @@ export default async function UserPage({ params }: Props) {
           displayName={displayName}
           userId={user.id}
           userHandle={user.handle}
+          initialComments={initialComments}
+          commentsInitialLoadFailed={commentsInitialLoadFailed}
         />
       </div>
       <Sidebar />
