@@ -90,6 +90,7 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/relation/following").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/relation/followers").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/relation/counter").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*/comments").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/users/*").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/*/comments").permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/posts/detail/*").permitAll()

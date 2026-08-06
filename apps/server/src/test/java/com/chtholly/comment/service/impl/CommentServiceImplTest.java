@@ -3,9 +3,11 @@ package com.chtholly.comment.service.impl;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.comment.api.dto.CommentResponse;
 import com.chtholly.comment.api.dto.CreateCommentRequest;
+import com.chtholly.comment.api.dto.UserCommentActivityResponse;
 import com.chtholly.comment.mapper.CommentMapper;
 import com.chtholly.comment.model.CommentCountRow;
 import com.chtholly.comment.model.CommentRow;
+import com.chtholly.comment.model.UserCommentActivityRow;
 import com.chtholly.comment.service.CommentContentSanitizer;
 import com.chtholly.common.exception.BusinessException;
 import com.chtholly.post.mapper.PostMapper;
@@ -233,6 +235,50 @@ class CommentServiceImplTest {
         verify(commentMapper, never()).countActiveByPostIds(anyList());
     }
 
+    @Test
+    void listByUserMapsPublicActivityAndPaginates() {
+        Instant rootCreatedAt = Instant.parse("2026-01-02T03:04:05Z");
+        Instant replyCreatedAt = Instant.parse("2026-01-03T04:05:06Z");
+        UserCommentActivityRow root = activityRow(
+                101L, 201L, "first-post", "First post", null, "root content", rootCreatedAt);
+        UserCommentActivityRow reply = activityRow(
+                102L, 202L, "second-post", "Second post", 88L, "reply content", replyCreatedAt);
+        when(commentMapper.countPublicActivityByUserId(9L)).thenReturn(21L);
+        when(commentMapper.listPublicActivityByUserId(9L, 20, 20)).thenReturn(List.of(root, reply));
+
+        PageResponse<UserCommentActivityResponse> response = service.listByUser(9L, 2, 20);
+
+        assertThat(response.page()).isEqualTo(2);
+        assertThat(response.size()).isEqualTo(20);
+        assertThat(response.total()).isEqualTo(21L);
+        assertThat(response.hasMore()).isFalse();
+        assertThat(response.items()).containsExactly(
+                new UserCommentActivityResponse(
+                        "101", "201", "first-post", "First post", null,
+                        "root content", rootCreatedAt),
+                new UserCommentActivityResponse(
+                        "102", "202", "second-post", "Second post", "88",
+                        "reply content", replyCreatedAt));
+        verify(commentMapper).countPublicActivityByUserId(9L);
+        verify(commentMapper).listPublicActivityByUserId(9L, 20, 20);
+    }
+
+    @Test
+    void listByUserReturnsAccurateEmptyPageMetadata() {
+        when(commentMapper.countPublicActivityByUserId(9L)).thenReturn(40L);
+        when(commentMapper.listPublicActivityByUserId(9L, 20, 40)).thenReturn(List.of());
+
+        PageResponse<UserCommentActivityResponse> response = service.listByUser(9L, 3, 20);
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.page()).isEqualTo(3);
+        assertThat(response.size()).isEqualTo(20);
+        assertThat(response.total()).isEqualTo(40L);
+        assertThat(response.hasMore()).isFalse();
+        verify(commentMapper).countPublicActivityByUserId(9L);
+        verify(commentMapper).listPublicActivityByUserId(9L, 20, 40);
+    }
+
     private void stubPublishedPost(long postId, long creatorId) {
         Post post = new Post();
         post.setId(postId);
@@ -255,6 +301,20 @@ class CommentServiceImplTest {
         row.setAuthorNickname("tester");
         row.setAuthorHandle("tester-handle");
         row.setAuthorAvatar(null);
+        return row;
+    }
+
+    private static UserCommentActivityRow activityRow(long id, long postId, String postSlug,
+                                                       String postTitle, Long parentId, String content,
+                                                       Instant createdAt) {
+        UserCommentActivityRow row = new UserCommentActivityRow();
+        row.setId(id);
+        row.setPostId(postId);
+        row.setPostSlug(postSlug);
+        row.setPostTitle(postTitle);
+        row.setParentId(parentId);
+        row.setContent(content);
+        row.setCreatedAt(createdAt);
         return row;
     }
 }

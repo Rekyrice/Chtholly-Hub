@@ -4,9 +4,11 @@ import com.chtholly.common.api.pagination.PageRequest;
 import com.chtholly.common.api.pagination.PageResponse;
 import com.chtholly.comment.api.dto.CommentResponse;
 import com.chtholly.comment.api.dto.CreateCommentRequest;
+import com.chtholly.comment.api.dto.UserCommentActivityResponse;
 import com.chtholly.comment.mapper.CommentMapper;
 import com.chtholly.comment.model.CommentCountRow;
 import com.chtholly.comment.model.CommentRow;
+import com.chtholly.comment.model.UserCommentActivityRow;
 import com.chtholly.comment.service.CommentContentSanitizer;
 import com.chtholly.comment.service.CommentService;
 import com.chtholly.common.exception.BusinessException;
@@ -124,6 +126,27 @@ public class CommentServiceImpl implements CommentService {
             }
         }
 
+        return PageResponse.offset(items, pageRequest.page(), pageRequest.size(), total);
+    }
+
+    /**
+     * Lists one user's comments that remain visible on published public posts.
+     *
+     * @param userId comment author ID
+     * @param page page number (1-based)
+     * @param size page size
+     * @return paginated public comment activity
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<UserCommentActivityResponse> listByUser(long userId, int page, int size) {
+        PageRequest pageRequest = PageRequest.of(page, size);
+        long total = commentMapper.countPublicActivityByUserId(userId);
+        List<UserCommentActivityResponse> items = commentMapper
+                .listPublicActivityByUserId(userId, pageRequest.size(), pageRequest.offset())
+                .stream()
+                .map(this::toUserActivityResponse)
+                .toList();
         return PageResponse.offset(items, pageRequest.page(), pageRequest.size(), total);
     }
 
@@ -321,6 +344,18 @@ public class CommentServiceImpl implements CommentService {
                 row.getCreatedAt(),
                 Boolean.TRUE.equals(row.getIsChtholly()),
                 replies
+        );
+    }
+
+    private UserCommentActivityResponse toUserActivityResponse(UserCommentActivityRow row) {
+        return new UserCommentActivityResponse(
+                String.valueOf(row.getId()),
+                String.valueOf(row.getPostId()),
+                row.getPostSlug(),
+                row.getPostTitle(),
+                row.getParentId() == null ? null : String.valueOf(row.getParentId()),
+                row.getContent(),
+                row.getCreatedAt()
         );
     }
 
