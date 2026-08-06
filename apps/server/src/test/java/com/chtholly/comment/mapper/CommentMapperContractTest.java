@@ -72,8 +72,25 @@ class CommentMapperContractTest {
         String migrationSql = Files.readString(migration, StandardCharsets.UTF_8);
         String schemaSql = Files.readString(Path.of("db/schema.sql"), StandardCharsets.UTF_8);
 
-        assertThat(migrationSql).contains(
-                "ALTER TABLE comments ADD " + ACTIVITY_INDEX_DEFINITION);
+        assertThat(migrationSql)
+                .contains("FROM information_schema.statistics")
+                .contains("table_schema = DATABASE()")
+                .contains("table_name = 'comments'")
+                .contains("index_name = 'ix_comments_user_deleted_ct'")
+                .contains("COUNT(*) = 4")
+                .contains("GROUP_CONCAT(column_name ORDER BY seq_in_index)")
+                .contains("'user_id,deleted_at,created_at,id'")
+                .contains("SUM(sub_part IS NOT NULL) = 0")
+                .contains("MIN(is_visible) = 'YES'")
+                .contains("MIN(index_type) = 'BTREE'")
+                .contains("MIN(non_unique) = 1")
+                .contains("IF(")
+                .contains("ALTER TABLE comments DROP INDEX ix_comments_user_deleted_ct, ADD "
+                        + ACTIVITY_INDEX_DEFINITION)
+                .contains("ADD " + ACTIVITY_INDEX_DEFINITION)
+                .contains("PREPARE")
+                .contains("EXECUTE")
+                .contains("DEALLOCATE PREPARE");
         assertThat(schemaSql).contains(ACTIVITY_INDEX_DEFINITION);
     }
 
