@@ -12,6 +12,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.util.Map;
@@ -64,6 +65,22 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).containsEntry("code", "MISSING_PARAM");
         assertThat(response.getBody().get("message")).asString().contains("page");
+    }
+
+    @Test
+    void argumentTypeMismatchReturns400WithoutEchoingRawValue() {
+        String rawValue = "9".repeat(500);
+        MethodArgumentTypeMismatchException exception = new MethodArgumentTypeMismatchException(
+                rawValue, Integer.class, "page", null, new NumberFormatException("invalid integer"));
+
+        ResponseEntity<Map<String, Object>> response = handler.handleTypeMismatch(exception);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).containsEntry("code", "BAD_REQUEST");
+        assertThat(response.getBody().get("message")).asString()
+                .contains("page")
+                .contains("格式错误")
+                .doesNotContain(rawValue);
     }
 
     @Test

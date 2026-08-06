@@ -3,6 +3,7 @@ package com.chtholly.comment.api;
 import com.chtholly.comment.api.dto.UserCommentActivityResponse;
 import com.chtholly.comment.service.CommentService;
 import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.common.api.pagination.Pagination;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
@@ -32,7 +33,7 @@ public class UserCommentController {
      * Lists a user's comments on published public posts.
      *
      * @param userId comment author ID
-     * @param page page number (1-based)
+     * @param page page number (1-based, max {@link Pagination#MAX_PAGE})
      * @param size items per page (max 50)
      * @return paginated public comment activity
      */
@@ -40,7 +41,7 @@ public class UserCommentController {
     @GetMapping
     public PageResponse<UserCommentActivityResponse> list(
             @PathVariable("userId") @Positive long userId,
-            @RequestParam(defaultValue = "1") @Min(1) int page,
+            @RequestParam(defaultValue = "1") @Min(1) @Max(Pagination.MAX_PAGE) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size) {
         return commentService.listByUser(userId, page, size);
     }

@@ -2,10 +2,10 @@ package com.chtholly.comment.api;
 
 import com.chtholly.admin.security.BannedUserFilter;
 import com.chtholly.auth.config.SecurityConfig;
-import com.chtholly.auth.token.JwtService;
 import com.chtholly.comment.api.dto.UserCommentActivityResponse;
 import com.chtholly.comment.service.CommentService;
 import com.chtholly.common.api.pagination.PageResponse;
+import com.chtholly.common.api.pagination.Pagination;
 import com.chtholly.storage.config.LocalStorageWebConfig;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,9 +49,6 @@ class UserCommentControllerSecurityTest {
     private CommentService commentService;
 
     @MockBean
-    private JwtService jwtService;
-
-    @MockBean
     private BannedUserFilter bannedUserFilter;
 
     @MockBean
@@ -83,8 +80,36 @@ class UserCommentControllerSecurityTest {
     }
 
     @Test
-    void givenOversizedPageWhenGetCommentsThenReturnsBadRequest() throws Exception {
+    void givenPageAboveSafeMaximumWhenGetCommentsThenReturnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/users/9/comments")
+                        .param("page", String.valueOf(Pagination.MAX_PAGE + 1)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+    }
+
+    @Test
+    void givenNonNumericPageWhenGetCommentsThenReturnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/users/9/comments").param("page", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+    }
+
+    @Test
+    void givenOutOfRangeUserIdWhenGetCommentsThenReturnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/users/9223372036854775808/comments"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+    }
+
+    @Test
+    void givenOversizedSizeWhenGetCommentsThenReturnsBadRequest() throws Exception {
         mockMvc.perform(get("/api/v1/users/9/comments").param("size", "51"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void givenZeroSizeWhenGetCommentsThenReturnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/users/9/comments").param("size", "0"))
                 .andExpect(status().isBadRequest());
     }
 

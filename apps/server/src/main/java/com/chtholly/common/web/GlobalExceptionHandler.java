@@ -17,6 +17,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.util.HashMap;
@@ -67,6 +68,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleMissingParam(MissingServletRequestParameterException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiErrorBody.of("MISSING_PARAM", "缺少必要参数: " + ex.getParameterName()));
+    }
+
+    /**
+     * Maps request parameter conversion failures to a safe client error response.
+     *
+     * @param ex parameter type mismatch details
+     * @return standardized bad-request response without the rejected raw value
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorBody.of(
+                        ErrorCode.BAD_REQUEST.getCode(),
+                        "参数格式错误: " + ex.getName()));
     }
 
     @ExceptionHandler(NoHandlerFoundException.class)
