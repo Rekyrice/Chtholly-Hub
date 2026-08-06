@@ -53,6 +53,17 @@ describe("UserCommentActivityList", () => {
     expect(screen.getByText("还没有留下公开回应")).toBeVisible();
   });
 
+  it("renders an invalid timestamp as undisclosed without a time element", () => {
+    render(
+      <UserCommentActivityList
+        items={[{ ...items[0], id: "invalid-date", createdAt: "not-a-date" }]}
+      />,
+    );
+
+    expect(screen.getByText("时间未公开")).toBeVisible();
+    expect(screen.queryByRole("time")).not.toBeInTheDocument();
+  });
+
   it("shows the initial error and retries it", async () => {
     const onRetry = vi.fn();
     const user = userEvent.setup();

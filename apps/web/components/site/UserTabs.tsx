@@ -9,7 +9,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { getStoredAuth } from "@/lib/auth/tokens";
 import { commentService } from "@/lib/services/commentService";
 import { postService } from "@/lib/services/postService";
-import type { UserCommentActivityPage } from "@/lib/types/comment";
+import type {
+  UserCommentActivityItem,
+  UserCommentActivityPage,
+} from "@/lib/types/comment";
 import type { FeedItem } from "@/lib/types/post";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +39,11 @@ type CommentLoadError = {
   mode: "initial" | "more";
 };
 
-export default function UserTabs({
+export default function UserTabs(props: UserTabsProps) {
+  return <UserTabsState key={String(props.userId)} {...props} />;
+}
+
+function UserTabsState({
   posts,
   displayName,
   userId,
@@ -49,7 +56,9 @@ export default function UserTabs({
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [loadingMine, setLoadingMine] = useState(false);
   const [mineError, setMineError] = useState<string | null>(null);
-  const [commentItems, setCommentItems] = useState(initialComments.items);
+  const [commentItems, setCommentItems] = useState(() =>
+    uniqueCommentActivityItems(initialComments.items),
+  );
   const [commentPage, setCommentPage] = useState(initialComments.page);
   const [commentsHasMore, setCommentsHasMore] = useState(initialComments.hasMore);
   const [commentError, setCommentError] = useState<CommentLoadError | null>(
@@ -66,7 +75,7 @@ export default function UserTabs({
   useEffect(() => {
     const epoch = ++commentsRequestEpoch.current;
     commentsLoadingRef.current = false;
-    setCommentItems(initialComments.items);
+    setCommentItems(uniqueCommentActivityItems(initialComments.items));
     setCommentPage(initialComments.page);
     setCommentsHasMore(initialComments.hasMore);
     setCommentError(
@@ -153,9 +162,8 @@ export default function UserTabs({
       if (commentsRequestEpoch.current !== requestEpoch) return;
 
       setCommentItems((current) => {
-        if (replace) return response.items;
-        const knownIds = new Set(current.map((item) => item.id));
-        return [...current, ...response.items.filter((item) => !knownIds.has(item.id))];
+        if (replace) return uniqueCommentActivityItems(response.items);
+        return uniqueCommentActivityItems(current, response.items);
       });
       setCommentPage(response.page);
       setCommentsHasMore(response.hasMore);
@@ -371,4 +379,21 @@ function ComingSoonCard({ message }: { message: string }) {
       <p>{message}</p>
     </div>
   );
+}
+
+function uniqueCommentActivityItems(
+  ...collections: ReadonlyArray<ReadonlyArray<UserCommentActivityItem>>
+) {
+  const seen = new Set<string>();
+  const uniqueItems: UserCommentActivityItem[] = [];
+
+  for (const items of collections) {
+    for (const item of items) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      uniqueItems.push(item);
+    }
+  }
+
+  return uniqueItems;
 }
