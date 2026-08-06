@@ -12,6 +12,7 @@ SET @comment_activity_index_valid = (
         COUNT(*) = 4
             AND GROUP_CONCAT(column_name ORDER BY seq_in_index)
                 = 'user_id,deleted_at,created_at,id'
+            AND GROUP_CONCAT(collation ORDER BY seq_in_index) = 'A,A,A,A'
             AND SUM(sub_part IS NOT NULL) = 0
             AND MIN(is_visible) = 'YES'
             AND MIN(index_type) = 'BTREE'

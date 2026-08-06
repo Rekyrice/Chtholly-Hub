@@ -62,18 +62,39 @@ class UserCommentActivityMigrationIT {
             executeMigration(connection);
             executeMigration(connection);
             assertIndexDefinition(connection);
+
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                        "ALTER TABLE comments ADD KEY ix_comments_user_legacy (user_id)");
+                statement.executeUpdate("ALTER TABLE comments DROP INDEX " + INDEX_NAME);
+                statement.executeUpdate("""
+                        ALTER TABLE comments
+                        ADD KEY ix_comments_user_deleted_ct
+                            (user_id ASC, deleted_at ASC, created_at DESC, id ASC)
+                        """);
+                statement.executeUpdate(
+                        "ALTER TABLE comments DROP INDEX ix_comments_user_legacy");
+            }
+
+            executeMigration(connection);
+            executeMigration(connection);
+            assertIndexDefinition(connection);
         }
     }
 
     private static void assertIndexDefinition(Connection connection) throws Exception {
         assertThat(queryRows(connection, """
-                SELECT column_name
+                SELECT CONCAT(column_name, ':', collation)
                 FROM information_schema.statistics
                 WHERE table_schema = DATABASE()
                   AND table_name = 'comments'
                   AND index_name = 'ix_comments_user_deleted_ct'
                 ORDER BY seq_in_index
-                """)).containsExactly("user_id", "deleted_at", "created_at", "id");
+                """)).containsExactly(
+                        "user_id:A",
+                        "deleted_at:A",
+                        "created_at:A",
+                        "id:A");
         assertThat(queryLong(connection, """
                 SELECT COUNT(*)
                 FROM information_schema.statistics
@@ -84,6 +105,7 @@ class UserCommentActivityMigrationIT {
                   AND is_visible = 'YES'
                   AND index_type = 'BTREE'
                   AND non_unique = 1
+                  AND collation = 'A'
                 """)).isEqualTo(4L);
     }
 
