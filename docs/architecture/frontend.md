@@ -47,6 +47,8 @@
 
 App Router 默认是 Server Component。公开读取路径优先保持服务端渲染：例如 [`/hub`](<../../apps/web/app/(site)/hub/page.tsx>) 是 `async` 页面，声明 `revalidate = 60`，直接调用 service 并把数据传给交互组件。文章详情、归档、标签、搜索和用户主页也应先判断能否沿用这一模式。
 
+用户主页的 `UserPage` 保持 Server Component：解析用户后并行加载文章首屏、关系计数和评论首屏，三类请求各自隔离失败，单个数据源异常不会阻断其余区域渲染。[`UserTabs`](../../apps/web/components/site/UserTabs.tsx) 在概览中展示最近 2 条评论，在评论标签页按 offset 继续分页；失败页可 retry，合并分页结果时按评论 ID 稳定去重。用户切换通过按用户标识重挂载状态，并以 stale response guard 丢弃旧用户的迟到响应，避免跨用户混入评论。用户主页的“点赞”标签页仍沿用现有占位交互，不代表点赞列表接口已经实现。
+
 以下需求才需要把边界下沉到 Client Component：
 
 - 浏览器事件、表单状态、`useEffect`、`localStorage` 或 WebSocket；

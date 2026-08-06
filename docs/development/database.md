@@ -4,13 +4,13 @@
 
 | 入口 | 当前职责 | 适用场景 |
 |------|----------|----------|
-| [`schema.sql`](../../apps/server/db/schema.sql) | 合并 V0–V19 历史并保留当前最终表形的全量开发入口；已包含 V20–V29 的最终结构与种子账号状态 | 新建或重建空数据库 |
-| [`migration/`](../../apps/server/db/migration/README.md) | 现存增量：`V20__knowledge_graph.sql` 至 `V29__user_refresh_session_epoch.sql` | 已有数据库向前演进，以及脚本登记 |
+| [`schema.sql`](../../apps/server/db/schema.sql) | 合并 V0–V19 历史并保留当前最终表形的全量开发入口；已包含 V20–V30 的最终结构与种子账号状态 | 新建或重建空数据库 |
+| [`migration/`](../../apps/server/db/migration/README.md) | 现存增量：`V20__knowledge_graph.sql` 至 `V30__user_comment_activity_index.sql` | 已有数据库向前演进，以及脚本登记 |
 | [`phase_a_seed.sql`](../../apps/server/db/seed/phase_a_seed.sql) | 幂等写入 Rekyrice 用户与 3 篇已发布帖子元数据 | 需要 Phase A 演示数据的环境 |
 
 `schema.sql` 与 `migration/` 不是一套完整的 Flyway 历史。仓库当前没有声明由应用启动自动执行 Flyway；本地用 [`apply-migrations.ps1`](../../scripts/dev/apply-migrations.ps1) 读取 `schema_migrations` 并执行未登记脚本，生产初始化脚本则显式导入 SQL。不要把“目录名符合 Flyway 命名”写成“已启用 Flyway 自动迁移”。
 
-## schema 与 V20–V29 的关系
+## schema 与 V20–V30 的关系
 
 - `V20__knowledge_graph.sql` 创建 `knowledge_entities` 与 `knowledge_relations`。
 - `V21__chtholly_bot_user.sql` 清理冲突的 `chtholly` handle，并确保 ID `888888888888888888` 的专用账号存在。
@@ -22,6 +22,7 @@
 - `V27__dead_letter_replay_state.sql` 扩展 `dead_letter_messages.status`，以 `REPLAYING` 和 `UNCERTAIN` 区分人工重放进行中、结果待核对与普通自动 `RETRYING`；同时增加 attempt token、开始时间和恢复截止时间。
 - `V28__post_projection_receipt.sql` 创建每帖投影顺序游标 `post_projection_cursor`，并创建以 Outbox 事件 ID 为主键、携带 `post_id` 的 `post_projection_receipt`。
 - `V29__user_refresh_session_epoch.sql` 为 `users` 增加用户级 refresh session 失效代际 `refresh_session_epoch BIGINT NOT NULL DEFAULT 1`，并使 MySQL 成为唯一代际权威。
+- `V30__user_comment_activity_index.sql` 为 `comments` 增加 `(user_id, deleted_at, created_at, id)` 索引，支撑公开用户评论活动的过滤、倒序与稳定分页。
 - 当前 `schema.sql` 已折叠这些版本的最终结构/数据形态，便于空库一次初始化；已有库仍依赖对应增量脚本前进。
 - 本地增量脚本会为部分可可靠识别的历史结构补登记版本；其余 `CREATE ... IF NOT EXISTS` 脚本会安全执行并登记，避免重复建表。
 
@@ -65,6 +66,10 @@
 4. 通知已有会话重新登录。旧 refresh key 可按 TTL 自然淘汰，但在淘汰完成前不得重新启动旧节点。
 
 应用启动不自动运行完整 Flyway，不能把 V29 留给新节点启动后再补。若必须回滚到旧认证实现，应先停止新节点并以单独评审的维护操作失效全部 refresh membership；直接启动旧节点可能让尚未过期的旧 membership 重新生效。
+
+## V30 用户评论活动索引边界
+
+`V30` 只维护 `comments` 上的 `(user_id, deleted_at, created_at, id)` 查询索引，不迁移或改写评论行。脚本检查 MySQL 元数据后可重复执行：索引缺失时创建；同名索引的列顺序或定义错误时删除并重建；定义正确时保持不变。因此迁移中断后可以重放，也能修复历史上误建的同名索引。
 
 ## 开发初始化
 

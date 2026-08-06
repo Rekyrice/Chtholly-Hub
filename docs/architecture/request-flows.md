@@ -68,12 +68,12 @@
 
 ## 7. 评论与通知
 
-- **触发入口**：[CommentController](../../apps/server/src/main/java/com/chtholly/comment/api/CommentController.java) 的文章评论 POST → [CommentServiceImpl](../../apps/server/src/main/java/com/chtholly/comment/service/impl/CommentServiceImpl.java)。
-- **同步主链**：校验文章可评论、正文清洗、父评论存在且是顶级评论，使用 Snowflake ID 写 MySQL，读取展示行后发布 `CommentCreatedEvent`。
+- **触发入口**：[CommentController](../../apps/server/src/main/java/com/chtholly/comment/api/CommentController.java) 的文章评论 POST → [CommentServiceImpl](../../apps/server/src/main/java/com/chtholly/comment/service/impl/CommentServiceImpl.java)；公开用户评论活动由匿名 `GET /api/v1/users/{userId}/comments` 进入 [UserCommentController](../../apps/server/src/main/java/com/chtholly/comment/api/UserCommentController.java)。[SecurityConfig](../../apps/server/src/main/java/com/chtholly/auth/config/SecurityConfig.java) 只公开该路径的 GET 方法，不扩大其他方法的匿名访问范围。
+- **同步主链**：写入链路校验文章可评论、正文清洗、父评论存在且是顶级评论，使用 Snowflake ID 写 MySQL，读取展示行后发布 `CommentCreatedEvent`。公开活动读取依次经过 `UserCommentController` → `CommentService.listByUser` → [CommentMapper](../../apps/server/src/main/java/com/chtholly/comment/mapper/CommentMapper.java)，以 MySQL 为权威，只返回 `comments.deleted_at IS NULL` 且所属文章 `status = published`、`visible = public` 的行；顶级评论与回复平铺展示，按 `created_at DESC, id DESC` 稳定排序并使用 offset 分页。
 - **事务边界**：[NotificationEventListener](../../apps/server/src/main/java/com/chtholly/notification/listener/NotificationEventListener.java) 在 `BEFORE_COMMIT` 阶段识别回复接收者或文章作者，调用 [NotificationServiceImpl](../../apps/server/src/main/java/com/chtholly/notification/service/impl/NotificationServiceImpl.java) 写通知；评论与通知共享同一个 MySQL 提交结果，不经过进程内异步队列。
-- **状态**：评论和通知均在 MySQL；Feed、搜索与个人文章列表展示的评论总数直接从未软删除评论聚合，不以 Redis 计数或 ES 文档作为权威。
+- **状态**：评论和通知均在 MySQL；Feed、搜索与个人文章列表展示的评论总数直接从未软删除评论聚合，不以 Redis 计数或 ES 文档作为权威。V30 为公开用户评论活动查询增加 `(user_id, deleted_at, created_at, id)` 索引；迁移可重放，索引缺失时创建，发现同名但列定义错误时先修复再建立正确索引。
 - **失败/降级**：非法层级、已删父评论、权限或限流失败时拒绝评论；通知写入异常向事务传播并回滚本次评论，避免出现评论已提交但对应站内通知永久缺失的半完成状态。
-- **代表性测试**：[CommentServiceImplTest](../../apps/server/src/test/java/com/chtholly/comment/service/impl/CommentServiceImplTest.java)、[NotificationEventListenerTest](../../apps/server/src/test/java/com/chtholly/notification/listener/NotificationEventListenerTest.java)、[NotificationServiceImplTest](../../apps/server/src/test/java/com/chtholly/notification/service/impl/NotificationServiceImplTest.java)。
+- **代表性测试**：[CommentMapperContractTest](../../apps/server/src/test/java/com/chtholly/comment/mapper/CommentMapperContractTest.java)、[CommentServiceImplTest](../../apps/server/src/test/java/com/chtholly/comment/service/impl/CommentServiceImplTest.java)、[UserCommentControllerSecurityTest](../../apps/server/src/test/java/com/chtholly/comment/api/UserCommentControllerSecurityTest.java)、[NotificationEventListenerTest](../../apps/server/src/test/java/com/chtholly/notification/listener/NotificationEventListenerTest.java)、[NotificationServiceImplTest](../../apps/server/src/test/java/com/chtholly/notification/service/impl/NotificationServiceImplTest.java)。
 
 ## 8. Agent WebSocket、上下文、工具与记忆
 
