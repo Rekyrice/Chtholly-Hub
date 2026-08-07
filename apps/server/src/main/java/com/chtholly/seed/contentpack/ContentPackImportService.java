@@ -1,10 +1,12 @@
 package com.chtholly.seed.contentpack;
 
 import com.chtholly.counter.service.UserCounterService;
+import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.service.impl.PostCacheInvalidator;
 import com.chtholly.relation.service.impl.RelationCacheInvalidator;
 import com.chtholly.search.index.SearchIndexService;
+import com.chtholly.seed.contentpack.ContentPackPostProjectionSynchronizer.SyncResult;
 import com.chtholly.seed.contentpack.ContentPackDatabaseWriter.WriteResult;
 import com.chtholly.seed.contentpack.ContentPackMediaPublisher.PublishedContent;
 import com.chtholly.seed.contentpack.ContentPackQualityGate.QualityGateResult;
@@ -23,7 +25,6 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -53,7 +54,7 @@ public final class ContentPackImportService {
     private final RelationCacheInvalidator relationCacheInvalidator;
     private final FeedTimelineService feedTimelineService;
     private final PostCacheInvalidator cacheInvalidator;
-    private final SearchIndexService searchIndexService;
+    private final ContentPackPostProjectionSynchronizer postProjectionSynchronizer;
     private final RedissonClient redisson;
     private final Clock clock;
 
@@ -71,11 +72,12 @@ public final class ContentPackImportService {
             RelationCacheInvalidator relationCacheInvalidator,
             FeedTimelineService feedTimelineService,
             PostCacheInvalidator cacheInvalidator,
-            SearchIndexService searchIndexService,
+            ContentPackPostProjectionSynchronizer postProjectionSynchronizer,
             RedissonClient redisson) {
         this(loader, validator, qualityGate, snapshotWriter, mediaPublisher, databaseWriter,
                 reactionApplier, userCounterService, relationCacheInvalidator,
-                feedTimelineService, cacheInvalidator, searchIndexService, redisson, Clock.systemUTC());
+                feedTimelineService, cacheInvalidator, postProjectionSynchronizer,
+                redisson, Clock.systemUTC());
     }
 
     ContentPackImportService(
@@ -91,6 +93,28 @@ public final class ContentPackImportService {
             FeedTimelineService feedTimelineService,
             PostCacheInvalidator cacheInvalidator,
             SearchIndexService searchIndexService,
+            PostRagIndexer ragIndexer,
+            RedissonClient redisson) {
+        this(loader, validator, qualityGate, snapshotWriter, mediaPublisher, databaseWriter,
+                reactionApplier, userCounterService, relationCacheInvalidator,
+                feedTimelineService, cacheInvalidator,
+                new ContentPackPostProjectionSynchronizer(searchIndexService, ragIndexer),
+                redisson, Clock.systemUTC());
+    }
+
+    ContentPackImportService(
+            ContentPackLoader loader,
+            ContentPackValidator validator,
+            ContentPackQualityGate qualityGate,
+            ContentPackSnapshotWriter snapshotWriter,
+            ContentPackMediaPublisher mediaPublisher,
+            ContentPackDatabaseWriter databaseWriter,
+            ContentPackReactionApplier reactionApplier,
+            UserCounterService userCounterService,
+            RelationCacheInvalidator relationCacheInvalidator,
+            FeedTimelineService feedTimelineService,
+            PostCacheInvalidator cacheInvalidator,
+            ContentPackPostProjectionSynchronizer postProjectionSynchronizer,
             RedissonClient redisson,
             Clock clock) {
         this.loader = Objects.requireNonNull(loader, "loader");
@@ -105,7 +129,8 @@ public final class ContentPackImportService {
                 relationCacheInvalidator, "relationCacheInvalidator");
         this.feedTimelineService = Objects.requireNonNull(feedTimelineService, "feedTimelineService");
         this.cacheInvalidator = Objects.requireNonNull(cacheInvalidator, "cacheInvalidator");
-        this.searchIndexService = Objects.requireNonNull(searchIndexService, "searchIndexService");
+        this.postProjectionSynchronizer = Objects.requireNonNull(
+                postProjectionSynchronizer, "postProjectionSynchronizer");
         this.redisson = Objects.requireNonNull(redisson, "redisson");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
@@ -152,7 +177,7 @@ public final class ContentPackImportService {
         }
         if (dryRun) {
             return report("validated", null, pack, null, null,
-                    List.of(), List.of(), List.of(), validation, quality);
+                    List.of(), List.of(), List.of(), List.of(), List.of(), validation, quality);
         }
         if (!"complete".equals(pack.manifest().stage())) {
             return failed(pack, "manifest-stage", validation, quality, null);
@@ -312,34 +337,25 @@ public final class ContentPackImportService {
             }
         }
 
-        List<Long> indexFailures = new ArrayList<>();
-        for (long postId : attemptedPostIds) {
-            try {
-                if (!searchIndexService.tryUpsertPost(postId)) {
-                    indexFailures.add(postId);
-                }
-            } catch (RuntimeException exception) {
-                // tryUpsertPost normally contains its own failure, but the import report remains complete if a proxy fails.
-                indexFailures.add(postId);
-                log.error("Seed post indexing invocation failed for post {}", postId, exception);
-            }
-        }
-        for (long postId : write.retiredPostIds()) {
-            try {
-                searchIndexService.softDeletePost(postId);
-            } catch (RuntimeException exception) {
-                runtimeFailure = true;
-                log.error("Retired post search-index deletion failed for post {}", postId, exception);
-            }
-        }
+        SyncResult projectionResult = postProjectionSynchronizer.synchronize(
+                attemptedPostIds, write.retiredPostIds());
+        List<Long> indexFailures = projectionResult.searchFailures();
+        List<Long> ragIndexFailures = projectionResult.ragFailures();
+        List<Long> ragIndexSkipped = projectionResult.ragSkipped();
+        runtimeFailure = runtimeFailure || projectionResult.retiredSearchFailure();
 
-        boolean partial = publicationCommitFailure || runtimeFailure || !indexFailures.isEmpty();
+        boolean partial = publicationCommitFailure || runtimeFailure
+                || !indexFailures.isEmpty() || !ragIndexFailures.isEmpty();
         String status = partial ? "partial" : "completed";
         String failedStage = publicationCommitFailure
                 ? "media-commit"
-                : (runtimeFailure ? "runtime-state" : (!indexFailures.isEmpty() ? "search-index" : null));
+                : (runtimeFailure
+                        ? "runtime-state"
+                        : (!indexFailures.isEmpty()
+                                ? "search-index"
+                                : (!ragIndexFailures.isEmpty() ? "rag-index" : null)));
         return report(status, failedStage, pack, snapshot, write, attemptedPostIds, pendingViews,
-                indexFailures, validation, quality);
+                indexFailures, ragIndexFailures, ragIndexSkipped, validation, quality);
     }
 
     private String newRunId() {
@@ -352,7 +368,8 @@ public final class ContentPackImportService {
             ValidationResult validation,
             QualityGateResult quality,
             SnapshotRef snapshot) {
-        return report("failed", stage, pack, snapshot, null, List.of(), List.of(), List.of(), validation, quality);
+        return report("failed", stage, pack, snapshot, null,
+                List.of(), List.of(), List.of(), List.of(), List.of(), validation, quality);
     }
 
     private ContentPackImportReport report(
@@ -364,6 +381,8 @@ public final class ContentPackImportService {
             List<Long> attemptedPostIds,
             List<Long> pendingViews,
             List<Long> indexFailures,
+            List<Long> ragIndexFailures,
+            List<Long> ragIndexSkipped,
             ValidationResult validation,
             QualityGateResult quality) {
         return new ContentPackImportReport(
@@ -378,6 +397,8 @@ public final class ContentPackImportService {
                 attemptedPostIds,
                 pendingViews,
                 indexFailures,
+                ragIndexFailures,
+                ragIndexSkipped,
                 validation == null ? List.of() : validation.warnings(),
                 quality == null ? List.of() : quality.warnings(),
                 quality == null ? List.of() : quality.errors());

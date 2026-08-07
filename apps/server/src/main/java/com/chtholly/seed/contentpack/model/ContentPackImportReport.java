@@ -18,6 +18,8 @@ import java.util.List;
  * @param attemptedPostIds all pack posts reconciled after the database boundary
  * @param pendingViewPostIds view baselines not yet visible before the bounded wait expired
  * @param indexFailures attempted pack posts that could not be indexed from full content
+ * @param ragIndexFailures posts whose RAG projection reconciliation failed
+ * @param ragIndexSkipped posts skipped because RAG is disabled for this runtime
  * @param validationWarnings non-blocking structural diagnostics
  * @param qualityWarnings non-blocking prose diagnostics
  * @param qualityErrors blocking prose diagnostics
@@ -34,6 +36,8 @@ public record ContentPackImportReport(
         List<Long> attemptedPostIds,
         List<Long> pendingViewPostIds,
         List<Long> indexFailures,
+        List<Long> ragIndexFailures,
+        List<Long> ragIndexSkipped,
         List<String> validationWarnings,
         List<String> qualityWarnings,
         List<String> qualityErrors) {
@@ -46,6 +50,8 @@ public record ContentPackImportReport(
         attemptedPostIds = immutable(attemptedPostIds);
         pendingViewPostIds = immutable(pendingViewPostIds);
         indexFailures = immutable(indexFailures);
+        ragIndexFailures = immutable(ragIndexFailures);
+        ragIndexSkipped = immutable(ragIndexSkipped);
         validationWarnings = immutable(validationWarnings);
         qualityWarnings = immutable(qualityWarnings);
         qualityErrors = immutable(qualityErrors);
@@ -67,6 +73,7 @@ public record ContentPackImportReport(
             List<String> qualityErrors) {
         this(status, failedStage, namespace, version, snapshot, changedPostIds, List.of(), List.of(),
                 attemptedPostIds, pendingViewPostIds, indexFailures,
+                List.of(), List.of(),
                 validationWarnings, qualityWarnings, qualityErrors);
     }
 

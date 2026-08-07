@@ -19,7 +19,7 @@ class SkillSelectorTest {
         registry = new SkillRegistry(
                 List.of(new PathMatchingResourcePatternResolver().getResources(
                         "classpath*:agent/skills/*/v1.yml")),
-                Set.of("article_rag", "fulltext_search", "bangumi_search",
+                Set.of("article_rag", "post_read", "fulltext_search", "bangumi_search",
                         "bangumi_characters", "bangumi_person_works", "web_search", "web_fetch"),
                 new SkillOutputValidator(),
                 ignored -> true);

@@ -24,7 +24,8 @@ public class AgentToolPlanner {
     private static final Pattern HTTP_URL = Pattern.compile("https?://\\S+", Pattern.CASE_INSENSITIVE);
     private static final Set<String> PRELOOP_SITE_RETRIEVAL = Set.of(
             "article_rag",
-            "fulltext_search");
+            "fulltext_search",
+            "post_read");
     private static final Set<String> INTENT_ROUTED_BANGUMI_TOOLS = Set.of(
             BANGUMI_SEARCH,
             BANGUMI_CHARACTERS,

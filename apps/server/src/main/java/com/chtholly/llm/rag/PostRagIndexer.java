@@ -5,6 +5,11 @@ package com.chtholly.llm.rag;
  */
 public interface PostRagIndexer {
 
+    /** Returns whether this runtime can build or remove RAG projections. */
+    default boolean isEnabled() {
+        return true;
+    }
+
     /** Reconciles all vector chunks for one post with its authoritative MySQL state. */
     void ensureIndexed(long postId);
 }

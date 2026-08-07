@@ -1,6 +1,7 @@
 package com.chtholly.seed.contentpack;
 
 import com.chtholly.counter.service.UserCounterService;
+import com.chtholly.llm.rag.PostRagIndexer;
 import com.chtholly.post.feed.FeedTimelineService;
 import com.chtholly.post.service.impl.PostCacheInvalidator;
 import com.chtholly.relation.service.impl.RelationCacheInvalidator;
@@ -53,6 +54,7 @@ class ContentPackImportServiceTest {
     private final FeedTimelineService feedTimelineService = mock(FeedTimelineService.class);
     private final PostCacheInvalidator cacheInvalidator = mock(PostCacheInvalidator.class);
     private final SearchIndexService searchIndexService = mock(SearchIndexService.class);
+    private final PostRagIndexer ragIndexer = mock(PostRagIndexer.class);
     private final RedissonClient redisson = mock(RedissonClient.class);
     private final RLock lock = mock(RLock.class);
     private ContentPackImportService service;
@@ -63,7 +65,8 @@ class ContentPackImportServiceTest {
     void setUp() throws Exception {
         service = new ContentPackImportService(loader, validator, qualityGate, snapshotWriter,
                 mediaPublisher, databaseWriter, reactionApplier, userCounterService,
-                relationCacheInvalidator, feedTimelineService, cacheInvalidator, searchIndexService, redisson);
+                relationCacheInvalidator, feedTimelineService, cacheInvalidator,
+                searchIndexService, ragIndexer, redisson);
         pack = pack("complete");
         published = new PublishedContent(Map.of(), Map.of(), List.of(), "seed-content-v2", "lease-1");
         when(loader.load(root)).thenReturn(pack);
@@ -77,6 +80,7 @@ class ContentPackImportServiceTest {
         when(databaseWriter.write(pack, published)).thenReturn(writeResult(List.of(11L, 12L), Map.of(101L, 2)));
         when(reactionApplier.apply(any(), any(), any())).thenReturn(new ReactionApplyResult(false, List.of()));
         when(searchIndexService.tryUpsertPost(anyLong())).thenReturn(true);
+        when(ragIndexer.isEnabled()).thenReturn(true);
     }
 
     @Test
@@ -86,7 +90,34 @@ class ContentPackImportServiceTest {
         assertThat(report.status()).isEqualTo("validated");
         verify(databaseWriter).validateExternalPostReferences(pack);
         verifyNoInteractions(snapshotWriter, mediaPublisher, reactionApplier,
-                userCounterService, cacheInvalidator, searchIndexService, redisson);
+                userCounterService, cacheInvalidator, searchIndexService, ragIndexer, redisson);
+    }
+
+    @Test
+    void givenRagIndexFailure_whenDatabaseCommitted_thenContinuesAndReportsFailedPost() {
+        doThrow(new IllegalStateException("embedding unavailable"))
+                .when(ragIndexer).ensureIndexed(11L);
+
+        ContentPackImportReport report = service.run(root, false);
+
+        assertThat(report.status()).isEqualTo("partial");
+        assertThat(report.failedStage()).isEqualTo("rag-index");
+        assertThat(report.ragIndexFailures()).containsExactly(11L);
+        assertThat(report.ragIndexSkipped()).isEmpty();
+        verify(ragIndexer).ensureIndexed(12L);
+        verify(databaseWriter).write(pack, published);
+    }
+
+    @Test
+    void givenRagDisabled_whenDatabaseCommitted_thenReportsSkippedWithoutPartialFailure() {
+        when(ragIndexer.isEnabled()).thenReturn(false);
+
+        ContentPackImportReport report = service.run(root, false);
+
+        assertThat(report.status()).isEqualTo("completed");
+        assertThat(report.ragIndexFailures()).isEmpty();
+        assertThat(report.ragIndexSkipped()).containsExactly(11L, 12L);
+        verify(ragIndexer, never()).ensureIndexed(anyLong());
     }
 
     @Test
@@ -367,6 +398,8 @@ class ContentPackImportServiceTest {
         verify(searchIndexService).softDeletePost(92L);
         verify(searchIndexService, never()).tryUpsertPost(91L);
         verify(searchIndexService, never()).tryUpsertPost(92L);
+        verify(ragIndexer).ensureIndexed(91L);
+        verify(ragIndexer).ensureIndexed(92L);
     }
 
     @Test

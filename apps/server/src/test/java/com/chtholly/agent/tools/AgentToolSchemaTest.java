@@ -5,6 +5,7 @@ import com.chtholly.agent.config.AgentDomainConfig;
 import com.chtholly.agent.config.BangumiDomainConfig;
 import com.chtholly.bangumi.service.BangumiService;
 import com.chtholly.llm.rag.RagQueryService;
+import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.search.service.SearchService;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +17,24 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AgentToolSchemaTest {
+
+    @Test
+    void postReadDeclaresExactSlugModeQuestionAndBoundedTopK() {
+        Map<String, ParamDef> schema = new PostReadTool(
+                mock(PostMapper.class), mock(RagQueryService.class)).parameterSchema();
+
+        assertThat(schema).containsOnlyKeys("slug", "mode", "query", "topK");
+        assertThat(schema.get("slug"))
+                .extracting(ParamDef::type, ParamDef::required, ParamDef::minLength, ParamDef::maxLength)
+                .containsExactly(String.class, true, 1, 300);
+        assertThat(schema.get("mode").enumValues()).containsExactly("overview", "focused");
+        assertThat(schema.get("query"))
+                .extracting(ParamDef::type, ParamDef::required, ParamDef::minLength, ParamDef::maxLength)
+                .containsExactly(String.class, false, 1, 200);
+        assertThat(schema.get("topK"))
+                .extracting(ParamDef::type, ParamDef::required, ParamDef::minimum, ParamDef::maximum)
+                .containsExactly(Integer.class, false, 1L, 6L);
+    }
 
     @Test
     void articleRagDeclaresBoundedQueryAndTopK() {

@@ -11,6 +11,11 @@ import org.springframework.stereotype.Component;
 public class NoOpPostRagIndexer implements PostRagIndexer {
 
     @Override
+    public boolean isEnabled() {
+        return false;
+    }
+
+    @Override
     public void ensureIndexed(long postId) {
         // Phase A 只读博客无需向量索引
     }

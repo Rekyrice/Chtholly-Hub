@@ -6,8 +6,10 @@ import com.chtholly.agent.search.SearchResult;
 import com.chtholly.post.mapper.PostMapper;
 import com.chtholly.post.model.Post;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 
 import java.util.List;
@@ -71,6 +73,11 @@ class RagQueryServiceTest {
         assertThat(results)
                 .extracting(SearchResult::getSnippet)
                 .containsExactly("requested first chunk", "requested second chunk");
+        ArgumentCaptor<SearchRequest> requestCaptor = ArgumentCaptor.forClass(SearchRequest.class);
+        verify(vectorStore).similaritySearch(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().hasFilterExpression()).isTrue();
+        assertThat(String.valueOf(requestCaptor.getValue().getFilterExpression()))
+                .contains("postId", "42");
         verify(indexService).ensureIndexed(42L);
     }
 

@@ -93,9 +93,12 @@ public class RagQueryService {
             return List.of();
         }
         int safeTopK = Math.min(topK, 20);
-        int fetchK = Math.max(safeTopK * 3, 20);
         List<Document> docs = vectorStore.similaritySearch(
-                SearchRequest.builder().query(query.trim()).topK(fetchK).build());
+                SearchRequest.builder()
+                        .query(query.trim())
+                        .topK(safeTopK)
+                        .filterExpression("postId == '" + postId + "'")
+                        .build());
         if (docs == null || docs.isEmpty()) {
             return List.of();
         }

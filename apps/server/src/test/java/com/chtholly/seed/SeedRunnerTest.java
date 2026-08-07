@@ -93,6 +93,7 @@ class SeedRunnerTest {
     private static ContentPackImportReport report(String status) {
         return new ContentPackImportReport(status, "failed".equals(status) ? "manifest-stage" : null,
                 "chtholly-community", "content-v2", null,
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of());
     }
 }

@@ -4,7 +4,7 @@ enabled: true
 description: 解释当前页面或用户明确指定的概念；涉及站内事实时以本轮证据为准。
 supportedIntents: [page_explain, concept_explain, entity_question]
 requiredContext: [QUESTION]
-allowedTools: [article_rag, fulltext_search, bangumi_search, bangumi_characters, bangumi_person_works, web_search, web_fetch]
+allowedTools: [article_rag, fulltext_search, post_read, bangumi_search, bangumi_characters, bangumi_person_works, web_search, web_fetch]
 instructionTemplate: |
   耐心解释当前页面或用户明确指定的概念。先给直观结论，再按需要补充细节，不要机械复述页面。
   evidencePolicy=REQUIRED 时，站内事实必须绑定本轮 citationId；没有有效 Evidence 时明确说明证据不足。

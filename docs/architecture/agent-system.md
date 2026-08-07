@@ -58,14 +58,16 @@ WebSocket `chat` 消息可以在顶层携带 `taskType`。[`SkillSelector`](../.
 - `EvidencePolicy.REQUIRED` 表示必须有可验证证据且事实引用必须通过校验；`OPTIONAL` 允许检索增强，也允许在证据为空时用通用知识完成任务，但不得伪装成站内结论；`NOT_NEEDED` 不为任务主动检索；
 - 页面/站内范围的大纲与基于当前页面的解释会从模板默认 `OPTIONAL` 提升为 `REQUIRED`，草稿事实核查始终为 `REQUIRED`，草稿编辑为 `NOT_NEEDED`。
 
-未提供 `taskType` 时，隐式路由按“事实核查 → 证据大纲 → 页面解释”的固定优先级选择，单独的“是什么”不会触发页面解释。Skill 及 Evidence 计划确定后，[`AgentToolPlanner`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentToolPlanner.java) 再从已授权集合中做确定性收紧：Evidence Skill 移除重复的 `article_rag` / `fulltext_search`，评分等作品信息仅保留 `bangumi_search`，角色问题再加 `bangumi_characters`，人物作品问题使用 `bangumi_person_works`。规划器只能收紧、不能扩大权限，并按以下规则处理公网能力：
+未提供 `taskType` 时，隐式路由按“事实核查 → 证据大纲 → 页面解释”的固定优先级选择，单独的“是什么”不会触发页面解释。Skill 及 Evidence 计划确定后，[`AgentToolPlanner`](../../apps/server/src/main/java/com/chtholly/agent/runtime/AgentToolPlanner.java) 再从已授权集合中做确定性收紧：Evidence Skill 移除重复的 `article_rag` / `fulltext_search` / `post_read`，评分等作品信息仅保留 `bangumi_search`，角色问题再加 `bangumi_characters`，人物作品问题使用 `bangumi_person_works`。规划器只能收紧、不能扩大权限，并按以下规则处理公网能力：
 
 - 明确要求“只依据当前文章/站内资料”或“不要/别/不/无需联网”时排除 `web_search` 与 `web_fetch`，否定约束优先于问题中同时出现的“联网/网页”等字样；
 - 问题含明确 HTTP(S) URL 时允许 `web_fetch`，明确要求先联网检索时才组合 `web_search → web_fetch`；
 - 只有用户明确要求联网、外部资料或时效信息时，通用对话才启用公网工具；普通闲聊不会隐式访问网络；
 - `web_search` 只负责发现候选页面，搜索摘要不是最终证据；模型必须再用 `web_fetch` 抓取少量目标页面，且抓取请求必须命中本轮任一次成功搜索已展示的累计候选 URL，事实才能获得 citation。无关网页或失败抓取不会解除“待核验”状态；候选集合的天然边界来自本轮最大步骤数、单次搜索结果上限和整轮 deadline，不会丢弃仍对模型可见的候选。
 
-当前工具集合共七个：`article_rag`、`fulltext_search`、`bangumi_search`、`bangumi_characters`、`bangumi_person_works`、`web_search` 与 `web_fetch`。公网研究边界由 [`agent/web`](../../apps/server/src/main/java/com/chtholly/agent/web) 实现：只允许 HTTP(S) 默认端口、拒绝 userinfo 与非公网 DNS 结果，并把校验通过的 DNS 地址绑定到真实连接；每个 redirect hop 在出站前重新做 URL/DNS、目标 host 配额与 `robots.txt` 检查，同时禁止 HTTPS 降级。响应体、内容类型、重定向次数和超时均有硬上限；robots 按 origin 有界缓存并失败关闭。正文抽取尊重合法的响应 charset，HTML 在未声明时允许 BOM/meta 探测，Trace 记录实际采用的编码。搜索与抓取同时受用户级和 provider/host 级 Redis 限流，不新增密钥、端口或必需配置。
+当前工具集合共八个：`article_rag`、`fulltext_search`、`post_read`、`bangumi_search`、`bangumi_characters`、`bangumi_person_works`、`web_search` 与 `web_fetch`。`fulltext_search` 用于发现站内文章；历史中已经出现 `/post/{slug}`，且用户继续要求查看、总结或讨论“这一篇”时，使用 [`PostReadTool`](../../apps/server/src/main/java/com/chtholly/agent/tools/PostReadTool.java) 按 slug 读取目标文章。该工具只接受 MySQL 中当前公开发布的文章，通过 [`RagQueryService`](../../apps/server/src/main/java/com/chtholly/llm/rag/RagQueryService.java) 先幂等补建缺失索引，再把 `postId` 过滤条件下推至向量查询，返回有限正文片段；空片段或索引失败不能被解释为文章删除、移动或私密。内容包导入在数据库提交后尽力同步 RAG 投影并报告失败或关闭时的跳过状态，不因 Embedding 故障回滚文章。
+
+公网研究边界由 [`agent/web`](../../apps/server/src/main/java/com/chtholly/agent/web) 实现：只允许 HTTP(S) 默认端口、拒绝 userinfo 与非公网 DNS 结果，并把校验通过的 DNS 地址绑定到真实连接；每个 redirect hop 在出站前重新做 URL/DNS、目标 host 配额与 `robots.txt` 检查，同时禁止 HTTPS 降级。响应体、内容类型、重定向次数和超时均有硬上限；robots 按 origin 有界缓存并失败关闭。正文抽取尊重合法的响应 charset，HTML 在未声明时允许 BOM/meta 探测，Trace 记录实际采用的编码。搜索与抓取同时受用户级和 provider/host 级 Redis 限流，不新增密钥、端口或必需配置。
 
 [`ParamDef`](../../apps/server/src/main/java/com/chtholly/agent/ParamDef.java) 的 schema 现在可声明字符串长度、数值范围和枚举约束；[`AgentToolParamValidator`](../../apps/server/src/main/java/com/chtholly/agent/AgentToolParamValidator.java) 与注入 prompt 的工具协议共用这一契约。运行时校验仍是权威边界，不依赖模型自觉遵守提示。
 

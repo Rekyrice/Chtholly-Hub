@@ -16,6 +16,7 @@ class AgentToolPlannerTest {
     private static final List<String> ALL_TOOLS = List.of(
             "article_rag",
             "fulltext_search",
+            "post_read",
             "bangumi_search",
             "bangumi_characters",
             "bangumi_person_works",
@@ -147,6 +148,7 @@ class AgentToolPlannerTest {
                 "fulltext_search",
                 "web_search",
                 "article_rag",
+                "post_read",
                 "web_fetch",
                 "bangumi_search",
                 "bangumi_characters",
@@ -159,6 +161,7 @@ class AgentToolPlannerTest {
         assertThat(plan.effectiveTools()).containsExactly(
                 "fulltext_search",
                 "article_rag",
+                "post_read",
                 "bangumi_search",
                 "bangumi_characters",
                 "bangumi_person_works");
@@ -189,7 +192,7 @@ class AgentToolPlannerTest {
                 "不要联网，也不要搜索网页，只用站内内容回答",
                 ALL_TOOLS);
 
-        assertThat(plan.effectiveTools()).containsExactly("article_rag", "fulltext_search");
+        assertThat(plan.effectiveTools()).containsExactly("article_rag", "fulltext_search", "post_read");
         assertThat(plan.reason()).isEqualTo("generic_chat_site_only");
     }
 
@@ -214,7 +217,7 @@ class AgentToolPlannerTest {
                 "不联网查这个问题，只用站内内容回答",
                 ALL_TOOLS);
 
-        assertThat(plan.effectiveTools()).containsExactly("article_rag", "fulltext_search");
+        assertThat(plan.effectiveTools()).containsExactly("article_rag", "fulltext_search", "post_read");
         assertThat(plan.reason()).isEqualTo("generic_chat_site_only");
     }
 

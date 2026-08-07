@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SkillCandidateDatasetTest {
 
     private static final Set<String> READ_ONLY_TOOLS = Set.of(
-            "article_rag", "fulltext_search", "bangumi_search",
+            "article_rag", "fulltext_search", "post_read", "bangumi_search",
             "bangumi_characters", "bangumi_person_works", "web_search", "web_fetch");
     private static final Set<String> FORBIDDEN_WRITE_TOOLS = Set.of("draft_write", "post_publish");
 
