@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.actuate.health.Status;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -35,9 +36,19 @@ public class BangumiHealthIndicator implements HealthIndicator {
         if (cached != null && !cached.isExpired()) {
             return cached.health();
         }
-        Health result = HealthCheckSupport.runWithTimeout(this::probeApi);
+        Health result = asOptionalDependency(HealthCheckSupport.runWithTimeout(this::probeApi));
         cache.set(new CachedResult(result, Instant.now()));
         return result;
+    }
+
+    private Health asOptionalDependency(Health result) {
+        if (Status.UP.equals(result.getStatus())) {
+            return result;
+        }
+        return Health.unknown()
+                .withDetails(result.getDetails())
+                .withDetail("optional", true)
+                .build();
     }
 
     private Health probeApi() {
