@@ -13,7 +13,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -48,6 +50,7 @@ public class RagIndexService implements PostRagIndexer {
     private final ElasticsearchClient es;
     // ES 相关配置（索引名等）
     private final EsProperties esProps;
+    private final String contentBaseUrl;
 
     /**
      * Creates the RAG projection service.
@@ -59,19 +62,32 @@ public class RagIndexService implements PostRagIndexer {
      * @param es Elasticsearch administration client
      * @param esProps Elasticsearch index properties
      */
+    @Autowired
     public RagIndexService(
             VectorStore vectorStore,
             PostMapper postMapper,
             RagPostMutationLock mutationLock,
             @Qualifier("searchContentRestTemplate") RestTemplate http,
             ElasticsearchClient es,
-            EsProperties esProps) {
+            EsProperties esProps,
+            @Value("${search.content-base-url:http://localhost:8888}") String contentBaseUrl) {
         this.vectorStore = Objects.requireNonNull(vectorStore, "vectorStore");
         this.postMapper = Objects.requireNonNull(postMapper, "postMapper");
         this.mutationLock = Objects.requireNonNull(mutationLock, "mutationLock");
         this.http = Objects.requireNonNull(http, "http");
         this.es = Objects.requireNonNull(es, "es");
         this.esProps = Objects.requireNonNull(esProps, "esProps");
+        this.contentBaseUrl = contentBaseUrl == null ? "" : contentBaseUrl.replaceAll("/+$", "");
+    }
+
+    RagIndexService(
+            VectorStore vectorStore,
+            PostMapper postMapper,
+            RagPostMutationLock mutationLock,
+            RestTemplate http,
+            ElasticsearchClient es,
+            EsProperties esProps) {
+        this(vectorStore, postMapper, mutationLock, http, es, esProps, "http://localhost:8888");
     }
 
     @Override
@@ -339,10 +355,20 @@ public class RagIndexService implements PostRagIndexer {
      */
     private String fetchContent(String url) {
         try {
-            return http.getForObject(url, String.class);
+            return http.getForObject(absoluteContentUrl(url), String.class);
         } catch (Exception e) {
             throw new IllegalStateException("Post content fetch failed: " + url, e);
         }
+    }
+
+    private String absoluteContentUrl(String url) {
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return url;
+        }
+        if (url.startsWith("/")) {
+            return contentBaseUrl + url;
+        }
+        throw new IllegalArgumentException("Unsupported content URL: " + url);
     }
 
     /**

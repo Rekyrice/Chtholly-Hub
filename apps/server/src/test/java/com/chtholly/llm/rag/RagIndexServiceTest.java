@@ -350,6 +350,40 @@ class RagIndexServiceTest {
     }
 
     @Test
+    void relativeLocalContentUrlUsesConfiguredContentBaseUrl() throws Exception {
+        VectorStore vectorStore = mock(VectorStore.class);
+        PostMapper postMapper = mock(PostMapper.class);
+        RestTemplate contentClient = mock(RestTemplate.class);
+        ElasticsearchClient elasticsearch = mock(ElasticsearchClient.class);
+        ElasticsearchIndicesClient indices = mock(ElasticsearchIndicesClient.class);
+        EsProperties properties = new EsProperties();
+        properties.setIndex("rag-test-index");
+        PostDetailRow post = publishedPost();
+        post.setContentUrl("/uploads/post.md");
+
+        when(postMapper.findDetailById(42L)).thenReturn(post);
+        when(elasticsearch.get(any(java.util.function.Function.class), eq(Map.class)))
+                .thenThrow(new IOException("force rebuild"));
+        doReturn(completeDeleteResponse()).when(elasticsearch)
+                .deleteByQuery(any(java.util.function.Function.class));
+        when(elasticsearch.indices()).thenReturn(indices);
+        doReturn(completeRefreshResponse()).when(indices)
+                .refresh(any(java.util.function.Function.class));
+        when(contentClient.getForObject(
+                "http://content.internal:8888/uploads/post.md", String.class))
+                .thenReturn("# Local content\nThe body is readable.");
+
+        RagIndexService service = new RagIndexService(
+                vectorStore, postMapper, passThroughLock(), contentClient,
+                elasticsearch, properties, "http://content.internal:8888/");
+
+        assertThat(service.reindexSinglePost(42L)).isPositive();
+        verify(contentClient).getForObject(
+                "http://content.internal:8888/uploads/post.md", String.class);
+        verify(vectorStore).add(any());
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void replayCleansPartialBulkBeforePublishingCompletionManifest() throws Exception {
         VectorStore vectorStore = mock(VectorStore.class);
