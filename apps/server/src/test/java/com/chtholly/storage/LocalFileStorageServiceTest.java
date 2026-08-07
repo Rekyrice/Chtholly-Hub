@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.concurrent.CountDownLatch;
@@ -97,6 +98,19 @@ class LocalFileStorageServiceTest {
         service.deleteObject(key);
         assertThat(Files.exists(target)).isFalse();
         assertThat(service.objectExists(key)).isFalse();
+    }
+
+    @Test
+    void uploadVerifiedObject_onPosixFileSystem_makesPublicObjectReadableByReverseProxy() throws Exception {
+        assumeTrue(Files.getFileStore(tempDir).supportsFileAttributeView("posix"));
+        byte[] data = "public-content".getBytes(StandardCharsets.UTF_8);
+        String key = "seed/content-v3/posts/post-" + sha256(data) + ".md";
+
+        service.uploadVerifiedObject(
+                key, new ByteArrayInputStream(data), "text/markdown", data.length, sha256(data));
+
+        assertThat(Files.getPosixFilePermissions(service.resolveObjectPath(key)))
+                .contains(PosixFilePermission.GROUP_READ, PosixFilePermission.OTHERS_READ);
     }
 
     @Test
