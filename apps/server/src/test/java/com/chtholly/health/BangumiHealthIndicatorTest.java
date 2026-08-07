@@ -28,8 +28,8 @@ class BangumiHealthIndicatorTest {
 
     @Test
     void health_up_whenApiReachable() {
-        when(bangumiClient.fetchCalendar())
-                .thenReturn(Optional.of(new ObjectMapper().createArrayNode()));
+        when(bangumiClient.getSubject(2L))
+                .thenReturn(Optional.of(new ObjectMapper().createObjectNode()));
 
         Health health = indicator.health();
 
@@ -38,23 +38,40 @@ class BangumiHealthIndicatorTest {
     }
 
     @Test
-    void health_down_whenApiUnreachable() {
-        when(bangumiClient.fetchCalendar()).thenReturn(Optional.empty());
+    void health_unknown_whenApiUnreachable() {
+        when(bangumiClient.getSubject(2L)).thenReturn(Optional.empty());
 
         Health health = indicator.health();
 
-        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(health.getStatus()).isEqualTo(Status.UNKNOWN);
         assertThat(health.getDetails()).containsEntry("error", "Bangumi API unreachable");
+        assertThat(health.getDetails()).containsEntry("optional", true);
+    }
+
+    @Test
+    void health_unknown_whenProbeTimesOut() {
+        when(bangumiClient.getSubject(2L)).thenAnswer(invocation -> {
+            Thread.sleep(HealthCheckSupport.TIMEOUT_SECONDS * 1000L + 100L);
+            return Optional.empty();
+        });
+
+        Health health = indicator.health();
+
+        assertThat(health.getStatus()).isEqualTo(Status.UNKNOWN);
+        assertThat(health.getDetails())
+                .containsEntry("error", "health check timeout after "
+                        + HealthCheckSupport.TIMEOUT_SECONDS + "s")
+                .containsEntry("optional", true);
     }
 
     @Test
     void health_usesCache_withinFiveMinutes() {
-        when(bangumiClient.fetchCalendar())
-                .thenReturn(Optional.of(new ObjectMapper().createArrayNode()));
+        when(bangumiClient.getSubject(2L))
+                .thenReturn(Optional.of(new ObjectMapper().createObjectNode()));
 
         indicator.health();
         indicator.health();
 
-        verify(bangumiClient, times(1)).fetchCalendar();
+        verify(bangumiClient, times(1)).getSubject(2L);
     }
 }

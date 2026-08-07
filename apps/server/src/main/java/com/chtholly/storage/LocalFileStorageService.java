@@ -19,14 +19,18 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.security.DigestInputStream;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -41,6 +45,11 @@ public class LocalFileStorageService implements StorageService {
 
     private static final int PRESIGN_EXPIRES_SECONDS = 600;
     private static final String UPLOAD_ENDPOINT = "/api/v1/storage/upload";
+    private static final Set<PosixFilePermission> PUBLIC_OBJECT_PERMISSIONS = EnumSet.of(
+            PosixFilePermission.OWNER_READ,
+            PosixFilePermission.OWNER_WRITE,
+            PosixFilePermission.GROUP_READ,
+            PosixFilePermission.OTHERS_READ);
 
     private final StorageProperties props;
     private final SeedProperties seedProperties;
@@ -174,8 +183,17 @@ public class LocalFileStorageService implements StorageService {
             } else {
                 moveReplacing(target, temporary);
             }
+            makePubliclyReadable(target);
         } finally {
             Files.deleteIfExists(temporary);
+        }
+    }
+
+    private void makePubliclyReadable(Path target) throws IOException {
+        PosixFileAttributeView attributes = Files.getFileAttributeView(
+                target, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (attributes != null) {
+            attributes.setPermissions(PUBLIC_OBJECT_PERMISSIONS);
         }
     }
 

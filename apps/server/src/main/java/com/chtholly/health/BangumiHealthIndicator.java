@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.actuate.health.Status;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class BangumiHealthIndicator implements HealthIndicator {
 
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
+    private static final long HEALTH_PROBE_SUBJECT_ID = 2L;
 
     private final BangumiClient bangumiClient;
     private final AtomicReference<CachedResult> cache = new AtomicReference<>();
@@ -34,14 +36,24 @@ public class BangumiHealthIndicator implements HealthIndicator {
         if (cached != null && !cached.isExpired()) {
             return cached.health();
         }
-        Health result = HealthCheckSupport.runWithTimeout(this::probeApi);
+        Health result = asOptionalDependency(HealthCheckSupport.runWithTimeout(this::probeApi));
         cache.set(new CachedResult(result, Instant.now()));
         return result;
     }
 
+    private Health asOptionalDependency(Health result) {
+        if (Status.UP.equals(result.getStatus())) {
+            return result;
+        }
+        return Health.unknown()
+                .withDetails(result.getDetails())
+                .withDetail("optional", true)
+                .build();
+    }
+
     private Health probeApi() {
-        Optional<JsonNode> calendar = bangumiClient.fetchCalendar();
-        if (calendar.isPresent()) {
+        Optional<JsonNode> subject = bangumiClient.getSubject(HEALTH_PROBE_SUBJECT_ID);
+        if (subject.isPresent()) {
             return Health.up().withDetail("api_reachable", true).build();
         }
         return Health.down().withDetail("error", "Bangumi API unreachable").build();
