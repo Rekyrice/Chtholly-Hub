@@ -61,7 +61,7 @@ export default function AgentSkillModeSelector({
             )}
             aria-pressed={value === mode.taskType}
             title={mode.description}
-            onClick={() => onChange(mode.taskType)}
+            onClick={() => onChange(value === mode.taskType ? null : mode.taskType)}
           >
             {mode.label}
           </button>

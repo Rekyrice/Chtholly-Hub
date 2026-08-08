@@ -25,4 +25,12 @@ describe("AgentSkillModeSelector", () => {
     fireEvent.click(screen.getByRole("button", { name: "退出任务模式" }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
+
+  it("cancels the active mode when its task button is clicked again", () => {
+    const onChange = vi.fn();
+    render(<AgentSkillModeSelector value="evidence-outline" onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "资料大纲" }));
+    expect(onChange).toHaveBeenCalledWith(null);
+  });
 });
