@@ -34,8 +34,13 @@ function buildWsBaseUrl(): string | null {
   }
 
   if (typeof window === "undefined") return null;
-  const host = window.location.hostname;
-  return `ws://${host}:8888/api/v1/agent/ws`;
+  const { host, hostname, protocol } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+    return `ws://${hostname}:8888/api/v1/agent/ws`;
+  }
+
+  const wsProtocol = protocol === "https:" ? "wss:" : "ws:";
+  return `${wsProtocol}//${host}/api/v1/agent/ws`;
 }
 
 /** 构建 Agent WebSocket URL（需先换取 ticket）。 */
