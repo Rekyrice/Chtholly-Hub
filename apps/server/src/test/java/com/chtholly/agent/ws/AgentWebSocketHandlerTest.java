@@ -1012,6 +1012,7 @@ class AgentWebSocketHandlerTest {
                 coordinator, asyncExecutor);
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch cancelled = new CountDownLatch(1);
+        CountDownLatch allowAgentReturn = new CountDownLatch(1);
         when(rawSession.getId()).thenReturn("sess-concurrent");
         when(rawSession.getUri()).thenReturn(
                 URI.create("ws://localhost/api/v1/agent/ws?ticket=concurrent"));
@@ -1034,6 +1035,18 @@ class AgentWebSocketHandlerTest {
                 }
             }
             cancelled.countDown();
+            boolean interrupted = false;
+            while (true) {
+                try {
+                    allowAgentReturn.await();
+                    break;
+                } catch (InterruptedException exception) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
             return null;
         }).when(agent).run(
                 any(), anyLong(), any(), any(AgentTurnControl.class), any(), any(), any());
@@ -1065,14 +1078,19 @@ class AgentWebSocketHandlerTest {
             asyncHandler.afterConnectionClosed(
                     rawSession, org.springframework.web.socket.CloseStatus.NORMAL);
             assertThat(cancelled.await(2, TimeUnit.SECONDS)).isTrue();
-            assertThat(coordinator.acquire(
-                    69L,
-                    "sess-chat-shared",
-                    "request-after-close",
-                    "turn-after-close",
-                    Duration.ofSeconds(30)).status())
-                    .isEqualTo(AgentTurnCoordinator.AcquireStatus.ACQUIRED);
+            allowAgentReturn.countDown();
+            await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+                    assertThat(coordinator.acquire(
+                            69L,
+                            "sess-chat-shared",
+                            "request-after-close",
+                            "turn-after-close",
+                            Duration.ofSeconds(30)).status())
+                            .isEqualTo(AgentTurnCoordinator.AcquireStatus.ACQUIRED));
+            assertThat(coordinator.release(
+                    69L, "sess-chat-shared", "turn-after-close")).isTrue();
         } finally {
+            allowAgentReturn.countDown();
             asyncExecutor.shutdownNow();
         }
     }
