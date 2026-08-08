@@ -21,6 +21,7 @@ import { formatDate } from "@/lib/utils";
 import { extractMarkdownHeadings } from "@/lib/markdownHeadings";
 import { loadRelatedPostCards } from "@/lib/relatedPosts";
 import { countWritingStats } from "@/lib/utils/markdownInsert";
+import { resolveServerResourceUrl } from "@/lib/serverResourceUrl";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -201,7 +202,9 @@ export default async function PostPage({ params }: Props) {
 
 async function loadMarkdown(contentUrl: string) {
   try {
-    const response = await fetch(contentUrl, { next: { revalidate: 300 } });
+    const response = await fetch(resolveServerResourceUrl(contentUrl), {
+      next: { revalidate: 300 },
+    });
     if (!response.ok) {
       throw new Error(`无法加载正文：${response.status}`);
     }

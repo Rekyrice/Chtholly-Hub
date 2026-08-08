@@ -36,6 +36,11 @@ const nextConfig: NextConfig = {
     remotePatterns,
   },
   async rewrites() {
+    const uploadsRewrite = {
+      source: "/uploads/:path*",
+      destination: `${apiOrigin}/uploads/:path*`,
+    };
+
     // 生产环境由 Nginx 反代 /api；开发时 Node 代理到 Spring Boot
     if (process.env.NODE_ENV === "development") {
       return [
@@ -43,13 +48,11 @@ const nextConfig: NextConfig = {
           source: "/api/v1/:path*",
           destination: `${apiOrigin}/api/v1/:path*`,
         },
-        {
-          source: "/uploads/:path*",
-          destination: `${apiOrigin}/uploads/:path*`,
-        },
+        uploadsRewrite,
       ];
     }
-    return [];
+    // 浏览器请求由 Nginx 直接响应；生产重写只供服务端图片优化器解析相同路径。
+    return [uploadsRewrite];
   },
 };
 

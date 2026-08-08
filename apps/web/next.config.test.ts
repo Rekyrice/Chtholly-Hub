@@ -36,4 +36,14 @@ describe("Next.js build output isolation", () => {
     expect(dockerfile).toContain("/app/.next-prod/static");
     expect(dockerfile).toContain("./.next-prod/static");
   });
+
+  it("proxies uploaded media to the API server in production", async () => {
+    vi.stubEnv("API_SERVER_URL", "http://server:8888");
+    const production = await loadConfig("production");
+
+    await expect(production.rewrites?.()).resolves.toContainEqual({
+      source: "/uploads/:path*",
+      destination: "http://server:8888/uploads/:path*",
+    });
+  });
 });
